@@ -1,0 +1,56 @@
+[workspace]
+members = [
+    "crates/gitkraft-core",
+    "crates/gitkraft-gui",
+    "crates/gitkraft-tui",
+]
+resolver = "2"
+
+[workspace.package]
+version      = "0.1.0"
+edition      = "2021"
+authors      = ["Sorin Irimies <sorinirimies@gmail.com>"]
+license      = "MIT"
+repository   = "https://github.com/sorinirimies/gitkraft"
+
+# ── Shared dependency versions ─────────────────────────────────────────────────
+# Pin versions here once; each crate's Cargo.toml references them with
+# `{ workspace = true }` so there is a single source of truth.
+
+[workspace.dependencies]
+# Core / shared
+git2         = "0.20"
+tokio        = { version = "1", features = ["full"] }
+anyhow       = "1"
+thiserror    = "2"
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"
+chrono       = { version = "0.4", features = ["serde"] }
+dirs         = "6.0"
+notify       = { version = "8.2.0", features = [] }
+futures      = "0.3"
+tempfile     = "3"
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# GUI (Iced)
+iced         = { version = "0.13.1", features = ["advanced", "canvas"] }
+iced_aw      = "0.12.2"
+iced_fonts   = { version = "0.1", features = ["bootstrap"] }
+rfd          = "0.15"
+
+# TUI (Ratatui)
+ratatui              = "0.30"
+crossterm            = "0.29"
+tui-file-explorer    = "0.9.8"
+tui-checkbox         = "0.4.3"
+
+# Internal crates
+gitkraft-core = { path = "crates/gitkraft-core", version = "0.1.0" }
+
+[profile.dev]
+opt-level = 0
+
+[profile.release]
+opt-level = 3
+lto       = true

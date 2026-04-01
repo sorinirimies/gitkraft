@@ -1,0 +1,31 @@
+[package]
+name = "gitkraft-tui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "GitKraft — Git IDE terminal application (Ratatui TUI)"
+readme = "README.md"
+categories = ["command-line-utilities", "development-tools"]
+keywords = ["git", "vcs", "ide", "tui"]
+
+[lib]
+name = "gitkraft_tui"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gitkraft-tui"
+path = "src/main.rs"
+
+[dependencies]
+gitkraft-core = { workspace = true }
+git2               = { workspace = true }
+ratatui            = { workspace = true }
+crossterm          = { workspace = true }
+dirs               = { workspace = true }
+tokio              = { workspace = true }
+futures            = { workspace = true }
+anyhow             = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }

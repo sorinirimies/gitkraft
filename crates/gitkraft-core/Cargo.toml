@@ -1,0 +1,27 @@
+[package]
+name = "gitkraft-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared core logic for GitKraft — domain models, git operations, repository management"
+readme = "README.md"
+categories = ["development-tools", "command-line-utilities"]
+keywords = ["git", "vcs", "ide", "repository"]
+
+[dependencies]
+git2          = { workspace = true }
+tokio         = { workspace = true }
+futures       = { workspace = true }
+serde         = { workspace = true }
+serde_json    = { workspace = true }
+chrono        = { workspace = true }
+dirs          = { workspace = true }
+notify        = { workspace = true }
+anyhow        = { workspace = true }
+thiserror     = { workspace = true }
+tracing       = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
