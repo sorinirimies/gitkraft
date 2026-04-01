@@ -82,6 +82,13 @@ pub struct App {
     /// When `true`, the next `d` press actually discards; otherwise the first
     /// `d` sets this flag and shows a confirmation prompt.
     pub confirm_discard: bool,
+
+    /// Whether the theme selection panel is visible.
+    pub show_theme_panel: bool,
+    /// Currently selected theme index (0-26).
+    pub current_theme_index: usize,
+    /// ListState for the theme list widget.
+    pub theme_list_state: ListState,
 }
 
 impl App {
@@ -124,6 +131,14 @@ impl App {
             error_message: None,
 
             confirm_discard: false,
+
+            show_theme_panel: false,
+            current_theme_index: 0,
+            theme_list_state: {
+                let mut s = ListState::default();
+                s.select(Some(0));
+                s
+            },
         }
     }
 }
@@ -135,6 +150,33 @@ impl Default for App {
 }
 
 impl App {
+    // ── Theme helpers ────────────────────────────────────────────────────
+
+    pub fn cycle_theme_next(&mut self) {
+        let count = 27; // number of themes
+        self.current_theme_index = (self.current_theme_index + 1) % count;
+        self.theme_list_state.select(Some(self.current_theme_index));
+        self.status_message = Some(format!("Theme: {}", self.current_theme_name()));
+    }
+
+    pub fn cycle_theme_prev(&mut self) {
+        let count = 27;
+        if self.current_theme_index == 0 {
+            self.current_theme_index = count - 1;
+        } else {
+            self.current_theme_index -= 1;
+        }
+        self.theme_list_state.select(Some(self.current_theme_index));
+        self.status_message = Some(format!("Theme: {}", self.current_theme_name()));
+    }
+
+    pub fn current_theme_name(&self) -> &'static str {
+        crate::features::theme::view::THEME_NAMES
+            .get(self.current_theme_index)
+            .copied()
+            .unwrap_or("Default")
+    }
+
     // ── Repo helpers ─────────────────────────────────────────────────────
 
     /// Open the repository fresh from `self.repo_path`.  We never store

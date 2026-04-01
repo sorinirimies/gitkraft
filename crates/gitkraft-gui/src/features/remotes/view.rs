@@ -25,9 +25,12 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .color(theme::ACCENT);
 
     let fetch_btn = if state.remotes.is_empty() {
-        button(fetch_icon).padding([2, 6])
+        button(fetch_icon).padding([2, 6]).style(theme::icon_button)
     } else {
-        button(fetch_icon).padding([2, 6]).on_press(Message::Fetch)
+        button(fetch_icon)
+            .padding([2, 6])
+            .style(theme::icon_button)
+            .on_press(Message::Fetch)
     };
 
     let header_row = row![

@@ -69,8 +69,12 @@ fn render_main(app: &mut App, frame: &mut Frame) {
     // Commit log
     features::commits::view::render(app, frame, main_cols[1]);
 
-    // Diff view
-    features::diff::view::render(app, frame, main_cols[2]);
+    // Diff view OR theme panel
+    if app.show_theme_panel {
+        features::theme::view::render(app, frame, main_cols[2]);
+    } else {
+        features::diff::view::render(app, frame, main_cols[2]);
+    }
 
     // Staging area
     features::staging::view::render(app, frame, outer[2]);

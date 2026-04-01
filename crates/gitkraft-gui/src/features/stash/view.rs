@@ -28,6 +28,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     let save_btn = button(save_icon)
         .padding([2, 6])
+        .style(theme::icon_button)
         .on_press(Message::StashSave);
 
     let header_row = row![
@@ -74,6 +75,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
             let pop_btn = button(pop_icon)
                 .padding([2, 4])
+                .style(theme::icon_button)
                 .on_press(Message::StashPop(entry.index));
 
             let drop_icon = text('\u{F5DE}') // trash
@@ -83,6 +85,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
             let drop_btn = button(drop_icon)
                 .padding([2, 4])
+                .style(theme::icon_button)
                 .on_press(Message::StashDrop(entry.index));
 
             let entry_row = row![

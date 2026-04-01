@@ -7,3 +7,4 @@ pub mod remotes;
 pub mod repo;
 pub mod staging;
 pub mod stash;
+pub mod theme;

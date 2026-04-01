@@ -19,6 +19,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 return;
             }
 
+            if app.show_theme_panel {
+                features::theme::events::handle_key(app, key);
+                return;
+            }
+
             // ── Global keys (available in Normal mode on the Main screen) ──
             match key.code {
                 KeyCode::Char('q') => app.should_quit = true,
@@ -29,6 +34,9 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 KeyCode::BackTab => cycle_pane_backward(app),
                 KeyCode::Char('r') => app.refresh(),
                 KeyCode::Char('f') => app.fetch_remote(),
+                KeyCode::Char('T') => {
+                    app.show_theme_panel = !app.show_theme_panel;
+                }
                 _ => {
                     // Delegate to the active pane's feature handler
                     match app.active_pane {

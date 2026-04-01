@@ -122,6 +122,8 @@ pub enum Message {
     DismissError,
     /// Toggle the left sidebar.
     ToggleSidebar,
+    /// User selected a different theme from the picker.
+    ThemeChanged(iced::Theme),
     /// No-op (used for disabled buttons, etc.).
     Noop,
 }

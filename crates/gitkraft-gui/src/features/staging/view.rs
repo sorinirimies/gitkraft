@@ -40,10 +40,13 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
         .color(theme::MUTED);
 
     let stage_all_btn = if state.unstaged_changes.is_empty() {
-        button(text("Stage All").size(11)).padding([2, 8])
+        button(text("Stage All").size(11))
+            .padding([2, 8])
+            .style(theme::toolbar_button)
     } else {
         button(text("Stage All").size(11))
             .padding([2, 8])
+            .style(theme::toolbar_button)
             .on_press(Message::StageAll)
     };
 
@@ -87,6 +90,7 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
                     .color(theme::ACCENT),
             )
             .padding([2, 4])
+            .style(theme::icon_button)
             .on_press(Message::SelectDiff(diff.clone()));
 
             let stage_btn = button(
@@ -96,6 +100,7 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
                     .color(theme::GREEN),
             )
             .padding([2, 4])
+            .style(theme::icon_button)
             .on_press(Message::StageFile(file_path_display.to_string()));
 
             let discard_btn = button(
@@ -105,6 +110,7 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
                     .color(theme::RED),
             )
             .padding([2, 4])
+            .style(theme::icon_button)
             .on_press(Message::DiscardFile(file_path_display.to_string()));
 
             let file_row = row![
@@ -166,10 +172,13 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
         .color(theme::MUTED);
 
     let unstage_all_btn = if state.staged_changes.is_empty() {
-        button(text("Unstage All").size(11)).padding([2, 8])
+        button(text("Unstage All").size(11))
+            .padding([2, 8])
+            .style(theme::toolbar_button)
     } else {
         button(text("Unstage All").size(11))
             .padding([2, 8])
+            .style(theme::toolbar_button)
             .on_press(Message::UnstageAll)
     };
 
@@ -213,6 +222,7 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
                     .color(theme::ACCENT),
             )
             .padding([2, 4])
+            .style(theme::icon_button)
             .on_press(Message::SelectDiff(diff.clone()));
 
             let unstage_btn = button(
@@ -222,6 +232,7 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
                     .color(theme::YELLOW),
             )
             .padding([2, 4])
+            .style(theme::icon_button)
             .on_press(Message::UnstageFile(file_path_display.to_string()));
 
             let file_row = row![
@@ -303,11 +314,13 @@ fn commit_view(state: &GitKraft) -> Element<'_, Message> {
         button(commit_btn_content)
             .padding([8, 16])
             .width(Length::Fill)
+            .style(theme::toolbar_button)
             .on_press(Message::CreateCommit)
     } else {
         button(commit_btn_content)
             .padding([8, 16])
             .width(Length::Fill)
+            .style(theme::toolbar_button)
     };
 
     let staged_hint = if state.staged_changes.is_empty() {

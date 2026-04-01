@@ -5,6 +5,7 @@
 use iced::widget::{button, container, row, text, Space};
 use iced::{Alignment, Element, Length};
 
+use crate::features::theme::view::theme_selector;
 use crate::message::Message;
 use crate::state::GitKraft;
 use crate::theme;
@@ -21,9 +22,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .size(14)
         .color(theme::TEXT_PRIMARY);
 
-    let separator = || {
-        text("│").size(14).color(theme::BORDER)
-    };
+    let separator = || text("│").size(14).color(theme::BORDER);
 
     // ── Branch indicator ──────────────────────────────────────────────────
     let branch_icon = text('\u{F404}') // git-branch icon
@@ -31,14 +30,9 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .size(14)
         .color(theme::GREEN);
 
-    let branch_name_str = state
-        .current_branch
-        .as_deref()
-        .unwrap_or("(detached)");
+    let branch_name_str = state.current_branch.as_deref().unwrap_or("(detached)");
 
-    let branch_label = text(branch_name_str)
-        .size(14)
-        .color(theme::TEXT_PRIMARY);
+    let branch_label = text(branch_name_str).size(14).color(theme::TEXT_PRIMARY);
 
     // ── Repo state badge (if not clean) ───────────────────────────────────
     let state_badge: Element<'_, Message> = if let Some(ref info) = state.repo_info {
@@ -66,12 +60,14 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .align_y(Alignment::Center),
         )
         .padding([4, 10])
+        .style(theme::toolbar_button)
     } else {
         button(
             row![fetch_icon, Space::with_width(4), text("Fetch").size(12)]
                 .align_y(Alignment::Center),
         )
         .padding([4, 10])
+        .style(theme::toolbar_button)
         .on_press(Message::Fetch)
     };
 
@@ -86,6 +82,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .align_y(Alignment::Center),
     )
     .padding([4, 10])
+    .style(theme::toolbar_button)
     .on_press(Message::RefreshRepo);
 
     // ── Open another repo button ──────────────────────────────────────────
@@ -95,10 +92,10 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .color(theme::TEXT_SECONDARY);
 
     let open_btn = button(
-        row![open_icon, Space::with_width(4), text("Open").size(12)]
-            .align_y(Alignment::Center),
+        row![open_icon, Space::with_width(4), text("Open").size(12)].align_y(Alignment::Center),
     )
     .padding([4, 10])
+    .style(theme::toolbar_button)
     .on_press(Message::OpenRepo);
 
     // ── Toggle sidebar ────────────────────────────────────────────────────
@@ -114,14 +111,12 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     let sidebar_btn = button(sidebar_icon)
         .padding([4, 8])
+        .style(theme::icon_button)
         .on_press(Message::ToggleSidebar);
 
     // ── Loading indicator ─────────────────────────────────────────────────
     let loading_indicator: Element<'_, Message> = if state.is_loading {
-        text("⟳ Loading…")
-            .size(12)
-            .color(theme::YELLOW)
-            .into()
+        text("⟳ Loading…").size(12).color(theme::YELLOW).into()
     } else {
         Space::with_width(0).into()
     };
@@ -145,6 +140,8 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         Space::with_width(10),
         loading_indicator,
         Space::with_width(Length::Fill),
+        theme_selector(&state.theme),
+        Space::with_width(8),
         fetch_btn,
         Space::with_width(4),
         refresh_btn,

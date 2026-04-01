@@ -82,6 +82,11 @@ impl GitKraft {
                 Task::none()
             }
 
+            Message::ThemeChanged(theme) => {
+                self.theme = theme.clone();
+                Task::none()
+            }
+
             Message::Noop => Task::none(),
         }
     }

@@ -1,6 +1,7 @@
 //! Theme helpers and color constants for GitKraft's dark UI.
 
 use iced::color;
+use iced::widget::button;
 use iced::Color;
 
 // ── Brand / accent ────────────────────────────────────────────────────────────
@@ -130,6 +131,113 @@ pub fn diff_hunk_style(_theme: &iced::Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(DIFF_HUNK_BG)),
         ..Default::default()
+    }
+}
+
+// ── Button styles ─────────────────────────────────────────────────────────
+
+/// Completely transparent button — no background, no border.  Used for
+/// clickable rows in the commit log, branch list, staging area, etc.
+pub fn ghost_button(theme: &iced::Theme, status: button::Status) -> button::Style {
+    let _ = theme;
+    match status {
+        button::Status::Active => button::Style {
+            background: None,
+            text_color: TEXT_PRIMARY,
+            border: iced::Border::default(),
+            shadow: iced::Shadow::default(),
+        },
+        button::Status::Hovered => button::Style {
+            background: Some(Background::Color(SURFACE_HIGHLIGHT)),
+            text_color: TEXT_PRIMARY,
+            border: iced::Border::default(),
+            shadow: iced::Shadow::default(),
+        },
+        button::Status::Pressed => button::Style {
+            background: Some(Background::Color(BORDER)),
+            text_color: TEXT_PRIMARY,
+            border: iced::Border::default(),
+            shadow: iced::Shadow::default(),
+        },
+        button::Status::Disabled => button::Style {
+            background: None,
+            text_color: MUTED,
+            border: iced::Border::default(),
+            shadow: iced::Shadow::default(),
+        },
+    }
+}
+
+/// Subtle toolbar button — transparent at rest, light surface on hover.
+pub fn toolbar_button(theme: &iced::Theme, status: button::Status) -> button::Style {
+    let _ = theme;
+    let border = iced::Border {
+        color: BORDER,
+        width: 1.0,
+        radius: 4.0.into(),
+    };
+    match status {
+        button::Status::Active => button::Style {
+            background: Some(Background::Color(SURFACE)),
+            text_color: TEXT_PRIMARY,
+            border,
+            shadow: iced::Shadow::default(),
+        },
+        button::Status::Hovered => button::Style {
+            background: Some(Background::Color(SURFACE_HIGHLIGHT)),
+            text_color: TEXT_PRIMARY,
+            border,
+            shadow: iced::Shadow::default(),
+        },
+        button::Status::Pressed => button::Style {
+            background: Some(Background::Color(BORDER)),
+            text_color: TEXT_PRIMARY,
+            border,
+            shadow: iced::Shadow::default(),
+        },
+        button::Status::Disabled => button::Style {
+            background: Some(Background::Color(SURFACE)),
+            text_color: MUTED,
+            border,
+            shadow: iced::Shadow::default(),
+        },
+    }
+}
+
+/// Small icon-only action button (stage, unstage, delete, etc.)
+pub fn icon_button(theme: &iced::Theme, status: button::Status) -> button::Style {
+    let _ = theme;
+    match status {
+        button::Status::Active => button::Style {
+            background: None,
+            text_color: TEXT_SECONDARY,
+            border: iced::Border::default(),
+            shadow: iced::Shadow::default(),
+        },
+        button::Status::Hovered => button::Style {
+            background: Some(Background::Color(SURFACE_HIGHLIGHT)),
+            text_color: TEXT_PRIMARY,
+            border: iced::Border {
+                radius: 3.0.into(),
+                ..Default::default()
+            },
+            shadow: iced::Shadow::default(),
+        },
+        button::Status::Pressed => button::Style {
+            background: Some(Background::Color(BORDER)),
+            text_color: TEXT_PRIMARY,
+            border: iced::Border {
+                radius: 3.0.into(),
+                ..Default::default()
+            },
+            shadow: iced::Shadow::default(),
+        },
+        button::Status::Disabled => button::Style {
+            background: None,
+            text_color: MUTED,
+            border: iced::Border::default(),
+            shadow: iced::Shadow::default(),
+        },
     }
 }
 

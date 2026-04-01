@@ -208,7 +208,8 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                     button(row_content)
                         .padding(0)
                         .width(Length::Fill)
-                        .on_press(Message::SelectCommit(idx)),
+                        .on_press(Message::SelectCommit(idx))
+                        .style(theme::ghost_button),
                 )
                 .width(Length::Fill)
                 .style(style_fn);

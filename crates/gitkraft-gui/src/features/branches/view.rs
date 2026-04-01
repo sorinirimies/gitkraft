@@ -30,6 +30,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     let toggle_btn = button(toggle_icon)
         .padding([2, 6])
+        .style(theme::icon_button)
         .on_press(Message::ToggleBranchCreate);
 
     let header_row = row![
@@ -50,23 +51,19 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .size(13);
 
         let create_btn = if state.new_branch_name.trim().is_empty() {
-            button(text("Create").size(13)).padding([4, 10])
+            button(text("Create").size(13))
+                .padding([4, 10])
+                .style(theme::toolbar_button)
         } else {
             button(text("Create").size(13))
                 .padding([4, 10])
+                .style(theme::toolbar_button)
                 .on_press(Message::CreateBranch)
         };
 
-        container(
-            column![
-                input,
-                create_btn,
-            ]
-            .spacing(4)
-            .width(Length::Fill),
-        )
-        .padding([4, 10])
-        .into()
+        container(column![input, create_btn,].spacing(4).width(Length::Fill))
+            .padding([4, 10])
+            .into()
     } else {
         Space::with_height(0).into()
     };
@@ -99,26 +96,20 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 theme::TEXT_PRIMARY
             };
 
-            let name_label = text(branch.name.as_str())
-                .size(13)
-                .color(name_color);
+            let name_label = text(branch.name.as_str()).size(13).color(name_color);
 
             let checkout_btn = if is_current {
                 // Already on this branch — no checkout action.
-                button(
-                    row![indicator, Space::with_width(6), name_label]
-                        .align_y(Alignment::Center),
-                )
-                .padding([4, 8])
-                .width(Length::Fill)
+                button(row![indicator, Space::with_width(6), name_label].align_y(Alignment::Center))
+                    .padding([4, 8])
+                    .width(Length::Fill)
+                    .style(theme::ghost_button)
             } else {
-                button(
-                    row![indicator, Space::with_width(6), name_label]
-                        .align_y(Alignment::Center),
-                )
-                .padding([4, 8])
-                .width(Length::Fill)
-                .on_press(Message::CheckoutBranch(branch.name.clone()))
+                button(row![indicator, Space::with_width(6), name_label].align_y(Alignment::Center))
+                    .padding([4, 8])
+                    .width(Length::Fill)
+                    .style(theme::ghost_button)
+                    .on_press(Message::CheckoutBranch(branch.name.clone()))
             };
 
             let delete_icon = text('\u{F5DE}')
@@ -128,10 +119,13 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
             let delete_btn = if is_current {
                 // Can't delete the current branch.
-                button(delete_icon).padding([4, 6])
+                button(delete_icon)
+                    .padding([4, 6])
+                    .style(theme::icon_button)
             } else {
                 button(delete_icon)
                     .padding([4, 6])
+                    .style(theme::icon_button)
                     .on_press(Message::DeleteBranch(branch.name.clone()))
             };
 
@@ -140,9 +134,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .align_y(Alignment::Center)
                 .width(Length::Fill);
 
-            container(branch_row)
-                .width(Length::Fill)
-                .into()
+            container(branch_row).width(Length::Fill).into()
         })
         .collect();
 
@@ -161,22 +153,17 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .size(12)
                 .color(theme::TEXT_SECONDARY);
 
-            container(
-                row![icon, Space::with_width(6), label]
-                    .align_y(Alignment::Center),
-            )
-            .padding([2, 8])
-            .width(Length::Fill)
-            .into()
+            container(row![icon, Space::with_width(6), label].align_y(Alignment::Center))
+                .padding([2, 8])
+                .width(Length::Fill)
+                .into()
         })
         .collect();
 
     let mut list_col = column![].spacing(1).width(Length::Fill);
 
     if !local_branches.is_empty() {
-        let local_header = text("Local")
-            .size(11)
-            .color(theme::MUTED);
+        let local_header = text("Local").size(11).color(theme::MUTED);
         list_col = list_col.push(container(local_header).padding([6, 10]));
         for item in local_branches {
             list_col = list_col.push(item);
@@ -185,9 +172,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     if !remote_branches.is_empty() {
         list_col = list_col.push(Space::with_height(8));
-        let remote_header = text("Remote")
-            .size(11)
-            .color(theme::MUTED);
+        let remote_header = text("Remote").size(11).color(theme::MUTED);
         list_col = list_col.push(container(remote_header).padding([6, 10]));
         for item in remote_branches {
             list_col = list_col.push(item);

@@ -25,6 +25,7 @@ pub fn welcome_view<'a>() -> Element<'a, Message> {
             .align_y(Alignment::Center),
     )
     .padding([10, 24])
+    .style(theme::toolbar_button)
     .on_press(Message::OpenRepo);
 
     let init_icon = text('\u{F4DA}').font(iced_fonts::BOOTSTRAP_FONT).size(16);
@@ -35,6 +36,7 @@ pub fn welcome_view<'a>() -> Element<'a, Message> {
             .align_y(Alignment::Center),
     )
     .padding([10, 24])
+    .style(theme::toolbar_button)
     .on_press(Message::InitRepo);
 
     let hint = text("Open an existing repository or initialise a new one to get started.")
