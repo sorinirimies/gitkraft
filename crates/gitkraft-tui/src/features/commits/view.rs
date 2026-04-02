@@ -160,12 +160,13 @@ fn build_graph_spans(row: &gitkraft_core::GraphRow) -> Vec<Span<'static>> {
 
 /// Render the commit log list inside the given `area`.
 pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
+    let theme = app.theme();
     let is_active = app.active_pane == ActivePane::CommitLog;
 
     let border_color = if is_active {
-        Color::Cyan
+        theme.border_active
     } else {
-        Color::DarkGray
+        theme.border_inactive
     };
 
     let block = Block::default()
@@ -176,7 +177,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     if app.commits.is_empty() {
         let items: Vec<ListItem> = vec![ListItem::new(Line::from(vec![Span::styled(
             "  No commits yet",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(theme.text_muted),
         )]))];
 
         let list = List::new(items).block(block);
@@ -207,16 +208,19 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
             // Append the commit info spans
             spans.push(Span::styled(
                 format!("{} ", commit.short_oid),
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(theme.warning),
             ));
-            spans.push(Span::styled(summary, Style::default().fg(Color::White)));
+            spans.push(Span::styled(
+                summary,
+                Style::default().fg(theme.text_primary),
+            ));
             spans.push(Span::styled(
                 format!(" ({}", commit.author_name),
-                Style::default().fg(Color::Cyan),
+                Style::default().fg(theme.accent),
             ));
             spans.push(Span::styled(
                 format!(", {})", relative),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme.text_muted),
             ));
 
             ListItem::new(Line::from(spans))
@@ -227,8 +231,8 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         .block(block)
         .highlight_style(
             Style::default()
-                .bg(Color::DarkGray)
-                .fg(Color::White)
+                .bg(theme.sel_bg)
+                .fg(theme.text_primary)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");

@@ -8,13 +8,16 @@ use iced::{Element, Font, Length};
 use crate::message::Message;
 use crate::state::GitKraft;
 use crate::theme;
+use crate::theme::ThemeColors;
 
 /// Render the diff viewer panel. If a diff is selected, render its hunks with
 /// colored lines; otherwise show a placeholder message.
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
+    let c = state.colors();
+
     let content: Element<'_, Message> = match &state.selected_diff {
-        Some(diff) => diff_content(diff),
-        None => placeholder_view(),
+        Some(diff) => diff_content(diff, &c),
+        None => placeholder_view(&c),
     };
 
     container(content)
@@ -25,15 +28,15 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 }
 
 /// Placeholder shown when no diff is selected.
-fn placeholder_view<'a>() -> Element<'a, Message> {
+fn placeholder_view<'a>(c: &ThemeColors) -> Element<'a, Message> {
     let icon = text('\u{F30A}') // file-diff icon
         .font(iced_fonts::BOOTSTRAP_FONT)
         .size(32)
-        .color(theme::MUTED);
+        .color(c.muted);
 
     let label = text("Select a commit or file to view diff")
         .size(14)
-        .color(theme::MUTED);
+        .color(c.muted);
 
     container(
         column![icon, Space::with_height(8), label]
@@ -48,14 +51,14 @@ fn placeholder_view<'a>() -> Element<'a, Message> {
 }
 
 /// Render the full diff content for a single [`DiffInfo`].
-fn diff_content<'a>(diff: &DiffInfo) -> Element<'a, Message> {
+fn diff_content<'a>(diff: &DiffInfo, c: &ThemeColors) -> Element<'a, Message> {
     let file_path_display = if diff.new_file.is_empty() {
         diff.old_file.clone()
     } else {
         diff.new_file.clone()
     };
 
-    let status_color = theme::status_color(&diff.status);
+    let status_color = theme::status_color(&diff.status, c);
 
     let status_badge = text(format!(" {} ", diff.status))
         .size(12)
@@ -64,7 +67,7 @@ fn diff_content<'a>(diff: &DiffInfo) -> Element<'a, Message> {
 
     let file_label = text(file_path_display)
         .size(14)
-        .color(theme::TEXT_PRIMARY)
+        .color(c.text_primary)
         .font(Font::MONOSPACE);
 
     let file_header = container(
@@ -79,12 +82,12 @@ fn diff_content<'a>(diff: &DiffInfo) -> Element<'a, Message> {
     if diff.hunks.is_empty() {
         let empty_msg = text("No diff content available.")
             .size(13)
-            .color(theme::MUTED)
+            .color(c.muted)
             .font(Font::MONOSPACE);
         lines_col = lines_col.push(container(empty_msg).padding([8, 12]));
     } else {
         for hunk in &diff.hunks {
-            lines_col = append_hunk_lines(lines_col, hunk);
+            lines_col = append_hunk_lines(lines_col, hunk, c);
         }
     }
 
@@ -100,22 +103,23 @@ fn diff_content<'a>(diff: &DiffInfo) -> Element<'a, Message> {
 fn append_hunk_lines<'a>(
     mut col: iced::widget::Column<'a, Message>,
     hunk: &DiffHunk,
+    c: &ThemeColors,
 ) -> iced::widget::Column<'a, Message> {
     for line in &hunk.lines {
-        let line_element = render_line(line);
+        let line_element = render_line(line, c);
         col = col.push(line_element);
     }
     col
 }
 
 /// Render a single [`DiffLine`] as a styled container with monospace text.
-fn render_line<'a>(line: &DiffLine) -> Element<'a, Message> {
+fn render_line<'a>(line: &DiffLine, c: &ThemeColors) -> Element<'a, Message> {
     match line {
         DiffLine::HunkHeader(header) => {
             let content = text(header.clone())
                 .size(13)
                 .font(Font::MONOSPACE)
-                .color(theme::ACCENT);
+                .color(c.accent);
 
             container(content)
                 .padding([4, 12])
@@ -125,12 +129,12 @@ fn render_line<'a>(line: &DiffLine) -> Element<'a, Message> {
         }
 
         DiffLine::Addition(content_str) => {
-            let prefix = text("+").size(13).font(Font::MONOSPACE).color(theme::GREEN);
+            let prefix = text("+").size(13).font(Font::MONOSPACE).color(c.green);
 
             let content = text(content_str.clone())
                 .size(13)
                 .font(Font::MONOSPACE)
-                .color(theme::GREEN);
+                .color(c.green);
 
             container(row![prefix, Space::with_width(4), content])
                 .padding([1, 12])
@@ -140,12 +144,12 @@ fn render_line<'a>(line: &DiffLine) -> Element<'a, Message> {
         }
 
         DiffLine::Deletion(content_str) => {
-            let prefix = text("-").size(13).font(Font::MONOSPACE).color(theme::RED);
+            let prefix = text("-").size(13).font(Font::MONOSPACE).color(c.red);
 
             let content = text(content_str.clone())
                 .size(13)
                 .font(Font::MONOSPACE)
-                .color(theme::RED);
+                .color(c.red);
 
             container(row![prefix, Space::with_width(4), content])
                 .padding([1, 12])
@@ -155,12 +159,12 @@ fn render_line<'a>(line: &DiffLine) -> Element<'a, Message> {
         }
 
         DiffLine::Context(content_str) => {
-            let prefix = text(" ").size(13).font(Font::MONOSPACE).color(theme::MUTED);
+            let prefix = text(" ").size(13).font(Font::MONOSPACE).color(c.muted);
 
             let content = text(content_str.clone())
                 .size(13)
                 .font(Font::MONOSPACE)
-                .color(theme::TEXT_SECONDARY);
+                .color(c.text_secondary);
 
             container(row![prefix, Space::with_width(4), content])
                 .padding([1, 12])

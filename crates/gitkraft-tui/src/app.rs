@@ -85,10 +85,15 @@ pub struct App {
 
     /// Whether the theme selection panel is visible.
     pub show_theme_panel: bool,
+    /// Whether the options panel is visible.
+    pub show_options_panel: bool,
     /// Currently selected theme index (0-26).
     pub current_theme_index: usize,
     /// ListState for the theme list widget.
     pub theme_list_state: ListState,
+
+    /// Recently opened repositories loaded from persistence.
+    pub recent_repos: Vec<gitkraft_core::RepoHistoryEntry>,
 }
 
 impl App {
@@ -96,6 +101,12 @@ impl App {
 
     #[must_use]
     pub fn new() -> Self {
+        let settings = gitkraft_core::features::persistence::load_settings().unwrap_or_default();
+
+        let theme_index = theme_name_to_index(settings.theme_name.as_deref().unwrap_or(""));
+
+        let recent_repos = settings.recent_repos;
+
         Self {
             should_quit: false,
             screen: AppScreen::Welcome,
@@ -133,12 +144,15 @@ impl App {
             confirm_discard: false,
 
             show_theme_panel: false,
-            current_theme_index: 0,
+            show_options_panel: false,
+            current_theme_index: theme_index,
             theme_list_state: {
                 let mut s = ListState::default();
-                s.select(Some(0));
+                s.select(Some(theme_index));
                 s
             },
+
+            recent_repos,
         }
     }
 }
@@ -171,10 +185,20 @@ impl App {
     }
 
     pub fn current_theme_name(&self) -> &'static str {
-        crate::features::theme::view::THEME_NAMES
+        gitkraft_core::THEME_NAMES
             .get(self.current_theme_index)
             .copied()
             .unwrap_or("Default")
+    }
+
+    /// Return the `UiTheme` for the currently selected theme index.
+    pub fn theme(&self) -> crate::features::theme::palette::UiTheme {
+        crate::features::theme::palette::theme_for_index(self.current_theme_index)
+    }
+
+    /// Persist the current theme selection to disk.
+    pub fn save_theme(&self) {
+        let _ = gitkraft_core::features::persistence::save_theme(self.current_theme_name());
     }
 
     // ── Repo helpers ─────────────────────────────────────────────────────
@@ -187,11 +211,6 @@ impl App {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No repository open"))?;
         gitkraft_core::features::repo::open_repo(path)
-    }
-
-    /// Open the repository as `&mut` (needed for stash operations).
-    fn open_current_repo_mut(&self) -> Result<git2::Repository> {
-        self.open_current_repo()
     }
 
     // ── High-level operations ────────────────────────────────────────────
@@ -211,8 +230,15 @@ impl App {
         match gitkraft_core::features::repo::get_repo_info(&repo) {
             Ok(info) => {
                 // Use the workdir as the canonical path if available
-                self.repo_path = info.workdir.clone().or(Some(path));
+                let canonical = info.workdir.clone().unwrap_or_else(|| path.clone());
+                self.repo_path = Some(canonical.clone());
                 self.repo_info = Some(info);
+
+                // Record in persistence and refresh the recent repos list
+                let _ = gitkraft_core::features::persistence::record_repo_opened(&canonical);
+                if let Ok(settings) = gitkraft_core::features::persistence::load_settings() {
+                    self.recent_repos = settings.recent_repos;
+                }
             }
             Err(e) => {
                 self.repo_path = Some(path);
@@ -289,7 +315,7 @@ impl App {
 
         // Stashes (needs mut)
         drop(repo);
-        match self.open_current_repo_mut() {
+        match self.open_current_repo() {
             Ok(mut r) => match gitkraft_core::features::stash::list_stashes(&mut r) {
                 Ok(s) => self.stashes = s,
                 Err(_) => self.stashes.clear(),
@@ -554,7 +580,7 @@ impl App {
     // ── Stash ────────────────────────────────────────────────────────────
 
     pub fn stash_save(&mut self) {
-        match self.open_current_repo_mut() {
+        match self.open_current_repo() {
             Ok(mut repo) => match gitkraft_core::features::stash::stash_save(&mut repo, None) {
                 Ok(entry) => {
                     self.status_message = Some(format!("Stashed: {}", entry.message));
@@ -569,7 +595,7 @@ impl App {
     pub fn stash_pop_selected(&mut self) {
         // Always pop the most recent stash (index 0)
         let index: usize = 0;
-        match self.open_current_repo_mut() {
+        match self.open_current_repo() {
             Ok(mut repo) => match gitkraft_core::features::stash::stash_pop(&mut repo, index) {
                 Ok(()) => {
                     self.status_message = Some("Stash popped".into());
@@ -588,7 +614,7 @@ impl App {
         } else {
             0
         };
-        match self.open_current_repo_mut() {
+        match self.open_current_repo() {
             Ok(mut repo) => match gitkraft_core::features::stash::stash_drop(&mut repo, index) {
                 Ok(()) => {
                     self.status_message = Some("Stash dropped".into());
@@ -697,6 +723,11 @@ impl App {
 
 // ── Free-standing helpers ─────────────────────────────────────────────────────
 
+/// Map a persisted theme name back to its index (0–26).
+fn theme_name_to_index(name: &str) -> usize {
+    gitkraft_core::theme_index_by_name(name)
+}
+
 /// Merge multiple per-file `DiffInfo`s into one combined view for the diff pane.
 fn merge_diffs(diffs: &[DiffInfo]) -> DiffInfo {
     use gitkraft_core::{DiffHunk, DiffLine, FileStatus};
@@ -735,5 +766,67 @@ fn merge_diffs(diffs: &[DiffInfo]) -> DiffInfo {
         },
         status: FileStatus::Modified,
         hunks,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_app_defaults() {
+        let app = App::new();
+        assert!(!app.should_quit);
+        assert_eq!(app.screen, AppScreen::Welcome);
+        assert_eq!(app.input_mode, InputMode::Normal);
+        assert!(app.commits.is_empty());
+        assert!(app.branches.is_empty());
+        assert!(app.repo_path.is_none());
+    }
+
+    #[test]
+    fn cycle_theme_next_wraps() {
+        let mut app = App::new();
+        app.current_theme_index = 0;
+        app.cycle_theme_next();
+        assert_eq!(app.current_theme_index, 1);
+        // Cycle to end
+        for _ in 0..26 {
+            app.cycle_theme_next();
+        }
+        assert_eq!(app.current_theme_index, 0); // wrapped
+    }
+
+    #[test]
+    fn cycle_theme_prev_wraps() {
+        let mut app = App::new();
+        app.current_theme_index = 0;
+        app.cycle_theme_prev();
+        assert_eq!(app.current_theme_index, 26); // wrapped to last
+    }
+
+    #[test]
+    fn theme_returns_struct() {
+        let mut app = App::new();
+        app.current_theme_index = 0;
+        let theme = app.theme();
+        // Default theme's active border comes from the core accent (88, 166, 255)
+        assert_eq!(
+            format!("{:?}", theme.border_active),
+            format!("{:?}", ratatui::style::Color::Rgb(88, 166, 255))
+        );
+    }
+
+    #[test]
+    fn theme_name_to_index_known() {
+        assert_eq!(theme_name_to_index("Default"), 0);
+        assert_eq!(theme_name_to_index("Dracula"), 8);
+        assert_eq!(theme_name_to_index("Nord"), 9);
+    }
+
+    #[test]
+    fn theme_name_to_index_unknown_returns_zero() {
+        assert_eq!(theme_name_to_index("NonExistentTheme"), 0);
+        assert_eq!(theme_name_to_index(""), 0);
     }
 }

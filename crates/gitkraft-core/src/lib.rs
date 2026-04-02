@@ -16,7 +16,11 @@ pub mod utils;
 pub use features::branches::{BranchInfo, BranchType};
 pub use features::commits::CommitInfo;
 pub use features::diff::{DiffHunk, DiffInfo, DiffLine, FileStatus};
-pub use features::graph::{GraphCommit, GraphEdge, GraphRow};
+pub use features::graph::{GraphEdge, GraphRow};
+pub use features::persistence::{AppSettings, RepoHistoryEntry};
 pub use features::remotes::RemoteInfo;
 pub use features::repo::{RepoInfo, RepoState};
 pub use features::stash::StashEntry;
+pub use features::theme::{
+    theme_by_index, theme_index_by_name, AppTheme, Rgb, THEME_COUNT, THEME_NAMES,
+};

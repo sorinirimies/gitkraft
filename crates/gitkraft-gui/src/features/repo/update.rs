@@ -59,6 +59,12 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
 
         Message::RepoRefreshed(result) => handle_repo_loaded(state, result),
 
+        Message::OpenRecentRepo(path) => {
+            state.is_loading = true;
+            state.status_message = Some(format!("Opening {}…", path.display()));
+            commands::load_repo(path)
+        }
+
         _ => Task::none(),
     }
 }
@@ -76,6 +82,15 @@ fn handle_repo_loaded(state: &mut GitKraft, result: Result<RepoPayload, String>)
                 .workdir
                 .clone()
                 .unwrap_or_else(|| payload.info.path.clone());
+
+            // Record the repo open in persisted settings (best-effort).
+            let _ = gitkraft_core::features::persistence::ops::record_repo_opened(&path);
+
+            // Refresh the in-memory recent repos list so the welcome screen
+            // stays up-to-date if the user closes and re-opens a repo.
+            if let Ok(settings) = gitkraft_core::features::persistence::ops::load_settings() {
+                state.recent_repos = settings.recent_repos;
+            }
 
             state.current_branch = payload.info.head_branch.clone();
             state.repo_path = Some(path);

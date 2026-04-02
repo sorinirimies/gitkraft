@@ -28,16 +28,18 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
 /// Render the "Unstaged Changes" file list.
 fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
+    let c = state.colors();
+
     let header_icon = text('\u{F30A}')
         .font(iced_fonts::BOOTSTRAP_FONT)
         .size(13)
-        .color(theme::YELLOW);
+        .color(c.yellow);
 
-    let header_label = text("Unstaged").size(13).color(theme::TEXT_PRIMARY);
+    let header_label = text("Unstaged").size(13).color(c.text_primary);
 
     let count_label = text(format!("({})", state.unstaged_changes.len()))
         .size(11)
-        .color(theme::MUTED);
+        .color(c.muted);
 
     let stage_all_btn = if state.unstaged_changes.is_empty() {
         button(text("Stage All").size(11))
@@ -72,7 +74,7 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
                 &diff.new_file
             };
 
-            let status_color = theme::status_color(&diff.status);
+            let status_color = theme::status_color(&diff.status, &c);
 
             let status_badge = text(format!("{}", diff.status))
                 .size(11)
@@ -81,13 +83,13 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
 
             let file_label = text(file_path_display.as_str())
                 .size(12)
-                .color(theme::TEXT_PRIMARY);
+                .color(c.text_primary);
 
             let view_btn = button(
                 text('\u{F2C0}')
                     .font(iced_fonts::BOOTSTRAP_FONT)
                     .size(11)
-                    .color(theme::ACCENT),
+                    .color(c.accent),
             )
             .padding([2, 4])
             .style(theme::icon_button)
@@ -97,7 +99,7 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
                 text('\u{F4FA}')
                     .font(iced_fonts::BOOTSTRAP_FONT)
                     .size(11)
-                    .color(theme::GREEN),
+                    .color(c.green),
             )
             .padding([2, 4])
             .style(theme::icon_button)
@@ -107,7 +109,7 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
                 text('\u{F5DE}')
                     .font(iced_fonts::BOOTSTRAP_FONT)
                     .size(11)
-                    .color(theme::RED),
+                    .color(c.red),
             )
             .padding([2, 4])
             .style(theme::icon_button)
@@ -134,7 +136,7 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
     let mut list_col = column![].spacing(1).width(Length::Fill);
 
     if file_rows.is_empty() {
-        let empty_msg = text("No unstaged changes").size(12).color(theme::MUTED);
+        let empty_msg = text("No unstaged changes").size(12).color(c.muted);
         list_col = list_col.push(
             container(empty_msg)
                 .padding([12, 8])
@@ -160,16 +162,18 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
 
 /// Render the "Staged Changes" file list.
 fn staged_view(state: &GitKraft) -> Element<'_, Message> {
+    let c = state.colors();
+
     let header_icon = text('\u{F287}')
         .font(iced_fonts::BOOTSTRAP_FONT)
         .size(13)
-        .color(theme::GREEN);
+        .color(c.green);
 
-    let header_label = text("Staged").size(13).color(theme::TEXT_PRIMARY);
+    let header_label = text("Staged").size(13).color(c.text_primary);
 
     let count_label = text(format!("({})", state.staged_changes.len()))
         .size(11)
-        .color(theme::MUTED);
+        .color(c.muted);
 
     let unstage_all_btn = if state.staged_changes.is_empty() {
         button(text("Unstage All").size(11))
@@ -204,7 +208,7 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
                 &diff.new_file
             };
 
-            let status_color = theme::status_color(&diff.status);
+            let status_color = theme::status_color(&diff.status, &c);
 
             let status_badge = text(format!("{}", diff.status))
                 .size(11)
@@ -213,13 +217,13 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
 
             let file_label = text(file_path_display.as_str())
                 .size(12)
-                .color(theme::TEXT_PRIMARY);
+                .color(c.text_primary);
 
             let view_btn = button(
                 text('\u{F2C0}')
                     .font(iced_fonts::BOOTSTRAP_FONT)
                     .size(11)
-                    .color(theme::ACCENT),
+                    .color(c.accent),
             )
             .padding([2, 4])
             .style(theme::icon_button)
@@ -229,7 +233,7 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
                 text('\u{F2EA}')
                     .font(iced_fonts::BOOTSTRAP_FONT)
                     .size(11)
-                    .color(theme::YELLOW),
+                    .color(c.yellow),
             )
             .padding([2, 4])
             .style(theme::icon_button)
@@ -254,7 +258,7 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
     let mut list_col = column![].spacing(1).width(Length::Fill);
 
     if file_rows.is_empty() {
-        let empty_msg = text("No staged changes").size(12).color(theme::MUTED);
+        let empty_msg = text("No staged changes").size(12).color(c.muted);
         list_col = list_col.push(
             container(empty_msg)
                 .padding([12, 8])
@@ -280,12 +284,14 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
 
 /// Render the commit message input and "Commit" button.
 fn commit_view(state: &GitKraft) -> Element<'_, Message> {
+    let c = state.colors();
+
     let header_icon = text('\u{F468}')
         .font(iced_fonts::BOOTSTRAP_FONT)
         .size(13)
-        .color(theme::ACCENT);
+        .color(c.accent);
 
-    let header_label = text("Commit").size(13).color(theme::TEXT_PRIMARY);
+    let header_label = text("Commit").size(13).color(c.text_primary);
 
     let header_row = row![header_icon, Space::with_width(4), header_label,]
         .align_y(Alignment::Center)
@@ -301,11 +307,7 @@ fn commit_view(state: &GitKraft) -> Element<'_, Message> {
     let commit_icon = text('\u{F287}')
         .font(iced_fonts::BOOTSTRAP_FONT)
         .size(14)
-        .color(if can_commit {
-            theme::GREEN
-        } else {
-            theme::MUTED
-        });
+        .color(if can_commit { c.green } else { c.muted });
 
     let commit_btn_content = row![commit_icon, Space::with_width(6), text("Commit").size(13),]
         .align_y(Alignment::Center);
@@ -326,11 +328,11 @@ fn commit_view(state: &GitKraft) -> Element<'_, Message> {
     let staged_hint = if state.staged_changes.is_empty() {
         text("Stage files before committing")
             .size(11)
-            .color(theme::MUTED)
+            .color(c.muted)
     } else {
         text(format!("{} file(s) staged", state.staged_changes.len()))
             .size(11)
-            .color(theme::TEXT_SECONDARY)
+            .color(c.text_secondary)
     };
 
     let content = column![

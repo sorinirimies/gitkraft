@@ -9,7 +9,7 @@ use crate::widgets;
 pub fn render(app: &mut App, frame: &mut Frame) {
     match app.screen {
         AppScreen::Welcome => {
-            features::repo::view::render(app, frame, frame.area());
+            features::repo::view::render(&*app, frame, frame.area());
         }
         AppScreen::Main => {
             render_main(app, frame);
@@ -69,9 +69,11 @@ fn render_main(app: &mut App, frame: &mut Frame) {
     // Commit log
     features::commits::view::render(app, frame, main_cols[1]);
 
-    // Diff view OR theme panel
+    // Diff view OR theme panel OR options panel
     if app.show_theme_panel {
         features::theme::view::render(app, frame, main_cols[2]);
+    } else if app.show_options_panel {
+        features::options::view::render(app, frame, main_cols[2]);
     } else {
         features::diff::view::render(app, frame, main_cols[2]);
     }

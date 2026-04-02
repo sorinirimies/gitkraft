@@ -1,6 +1,7 @@
 pub mod branches;
 pub mod commits;
 pub mod diff;
+pub mod options;
 pub mod remotes;
 pub mod repo;
 pub mod staging;

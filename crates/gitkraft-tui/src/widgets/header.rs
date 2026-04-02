@@ -1,5 +1,5 @@
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
@@ -13,10 +13,12 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         return;
     }
 
+    let theme = app.theme();
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .style(Style::default().bg(Color::DarkGray));
+        .border_style(Style::default().fg(theme.border_inactive))
+        .style(Style::default().bg(theme.border_inactive));
 
     let repo_name = app
         .repo_path
@@ -41,47 +43,61 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         Span::styled(
             format!(" {} ", repo_name),
             Style::default()
-                .fg(Color::White)
+                .fg(theme.text_primary)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("│", Style::default().fg(Color::Gray)),
+        Span::styled("│", Style::default().fg(theme.text_secondary)),
         Span::styled(
             format!("  {} ", branch_name),
             Style::default()
-                .fg(Color::Green)
+                .fg(theme.success)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("│", Style::default().fg(Color::Gray)),
-        Span::styled(format!(" {} ", state), Style::default().fg(Color::Cyan)),
-        Span::styled("│", Style::default().fg(Color::Gray)),
+        Span::styled("│", Style::default().fg(theme.text_secondary)),
+        Span::styled(format!(" {} ", state), Style::default().fg(theme.accent)),
+        Span::styled("│", Style::default().fg(theme.text_secondary)),
         Span::styled(
             " [Tab]",
             Style::default()
-                .fg(Color::Yellow)
+                .fg(theme.warning)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" pane ", Style::default().fg(Color::White)),
+        Span::styled(" pane ", Style::default().fg(theme.text_primary)),
         Span::styled(
             "[r]",
             Style::default()
-                .fg(Color::Yellow)
+                .fg(theme.warning)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" refresh ", Style::default().fg(Color::White)),
+        Span::styled(" refresh ", Style::default().fg(theme.text_primary)),
         Span::styled(
             "[f]",
             Style::default()
-                .fg(Color::Yellow)
+                .fg(theme.warning)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" fetch ", Style::default().fg(Color::White)),
+        Span::styled(" fetch ", Style::default().fg(theme.text_primary)),
+        Span::styled(
+            "[T]",
+            Style::default()
+                .fg(theme.warning)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" theme ", Style::default().fg(theme.text_primary)),
+        Span::styled(
+            "[O]",
+            Style::default()
+                .fg(theme.warning)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" options ", Style::default().fg(theme.text_primary)),
         Span::styled(
             "[q]",
             Style::default()
-                .fg(Color::Yellow)
+                .fg(theme.warning)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" quit", Style::default().fg(Color::White)),
+        Span::styled(" quit", Style::default().fg(theme.text_primary)),
     ];
 
     let line = Line::from(spans);

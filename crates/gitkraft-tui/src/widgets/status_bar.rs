@@ -1,5 +1,5 @@
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
@@ -10,10 +10,12 @@ use crate::app::{App, InputMode, InputPurpose};
 /// status message, or error message.
 ///
 /// Format: ` [{mode}] {status_or_error}`
-///  - Error messages are rendered in Red.
-///  - Status messages are rendered in Green.
-///  - The mode indicator is rendered in Yellow.
+///  - Error messages are rendered in the theme's error color.
+///  - Status messages are rendered in the theme's success color.
+///  - The mode indicator is rendered in the theme's warning color.
 pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
+    let theme = app.theme();
+
     let mode_str = match app.input_mode {
         InputMode::Normal => "NORMAL",
         InputMode::Input => match app.input_purpose {
@@ -26,32 +28,32 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     };
 
     let mut spans: Vec<Span> = vec![
-        Span::styled(" [", Style::default().fg(Color::DarkGray)),
+        Span::styled(" [", Style::default().fg(theme.text_muted)),
         Span::styled(
             mode_str,
             Style::default()
-                .fg(Color::Yellow)
+                .fg(theme.warning)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("] ", Style::default().fg(Color::DarkGray)),
+        Span::styled("] ", Style::default().fg(theme.text_muted)),
     ];
 
     // Show input buffer contents when in input mode
     if app.input_mode == InputMode::Input {
         spans.push(Span::styled(
             &app.input_buffer,
-            Style::default().fg(Color::White),
+            Style::default().fg(theme.text_primary),
         ));
         let cursor_char = if app.tick_count % 10 < 5 { "█" } else { " " };
         spans.push(Span::styled(
             cursor_char,
             Style::default()
-                .fg(Color::Yellow)
+                .fg(theme.warning)
                 .add_modifier(Modifier::BOLD),
         ));
         spans.push(Span::styled(
             "  (Enter: submit │ Esc: cancel)",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(theme.text_muted),
         ));
     }
 
@@ -59,14 +61,16 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     if let Some(ref err) = app.error_message {
         spans.push(Span::styled(
             err,
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.error)
+                .add_modifier(Modifier::BOLD),
         ));
     } else if let Some(ref msg) = app.status_message {
-        spans.push(Span::styled(msg, Style::default().fg(Color::Green)));
+        spans.push(Span::styled(msg, Style::default().fg(theme.success)));
     }
 
     let line = Line::from(spans);
-    let paragraph = Paragraph::new(line).style(Style::default().bg(Color::DarkGray));
+    let paragraph = Paragraph::new(line).style(Style::default().bg(theme.border_inactive));
 
     frame.render_widget(paragraph, area);
 }

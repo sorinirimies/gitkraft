@@ -1,5 +1,5 @@
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem};
 use ratatui::Frame;
@@ -8,7 +8,8 @@ use crate::app::App;
 
 /// Render the stash list in the sidebar below the branches list.
 pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
-    let border_color = Color::DarkGray;
+    let theme = app.theme();
+    let border_color = theme.border_inactive;
 
     let title = format!(" Stashes ({}) ", app.stashes.len());
 
@@ -20,7 +21,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     if app.stashes.is_empty() {
         let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(
             "  No stashes",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(theme.text_muted),
         )))];
         let list = List::new(items).block(block);
         frame.render_widget(list, area);
@@ -41,12 +42,12 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                 Span::styled(
                     format!("{}:", entry.index),
                     Style::default()
-                        .fg(Color::Yellow)
+                        .fg(theme.warning)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     format!(" {}", truncated_msg),
-                    Style::default().fg(Color::White),
+                    Style::default().fg(theme.text_primary),
                 ),
             ]);
 

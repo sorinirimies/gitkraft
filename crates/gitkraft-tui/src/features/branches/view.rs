@@ -1,5 +1,5 @@
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem};
 use ratatui::Frame;
@@ -9,12 +9,13 @@ use gitkraft_core::BranchType;
 
 /// Render the branches list in the sidebar area.
 pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
+    let theme = app.theme();
     let is_active = app.active_pane == ActivePane::Branches;
 
     let border_color = if is_active {
-        Color::Cyan
+        theme.border_active
     } else {
-        Color::DarkGray
+        theme.border_inactive
     };
 
     let block = Block::default()
@@ -25,7 +26,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     if app.branches.is_empty() {
         let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(
             "  No branches",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(theme.text_muted),
         )))];
         let list = List::new(items).block(block);
         frame.render_widget(list, area);
@@ -40,13 +41,13 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                 (
                     "* ",
                     Style::default()
-                        .fg(Color::Green)
+                        .fg(theme.success)
                         .add_modifier(Modifier::BOLD),
                 )
             } else {
                 match branch.branch_type {
-                    BranchType::Local => ("  ", Style::default().fg(Color::White)),
-                    BranchType::Remote => ("  ", Style::default().fg(Color::DarkGray)),
+                    BranchType::Local => ("  ", Style::default().fg(theme.text_primary)),
+                    BranchType::Remote => ("  ", Style::default().fg(theme.text_muted)),
                 }
             };
 
@@ -69,7 +70,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         .block(block)
         .highlight_style(
             Style::default()
-                .bg(Color::DarkGray)
+                .bg(theme.sel_bg)
                 .add_modifier(Modifier::REVERSED),
         )
         .highlight_symbol("▶ ");

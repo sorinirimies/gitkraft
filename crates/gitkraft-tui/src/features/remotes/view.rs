@@ -1,5 +1,5 @@
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem};
 use ratatui::Frame;
@@ -8,7 +8,8 @@ use crate::app::App;
 
 /// Render the remotes list in the sidebar (below stashes).
 pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
-    let border_color = Color::DarkGray;
+    let theme = app.theme();
+    let border_color = theme.border_inactive;
 
     let block = Block::default()
         .title(" Remotes ")
@@ -18,7 +19,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     if app.remotes.is_empty() {
         let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(
             "  No remotes",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(theme.text_muted),
         )))];
         let list = List::new(items).block(block);
         frame.render_widget(list, area);
@@ -34,14 +35,14 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
             let line = Line::from(vec![
                 Span::styled(
                     format!("  {} ", remote.name),
-                    Style::default().fg(Color::Cyan),
+                    Style::default().fg(theme.accent),
                 ),
                 Span::styled(
                     truncate_str(
                         url_part,
                         area.width.saturating_sub(remote.name.len() as u16 + 6) as usize,
                     ),
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(theme.text_muted),
                 ),
             ]);
 

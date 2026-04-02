@@ -122,8 +122,11 @@ pub enum Message {
     DismissError,
     /// Toggle the left sidebar.
     ToggleSidebar,
-    /// User selected a different theme from the picker.
-    ThemeChanged(iced::Theme),
+    /// User selected a different theme from the picker (by index into
+    /// `gitkraft_core::THEME_NAMES`).
+    ThemeChanged(usize),
+    /// User clicked a recent repository entry on the welcome screen.
+    OpenRecentRepo(PathBuf),
     /// No-op (used for disabled buttons, etc.).
     Noop,
 }

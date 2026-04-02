@@ -22,7 +22,8 @@ impl GitKraft {
             | Message::RepoInitSelected(_)
             | Message::RepoOpened(_)
             | Message::RefreshRepo
-            | Message::RepoRefreshed(_) => crate::features::repo::update::update(self, message),
+            | Message::RepoRefreshed(_)
+            | Message::OpenRecentRepo(_) => crate::features::repo::update::update(self, message),
 
             // ── Branches ──────────────────────────────────────────────────
             Message::CheckoutBranch(_)
@@ -82,8 +83,14 @@ impl GitKraft {
                 Task::none()
             }
 
-            Message::ThemeChanged(theme) => {
-                self.theme = theme.clone();
+            Message::ThemeChanged(index) => {
+                self.current_theme_index = *index;
+                // Persist the selected theme name so it survives restarts.
+                let name = gitkraft_core::THEME_NAMES
+                    .get(*index)
+                    .copied()
+                    .unwrap_or("Default");
+                let _ = gitkraft_core::features::persistence::ops::save_theme(name);
                 Task::none()
             }
 

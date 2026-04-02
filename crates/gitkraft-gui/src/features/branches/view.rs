@@ -11,12 +11,14 @@ use crate::theme;
 
 /// Render the branches sidebar panel.
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
+    let c = state.colors();
+
     let header_icon = text('\u{F404}')
         .font(iced_fonts::BOOTSTRAP_FONT)
         .size(14)
-        .color(theme::ACCENT);
+        .color(c.accent);
 
-    let header_text = text("Branches").size(14).color(theme::TEXT_PRIMARY);
+    let header_text = text("Branches").size(14).color(c.text_primary);
 
     let toggle_icon_char = if state.show_branch_create {
         '\u{F2EA}' // dash-circle
@@ -26,7 +28,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let toggle_icon = text(toggle_icon_char)
         .font(iced_fonts::BOOTSTRAP_FONT)
         .size(14)
-        .color(theme::ACCENT);
+        .color(c.accent);
 
     let toggle_btn = button(toggle_icon)
         .padding([2, 6])
@@ -80,21 +82,17 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 text('\u{F287}') // check-circle-fill
                     .font(iced_fonts::BOOTSTRAP_FONT)
                     .size(12)
-                    .color(theme::GREEN)
+                    .color(c.green)
                     .into()
             } else {
                 text('\u{F404}') // git-branch icon
                     .font(iced_fonts::BOOTSTRAP_FONT)
                     .size(12)
-                    .color(theme::MUTED)
+                    .color(c.muted)
                     .into()
             };
 
-            let name_color = if is_current {
-                theme::GREEN
-            } else {
-                theme::TEXT_PRIMARY
-            };
+            let name_color = if is_current { c.green } else { c.text_primary };
 
             let name_label = text(branch.name.as_str()).size(13).color(name_color);
 
@@ -115,7 +113,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             let delete_icon = text('\u{F5DE}')
                 .font(iced_fonts::BOOTSTRAP_FONT)
                 .size(12)
-                .color(theme::RED);
+                .color(c.red);
 
             let delete_btn = if is_current {
                 // Can't delete the current branch.
@@ -147,11 +145,9 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             let icon = text('\u{F469}') // cloud
                 .font(iced_fonts::BOOTSTRAP_FONT)
                 .size(12)
-                .color(theme::MUTED);
+                .color(c.muted);
 
-            let label = text(branch.name.as_str())
-                .size(12)
-                .color(theme::TEXT_SECONDARY);
+            let label = text(branch.name.as_str()).size(12).color(c.text_secondary);
 
             container(row![icon, Space::with_width(6), label].align_y(Alignment::Center))
                 .padding([2, 8])
@@ -163,7 +159,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let mut list_col = column![].spacing(1).width(Length::Fill);
 
     if !local_branches.is_empty() {
-        let local_header = text("Local").size(11).color(theme::MUTED);
+        let local_header = text("Local").size(11).color(c.muted);
         list_col = list_col.push(container(local_header).padding([6, 10]));
         for item in local_branches {
             list_col = list_col.push(item);
@@ -172,7 +168,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     if !remote_branches.is_empty() {
         list_col = list_col.push(Space::with_height(8));
-        let remote_header = text("Remote").size(11).color(theme::MUTED);
+        let remote_header = text("Remote").size(11).color(c.muted);
         list_col = list_col.push(container(remote_header).padding([6, 10]));
         for item in remote_branches {
             list_col = list_col.push(item);

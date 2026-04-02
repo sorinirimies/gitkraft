@@ -34,7 +34,14 @@ use crate::app::App;
 ///
 /// If `repo_path` is `Some`, the repository at that path is opened immediately.
 /// Otherwise the Welcome screen is shown, letting the user choose a repository.
-pub async fn run(repo_path: Option<PathBuf>) -> Result<()> {
+pub async fn run(mut repo_path: Option<PathBuf>) -> Result<()> {
+    // If no repo path was given, try loading the last-opened repo from settings.
+    if repo_path.is_none() {
+        repo_path = gitkraft_core::features::persistence::get_last_repo()
+            .ok()
+            .flatten();
+    }
+
     // Install a panic hook that restores the terminal before printing the
     // panic message.  Without this the user is left with a broken terminal
     // after an unexpected panic.

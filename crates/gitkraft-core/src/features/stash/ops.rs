@@ -68,3 +68,65 @@ pub fn stash_drop(repo: &mut Repository, index: usize) -> Result<()> {
     debug!("Stash at index {} dropped", index);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn setup_repo_with_commit() -> (TempDir, Repository) {
+        // same helper as branches
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let mut config = repo.config().unwrap();
+        config.set_str("user.name", "Test").unwrap();
+        config.set_str("user.email", "test@test.com").unwrap();
+        std::fs::write(dir.path().join("file.txt"), "hello\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("file.txt")).unwrap();
+        index.write().unwrap();
+        let tree_oid = index.write_tree().unwrap();
+        {
+            let tree = repo.find_tree(tree_oid).unwrap();
+            let sig = repo.signature().unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[])
+                .unwrap();
+        }
+        (dir, repo)
+    }
+
+    #[test]
+    fn list_stashes_empty() {
+        let (_dir, mut repo) = setup_repo_with_commit();
+        let stashes = list_stashes(&mut repo).unwrap();
+        assert!(stashes.is_empty());
+    }
+
+    #[test]
+    fn stash_save_and_list() {
+        let (dir, mut repo) = setup_repo_with_commit();
+        // Make a change
+        std::fs::write(dir.path().join("file.txt"), "changed\n").unwrap();
+        let entry = stash_save(&mut repo, Some("test stash")).unwrap();
+        assert_eq!(entry.index, 0);
+        assert!(entry.message.contains("test stash"));
+
+        let stashes = list_stashes(&mut repo).unwrap();
+        assert_eq!(stashes.len(), 1);
+    }
+
+    #[test]
+    fn stash_pop_restores_changes() {
+        let (dir, mut repo) = setup_repo_with_commit();
+        std::fs::write(dir.path().join("file.txt"), "changed\n").unwrap();
+        stash_save(&mut repo, Some("test")).unwrap();
+
+        // File should be restored to committed state after stash
+        let content = std::fs::read_to_string(dir.path().join("file.txt")).unwrap();
+        assert_eq!(content, "hello\n");
+
+        stash_pop(&mut repo, 0).unwrap();
+        let content = std::fs::read_to_string(dir.path().join("file.txt")).unwrap();
+        assert_eq!(content, "changed\n");
+    }
+}

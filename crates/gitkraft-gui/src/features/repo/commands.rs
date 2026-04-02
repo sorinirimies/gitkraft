@@ -90,7 +90,10 @@ pub fn refresh_repo(path: PathBuf) -> Task<Message> {
 /// Opens the repository and collects every piece of state the UI needs into a
 /// single [`RepoPayload`].
 fn load_repo_blocking(path: &std::path::Path) -> Result<RepoPayload, String> {
-    let repo = gitkraft_core::features::repo::open_repo(path).map_err(|e| e.to_string())?;
+    // Open the repository once and reuse the handle for every operation.
+    // `list_stashes` needs `&mut`, so we declare the binding as `mut`.
+    let mut repo = gitkraft_core::features::repo::open_repo(path).map_err(|e| e.to_string())?;
+
     let info = gitkraft_core::features::repo::get_repo_info(&repo).map_err(|e| e.to_string())?;
     let branches =
         gitkraft_core::features::branches::list_branches(&repo).map_err(|e| e.to_string())?;
@@ -103,11 +106,8 @@ fn load_repo_blocking(path: &std::path::Path) -> Result<RepoPayload, String> {
         gitkraft_core::features::diff::get_staged_diff(&repo).map_err(|e| e.to_string())?;
     let remotes =
         gitkraft_core::features::remotes::list_remotes(&repo).map_err(|e| e.to_string())?;
-
-    // Stash listing requires &mut Repository
-    let mut repo_mut = gitkraft_core::features::repo::open_repo(path).map_err(|e| e.to_string())?;
     let stashes =
-        gitkraft_core::features::stash::list_stashes(&mut repo_mut).map_err(|e| e.to_string())?;
+        gitkraft_core::features::stash::list_stashes(&mut repo).map_err(|e| e.to_string())?;
 
     Ok(RepoPayload {
         info,

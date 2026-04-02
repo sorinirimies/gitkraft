@@ -1,16 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// A commit node with its position in the graph visual.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GraphCommit {
-    /// The commit data.
-    pub commit: crate::features::commits::CommitInfo,
-    /// Which column (lane) this commit sits in (0-based).
-    pub column: usize,
-    /// Edges from this node to its parents.
-    pub edges: Vec<GraphEdge>,
-}
-
 /// An edge connecting a child commit to a parent commit.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphEdge {

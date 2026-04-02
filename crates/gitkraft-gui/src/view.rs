@@ -24,14 +24,17 @@ use crate::features;
 use crate::message::Message;
 use crate::state::GitKraft;
 use crate::theme;
+use crate::theme::ThemeColors;
 use crate::widgets;
 
 impl GitKraft {
     /// Top-level view — called by the Iced runtime on every frame.
     pub fn view(&self) -> Element<'_, Message> {
         if !self.has_repo() {
-            return features::repo::view::welcome_view();
+            return features::repo::view::welcome_view(self);
         }
+
+        let c = self.colors();
 
         // ── Header toolbar ────────────────────────────────────────────────
         let header = widgets::header::view(self);
@@ -83,7 +86,7 @@ impl GitKraft {
         let mut main_col = column![].width(Length::Fill).height(Length::Fill);
 
         if let Some(ref err) = self.error_message {
-            main_col = main_col.push(error_banner(err));
+            main_col = main_col.push(error_banner(err, &c));
         }
 
         main_col = main_col
@@ -96,9 +99,12 @@ impl GitKraft {
         container(main_col)
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(|_theme| iced::widget::container::Style {
-                background: Some(iced::Background::Color(theme::BG)),
-                ..Default::default()
+            .style(|theme: &iced::Theme| {
+                let tc = ThemeColors::from_theme(theme);
+                iced::widget::container::Style {
+                    background: Some(iced::Background::Color(tc.bg)),
+                    ..Default::default()
+                }
             })
             .into()
     }
@@ -106,6 +112,8 @@ impl GitKraft {
 
 /// Render the status bar at the very bottom of the window.
 fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
+    let c = state.colors();
+
     let status_text = if state.is_loading {
         state
             .status_message
@@ -120,14 +128,14 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
             .to_string()
     };
 
-    let status_label = text(status_text).size(12).color(theme::TEXT_SECONDARY);
+    let status_label = text(status_text).size(12).color(c.text_secondary);
 
     let branch_info: Element<'_, Message> = if let Some(ref branch) = state.current_branch {
         let icon = text('\u{F404}')
             .font(iced_fonts::BOOTSTRAP_FONT)
             .size(12)
-            .color(theme::ACCENT);
-        let label = text(branch.as_str()).size(12).color(theme::TEXT_PRIMARY);
+            .color(c.accent);
+        let label = text(branch.as_str()).size(12).color(c.text_primary);
         row![icon, Space::with_width(4), label]
             .align_y(Alignment::Center)
             .into()
@@ -138,7 +146,7 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
     let repo_state_info: Element<'_, Message> = if let Some(ref info) = state.repo_info {
         let state_str = format!("{}", info.state);
         if state_str != "Clean" {
-            text(state_str).size(12).color(theme::YELLOW).into()
+            text(state_str).size(12).color(c.yellow).into()
         } else {
             Space::with_width(0).into()
         }
@@ -152,9 +160,9 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
         if unstaged_count > 0 || staged_count > 0 {
             text(format!("{unstaged_count} unstaged, {staged_count} staged"))
                 .size(12)
-                .color(theme::MUTED)
+                .color(c.muted)
         } else {
-            text("Working tree clean").size(12).color(theme::MUTED)
+            text("Working tree clean").size(12).color(c.muted)
         }
     };
 
@@ -178,21 +186,19 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
 }
 
 /// Render an error banner at the top of the window with a dismiss button.
-fn error_banner(message: &str) -> Element<'_, Message> {
+fn error_banner<'a>(message: &str, c: &ThemeColors) -> Element<'a, Message> {
     let icon = text('\u{F333}') // exclamation-triangle
         .font(iced_fonts::BOOTSTRAP_FONT)
         .size(14)
-        .color(theme::RED);
+        .color(c.red);
 
-    let msg = text(message.to_string())
-        .size(13)
-        .color(theme::TEXT_PRIMARY);
+    let msg = text(message.to_string()).size(13).color(c.text_primary);
 
     let dismiss = iced::widget::button(
         text('\u{F62A}') // x-circle
             .font(iced_fonts::BOOTSTRAP_FONT)
             .size(14)
-            .color(theme::TEXT_SECONDARY),
+            .color(c.text_secondary),
     )
     .padding([2, 6])
     .on_press(Message::DismissError);
@@ -210,7 +216,7 @@ fn error_banner(message: &str) -> Element<'_, Message> {
 
     container(banner_row)
         .width(Length::Fill)
-        .style(|_theme| iced::widget::container::Style {
+        .style(|_theme: &iced::Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(iced::Color {
                 r: 0.35,
                 g: 0.10,

@@ -28,6 +28,13 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 }
             }
         }
+        KeyCode::Char(c @ '1'..='9') => {
+            let idx = (c as usize) - ('1' as usize);
+            if idx < app.recent_repos.len() {
+                let path = app.recent_repos[idx].path.clone();
+                app.open_repo(path);
+            }
+        }
         KeyCode::Char('q') => {
             app.should_quit = true;
         }

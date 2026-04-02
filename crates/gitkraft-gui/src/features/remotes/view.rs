@@ -12,17 +12,19 @@ use crate::theme;
 
 /// Render the remotes section for the sidebar.
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
+    let c = state.colors();
+
     let header_icon = text('\u{F469}') // cloud icon
         .font(iced_fonts::BOOTSTRAP_FONT)
         .size(14)
-        .color(theme::ACCENT);
+        .color(c.accent);
 
-    let header_text = text("Remotes").size(14).color(theme::TEXT_PRIMARY);
+    let header_text = text("Remotes").size(14).color(c.text_primary);
 
     let fetch_icon = text('\u{F116}') // arrow-down-circle
         .font(iced_fonts::BOOTSTRAP_FONT)
         .size(14)
-        .color(theme::ACCENT);
+        .color(c.accent);
 
     let fetch_btn = if state.remotes.is_empty() {
         button(fetch_icon).padding([2, 6]).style(theme::icon_button)
@@ -46,17 +48,15 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let mut list_col = column![].spacing(2).width(Length::Fill);
 
     if state.remotes.is_empty() {
-        let empty_msg = text("No remotes configured").size(12).color(theme::MUTED);
+        let empty_msg = text("No remotes configured").size(12).color(c.muted);
         list_col = list_col.push(container(empty_msg).padding([4, 10]).width(Length::Fill));
     } else {
         for remote in &state.remotes {
-            let name_label = text(remote.name.as_str())
-                .size(13)
-                .color(theme::TEXT_PRIMARY);
+            let name_label = text(remote.name.as_str()).size(13).color(c.text_primary);
 
             let url_str = remote.url.as_deref().unwrap_or("<no url>");
 
-            let url_label = text(url_str).size(11).color(theme::MUTED);
+            let url_label = text(url_str).size(11).color(c.muted);
 
             let remote_item = column![name_label, url_label]
                 .spacing(2)

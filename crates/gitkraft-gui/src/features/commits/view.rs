@@ -104,16 +104,18 @@ fn graph_cell(graph_row: &gitkraft_core::GraphRow) -> Row<'_, Message> {
 
 /// Render the commit log panel.
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
+    let c = state.colors();
+
     let header_icon = text('\u{F293}')
         .font(iced_fonts::BOOTSTRAP_FONT)
         .size(14)
-        .color(theme::ACCENT);
+        .color(c.accent);
 
-    let header_text = text("Commit Log").size(14).color(theme::TEXT_PRIMARY);
+    let header_text = text("Commit Log").size(14).color(c.text_primary);
 
     let commit_count = text(format!("({})", state.commits.len()))
         .size(12)
-        .color(theme::MUTED);
+        .color(c.muted);
 
     let header_row = row![
         header_icon,
@@ -126,7 +128,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     .padding([8, 10]);
 
     if state.commits.is_empty() {
-        let empty_msg = text("No commits yet.").size(14).color(theme::MUTED);
+        let empty_msg = text("No commits yet.").size(14).color(c.muted);
 
         let content = column![
             header_row,
@@ -161,25 +163,26 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
                 let oid_label = text(commit.short_oid.as_str())
                     .size(12)
-                    .color(theme::ACCENT)
+                    .color(c.accent)
                     .font(iced::Font::MONOSPACE);
 
-                let sep1 = text("│").size(12).color(theme::BORDER);
-                let sep2 = text("│").size(12).color(theme::BORDER);
+                let sep1 = text("│").size(12).color(c.border);
+                let sep2 = text("│").size(12).color(c.border);
 
-                let summary_text = if commit.summary.len() > 60 {
-                    format!("{}…", &commit.summary[..59])
+                let summary_text = if commit.summary.chars().count() > 60 {
+                    let truncated: String = commit.summary.chars().take(59).collect();
+                    format!("{truncated}…")
                 } else {
                     commit.summary.clone()
                 };
-                let summary_label = text(summary_text).size(12).color(theme::TEXT_PRIMARY);
+                let summary_label = text(summary_text).size(12).color(c.text_primary);
 
                 let author_label = text(commit.author_name.as_str())
                     .size(11)
-                    .color(theme::TEXT_SECONDARY);
+                    .color(c.text_secondary);
 
                 let time_str = gitkraft_core::utils::relative_time(commit.time);
-                let time_label = text(time_str).size(11).color(theme::MUTED);
+                let time_label = text(time_str).size(11).color(c.muted);
 
                 let row_content = row![
                     graph_elem,

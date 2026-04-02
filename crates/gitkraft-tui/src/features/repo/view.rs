@@ -1,88 +1,104 @@
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Padding, Paragraph};
+use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 use crate::app::App;
 
-/// Render the Welcome screen — a centered box with the GitKraft logo and
-/// available actions.
-pub fn render(_app: &mut App, frame: &mut Frame, area: Rect) {
+/// Render the Welcome screen — a centered box with the GitKraft title,
+/// available actions, and recent repositories.
+pub fn render(app: &App, frame: &mut Frame, area: Rect) {
+    let theme = app.theme();
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
+        .border_style(Style::default().fg(theme.border_active))
         .title(" GitKraft ")
-        .title_alignment(Alignment::Center)
-        .padding(Padding::new(2, 2, 1, 1))
-        .style(Style::default().bg(Color::Black));
+        .title_alignment(Alignment::Center);
 
-    let lines = vec![
+    let mut lines: Vec<Line> = vec![
         Line::from(""),
         Line::from(Span::styled(
-            "╔═══════════════════════════════╗",
-            Style::default().fg(Color::Cyan),
-        )),
-        Line::from(Span::styled(
-            "║          GitKraft             ║",
+            "GitKraft",
             Style::default()
-                .fg(Color::Cyan)
+                .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
-        )),
+        ))
+        .alignment(Alignment::Center),
         Line::from(Span::styled(
-            "║     Git IDE for terminal      ║",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(Span::styled(
-            "║                               ║",
-            Style::default().fg(Color::Cyan),
-        )),
+            "Git IDE for terminal",
+            Style::default().fg(theme.text_primary),
+        ))
+        .alignment(Alignment::Center),
+        Line::from(""),
         Line::from(vec![
-            Span::styled("║   ", Style::default().fg(Color::Cyan)),
             Span::styled(
                 "[o]",
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(theme.warning)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" Open Repository       ", Style::default().fg(Color::White)),
-            Span::styled("║", Style::default().fg(Color::Cyan)),
-        ]),
+            Span::styled(" Open Repository", Style::default().fg(theme.text_primary)),
+        ])
+        .alignment(Alignment::Center),
         Line::from(vec![
-            Span::styled("║   ", Style::default().fg(Color::Cyan)),
             Span::styled(
                 "[i]",
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(theme.warning)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" Init Repository       ", Style::default().fg(Color::White)),
-            Span::styled("║", Style::default().fg(Color::Cyan)),
-        ]),
+            Span::styled(" Init Repository", Style::default().fg(theme.text_primary)),
+        ])
+        .alignment(Alignment::Center),
         Line::from(vec![
-            Span::styled("║   ", Style::default().fg(Color::Cyan)),
             Span::styled(
                 "[q]",
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(theme.warning)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" Quit                  ", Style::default().fg(Color::White)),
-            Span::styled("║", Style::default().fg(Color::Cyan)),
-        ]),
-        Line::from(Span::styled(
-            "╚═══════════════════════════════╝",
-            Style::default().fg(Color::Cyan),
-        )),
+            Span::styled(" Quit", Style::default().fg(theme.text_primary)),
+        ])
+        .alignment(Alignment::Center),
         Line::from(""),
     ];
+
+    if !app.recent_repos.is_empty() {
+        lines.push(
+            Line::from(Span::styled(
+                "Recent repositories:",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .alignment(Alignment::Center),
+        );
+
+        for (i, entry) in app.recent_repos.iter().take(9).enumerate() {
+            let number = format!("[{}]", i + 1);
+            let path_str = format!(" {}", entry.path.display());
+            lines.push(
+                Line::from(vec![
+                    Span::styled(
+                        number,
+                        Style::default()
+                            .fg(theme.warning)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(path_str, Style::default().fg(theme.text_secondary)),
+                ])
+                .alignment(Alignment::Center),
+            );
+        }
+    }
 
     let paragraph = Paragraph::new(lines)
         .alignment(Alignment::Center)
         .block(block);
 
-    // Center the block in the available area
-    let centered = centered_rect(50, 60, area);
+    let centered = centered_rect(50, 50, area);
     frame.render_widget(paragraph, centered);
 }
 

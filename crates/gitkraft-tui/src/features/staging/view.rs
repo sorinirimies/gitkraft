@@ -1,7 +1,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
+use ratatui::widgets::{Block, Borders, List, ListItem, Padding, Paragraph};
 use ratatui::Frame;
 
 use gitkraft_core::FileStatus;
@@ -32,14 +32,15 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
 
 /// Render the unstaged changes list.
 fn render_unstaged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool) {
+    let theme = app.theme();
     let is_focused = pane_active && app.staging_focus == StagingFocus::Unstaged;
 
     let border_color = if is_focused {
-        Color::Cyan
+        theme.border_active
     } else if pane_active {
-        Color::Blue
+        theme.accent
     } else {
-        Color::DarkGray
+        theme.border_inactive
     };
 
     let title = format!(" Unstaged ({}) ", app.unstaged_changes.len());
@@ -51,7 +52,7 @@ fn render_unstaged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bo
     if app.unstaged_changes.is_empty() {
         let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(
             "  No unstaged changes",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(theme.text_muted),
         )))];
         let list = List::new(items).block(block);
         frame.render_widget(list, area);
@@ -68,7 +69,7 @@ fn render_unstaged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bo
                 &diff.new_file
             };
 
-            let (status_char, status_color) = status_display(&diff.status);
+            let (status_char, status_color) = status_display(&diff.status, &theme);
 
             let line = Line::from(vec![
                 Span::styled(
@@ -77,7 +78,7 @@ fn render_unstaged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bo
                         .fg(status_color)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(file_name, Style::default().fg(Color::White)),
+                Span::styled(file_name, Style::default().fg(theme.text_primary)),
             ]);
 
             ListItem::new(line)
@@ -88,7 +89,7 @@ fn render_unstaged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bo
         .block(block)
         .highlight_style(
             Style::default()
-                .bg(Color::DarkGray)
+                .bg(theme.sel_bg)
                 .add_modifier(Modifier::REVERSED),
         )
         .highlight_symbol("▶ ");
@@ -98,14 +99,15 @@ fn render_unstaged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bo
 
 /// Render the staged changes list.
 fn render_staged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool) {
+    let theme = app.theme();
     let is_focused = pane_active && app.staging_focus == StagingFocus::Staged;
 
     let border_color = if is_focused {
-        Color::Cyan
+        theme.border_active
     } else if pane_active {
-        Color::Blue
+        theme.accent
     } else {
-        Color::DarkGray
+        theme.border_inactive
     };
 
     let title = format!(" Staged ({}) ", app.staged_changes.len());
@@ -117,7 +119,7 @@ fn render_staged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool
     if app.staged_changes.is_empty() {
         let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(
             "  No staged changes",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(theme.text_muted),
         )))];
         let list = List::new(items).block(block);
         frame.render_widget(list, area);
@@ -134,7 +136,7 @@ fn render_staged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool
                 &diff.new_file
             };
 
-            let (status_char, status_color) = status_display(&diff.status);
+            let (status_char, status_color) = status_display(&diff.status, &theme);
 
             let line = Line::from(vec![
                 Span::styled(
@@ -143,7 +145,7 @@ fn render_staged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool
                         .fg(status_color)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(file_name, Style::default().fg(Color::White)),
+                Span::styled(file_name, Style::default().fg(theme.text_primary)),
             ]);
 
             ListItem::new(line)
@@ -154,7 +156,7 @@ fn render_staged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool
         .block(block)
         .highlight_style(
             Style::default()
-                .bg(Color::DarkGray)
+                .bg(theme.sel_bg)
                 .add_modifier(Modifier::REVERSED),
         )
         .highlight_symbol("▶ ");
@@ -164,10 +166,11 @@ fn render_staged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool
 
 /// Render either the commit message input (if in input mode) or key hints.
 fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool) {
+    let theme = app.theme();
     let border_color = if pane_active {
-        Color::Cyan
+        theme.border_active
     } else {
-        Color::DarkGray
+        theme.border_inactive
     };
 
     let is_commit_input =
@@ -178,92 +181,166 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
         let block = Block::default()
             .title(" Commit Message ")
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow));
+            .border_style(Style::default().fg(theme.warning));
 
-        // Build the text with a blinking cursor
         let cursor_char = if app.tick_count % 10 < 5 { "█" } else { " " };
 
         let lines = vec![
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ", Style::default()),
-                Span::styled(&app.input_buffer, Style::default().fg(Color::White)),
+                Span::styled(&app.input_buffer, Style::default().fg(theme.text_primary)),
                 Span::styled(
                     cursor_char,
                     Style::default()
-                        .fg(Color::Yellow)
+                        .fg(theme.warning)
                         .add_modifier(Modifier::BOLD),
                 ),
             ]),
             Line::from(""),
             Line::from(Span::styled(
                 " Enter: commit │ Esc: cancel",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme.text_muted),
             )),
         ];
 
         let paragraph = Paragraph::new(lines).block(block);
         frame.render_widget(paragraph, area);
     } else {
-        // Show key hints
-        let block = Block::default()
-            .title(" Actions ")
+        // Show key hints in bordered inner sections (tui-file-explorer style)
+        let outer_block = Block::default()
+            .title(Line::from(vec![
+                Span::styled("⚡", Style::default().fg(theme.accent)),
+                Span::styled(
+                    "Actions",
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(border_color));
+            .border_style(Style::default().fg(border_color))
+            .padding(Padding::new(1, 1, 0, 0));
 
-        let lines = vec![
-            Line::from(""),
-            Line::from(vec![
-                Span::styled(" [s]", Style::default().fg(Color::Yellow)),
-                Span::styled("tage  ", Style::default().fg(Color::White)),
-                Span::styled("[u]", Style::default().fg(Color::Yellow)),
-                Span::styled("nstage", Style::default().fg(Color::White)),
-            ]),
-            Line::from(vec![
-                Span::styled(" [S]", Style::default().fg(Color::Yellow)),
-                Span::styled("tage all  ", Style::default().fg(Color::White)),
-                Span::styled("[U]", Style::default().fg(Color::Yellow)),
-                Span::styled("nstage all", Style::default().fg(Color::White)),
-            ]),
-            Line::from(vec![
-                Span::styled(" [c]", Style::default().fg(Color::Yellow)),
-                Span::styled("ommit  ", Style::default().fg(Color::White)),
-                Span::styled("[d]", Style::default().fg(Color::Yellow)),
-                Span::styled("iscard", Style::default().fg(Color::White)),
-            ]),
-            Line::from(vec![
-                Span::styled(" [z]", Style::default().fg(Color::Yellow)),
-                Span::styled(" stash  ", Style::default().fg(Color::White)),
-                Span::styled("[Z]", Style::default().fg(Color::Yellow)),
-                Span::styled(" stash pop", Style::default().fg(Color::White)),
-            ]),
-            if app.confirm_discard {
-                Line::from(Span::styled(
-                    " ⚠ Press d again to confirm discard",
-                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                ))
-            } else {
+        let inner_area = outer_block.inner(area);
+        frame.render_widget(outer_block, area);
+
+        let key_style = Style::default()
+            .fg(theme.warning)
+            .add_modifier(Modifier::BOLD);
+        let desc_style = Style::default().fg(theme.text_primary);
+        let value_style = Style::default().fg(theme.accent);
+        let section_title = Style::default().fg(theme.text_muted);
+
+        // Split inner area into sections
+        let sections = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(4), // Staging section
+                Constraint::Length(4), // Git section
+                Constraint::Min(2),    // remaining / warnings
+            ])
+            .split(inner_area);
+
+        // ── Staging section ───────────────────────────────────────────
+        {
+            let block = Block::default()
+                .title(Span::styled(" Staging ", section_title))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.border_inactive));
+
+            let lines = vec![
                 Line::from(vec![
-                    Span::styled(" [Tab]", Style::default().fg(Color::Yellow)),
-                    Span::styled(" toggle focus", Style::default().fg(Color::White)),
-                ])
-            },
-        ];
+                    Span::styled(pad_right("s", 8), key_style),
+                    Span::styled(pad_right("stage", 12), desc_style),
+                    Span::styled(pad_right("u", 8), key_style),
+                    Span::styled("unstage", desc_style),
+                ]),
+                Line::from(vec![
+                    Span::styled(pad_right("S", 8), key_style),
+                    Span::styled(pad_right("stage all", 12), desc_style),
+                    Span::styled(pad_right("U", 8), key_style),
+                    Span::styled("unstage all", desc_style),
+                ]),
+            ];
 
-        let paragraph = Paragraph::new(lines).block(block);
-        frame.render_widget(paragraph, area);
+            let paragraph = Paragraph::new(lines).block(block);
+            frame.render_widget(paragraph, sections[0]);
+        }
+
+        // ── Git section ───────────────────────────────────────────────
+        {
+            let block = Block::default()
+                .title(Span::styled(" Git ", section_title))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.border_inactive));
+
+            let lines = vec![
+                Line::from(vec![
+                    Span::styled(pad_right("c", 8), key_style),
+                    Span::styled(pad_right("commit", 12), desc_style),
+                    Span::styled(pad_right("z", 8), key_style),
+                    Span::styled("stash", desc_style),
+                ]),
+                Line::from(vec![
+                    Span::styled(pad_right("d", 8), key_style),
+                    Span::styled(pad_right("discard", 12), desc_style),
+                    Span::styled(pad_right("Z", 8), key_style),
+                    Span::styled("stash pop", desc_style),
+                ]),
+            ];
+
+            let paragraph = Paragraph::new(lines).block(block);
+            frame.render_widget(paragraph, sections[1]);
+        }
+
+        // ── Remaining area: navigation hint + discard warning ─────────
+        {
+            let mut lines = vec![Line::from(vec![
+                Span::styled(" Tab", key_style),
+                Span::styled(" focus  ", desc_style),
+                Span::styled("Enter", key_style),
+                Span::styled(" diff  ", desc_style),
+                Span::styled("O", key_style),
+                Span::styled(" options", value_style),
+            ])];
+
+            if app.confirm_discard {
+                lines.push(Line::from(Span::styled(
+                    " ⚠ Press d again to confirm discard",
+                    Style::default()
+                        .fg(theme.error)
+                        .add_modifier(Modifier::BOLD),
+                )));
+            }
+
+            let paragraph = Paragraph::new(lines);
+            frame.render_widget(paragraph, sections[2]);
+        }
+    }
+}
+
+/// Pad a string to a fixed width with trailing spaces.
+fn pad_right(s: &str, width: usize) -> String {
+    if s.len() >= width {
+        s.to_string()
+    } else {
+        format!("{}{}", s, " ".repeat(width - s.len()))
     }
 }
 
 /// Map a `FileStatus` to a display character and color.
-fn status_display(status: &FileStatus) -> (&'static str, Color) {
+fn status_display(
+    status: &FileStatus,
+    theme: &crate::features::theme::palette::UiTheme,
+) -> (&'static str, ratatui::style::Color) {
     match status {
-        FileStatus::Modified => ("M", Color::Yellow),
-        FileStatus::New => ("A", Color::Green),
-        FileStatus::Deleted => ("D", Color::Red),
-        FileStatus::Renamed => ("R", Color::Blue),
-        FileStatus::Copied => ("C", Color::Blue),
-        FileStatus::Typechange => ("T", Color::Magenta),
-        FileStatus::Untracked => ("?", Color::Magenta),
+        FileStatus::Modified => ("M", theme.warning),
+        FileStatus::New => ("A", theme.success),
+        FileStatus::Deleted => ("D", theme.error),
+        FileStatus::Renamed => ("R", theme.accent),
+        FileStatus::Copied => ("C", theme.accent),
+        FileStatus::Typechange => ("T", theme.text_secondary),
+        FileStatus::Untracked => ("?", theme.text_secondary),
     }
 }

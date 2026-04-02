@@ -218,3 +218,68 @@ fn head_branch_name(repo: &Repository) -> Result<String> {
         .to_string();
     Ok(name)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn setup_repo_with_commit() -> (TempDir, Repository) {
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let mut config = repo.config().unwrap();
+        config.set_str("user.name", "Test User").unwrap();
+        config.set_str("user.email", "test@example.com").unwrap();
+        std::fs::write(dir.path().join("file.txt"), "hello\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("file.txt")).unwrap();
+        index.write().unwrap();
+        let tree_oid = index.write_tree().unwrap();
+        {
+            let tree = repo.find_tree(tree_oid).unwrap();
+            let sig = repo.signature().unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[])
+                .unwrap();
+        }
+        (dir, repo)
+    }
+
+    #[test]
+    fn list_branches_shows_main() {
+        let (_dir, repo) = setup_repo_with_commit();
+        let branches = list_branches(&repo).unwrap();
+        assert!(!branches.is_empty());
+        assert!(branches.iter().any(|b| b.is_head));
+    }
+
+    #[test]
+    fn create_and_delete_branch() {
+        let (_dir, repo) = setup_repo_with_commit();
+        let branch = create_branch(&repo, "feature-test").unwrap();
+        assert_eq!(branch.name, "feature-test");
+        assert!(!branch.is_head);
+
+        delete_branch(&repo, "feature-test").unwrap();
+        let branches = list_branches(&repo).unwrap();
+        assert!(!branches.iter().any(|b| b.name == "feature-test"));
+    }
+
+    #[test]
+    fn checkout_branch_switches_head() {
+        let (_dir, repo) = setup_repo_with_commit();
+        create_branch(&repo, "new-branch").unwrap();
+        checkout_branch(&repo, "new-branch").unwrap();
+        let branches = list_branches(&repo).unwrap();
+        let head = branches.iter().find(|b| b.is_head).unwrap();
+        assert_eq!(head.name, "new-branch");
+    }
+
+    #[test]
+    fn delete_head_branch_fails() {
+        let (_dir, repo) = setup_repo_with_commit();
+        let branches = list_branches(&repo).unwrap();
+        let head = branches.iter().find(|b| b.is_head).unwrap();
+        let result = delete_branch(&repo, &head.name);
+        assert!(result.is_err());
+    }
+}

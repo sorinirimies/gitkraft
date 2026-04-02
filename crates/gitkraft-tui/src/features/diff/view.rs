@@ -1,5 +1,5 @@
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
@@ -11,11 +11,12 @@ use crate::app::{ActivePane, App};
 /// Render the diff pane — shows colored hunks when a diff is selected,
 /// or a placeholder message when nothing is selected.
 pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
+    let theme = app.theme();
     let is_active = app.active_pane == ActivePane::DiffView;
     let border_color = if is_active {
-        Color::Cyan
+        theme.border_active
     } else {
-        Color::DarkGray
+        theme.border_inactive
     };
 
     let title = match &app.selected_diff {
@@ -43,7 +44,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         None => {
             let placeholder = Paragraph::new(Line::from(vec![Span::styled(
                 "Select a commit or file to view diff",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme.text_muted),
             )]))
             .block(block)
             .alignment(ratatui::layout::Alignment::Center);
@@ -58,20 +59,20 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                     let styled_line = match line {
                         DiffLine::Addition(s) => Line::from(Span::styled(
                             format!("+{}", s),
-                            Style::default().fg(Color::Green),
+                            Style::default().fg(theme.diff_add),
                         )),
                         DiffLine::Deletion(s) => Line::from(Span::styled(
                             format!("-{}", s),
-                            Style::default().fg(Color::Red),
+                            Style::default().fg(theme.diff_del),
                         )),
                         DiffLine::Context(s) => Line::from(Span::styled(
                             format!(" {}", s),
-                            Style::default().fg(Color::Gray),
+                            Style::default().fg(theme.diff_context),
                         )),
                         DiffLine::HunkHeader(s) => Line::from(Span::styled(
                             s.clone(),
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.diff_hunk)
                                 .add_modifier(Modifier::BOLD),
                         )),
                     };

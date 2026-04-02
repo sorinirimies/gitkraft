@@ -10,21 +10,23 @@ use crate::theme;
 
 /// Render the stash panel (typically shown in the sidebar beneath branches).
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
+    let c = state.colors();
+
     let header_icon = text('\u{F577}') // stack icon
         .font(iced_fonts::BOOTSTRAP_FONT)
         .size(14)
-        .color(theme::ACCENT);
+        .color(c.accent);
 
-    let header_label = text("Stashes").size(14).color(theme::TEXT_PRIMARY);
+    let header_label = text("Stashes").size(14).color(c.text_primary);
 
     let count_label = text(format!("({})", state.stashes.len()))
         .size(11)
-        .color(theme::MUTED);
+        .color(c.muted);
 
     let save_icon = text('\u{F4FA}') // plus-circle
         .font(iced_fonts::BOOTSTRAP_FONT)
         .size(14)
-        .color(theme::GREEN);
+        .color(c.green);
 
     let save_btn = button(save_icon)
         .padding([2, 6])
@@ -58,20 +60,21 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .map(|entry| {
             let index_label = text(format!("stash@{{{}}}", entry.index))
                 .size(11)
-                .color(theme::ACCENT)
+                .color(c.accent)
                 .font(iced::Font::MONOSPACE);
 
-            let msg_text = if entry.message.len() > 40 {
-                format!("{}…", &entry.message[..39])
+            let msg_text = if entry.message.chars().count() > 40 {
+                let truncated: String = entry.message.chars().take(39).collect();
+                format!("{truncated}…")
             } else {
                 entry.message.clone()
             };
-            let msg_label = text(msg_text).size(11).color(theme::TEXT_SECONDARY);
+            let msg_label = text(msg_text).size(11).color(c.text_secondary);
 
             let pop_icon = text('\u{F117}') // box-arrow-up
                 .font(iced_fonts::BOOTSTRAP_FONT)
                 .size(11)
-                .color(theme::GREEN);
+                .color(c.green);
 
             let pop_btn = button(pop_icon)
                 .padding([2, 4])
@@ -81,7 +84,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             let drop_icon = text('\u{F5DE}') // trash
                 .font(iced_fonts::BOOTSTRAP_FONT)
                 .size(11)
-                .color(theme::RED);
+                .color(c.red);
 
             let drop_btn = button(drop_icon)
                 .padding([2, 4])
@@ -107,7 +110,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let mut list_col = column![].spacing(1).width(Length::Fill);
 
     if stash_entries.is_empty() {
-        let empty_msg = text("No stashes").size(12).color(theme::MUTED);
+        let empty_msg = text("No stashes").size(12).color(c.muted);
         list_col = list_col.push(container(empty_msg).padding([8, 10]).width(Length::Fill));
     } else {
         for entry_el in stash_entries {

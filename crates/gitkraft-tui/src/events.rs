@@ -11,16 +11,22 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         app.error_message = None;
     }
 
+    // Input mode takes priority on ANY screen
+    if app.input_mode == InputMode::Input {
+        handle_input_key(app, key);
+        return;
+    }
+
     match app.screen {
         AppScreen::Welcome => features::repo::events::handle_key(app, key),
         AppScreen::Main => {
-            if app.input_mode == InputMode::Input {
-                handle_input_key(app, key);
+            if app.show_theme_panel {
+                features::theme::events::handle_key(app, key);
                 return;
             }
 
-            if app.show_theme_panel {
-                features::theme::events::handle_key(app, key);
+            if app.show_options_panel {
+                features::options::events::handle_key(app, key);
                 return;
             }
 
@@ -36,6 +42,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 KeyCode::Char('f') => app.fetch_remote(),
                 KeyCode::Char('T') => {
                     app.show_theme_panel = !app.show_theme_panel;
+                    app.show_options_panel = false; // close options if open
+                }
+                KeyCode::Char('O') => {
+                    app.show_options_panel = !app.show_options_panel;
+                    app.show_theme_panel = false; // close theme panel if open
                 }
                 _ => {
                     // Delegate to the active pane's feature handler
@@ -131,4 +142,61 @@ fn cycle_pane_backward(app: &mut App) {
         ActivePane::DiffView => ActivePane::CommitLog,
         ActivePane::Staging => ActivePane::DiffView,
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn q_quits_on_main() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        handle_key(&mut app, key(KeyCode::Char('q')));
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn tab_cycles_pane() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        assert_eq!(app.active_pane, ActivePane::Branches);
+        handle_key(&mut app, key(KeyCode::Tab));
+        assert_eq!(app.active_pane, ActivePane::CommitLog);
+    }
+
+    #[test]
+    fn o_on_welcome_enters_input() {
+        let mut app = App::new();
+        handle_key(&mut app, key(KeyCode::Char('o')));
+        assert_eq!(app.input_mode, InputMode::Input);
+        assert_eq!(app.input_purpose, InputPurpose::RepoPath);
+    }
+
+    #[test]
+    fn input_mode_captures_chars() {
+        let mut app = App::new();
+        app.input_mode = InputMode::Input;
+        app.input_purpose = InputPurpose::RepoPath;
+        app.screen = AppScreen::Welcome;
+        handle_key(&mut app, key(KeyCode::Char('/')));
+        handle_key(&mut app, key(KeyCode::Char('t')));
+        assert_eq!(app.input_buffer, "/t");
+    }
+
+    #[test]
+    fn esc_cancels_input() {
+        let mut app = App::new();
+        app.input_mode = InputMode::Input;
+        app.input_purpose = InputPurpose::RepoPath;
+        app.input_buffer = "/tmp".to_string();
+        handle_key(&mut app, key(KeyCode::Esc));
+        assert_eq!(app.input_mode, InputMode::Normal);
+        assert!(app.input_buffer.is_empty());
+    }
 }
