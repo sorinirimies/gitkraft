@@ -23,8 +23,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('G') => {
             // Jump to last commit
             if !app.commits.is_empty() {
-                app.commit_list_state
-                    .select(Some(app.commits.len() - 1));
+                app.commit_list_state.select(Some(app.commits.len() - 1));
             }
         }
         KeyCode::Esc => {

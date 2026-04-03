@@ -115,23 +115,20 @@ fn parse_diff(diff: &Diff<'_>) -> Result<Vec<DiffInfo>> {
             .unwrap_or_default();
 
         // Find the matching DiffInfo — usually at current_delta_idx or later.
-        let mut found = false;
-        for i in current_delta_idx..infos.len() {
-            if infos[i].new_file == delta_new && infos[i].old_file == delta_old {
-                current_delta_idx = i;
-                found = true;
-                break;
-            }
-        }
-        if !found {
-            // Also search from the beginning in case deltas are reordered
-            for i in 0..current_delta_idx {
-                if infos[i].new_file == delta_new && infos[i].old_file == delta_old {
-                    current_delta_idx = i;
-                    found = true;
-                    break;
-                }
-            }
+        let found_idx = infos[current_delta_idx..]
+            .iter()
+            .position(|info| info.new_file == delta_new && info.old_file == delta_old)
+            .map(|pos| pos + current_delta_idx)
+            .or_else(|| {
+                // Also search from the beginning in case deltas are reordered
+                infos[..current_delta_idx]
+                    .iter()
+                    .position(|info| info.new_file == delta_new && info.old_file == delta_old)
+            });
+
+        let found = found_idx.is_some();
+        if let Some(idx) = found_idx {
+            current_delta_idx = idx;
         }
         if !found {
             return true; // skip unknown delta

@@ -86,7 +86,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         .block(block)
         .highlight_style(highlight_style);
 
-    let mut state = app.theme_list_state.clone();
+    let mut state = app.theme_list_state;
     frame.render_stateful_widget(list, area, &mut state);
     app.theme_list_state = state;
 }

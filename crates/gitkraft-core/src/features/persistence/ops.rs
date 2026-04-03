@@ -60,11 +60,9 @@ pub fn load_settings() -> Result<AppSettings> {
     if let Ok(table) = read_txn.open_table(RECENT_REPOS_TABLE) {
         let mut entries: Vec<RepoHistoryEntry> = Vec::new();
         if let Ok(iter) = table.iter() {
-            for item in iter {
-                if let Ok((_key, value)) = item {
-                    if let Ok(entry) = serde_json::from_slice::<RepoHistoryEntry>(value.value()) {
-                        entries.push(entry);
-                    }
+            for (_key, value) in iter.flatten() {
+                if let Ok(entry) = serde_json::from_slice::<RepoHistoryEntry>(value.value()) {
+                    entries.push(entry);
                 }
             }
         }
@@ -179,8 +177,10 @@ mod tests {
 
     #[test]
     fn add_recent_respects_max() {
-        let mut settings = AppSettings::default();
-        settings.max_recent = 3;
+        let mut settings = AppSettings {
+            max_recent: 3,
+            ..Default::default()
+        };
         for i in 0..5 {
             settings.add_recent_repo(PathBuf::from(format!("/tmp/repo{i}")));
         }

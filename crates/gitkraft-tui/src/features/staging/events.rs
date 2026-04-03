@@ -47,7 +47,8 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 app.discard_selected();
             } else {
                 app.confirm_discard = true;
-                app.status_message = Some("Press 'd' again to confirm discard, or any other key to cancel".into());
+                app.status_message =
+                    Some("Press 'd' again to confirm discard, or any other key to cancel".into());
             }
         }
 

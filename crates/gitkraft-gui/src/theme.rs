@@ -40,13 +40,7 @@ pub struct ThemeColors {
 
 /// Clamp a single channel to `[0.0, 1.0]`.
 fn clamp(v: f32) -> f32 {
-    if v < 0.0 {
-        0.0
-    } else if v > 1.0 {
-        1.0
-    } else {
-        v
-    }
+    v.clamp(0.0, 1.0)
 }
 
 /// Shift every RGB channel of `base` by `delta` (positive = lighter, negative = darker).
@@ -164,9 +158,8 @@ impl ThemeColors {
 /// Map an `iced::Theme` to the closest `gitkraft_core` theme index.
 fn iced_theme_to_core_index(theme: &iced::Theme) -> usize {
     let name = theme.to_string();
-    let idx = gitkraft_core::theme_index_by_name(&name);
     // theme_index_by_name returns 0 (Default) for unknown names, which is fine.
-    idx
+    gitkraft_core::theme_index_by_name(&name)
 }
 
 // ── Container styles ──────────────────────────────────────────────────────────

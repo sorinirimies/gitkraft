@@ -217,7 +217,7 @@ mod tests {
         ];
         let rows = build_graph(&commits);
         for row in &rows {
-            assert!(row.width >= row.node_column + 1);
+            assert!(row.width > row.node_column);
         }
     }
 }

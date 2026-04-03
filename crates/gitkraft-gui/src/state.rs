@@ -129,6 +129,12 @@ pub struct GitKraft {
     pub recent_repos: Vec<gitkraft_core::RepoHistoryEntry>,
 }
 
+impl Default for GitKraft {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GitKraft {
     /// Create a fresh application state with sensible defaults.
     ///
