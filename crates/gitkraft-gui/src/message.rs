@@ -142,6 +142,10 @@ pub enum Message {
     SettingsLoaded(Result<Vec<gitkraft_core::RepoHistoryEntry>, String>),
     /// Background `save_theme` completed (fire-and-forget, errors logged).
     ThemeSaved(Result<(), String>),
+    /// Background layout save completed (fire-and-forget, errors logged).
+    LayoutSaved(Result<(), String>),
+    /// Layout loaded from persisted settings on startup.
+    LayoutLoaded(Result<Option<gitkraft_core::LayoutSettings>, String>),
 
     /// User selected a different theme from the picker (by index into
     /// `gitkraft_core::THEME_NAMES`).

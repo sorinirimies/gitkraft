@@ -17,8 +17,13 @@ fn main() -> iced::Result {
         .run_with(|| {
             let mut state = GitKraft::new();
 
+            // Maximize the window on startup by finding the main window ID
+            // and then requesting maximization.
+            let maximize_task: iced::Task<gitkraft_gui::Message> =
+                iced::window::get_oldest().and_then(|id| iced::window::maximize(id, true));
+
             // If there is a recently opened repo in persisted settings, auto-open it.
-            let startup_task = match gitkraft_core::features::persistence::ops::get_last_repo() {
+            let repo_task = match gitkraft_core::features::persistence::ops::get_last_repo() {
                 Ok(Some(path)) if path.exists() => {
                     state.is_loading = true;
                     state.status_message = Some("Loading repository...".to_string());
@@ -26,6 +31,8 @@ fn main() -> iced::Result {
                 }
                 _ => iced::Task::none(),
             };
+
+            let startup_task = iced::Task::batch([maximize_task, repo_task]);
 
             (state, startup_task)
         })

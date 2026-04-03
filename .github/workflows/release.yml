@@ -1,0 +1,367 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Manual fallback — trigger from the GitHub Actions UI if the tag push
+  # ever silently skips or a re-run is needed without re-pushing the tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v0.5.0) — must already exist on the repo"
+        required: true
+        default: ""
+
+permissions:
+  contents: write
+  packages: write
+
+# One release run at a time per tag.  Re-pushing the same tag cancels the
+# previous run instead of queuing a duplicate.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── 0. Validate trigger ──────────────────────────────────────────────────────
+  # Resolve the effective tag from either a tag push or a manual dispatch, then
+  # validate it matches vX.Y.Z before spending time on any build work.
+  validate:
+    name: Validate tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - name: Resolve and validate tag
+        id: resolve
+        run: |
+          # For a tag push  → github.ref_name is the tag (e.g. "v0.5.0")
+          # For manual runs → the user supplies it via the `tag` input
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+
+          echo "Resolved tag: ${TAG}"
+
+          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Tag '${TAG}' does not match vX.Y.Z — aborting."
+            exit 1
+          fi
+
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}"     >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "✅ Tag ${TAG} (version ${VERSION}) is valid."
+
+  # ── 1. Quality gate ──────────────────────────────────────────────────────────
+  test:
+    name: Test & lint
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - name: Install Linux GUI system libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libxkbcommon-dev \
+            libx11-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libwayland-dev \
+            libgl1-mesa-dev \
+            libfontconfig1-dev \
+            libssl-dev
+
+      - name: Install Rust stable (rustfmt + clippy + cross targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: x86_64-pc-windows-gnu,x86_64-apple-darwin,aarch64-apple-darwin
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy (workspace)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings -A deprecated
+
+      - name: Run tests (workspace)
+        run: cargo test --workspace --all-features
+
+      # ── Cross-compile checks ─────────────────────────────────────────────────
+      # Verify platform-specific Git operations code type-checks correctly
+      # before we spend time on binary builds.
+      - name: Install mingw-w64 (for Windows cross-check)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends mingw-w64
+
+      - name: cargo check core — x86_64-pc-windows-gnu
+        run: cargo check -p gitkraft-core --target x86_64-pc-windows-gnu
+
+      - name: cargo check core — x86_64-apple-darwin
+        run: cargo check -p gitkraft-core --target x86_64-apple-darwin
+
+      - name: cargo check core — aarch64-apple-darwin
+        run: cargo check -p gitkraft-core --target aarch64-apple-darwin
+
+  # ── 2. Binary builds ─────────────────────────────────────────────────────────
+  # Build GUI and TUI release binaries for each target platform.
+  # The matrix produces one job per (target, runner) combination so builds
+  # run in parallel.
+  build:
+    name: Build — ${{ matrix.target }}
+    needs: [validate, test]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ── Linux x86_64 (dynamic — standard distro binary) ─────────────────
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            gui_binary: gitkraft
+            tui_binary: gitkraft-tui
+            suffix: ""
+            install_gui_libs: true
+
+          # ── Windows x86_64 (MSVC) ────────────────────────────────────────────
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            gui_binary: gitkraft
+            tui_binary: gitkraft-tui
+            suffix: ".exe"
+            install_gui_libs: false
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      # ── System libraries (GUI only) ─────────────────────────────────────────
+      - name: Install Linux GUI system libraries
+        if: matrix.install_gui_libs
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libxkbcommon-dev \
+            libx11-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libwayland-dev \
+            libgl1-mesa-dev \
+            libfontconfig1-dev \
+            libssl-dev
+
+      - name: Install Rust stable + target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # ── Build TUI (all targets) ──────────────────────────────────────────────
+      - name: Build TUI release binary
+        run: cargo build --release -p gitkraft-tui --target ${{ matrix.target }}
+
+      # ── Build GUI ───────────────────────────────────────────────────────────
+      - name: Build GUI release binary
+        if: matrix.gui_binary != ''
+        run: cargo build --release -p gitkraft --target ${{ matrix.target }}
+
+      # ── Stage artifacts ──────────────────────────────────────────────────────
+      - name: Create dist directory
+        run: mkdir dist
+
+      - name: Stage TUI artifact
+        run: cp target/${{ matrix.target }}/release/gitkraft-tui${{ matrix.suffix }} dist/gitkraft-tui-${{ matrix.target }}${{ matrix.suffix }}
+
+      - name: Stage GUI artifact
+        if: matrix.gui_binary != ''
+        run: cp target/${{ matrix.target }}/release/gitkraft${{ matrix.suffix }} dist/gitkraft-gui-${{ matrix.target }}${{ matrix.suffix }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.target }}
+          path: dist/
+          retention-days: 1
+
+  # ── 3. GitHub Release ────────────────────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Install git-cliff
+        run: cargo install git-cliff --locked
+
+      - name: Install Nushell
+        run: cargo install nu --locked
+
+      - name: Prepare release (RELEASE_NOTES.md + CHANGELOG.md)
+        run: nu scripts/release_prepare.nu ${{ needs.validate.outputs.tag }}
+
+      # Download every artifact uploaded by the build matrix
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          pattern: binaries-*
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lh artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.validate.outputs.tag }}
+          body_path: RELEASE_NOTES.md
+          files: |
+            artifacts/*
+            LICENSE
+            README.md
+            CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── 4. Publish to crates.io ──────────────────────────────────────────────────
+  # Order matters: core must be published first because gui and tui depend on it.
+  # gitkraft (crates/gitkraft-gui) is published as `gitkraft` (the GUI binary).
+  # gitkraft-tui is published as `gitkraft-tui` (the TUI binary).
+  publish:
+    name: Publish to crates.io
+    needs: [validate, release]
+    runs-on: ubuntu-latest
+    # `secrets.*` cannot be used in a job-level `if:` on GitHub Actions —
+    # the expression is evaluated before secrets are injected and always
+    # resolves to the empty string, making the condition unparseable.
+    # Instead we expose the secret as an env var and gate every publish
+    # step with `if: env.HAS_TOKEN == 'true'`.
+    env:
+      HAS_TOKEN: ${{ secrets.CRATES_IO_TOKEN != '' }}
+    steps:
+      - name: Skip notice (no token)
+        if: env.HAS_TOKEN != 'true'
+        run: echo "⏭️  CRATES_IO_TOKEN is not configured — skipping crates.io publish."
+
+      - uses: actions/checkout@v4
+        if: env.HAS_TOKEN == 'true'
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - name: Install Linux GUI system libraries
+        if: env.HAS_TOKEN == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libxkbcommon-dev \
+            libx11-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libwayland-dev \
+            libgl1-mesa-dev \
+            libfontconfig1-dev \
+            libssl-dev
+
+      - name: Install Rust stable
+        if: env.HAS_TOKEN == 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        if: env.HAS_TOKEN == 'true'
+        uses: Swatinem/rust-cache@v2
+
+      # ── Step 1: publish gitkraft-core ───────────────────────────────────────
+      # gui and tui both depend on this; it must hit the crates.io index first.
+      - name: Publish gitkraft-core
+        if: env.HAS_TOKEN == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          if cargo info gitkraft-core@${VERSION} 2>/dev/null | grep -q "^gitkraft-core"; then
+            echo "⏭️  gitkraft-core@${VERSION} already on crates.io — skipping."
+          else
+            echo "📦 Copying README.md into crates/gitkraft-core…"
+            cp README.md crates/gitkraft-core/README.md
+            echo "📦 Publishing gitkraft-core…"
+            output=$(cargo publish -p gitkraft-core --allow-dirty 2>&1) && echo "$output" || {
+              echo "$output"
+              echo "$output" | grep -q "already exists" && echo "⏭️  Already published — skipping." || exit 1
+            }
+            echo "⏳ Waiting 30 s for the index to propagate…"
+            sleep 30
+          fi
+
+      # ── Step 2: publish gitkraft (GUI) ──────────────────────────────────────
+      - name: Publish gitkraft (GUI)
+        if: env.HAS_TOKEN == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          if cargo info gitkraft@${VERSION} 2>/dev/null | grep -q "^gitkraft"; then
+            echo "⏭️  gitkraft@${VERSION} already on crates.io — skipping."
+          else
+            echo "📦 Copying README.md into crates/gitkraft-gui…"
+            cp README.md crates/gitkraft-gui/README.md
+            echo "📦 Publishing gitkraft (GUI)…"
+            output=$(cargo publish -p gitkraft --allow-dirty 2>&1) && echo "$output" || {
+              echo "$output"
+              echo "$output" | grep -q "already exists" && echo "⏭️  Already published — skipping." || exit 1
+            }
+            echo "⏳ Waiting 20 s for the index to propagate…"
+            sleep 20
+          fi
+
+      # ── Step 3: publish gitkraft-tui ────────────────────────────────────────
+      - name: Publish gitkraft-tui
+        if: env.HAS_TOKEN == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          if cargo info gitkraft-tui@${VERSION} 2>/dev/null | grep -q "^gitkraft-tui"; then
+            echo "⏭️  gitkraft-tui@${VERSION} already on crates.io — skipping."
+          else
+            echo "📦 Copying README.md into crates/gitkraft-tui…"
+            cp README.md crates/gitkraft-tui/README.md
+            echo "📦 Publishing gitkraft-tui…"
+            output=$(cargo publish -p gitkraft-tui --allow-dirty 2>&1) && echo "$output" || {
+              echo "$output"
+              echo "$output" | grep -q "already exists" && echo "⏭️  Already published — skipping." || exit 1
+            }
+          fi
+          echo "✅ Publish step complete."

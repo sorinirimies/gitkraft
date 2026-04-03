@@ -185,3 +185,35 @@ pub fn save_theme_async(theme_name: String) -> Task<Message> {
         Message::ThemeSaved,
     )
 }
+
+/// Save layout preferences on a background thread (fire-and-forget).
+pub fn save_layout_async(layout: gitkraft_core::LayoutSettings) -> Task<Message> {
+    Task::perform(
+        async move {
+            let (tx, rx) = futures::channel::oneshot::channel();
+            std::thread::spawn(move || {
+                let result = gitkraft_core::features::persistence::ops::save_layout(&layout)
+                    .map_err(|e| e.to_string());
+                let _ = tx.send(result);
+            });
+            rx.await.map_err(|_| "Task cancelled".to_string())?
+        },
+        Message::LayoutSaved,
+    )
+}
+
+/// Load layout preferences from persisted settings on a background thread.
+pub fn load_layout_async() -> Task<Message> {
+    Task::perform(
+        async move {
+            let (tx, rx) = futures::channel::oneshot::channel();
+            std::thread::spawn(move || {
+                let result = gitkraft_core::features::persistence::ops::get_saved_layout()
+                    .map_err(|e| e.to_string());
+                let _ = tx.send(result);
+            });
+            rx.await.map_err(|_| "Task cancelled".to_string())?
+        },
+        Message::LayoutLoaded,
+    )
+}

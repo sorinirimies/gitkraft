@@ -146,6 +146,24 @@ impl GitKraft {
 
         let recent_repos = settings.recent_repos;
 
+        let (
+            sidebar_width,
+            commit_log_width,
+            staging_height,
+            diff_file_list_width,
+            sidebar_expanded,
+        ) = if let Some(ref layout) = settings.layout {
+            (
+                layout.sidebar_width.unwrap_or(220.0),
+                layout.commit_log_width.unwrap_or(500.0),
+                layout.staging_height.unwrap_or(200.0),
+                layout.diff_file_list_width.unwrap_or(180.0),
+                layout.sidebar_expanded.unwrap_or(true),
+            )
+        } else {
+            (220.0, 500.0, 200.0, 180.0, true)
+        };
+
         Self {
             repo_path: None,
             repo_info: None,
@@ -167,12 +185,12 @@ impl GitKraft {
             remotes: Vec::new(),
 
             show_commit_detail: false,
-            sidebar_expanded: true,
+            sidebar_expanded,
 
-            sidebar_width: 220.0,
-            commit_log_width: 500.0,
-            staging_height: 200.0,
-            diff_file_list_width: 180.0,
+            sidebar_width,
+            commit_log_width,
+            staging_height,
+            diff_file_list_width,
 
             dragging: None,
             dragging_h: None,
@@ -249,6 +267,17 @@ impl GitKraft {
             .get(self.current_theme_index)
             .copied()
             .unwrap_or("Default")
+    }
+
+    /// Build a [`LayoutSettings`] snapshot from the current pane dimensions.
+    pub fn current_layout(&self) -> gitkraft_core::LayoutSettings {
+        gitkraft_core::LayoutSettings {
+            sidebar_width: Some(self.sidebar_width),
+            commit_log_width: Some(self.commit_log_width),
+            staging_height: Some(self.staging_height),
+            diff_file_list_width: Some(self.diff_file_list_width),
+            sidebar_expanded: Some(self.sidebar_expanded),
+        }
     }
 }
 

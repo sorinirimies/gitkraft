@@ -83,7 +83,7 @@ impl GitKraft {
 
             Message::ToggleSidebar => {
                 self.sidebar_expanded = !self.sidebar_expanded;
-                Task::none()
+                crate::features::repo::commands::save_layout_async(self.current_layout())
             }
 
             // ── Pane resize ───────────────────────────────────────────────
@@ -156,7 +156,7 @@ impl GitKraft {
                 self.dragging_h = None;
                 self.drag_initialized = false;
                 self.drag_initialized_h = false;
-                Task::none()
+                crate::features::repo::commands::save_layout_async(self.current_layout())
             }
 
             Message::ThemeChanged(index) => {
@@ -171,6 +171,32 @@ impl GitKraft {
 
             Message::ThemeSaved(_result) => {
                 // Fire-and-forget — errors are silently ignored.
+                Task::none()
+            }
+
+            Message::LayoutSaved(_result) => {
+                // Fire-and-forget — errors are silently ignored.
+                Task::none()
+            }
+
+            Message::LayoutLoaded(result) => {
+                if let Ok(Some(layout)) = result {
+                    if let Some(w) = layout.sidebar_width {
+                        self.sidebar_width = w;
+                    }
+                    if let Some(w) = layout.commit_log_width {
+                        self.commit_log_width = w;
+                    }
+                    if let Some(h) = layout.staging_height {
+                        self.staging_height = h;
+                    }
+                    if let Some(w) = layout.diff_file_list_width {
+                        self.diff_file_list_width = w;
+                    }
+                    if let Some(expanded) = layout.sidebar_expanded {
+                        self.sidebar_expanded = expanded;
+                    }
+                }
                 Task::none()
             }
 

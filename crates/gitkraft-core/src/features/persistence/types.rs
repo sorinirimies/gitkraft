@@ -9,6 +9,16 @@ pub struct RepoHistoryEntry {
     pub last_opened: DateTime<Utc>,
 }
 
+/// Persisted pane layout dimensions so the UI restores exactly as the user left it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LayoutSettings {
+    pub sidebar_width: Option<f32>,
+    pub commit_log_width: Option<f32>,
+    pub staging_height: Option<f32>,
+    pub diff_file_list_width: Option<f32>,
+    pub sidebar_expanded: Option<bool>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     /// Last opened repository path.
@@ -20,6 +30,9 @@ pub struct AppSettings {
     /// Max recent repos to store.
     #[serde(default = "default_max_recent")]
     pub max_recent: usize,
+    /// Persisted pane layout dimensions.
+    #[serde(default)]
+    pub layout: Option<LayoutSettings>,
 }
 
 fn default_max_recent() -> usize {
@@ -33,6 +46,7 @@ impl Default for AppSettings {
             recent_repos: Vec::new(),
             theme_name: None,
             max_recent: default_max_recent(),
+            layout: None,
         }
     }
 }

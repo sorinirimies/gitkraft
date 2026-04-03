@@ -49,6 +49,11 @@ pub fn load_settings() -> Result<AppSettings> {
         if let Ok(Some(val)) = table.get("theme_name") {
             settings.theme_name = Some(val.value().to_string());
         }
+        if let Ok(Some(val)) = table.get("layout") {
+            if let Ok(layout) = serde_json::from_str::<super::types::LayoutSettings>(val.value()) {
+                settings.layout = Some(layout);
+            }
+        }
     }
 
     // Read recent repos
@@ -84,6 +89,11 @@ pub fn save_settings(settings: &AppSettings) -> Result<()> {
         }
         if let Some(ref theme) = settings.theme_name {
             table.insert("theme_name", theme.as_str())?;
+        }
+        if let Some(ref layout) = settings.layout {
+            let layout_json =
+                serde_json::to_string(layout).context("failed to serialize layout settings")?;
+            table.insert("layout", layout_json.as_str())?;
         }
     }
 
@@ -138,6 +148,19 @@ pub fn save_theme(theme_name: &str) -> Result<()> {
 pub fn get_saved_theme() -> Result<Option<String>> {
     let settings = load_settings()?;
     Ok(settings.theme_name)
+}
+
+/// Convenience: save layout preferences.
+pub fn save_layout(layout: &super::types::LayoutSettings) -> Result<()> {
+    let mut settings = load_settings()?;
+    settings.layout = Some(layout.clone());
+    save_settings(&settings)
+}
+
+/// Convenience: get saved layout preferences.
+pub fn get_saved_layout() -> Result<Option<super::types::LayoutSettings>> {
+    let settings = load_settings()?;
+    Ok(settings.layout)
 }
 
 #[cfg(test)]
