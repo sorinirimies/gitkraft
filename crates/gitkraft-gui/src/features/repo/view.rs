@@ -15,6 +15,34 @@ use crate::theme;
 pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
     let c = state.colors();
 
+    // ── Loading state (e.g. auto-opening last repo) ───────────────────────
+    if state.is_loading {
+        let spinner_icon = text('\u{F130}') // arrow-repeat (Bootstrap)
+            .font(iced_fonts::BOOTSTRAP_FONT)
+            .size(32)
+            .color(c.accent);
+
+        let loading_label = text(
+            state
+                .status_message
+                .as_deref()
+                .unwrap_or("Loading repository..."),
+        )
+        .size(18)
+        .color(c.text_secondary);
+
+        let loading_col =
+            column![spinner_icon, Space::with_height(12), loading_label].align_x(Alignment::Center);
+
+        return container(loading_col)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .style(theme::bg_style)
+            .into();
+    }
+
     let title = text("GitKraft").size(48).color(c.accent);
 
     let subtitle = text("A modern Git IDE").size(18).color(c.text_secondary);
@@ -136,12 +164,6 @@ pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
         .height(Length::Fill)
         .center_x(Length::Fill)
         .center_y(Length::Fill)
-        .style(move |theme: &iced::Theme| {
-            let tc = theme::ThemeColors::from_theme(theme);
-            iced::widget::container::Style {
-                background: Some(iced::Background::Color(tc.bg)),
-                ..Default::default()
-            }
-        })
+        .style(theme::bg_style)
         .into()
 }

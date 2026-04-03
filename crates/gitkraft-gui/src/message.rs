@@ -122,6 +122,27 @@ pub enum Message {
     DismissError,
     /// Toggle the left sidebar.
     ToggleSidebar,
+    /// Close the current repository and return to the welcome screen.
+    CloseRepo,
+
+    // ── Pane resize ───────────────────────────────────────────────────────
+    /// User pressed the mouse button on a vertical divider to start dragging.
+    PaneDragStart(crate::state::DragTarget, f32),
+    /// User pressed the mouse button on the horizontal staging divider.
+    PaneDragStartH(crate::state::DragTargetH, f32),
+    /// Mouse moved during a drag — `(x, y)` in window coordinates.
+    PaneDragMove(f32, f32),
+    /// Mouse button released — stop dragging.
+    PaneDragEnd,
+    // ── Async persistence results ─────────────────────────────────────
+    /// Background `record_repo_opened` + `load_settings` completed.
+    /// Carries the refreshed recent-repos list (or an error string).
+    RepoRecorded(Result<Vec<gitkraft_core::RepoHistoryEntry>, String>),
+    /// Background `load_settings` completed (e.g. after closing a repo).
+    SettingsLoaded(Result<Vec<gitkraft_core::RepoHistoryEntry>, String>),
+    /// Background `save_theme` completed (fire-and-forget, errors logged).
+    ThemeSaved(Result<(), String>),
+
     /// User selected a different theme from the picker (by index into
     /// `gitkraft_core::THEME_NAMES`).
     ThemeChanged(usize),

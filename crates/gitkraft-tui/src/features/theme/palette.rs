@@ -21,11 +21,14 @@ pub struct UiTheme {
     pub diff_hunk: Color,
     pub sel_bg: Color,
     pub bg: Color,
+    /// Eight colours cycled across branch lanes in the commit graph.
+    pub graph_colors: [Color; 8],
 }
 
 impl UiTheme {
     /// Convert from the core's platform-agnostic theme.
     pub fn from_core(t: &AppTheme) -> Self {
+        let gc = &t.graph_colors;
         Self {
             border_active: rgb_to_color(t.accent),
             border_inactive: rgb_to_color(t.border),
@@ -42,6 +45,16 @@ impl UiTheme {
             diff_hunk: rgb_to_color(t.diff_hunk),
             sel_bg: rgb_to_color(t.selection),
             bg: rgb_to_color(t.background),
+            graph_colors: [
+                rgb_to_color(gc[0]),
+                rgb_to_color(gc[1]),
+                rgb_to_color(gc[2]),
+                rgb_to_color(gc[3]),
+                rgb_to_color(gc[4]),
+                rgb_to_color(gc[5]),
+                rgb_to_color(gc[6]),
+                rgb_to_color(gc[7]),
+            ],
         }
     }
 }

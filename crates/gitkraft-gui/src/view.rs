@@ -16,13 +16,24 @@
 //! │  status bar                              │
 //! └──────────────────────────────────────────┘
 //! ```
+//!
+//! All vertical and horizontal dividers between panes are **draggable** — the
+//! user can resize the sidebar, commit-log, diff-viewer, and staging area by
+//! grabbing the thin divider lines and dragging.
+//!
+//! The outer-most widget is **always** a `mouse_area` that captures
+//! `on_move` and `on_release` events.  This ensures that once a drag starts
+//! (via the divider's `on_press`), subsequent mouse-move events are tracked
+//! even if the pointer leaves the narrow divider hit-zone.  When no drag is
+//! active the update handler simply ignores the events, so there is no
+//! measurable cost.
 
-use iced::widget::{column, container, horizontal_rule, row, text, Space};
+use iced::widget::{column, container, mouse_area, row, text, Space};
 use iced::{Alignment, Element, Length};
 
 use crate::features;
 use crate::message::Message;
-use crate::state::GitKraft;
+use crate::state::{DragTarget, DragTargetH, GitKraft};
 use crate::theme;
 use crate::theme::ThemeColors;
 use crate::widgets;
@@ -45,39 +56,56 @@ impl GitKraft {
             let stash = features::stash::view::view(self);
             let remotes = features::remotes::view::view(self);
 
-            container(
+            let sidebar_content = container(
                 column![
                     branches,
-                    horizontal_rule(1),
+                    iced::widget::horizontal_rule(1),
                     stash,
-                    horizontal_rule(1),
+                    iced::widget::horizontal_rule(1),
                     remotes
                 ]
-                .width(220)
+                .width(Length::Fill)
                 .height(Length::Fill),
             )
-            .width(220)
+            .width(Length::Fixed(self.sidebar_width))
             .height(Length::Fill)
-            .style(theme::sidebar_style)
-            .into()
+            .style(theme::sidebar_style);
+
+            let divider = widgets::divider::vertical_divider(DragTarget::SidebarRight, &c);
+
+            row![sidebar_content, divider].height(Length::Fill).into()
         } else {
             Space::with_width(0).into()
         };
 
         // ── Commit log ────────────────────────────────────────────────────
-        let commit_log = features::commits::view::view(self);
+        let commit_log_content = container(features::commits::view::view(self))
+            .width(Length::Fixed(self.commit_log_width))
+            .height(Length::Fill);
 
-        // ── Diff viewer ───────────────────────────────────────────────────
-        let diff_viewer = features::diff::view::view(self);
+        let commit_divider = widgets::divider::vertical_divider(DragTarget::CommitLogRight, &c);
 
-        // ── Middle row: sidebar | commit log | diff viewer ────────────────
+        let commit_log: Element<'_, Message> = row![commit_log_content, commit_divider]
+            .height(Length::Fill)
+            .into();
+
+        // ── Diff viewer (fills all remaining horizontal space) ────────────
+        let diff_viewer = container(features::diff::view::view(self))
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        // ── Middle row: sidebar | divider | commit log | divider | diff ───
         let middle = row![sidebar, commit_log, diff_viewer]
-            .spacing(1)
             .height(Length::Fill)
             .width(Length::Fill);
 
+        // ── Horizontal divider between middle and staging ─────────────────
+        let h_divider = widgets::divider::horizontal_divider(DragTargetH::StagingTop, &c);
+
         // ── Staging area ──────────────────────────────────────────────────
-        let staging = features::staging::view::view(self);
+        let staging = container(features::staging::view::view(self))
+            .width(Length::Fill)
+            .height(Length::Fixed(self.staging_height));
 
         // ── Status bar ────────────────────────────────────────────────────
         let status_bar = status_bar_view(self);
@@ -92,20 +120,22 @@ impl GitKraft {
         main_col = main_col
             .push(header)
             .push(middle)
-            .push(horizontal_rule(1))
+            .push(h_divider)
             .push(staging)
             .push(status_bar);
 
-        container(main_col)
+        let body = container(main_col)
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(|theme: &iced::Theme| {
-                let tc = ThemeColors::from_theme(theme);
-                iced::widget::container::Style {
-                    background: Some(iced::Background::Color(tc.bg)),
-                    ..Default::default()
-                }
-            })
+            .style(theme::bg_style);
+
+        // Always-active mouse_area.  The `on_move` and `on_release` handlers
+        // fire on every frame the mouse moves, but the update function
+        // short-circuits to `Task::none()` when no drag is active — so there
+        // is no performance penalty during normal use.
+        mouse_area(body)
+            .on_move(|point| Message::PaneDragMove(point.x, point.y))
+            .on_release(Message::PaneDragEnd)
             .into()
     }
 }
@@ -216,14 +246,6 @@ fn error_banner<'a>(message: &str, c: &ThemeColors) -> Element<'a, Message> {
 
     container(banner_row)
         .width(Length::Fill)
-        .style(|_theme: &iced::Theme| iced::widget::container::Style {
-            background: Some(iced::Background::Color(iced::Color {
-                r: 0.35,
-                g: 0.10,
-                b: 0.10,
-                a: 1.0,
-            })),
-            ..Default::default()
-        })
+        .style(theme::error_banner_style)
         .into()
 }

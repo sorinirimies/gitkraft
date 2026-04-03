@@ -17,7 +17,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     let content = row![unstaged_panel, staged_panel, commit_panel]
         .spacing(1)
-        .height(200)
+        .height(Length::Fill)
         .width(Length::Fill);
 
     container(content)

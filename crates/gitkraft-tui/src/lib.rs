@@ -81,9 +81,17 @@ where
     loop {
         app.tick_count = app.tick_count.wrapping_add(1);
 
+        // Drain any results from background tasks (open_repo, refresh,
+        // stage, commit, etc.) before drawing so the UI reflects the
+        // latest state.
+        app.poll_background();
+
         terminal.draw(|frame| layout::render(&mut app, frame))?;
 
-        if event::poll(Duration::from_millis(100))? {
+        // Use a shorter poll interval (33 ms ≈ 30 fps) so background-task
+        // results are picked up promptly and the loading indicator updates
+        // without a noticeable lag.
+        if event::poll(Duration::from_millis(33))? {
             if let Event::Key(key) = event::read()? {
                 // Ignore key-release events on platforms that send them
                 if key.kind == crossterm::event::KeyEventKind::Press {

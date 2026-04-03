@@ -4,6 +4,10 @@
 //! work on a background thread via `std::thread::spawn` + a `futures` oneshot
 //! channel, then maps the result into a [`Message`] variant the update loop
 //! can handle.
+//!
+//! This module also contains async wrappers for persistence operations
+//! (`record_repo_opened`, `load_settings`, `save_theme`) so that redb
+//! database I/O never blocks the UI thread.
 
 use std::path::PathBuf;
 
@@ -119,4 +123,65 @@ fn load_repo_blocking(path: &std::path::Path) -> Result<RepoPayload, String> {
         stashes,
         remotes,
     })
+}
+
+// ── Async persistence helpers ─────────────────────────────────────────────────
+
+/// Record that a repo was opened and return the refreshed recent-repos list.
+///
+/// Runs `record_repo_opened` + `load_settings` on a background thread so that
+/// the redb database I/O never blocks the Iced event loop.
+pub fn record_repo_opened_async(path: std::path::PathBuf) -> Task<Message> {
+    Task::perform(
+        async move {
+            let (tx, rx) = futures::channel::oneshot::channel();
+            std::thread::spawn(move || {
+                let result = (|| {
+                    gitkraft_core::features::persistence::ops::record_repo_opened(&path)
+                        .map_err(|e| e.to_string())?;
+                    let settings = gitkraft_core::features::persistence::ops::load_settings()
+                        .map_err(|e| e.to_string())?;
+                    Ok(settings.recent_repos)
+                })();
+                let _ = tx.send(result);
+            });
+            rx.await.map_err(|_| "Task cancelled".to_string())?
+        },
+        Message::RepoRecorded,
+    )
+}
+
+/// Load the recent-repos list from persisted settings on a background thread.
+pub fn load_recent_repos_async() -> Task<Message> {
+    Task::perform(
+        async move {
+            let (tx, rx) = futures::channel::oneshot::channel();
+            std::thread::spawn(move || {
+                let result = (|| {
+                    let settings = gitkraft_core::features::persistence::ops::load_settings()
+                        .map_err(|e| e.to_string())?;
+                    Ok(settings.recent_repos)
+                })();
+                let _ = tx.send(result);
+            });
+            rx.await.map_err(|_| "Task cancelled".to_string())?
+        },
+        Message::SettingsLoaded,
+    )
+}
+
+/// Save the theme preference on a background thread (fire-and-forget).
+pub fn save_theme_async(theme_name: String) -> Task<Message> {
+    Task::perform(
+        async move {
+            let (tx, rx) = futures::channel::oneshot::channel();
+            std::thread::spawn(move || {
+                let result = gitkraft_core::features::persistence::ops::save_theme(&theme_name)
+                    .map_err(|e| e.to_string());
+                let _ = tx.send(result);
+            });
+            rx.await.map_err(|_| "Task cancelled".to_string())?
+        },
+        Message::ThemeSaved,
+    )
 }

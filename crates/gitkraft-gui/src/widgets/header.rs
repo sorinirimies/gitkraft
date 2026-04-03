@@ -100,6 +100,19 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     .style(theme::toolbar_button)
     .on_press(Message::OpenRepo);
 
+    // ── Close repo button (return to welcome screen) ──────────────────────
+    let close_icon = text('\u{F62A}') // x-circle
+        .font(iced_fonts::BOOTSTRAP_FONT)
+        .size(14)
+        .color(c.text_secondary);
+
+    let close_btn = button(
+        row![close_icon, Space::with_width(4), text("Close").size(12)].align_y(Alignment::Center),
+    )
+    .padding([4, 10])
+    .style(theme::toolbar_button)
+    .on_press(Message::CloseRepo);
+
     // ── Toggle sidebar ────────────────────────────────────────────────────
     let sidebar_icon_char = if state.sidebar_expanded {
         '\u{F284}' // chevron-left
@@ -149,6 +162,8 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         refresh_btn,
         Space::with_width(4),
         open_btn,
+        Space::with_width(4),
+        close_btn,
     ]
     .align_y(Alignment::Center)
     .padding([6, 12])

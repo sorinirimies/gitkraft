@@ -1,8 +1,30 @@
 use std::path::PathBuf;
 
 use gitkraft_core::*;
+use iced::Color;
 
 use crate::theme::ThemeColors;
+
+// ── Pane resize ───────────────────────────────────────────────────────────────
+
+/// Which vertical divider the user is currently dragging (if any).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DragTarget {
+    /// The divider between the sidebar and the commit-log panel.
+    SidebarRight,
+    /// The divider between the commit-log panel and the diff panel.
+    CommitLogRight,
+    /// The divider between the diff-viewer file list and the diff content
+    /// (only visible when a multi-file commit is selected).
+    DiffFileListRight,
+}
+
+/// Which horizontal divider the user is currently dragging (if any).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DragTargetH {
+    /// The divider between the middle row and the staging area.
+    StagingTop,
+}
 
 /// Top-level application state for the GitKraft GUI.
 pub struct GitKraft {
@@ -33,6 +55,8 @@ pub struct GitKraft {
     pub unstaged_changes: Vec<DiffInfo>,
     /// Staged (index) changes.
     pub staged_changes: Vec<DiffInfo>,
+    /// All file diffs for the currently selected commit.
+    pub commit_diffs: Vec<DiffInfo>,
     /// The diff currently displayed in the diff viewer panel.
     pub selected_diff: Option<DiffInfo>,
     /// Text in the commit-message input.
@@ -51,6 +75,32 @@ pub struct GitKraft {
     pub show_commit_detail: bool,
     /// Whether the left sidebar is expanded.
     pub sidebar_expanded: bool,
+
+    // ── Pane widths / heights (pixels) ────────────────────────────────────
+    /// Width of the left sidebar in pixels.
+    pub sidebar_width: f32,
+    /// Width of the commit-log panel in pixels.
+    pub commit_log_width: f32,
+    /// Height of the staging area in pixels.
+    pub staging_height: f32,
+    /// Width of the diff file-list sidebar in pixels.
+    pub diff_file_list_width: f32,
+
+    // ── Drag state ────────────────────────────────────────────────────────
+    /// Which vertical divider is being dragged (if any).
+    pub dragging: Option<DragTarget>,
+    /// Which horizontal divider is being dragged (if any).
+    pub dragging_h: Option<DragTargetH>,
+    /// Last known mouse X position during a drag (absolute window coords).
+    pub drag_start_x: f32,
+    /// Last known mouse Y position during a drag (absolute window coords).
+    pub drag_start_y: f32,
+    /// Whether the first move event has been received for the current vertical drag.
+    /// `false` right after `PaneDragStart` — the first `PaneDragMove` sets the
+    /// real start position instead of computing a bogus delta from 0.0.
+    pub drag_initialized: bool,
+    /// Same as `drag_initialized` but for horizontal drags.
+    pub drag_initialized_h: bool,
 
     // ── Feedback ──────────────────────────────────────────────────────────
     /// Transient status-bar message (e.g. "Branch created").
@@ -109,6 +159,7 @@ impl GitKraft {
 
             unstaged_changes: Vec::new(),
             staged_changes: Vec::new(),
+            commit_diffs: Vec::new(),
             selected_diff: None,
             commit_message: String::new(),
 
@@ -117,6 +168,18 @@ impl GitKraft {
 
             show_commit_detail: false,
             sidebar_expanded: true,
+
+            sidebar_width: 220.0,
+            commit_log_width: 500.0,
+            staging_height: 200.0,
+            diff_file_list_width: 180.0,
+
+            dragging: None,
+            dragging_h: None,
+            drag_start_x: 0.0,
+            drag_start_y: 0.0,
+            drag_initialized: false,
+            drag_initialized_h: false,
 
             status_message: None,
             error_message: None,
@@ -157,18 +220,27 @@ impl GitKraft {
         ThemeColors::from_core(&gitkraft_core::theme_by_index(self.current_theme_index))
     }
 
-    /// Return the `iced::Theme` that should be used as the base Iced palette.
+    /// Return a **custom** `iced::Theme` whose [`Palette`] is derived from the
+    /// active core theme.
     ///
-    /// We pick `Theme::Dark` or `Theme::Light` based on the core theme's
-    /// `is_dark` flag. The actual colours come from [`Self::colors()`], but
-    /// Iced's built-in widgets still need a base theme for defaults.
+    /// This is the key to making every built-in Iced widget (text inputs,
+    /// pick-lists, scrollbars, buttons without explicit `.style()`, etc.)
+    /// inherit the correct background, text, accent, success and danger
+    /// colours.  Without this, Iced falls back to its generic Dark/Light
+    /// palette and the UI looks wrong for every non-default theme.
     pub fn iced_theme(&self) -> iced::Theme {
         let core = gitkraft_core::theme_by_index(self.current_theme_index);
-        if core.is_dark {
-            iced::Theme::Dark
-        } else {
-            iced::Theme::Light
-        }
+        let name = self.current_theme_name().to_string();
+
+        let palette = iced::theme::Palette {
+            background: rgb_to_iced(core.background),
+            text: rgb_to_iced(core.text_primary),
+            primary: rgb_to_iced(core.accent),
+            success: rgb_to_iced(core.success),
+            danger: rgb_to_iced(core.error),
+        };
+
+        iced::Theme::custom(name, palette)
     }
 
     /// The display name of the currently active theme.
@@ -178,6 +250,11 @@ impl GitKraft {
             .copied()
             .unwrap_or("Default")
     }
+}
+
+/// Convert a core [`gitkraft_core::Rgb`] to an [`iced::Color`].
+fn rgb_to_iced(rgb: gitkraft_core::Rgb) -> Color {
+    Color::from_rgb8(rgb.r, rgb.g, rgb.b)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -196,6 +273,12 @@ mod tests {
         assert!(state.sidebar_expanded);
         // Default theme index should be valid
         assert!(state.current_theme_index < gitkraft_core::THEME_COUNT);
+        // Pane defaults
+        assert!(state.sidebar_width > 0.0);
+        assert!(state.commit_log_width > 0.0);
+        assert!(state.staging_height > 0.0);
+        assert!(state.dragging.is_none());
+        assert!(state.dragging_h.is_none());
     }
 
     #[test]
@@ -214,17 +297,54 @@ mod tests {
     }
 
     #[test]
-    fn iced_theme_matches_is_dark() {
+    fn iced_theme_is_custom_with_correct_palette() {
         let mut state = GitKraft::new();
-        // Index 0 = Default (dark)
+
+        // Index 0 = Default (dark) — custom theme with dark background
         state.current_theme_index = 0;
         let iced_t = state.iced_theme();
-        assert_eq!(iced_t, iced::Theme::Dark);
+        let pal = iced_t.palette();
+        assert!(pal.background.r < 0.5, "Default theme bg should be dark");
+        assert_eq!(iced_t.to_string(), "Default");
 
-        // Index 11 = Solarized Light (light)
+        // Index 11 = Solarized Light — custom theme with light background
         state.current_theme_index = 11;
         let iced_t = state.iced_theme();
-        assert_eq!(iced_t, iced::Theme::Light);
+        let pal = iced_t.palette();
+        assert!(pal.background.r > 0.5, "Solarized Light bg should be light");
+        assert_eq!(iced_t.to_string(), "Solarized Light");
+
+        // Index 12 = Gruvbox Dark — accent should come from core
+        state.current_theme_index = 12;
+        let iced_t = state.iced_theme();
+        let pal = iced_t.palette();
+        let core = gitkraft_core::theme_by_index(12);
+        let expected_accent = rgb_to_iced(core.accent);
+        assert!(
+            (pal.primary.r - expected_accent.r).abs() < 0.01
+                && (pal.primary.g - expected_accent.g).abs() < 0.01
+                && (pal.primary.b - expected_accent.b).abs() < 0.01,
+            "Gruvbox Dark accent should match core accent"
+        );
+    }
+
+    #[test]
+    fn iced_theme_name_round_trips_through_core() {
+        // Ensure the custom theme name matches a core THEME_NAMES entry so
+        // that ThemeColors::from_theme() can map it back to the right index.
+        for i in 0..gitkraft_core::THEME_COUNT {
+            let mut state = GitKraft::new();
+            state.current_theme_index = i;
+            let iced_t = state.iced_theme();
+            let name = iced_t.to_string();
+            let resolved = gitkraft_core::theme_index_by_name(&name);
+            assert_eq!(
+                resolved,
+                i,
+                "theme index {i} ({}) did not round-trip through iced_theme name",
+                gitkraft_core::THEME_NAMES[i]
+            );
+        }
     }
 
     #[test]

@@ -106,6 +106,16 @@ pub fn default() -> AppTheme {
         diff_del: Rgb::new(248, 83, 73),
         diff_context: Rgb::new(139, 148, 158),
         diff_hunk: Rgb::new(88, 166, 255),
+        graph_colors: [
+            Rgb::new(88, 166, 255),
+            Rgb::new(63, 185, 80),
+            Rgb::new(248, 83, 73),
+            Rgb::new(210, 154, 34),
+            Rgb::new(188, 140, 255),
+            Rgb::new(0, 200, 180),
+            Rgb::new(255, 140, 60),
+            Rgb::new(255, 130, 160),
+        ],
     }
 }
 
@@ -127,6 +137,16 @@ pub fn grape() -> AppTheme {
         diff_del: Rgb::new(255, 100, 120),
         diff_context: Rgb::new(100, 85, 130),
         diff_hunk: Rgb::new(150, 160, 255),
+        graph_colors: [
+            Rgb::new(180, 130, 255),
+            Rgb::new(130, 230, 160),
+            Rgb::new(255, 100, 120),
+            Rgb::new(240, 200, 100),
+            Rgb::new(100, 180, 255),
+            Rgb::new(255, 160, 200),
+            Rgb::new(120, 220, 220),
+            Rgb::new(255, 170, 100),
+        ],
     }
 }
 
@@ -148,6 +168,16 @@ pub fn ocean() -> AppTheme {
         diff_del: Rgb::new(255, 100, 100),
         diff_context: Rgb::new(70, 100, 130),
         diff_hunk: Rgb::new(80, 200, 180),
+        graph_colors: [
+            Rgb::new(80, 200, 180),
+            Rgb::new(80, 220, 120),
+            Rgb::new(255, 100, 100),
+            Rgb::new(220, 200, 80),
+            Rgb::new(100, 160, 255),
+            Rgb::new(200, 130, 255),
+            Rgb::new(255, 180, 80),
+            Rgb::new(255, 130, 180),
+        ],
     }
 }
 
@@ -169,6 +199,16 @@ pub fn sunset() -> AppTheme {
         diff_del: Rgb::new(255, 80, 80),
         diff_context: Rgb::new(140, 100, 80),
         diff_hunk: Rgb::new(255, 180, 100),
+        graph_colors: [
+            Rgb::new(255, 140, 60),
+            Rgb::new(180, 220, 80),
+            Rgb::new(255, 80, 80),
+            Rgb::new(255, 200, 50),
+            Rgb::new(200, 120, 255),
+            Rgb::new(80, 200, 200),
+            Rgb::new(255, 130, 160),
+            Rgb::new(100, 180, 255),
+        ],
     }
 }
 
@@ -190,6 +230,16 @@ pub fn forest() -> AppTheme {
         diff_del: Rgb::new(220, 90, 70),
         diff_context: Rgb::new(80, 110, 80),
         diff_hunk: Rgb::new(120, 180, 120),
+        graph_colors: [
+            Rgb::new(80, 180, 80),
+            Rgb::new(100, 220, 100),
+            Rgb::new(220, 90, 70),
+            Rgb::new(220, 200, 80),
+            Rgb::new(100, 170, 220),
+            Rgb::new(180, 130, 200),
+            Rgb::new(200, 180, 100),
+            Rgb::new(140, 210, 200),
+        ],
     }
 }
 
@@ -211,6 +261,16 @@ pub fn rose() -> AppTheme {
         diff_del: Rgb::new(255, 80, 100),
         diff_context: Rgb::new(130, 90, 110),
         diff_hunk: Rgb::new(220, 150, 200),
+        graph_colors: [
+            Rgb::new(255, 130, 160),
+            Rgb::new(130, 220, 150),
+            Rgb::new(255, 80, 100),
+            Rgb::new(240, 200, 100),
+            Rgb::new(130, 170, 255),
+            Rgb::new(200, 140, 255),
+            Rgb::new(80, 210, 210),
+            Rgb::new(255, 170, 100),
+        ],
     }
 }
 
@@ -232,6 +292,16 @@ pub fn mono() -> AppTheme {
         diff_del: Rgb::new(220, 140, 140),
         diff_context: Rgb::new(100, 100, 100),
         diff_hunk: Rgb::new(180, 180, 180),
+        graph_colors: [
+            Rgb::new(180, 180, 180),
+            Rgb::new(180, 220, 180),
+            Rgb::new(220, 140, 140),
+            Rgb::new(220, 200, 160),
+            Rgb::new(140, 180, 220),
+            Rgb::new(200, 160, 200),
+            Rgb::new(200, 200, 140),
+            Rgb::new(160, 210, 210),
+        ],
     }
 }
 
@@ -253,6 +323,16 @@ pub fn neon() -> AppTheme {
         diff_del: Rgb::new(255, 0, 80),
         diff_context: Rgb::new(60, 80, 120),
         diff_hunk: Rgb::new(200, 0, 255),
+        graph_colors: [
+            Rgb::new(0, 255, 200),
+            Rgb::new(0, 255, 100),
+            Rgb::new(255, 0, 80),
+            Rgb::new(255, 255, 0),
+            Rgb::new(0, 200, 255),
+            Rgb::new(200, 0, 255),
+            Rgb::new(255, 100, 0),
+            Rgb::new(255, 0, 200),
+        ],
     }
 }
 
@@ -274,6 +354,16 @@ pub fn dracula() -> AppTheme {
         diff_del: Rgb::new(255, 85, 85),
         diff_context: Rgb::new(98, 114, 164),
         diff_hunk: Rgb::new(139, 233, 253),
+        graph_colors: [
+            Rgb::new(189, 147, 249),
+            Rgb::new(80, 250, 123),
+            Rgb::new(255, 85, 85),
+            Rgb::new(241, 250, 140),
+            Rgb::new(139, 233, 253),
+            Rgb::new(255, 121, 198),
+            Rgb::new(255, 184, 108),
+            Rgb::new(98, 114, 164),
+        ],
     }
 }
 
@@ -295,6 +385,16 @@ pub fn nord() -> AppTheme {
         diff_del: Rgb::new(191, 97, 106),
         diff_context: Rgb::new(76, 86, 106),
         diff_hunk: Rgb::new(129, 161, 193),
+        graph_colors: [
+            Rgb::new(136, 192, 208),
+            Rgb::new(163, 190, 140),
+            Rgb::new(191, 97, 106),
+            Rgb::new(235, 203, 139),
+            Rgb::new(129, 161, 193),
+            Rgb::new(180, 142, 173),
+            Rgb::new(208, 135, 112),
+            Rgb::new(143, 188, 187),
+        ],
     }
 }
 
@@ -316,6 +416,16 @@ pub fn solarized_dark() -> AppTheme {
         diff_del: Rgb::new(220, 50, 47),
         diff_context: Rgb::new(88, 110, 117),
         diff_hunk: Rgb::new(42, 161, 152),
+        graph_colors: [
+            Rgb::new(38, 139, 210),
+            Rgb::new(133, 153, 0),
+            Rgb::new(220, 50, 47),
+            Rgb::new(181, 137, 0),
+            Rgb::new(42, 161, 152),
+            Rgb::new(108, 113, 196),
+            Rgb::new(203, 75, 22),
+            Rgb::new(211, 54, 130),
+        ],
     }
 }
 
@@ -337,6 +447,16 @@ pub fn solarized_light() -> AppTheme {
         diff_del: Rgb::new(220, 50, 47),
         diff_context: Rgb::new(147, 161, 161),
         diff_hunk: Rgb::new(42, 161, 152),
+        graph_colors: [
+            Rgb::new(38, 139, 210),
+            Rgb::new(133, 153, 0),
+            Rgb::new(220, 50, 47),
+            Rgb::new(181, 137, 0),
+            Rgb::new(42, 161, 152),
+            Rgb::new(108, 113, 196),
+            Rgb::new(203, 75, 22),
+            Rgb::new(211, 54, 130),
+        ],
     }
 }
 
@@ -358,6 +478,16 @@ pub fn gruvbox_dark() -> AppTheme {
         diff_del: Rgb::new(251, 73, 52),
         diff_context: Rgb::new(146, 131, 116),
         diff_hunk: Rgb::new(142, 192, 124),
+        graph_colors: [
+            Rgb::new(254, 128, 25),
+            Rgb::new(184, 187, 38),
+            Rgb::new(251, 73, 52),
+            Rgb::new(250, 189, 47),
+            Rgb::new(131, 165, 152),
+            Rgb::new(211, 134, 155),
+            Rgb::new(142, 192, 124),
+            Rgb::new(69, 133, 136),
+        ],
     }
 }
 
@@ -379,90 +509,192 @@ pub fn gruvbox_light() -> AppTheme {
         diff_del: Rgb::new(157, 0, 6),
         diff_context: Rgb::new(146, 131, 116),
         diff_hunk: Rgb::new(104, 157, 106),
+        graph_colors: [
+            Rgb::new(214, 93, 14),
+            Rgb::new(121, 116, 14),
+            Rgb::new(157, 0, 6),
+            Rgb::new(215, 153, 33),
+            Rgb::new(69, 133, 136),
+            Rgb::new(177, 98, 134),
+            Rgb::new(104, 157, 106),
+            Rgb::new(7, 102, 120),
+        ],
     }
 }
 
 pub fn catppuccin_latte() -> AppTheme {
     AppTheme {
         is_dark: false,
+        // Base
         background: Rgb::new(239, 241, 245),
+        // Surface 0
         surface: Rgb::new(204, 208, 218),
+        // Surface 2
         border: Rgb::new(172, 176, 190),
-        selection: Rgb::new(204, 208, 218),
+        // Surface 1
+        selection: Rgb::new(188, 192, 204),
+        // Text
         text_primary: Rgb::new(76, 79, 105),
-        text_secondary: Rgb::new(30, 102, 245),
+        // Subtext 1
+        text_secondary: Rgb::new(92, 95, 119),
+        // Overlay 0
         text_muted: Rgb::new(156, 160, 176),
+        // Mauve
         accent: Rgb::new(136, 57, 239),
+        // Green
         success: Rgb::new(64, 160, 43),
+        // Yellow
         warning: Rgb::new(223, 142, 29),
+        // Red
         error: Rgb::new(210, 15, 57),
         diff_add: Rgb::new(64, 160, 43),
         diff_del: Rgb::new(210, 15, 57),
+        // Overlay 0
         diff_context: Rgb::new(156, 160, 176),
+        // Teal
         diff_hunk: Rgb::new(23, 146, 153),
+        graph_colors: [
+            Rgb::new(136, 57, 239), // Mauve
+            Rgb::new(64, 160, 43),  // Green
+            Rgb::new(210, 15, 57),  // Red
+            Rgb::new(223, 142, 29), // Yellow
+            Rgb::new(23, 146, 153), // Teal
+            Rgb::new(30, 102, 245), // Blue
+            Rgb::new(230, 69, 83),  // Maroon
+            Rgb::new(32, 159, 181), // Sapphire
+        ],
     }
 }
 
 pub fn catppuccin_frappe() -> AppTheme {
     AppTheme {
         is_dark: true,
+        // Base
         background: Rgb::new(48, 52, 70),
+        // Surface 0
         surface: Rgb::new(65, 69, 89),
-        border: Rgb::new(81, 87, 109),
-        selection: Rgb::new(65, 69, 89),
+        // Surface 2
+        border: Rgb::new(98, 104, 128),
+        // Surface 1
+        selection: Rgb::new(81, 87, 109),
+        // Text
         text_primary: Rgb::new(198, 208, 245),
-        text_secondary: Rgb::new(140, 170, 238),
+        // Subtext 1
+        text_secondary: Rgb::new(181, 191, 226),
+        // Overlay 0
         text_muted: Rgb::new(115, 121, 148),
+        // Mauve
         accent: Rgb::new(202, 158, 230),
+        // Green
         success: Rgb::new(166, 209, 137),
+        // Yellow
         warning: Rgb::new(229, 200, 144),
+        // Red
         error: Rgb::new(231, 130, 132),
         diff_add: Rgb::new(166, 209, 137),
         diff_del: Rgb::new(231, 130, 132),
+        // Overlay 0
         diff_context: Rgb::new(115, 121, 148),
+        // Teal
         diff_hunk: Rgb::new(129, 200, 190),
+        graph_colors: [
+            Rgb::new(202, 158, 230), // Mauve
+            Rgb::new(166, 209, 137), // Green
+            Rgb::new(231, 130, 132), // Red
+            Rgb::new(229, 200, 144), // Yellow
+            Rgb::new(140, 170, 238), // Blue
+            Rgb::new(244, 184, 228), // Pink
+            Rgb::new(129, 200, 190), // Teal
+            Rgb::new(239, 159, 118), // Peach
+        ],
     }
 }
 
 pub fn catppuccin_macchiato() -> AppTheme {
     AppTheme {
         is_dark: true,
+        // Base
         background: Rgb::new(36, 39, 58),
+        // Surface 0
         surface: Rgb::new(54, 58, 79),
-        border: Rgb::new(73, 77, 100),
-        selection: Rgb::new(54, 58, 79),
+        // Surface 2
+        border: Rgb::new(91, 96, 120),
+        // Surface 1
+        selection: Rgb::new(73, 77, 100),
+        // Text
         text_primary: Rgb::new(202, 211, 245),
-        text_secondary: Rgb::new(138, 173, 244),
+        // Subtext 1
+        text_secondary: Rgb::new(184, 192, 224),
+        // Overlay 0
         text_muted: Rgb::new(110, 115, 141),
+        // Mauve
         accent: Rgb::new(198, 160, 246),
+        // Green
         success: Rgb::new(166, 218, 149),
+        // Yellow
         warning: Rgb::new(238, 212, 159),
+        // Red
         error: Rgb::new(237, 135, 150),
         diff_add: Rgb::new(166, 218, 149),
         diff_del: Rgb::new(237, 135, 150),
+        // Overlay 0
         diff_context: Rgb::new(110, 115, 141),
+        // Teal
         diff_hunk: Rgb::new(139, 213, 202),
+        graph_colors: [
+            Rgb::new(198, 160, 246), // Mauve
+            Rgb::new(166, 218, 149), // Green
+            Rgb::new(237, 135, 150), // Red
+            Rgb::new(238, 212, 159), // Yellow
+            Rgb::new(138, 173, 244), // Blue
+            Rgb::new(245, 189, 230), // Pink
+            Rgb::new(139, 213, 202), // Teal
+            Rgb::new(245, 169, 127), // Peach
+        ],
     }
 }
 
 pub fn catppuccin_mocha() -> AppTheme {
     AppTheme {
         is_dark: true,
+        // Base
         background: Rgb::new(30, 30, 46),
+        // Surface 0
         surface: Rgb::new(49, 50, 68),
-        border: Rgb::new(69, 71, 90),
-        selection: Rgb::new(49, 50, 68),
+        // Surface 2
+        border: Rgb::new(88, 91, 112),
+        // Surface 1
+        selection: Rgb::new(69, 71, 90),
+        // Text
         text_primary: Rgb::new(205, 214, 244),
-        text_secondary: Rgb::new(137, 180, 250),
+        // Subtext 1
+        text_secondary: Rgb::new(186, 194, 222),
+        // Overlay 0
         text_muted: Rgb::new(108, 112, 134),
+        // Mauve
         accent: Rgb::new(203, 166, 247),
+        // Green
         success: Rgb::new(166, 227, 161),
+        // Yellow
         warning: Rgb::new(249, 226, 175),
+        // Red
         error: Rgb::new(243, 139, 168),
         diff_add: Rgb::new(166, 227, 161),
         diff_del: Rgb::new(243, 139, 168),
+        // Overlay 0
         diff_context: Rgb::new(108, 112, 134),
+        // Blue
         diff_hunk: Rgb::new(137, 180, 250),
+        graph_colors: [
+            Rgb::new(203, 166, 247), // Mauve
+            Rgb::new(166, 227, 161), // Green
+            Rgb::new(243, 139, 168), // Red
+            Rgb::new(249, 226, 175), // Yellow
+            Rgb::new(137, 180, 250), // Blue
+            Rgb::new(245, 194, 231), // Pink
+            Rgb::new(148, 226, 213), // Teal
+            Rgb::new(250, 179, 135), // Peach
+        ],
     }
 }
 
@@ -484,6 +716,16 @@ pub fn tokyo_night() -> AppTheme {
         diff_del: Rgb::new(247, 118, 142),
         diff_context: Rgb::new(86, 95, 137),
         diff_hunk: Rgb::new(187, 154, 247),
+        graph_colors: [
+            Rgb::new(122, 162, 247),
+            Rgb::new(158, 206, 106),
+            Rgb::new(247, 118, 142),
+            Rgb::new(224, 175, 104),
+            Rgb::new(187, 154, 247),
+            Rgb::new(255, 117, 127),
+            Rgb::new(115, 218, 202),
+            Rgb::new(255, 158, 100),
+        ],
     }
 }
 
@@ -505,6 +747,16 @@ pub fn tokyo_night_storm() -> AppTheme {
         diff_del: Rgb::new(247, 118, 142),
         diff_context: Rgb::new(86, 95, 137),
         diff_hunk: Rgb::new(187, 154, 247),
+        graph_colors: [
+            Rgb::new(122, 162, 247),
+            Rgb::new(158, 206, 106),
+            Rgb::new(247, 118, 142),
+            Rgb::new(224, 175, 104),
+            Rgb::new(187, 154, 247),
+            Rgb::new(255, 117, 127),
+            Rgb::new(115, 218, 202),
+            Rgb::new(255, 158, 100),
+        ],
     }
 }
 
@@ -526,6 +778,16 @@ pub fn tokyo_night_light() -> AppTheme {
         diff_del: Rgb::new(143, 57, 85),
         diff_context: Rgb::new(132, 140, 176),
         diff_hunk: Rgb::new(90, 74, 120),
+        graph_colors: [
+            Rgb::new(46, 126, 233),
+            Rgb::new(72, 94, 48),
+            Rgb::new(143, 57, 85),
+            Rgb::new(140, 108, 62),
+            Rgb::new(90, 74, 120),
+            Rgb::new(166, 77, 121),
+            Rgb::new(15, 130, 130),
+            Rgb::new(180, 90, 50),
+        ],
     }
 }
 
@@ -547,6 +809,16 @@ pub fn kanagawa_wave() -> AppTheme {
         diff_del: Rgb::new(195, 64, 67),
         diff_context: Rgb::new(114, 113, 105),
         diff_hunk: Rgb::new(210, 126, 153),
+        graph_colors: [
+            Rgb::new(126, 156, 216),
+            Rgb::new(118, 148, 106),
+            Rgb::new(195, 64, 67),
+            Rgb::new(220, 165, 97),
+            Rgb::new(210, 126, 153),
+            Rgb::new(160, 140, 200),
+            Rgb::new(106, 149, 137),
+            Rgb::new(228, 104, 118),
+        ],
     }
 }
 
@@ -568,6 +840,16 @@ pub fn kanagawa_dragon() -> AppTheme {
         diff_del: Rgb::new(195, 64, 67),
         diff_context: Rgb::new(166, 166, 156),
         diff_hunk: Rgb::new(210, 126, 153),
+        graph_colors: [
+            Rgb::new(139, 164, 176),
+            Rgb::new(135, 169, 135),
+            Rgb::new(195, 64, 67),
+            Rgb::new(200, 170, 109),
+            Rgb::new(210, 126, 153),
+            Rgb::new(160, 140, 200),
+            Rgb::new(106, 149, 137),
+            Rgb::new(228, 104, 118),
+        ],
     }
 }
 
@@ -589,6 +871,16 @@ pub fn kanagawa_lotus() -> AppTheme {
         diff_del: Rgb::new(195, 64, 67),
         diff_context: Rgb::new(196, 178, 138),
         diff_hunk: Rgb::new(160, 154, 190),
+        graph_colors: [
+            Rgb::new(77, 105, 155),
+            Rgb::new(111, 137, 78),
+            Rgb::new(195, 64, 67),
+            Rgb::new(119, 113, 63),
+            Rgb::new(160, 154, 190),
+            Rgb::new(155, 80, 117),
+            Rgb::new(75, 130, 120),
+            Rgb::new(180, 100, 55),
+        ],
     }
 }
 
@@ -610,6 +902,16 @@ pub fn moonfly() -> AppTheme {
         diff_del: Rgb::new(255, 83, 112),
         diff_context: Rgb::new(99, 99, 99),
         diff_hunk: Rgb::new(128, 160, 255),
+        graph_colors: [
+            Rgb::new(174, 129, 255),
+            Rgb::new(130, 170, 60),
+            Rgb::new(255, 83, 112),
+            Rgb::new(230, 170, 50),
+            Rgb::new(128, 160, 255),
+            Rgb::new(255, 100, 180),
+            Rgb::new(80, 200, 180),
+            Rgb::new(255, 160, 80),
+        ],
     }
 }
 
@@ -631,6 +933,16 @@ pub fn nightfly() -> AppTheme {
         diff_del: Rgb::new(252, 57, 49),
         diff_context: Rgb::new(99, 117, 150),
         diff_hunk: Rgb::new(174, 129, 255),
+        graph_colors: [
+            Rgb::new(130, 170, 255),
+            Rgb::new(161, 217, 147),
+            Rgb::new(252, 57, 49),
+            Rgb::new(236, 196, 100),
+            Rgb::new(174, 129, 255),
+            Rgb::new(255, 100, 180),
+            Rgb::new(33, 200, 170),
+            Rgb::new(255, 160, 90),
+        ],
     }
 }
 
@@ -652,6 +964,16 @@ pub fn oxocarbon() -> AppTheme {
         diff_del: Rgb::new(238, 83, 120),
         diff_context: Rgb::new(82, 82, 82),
         diff_hunk: Rgb::new(51, 177, 255),
+        graph_colors: [
+            Rgb::new(78, 154, 232),
+            Rgb::new(66, 190, 101),
+            Rgb::new(238, 83, 120),
+            Rgb::new(190, 149, 255),
+            Rgb::new(51, 177, 255),
+            Rgb::new(255, 104, 159),
+            Rgb::new(8, 189, 186),
+            Rgb::new(255, 164, 90),
+        ],
     }
 }
 
@@ -700,5 +1022,40 @@ mod tests {
         let oob = theme_by_index(999);
         assert_eq!(d.background, oob.background);
         assert_eq!(d.accent, oob.accent);
+    }
+
+    #[test]
+    fn graph_colors_populated_for_all_themes() {
+        for i in 0..THEME_COUNT {
+            let t = theme_by_index(i);
+            // Every theme must supply exactly 8 graph lane colours
+            assert_eq!(
+                t.graph_colors.len(),
+                8,
+                "theme index {i} does not have 8 graph_colors"
+            );
+            // At least two distinct colours among the 8 lanes
+            let first = t.graph_colors[0];
+            let all_same = t.graph_colors.iter().all(|c| *c == first);
+            assert!(
+                !all_same,
+                "theme index {i} has all identical graph lane colours"
+            );
+        }
+    }
+
+    #[test]
+    fn graph_colors_channels_nonzero() {
+        for i in 0..THEME_COUNT {
+            let t = theme_by_index(i);
+            for (lane, c) in t.graph_colors.iter().enumerate() {
+                // Each lane colour should have at least one non-zero channel
+                // (pure black would be invisible on dark themes)
+                assert!(
+                    c.r > 0 || c.g > 0 || c.b > 0,
+                    "theme {i} graph_colors[{lane}] is pure black"
+                );
+            }
+        }
     }
 }

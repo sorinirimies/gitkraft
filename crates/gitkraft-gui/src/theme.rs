@@ -27,12 +27,15 @@ pub struct ThemeColors {
     pub header_bg: Color,
     pub sidebar_bg: Color,
     pub border: Color,
+    pub selection: Color,
     pub green: Color,
     pub red: Color,
     pub yellow: Color,
     pub diff_add_bg: Color,
     pub diff_del_bg: Color,
     pub diff_hunk_bg: Color,
+    pub error_bg: Color,
+    pub graph_colors: [Color; 8],
 }
 
 /// Clamp a single channel to `[0.0, 1.0]`.
@@ -106,6 +109,24 @@ impl ThemeColors {
         let diff_del_bg = mix(bg, error, tint_amount);
         let diff_hunk_bg = mix(bg, hunk, tint_amount);
 
+        // Error banner background — faint tint of the error colour over the bg
+        let error_bg = mix(bg, error, tint_amount);
+
+        // Graph lane colours — convert all eight from the core theme
+        let graph_colors = {
+            let gc = &t.graph_colors;
+            [
+                rgb_to_iced(gc[0]),
+                rgb_to_iced(gc[1]),
+                rgb_to_iced(gc[2]),
+                rgb_to_iced(gc[3]),
+                rgb_to_iced(gc[4]),
+                rgb_to_iced(gc[5]),
+                rgb_to_iced(gc[6]),
+                rgb_to_iced(gc[7]),
+            ]
+        };
+
         Self {
             accent: rgb_to_iced(t.accent),
             text_primary: rgb_to_iced(t.text_primary),
@@ -117,12 +138,15 @@ impl ThemeColors {
             header_bg,
             sidebar_bg,
             border: rgb_to_iced(t.border),
+            selection: rgb_to_iced(t.selection),
             green: success,
             red: error,
             yellow: rgb_to_iced(t.warning),
             diff_add_bg,
             diff_del_bg,
             diff_hunk_bg,
+            error_bg,
+            graph_colors,
         }
     }
 
@@ -146,6 +170,24 @@ fn iced_theme_to_core_index(theme: &iced::Theme) -> usize {
 }
 
 // ── Container styles ──────────────────────────────────────────────────────────
+
+/// Style for a container with the main window background.
+pub fn bg_style(theme: &iced::Theme) -> container::Style {
+    let c = ThemeColors::from_theme(theme);
+    container::Style {
+        background: Some(Background::Color(c.bg)),
+        ..Default::default()
+    }
+}
+
+/// Style for the error banner background (faint red tint).
+pub fn error_banner_style(theme: &iced::Theme) -> container::Style {
+    let c = ThemeColors::from_theme(theme);
+    container::Style {
+        background: Some(Background::Color(c.error_bg)),
+        ..Default::default()
+    }
+}
 
 /// Style for a container with the standard surface background.
 pub fn surface_style(theme: &iced::Theme) -> container::Style {
@@ -425,6 +467,96 @@ mod tests {
             assert!(
                 c.bg.b >= 0.0 && c.bg.b <= 1.0,
                 "theme {i} bg.b out of range"
+            );
+        }
+    }
+
+    #[test]
+    fn graph_colors_populated_for_all_themes() {
+        for i in 0..gitkraft_core::THEME_COUNT {
+            let core = gitkraft_core::theme_by_index(i);
+            let c = ThemeColors::from_core(&core);
+            // All 8 graph lane colours should be valid (channels in [0, 1])
+            for (lane, color) in c.graph_colors.iter().enumerate() {
+                assert!(
+                    color.r >= 0.0 && color.r <= 1.0,
+                    "theme {i} graph_colors[{lane}].r out of range"
+                );
+                assert!(
+                    color.g >= 0.0 && color.g <= 1.0,
+                    "theme {i} graph_colors[{lane}].g out of range"
+                );
+                assert!(
+                    color.b >= 0.0 && color.b <= 1.0,
+                    "theme {i} graph_colors[{lane}].b out of range"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn graph_colors_are_not_all_identical() {
+        for i in 0..gitkraft_core::THEME_COUNT {
+            let core = gitkraft_core::theme_by_index(i);
+            let c = ThemeColors::from_core(&core);
+            // At least two distinct colours among the 8 lanes
+            let first = c.graph_colors[0];
+            let all_same = c.graph_colors.iter().all(|gc| {
+                (gc.r - first.r).abs() < f32::EPSILON
+                    && (gc.g - first.g).abs() < f32::EPSILON
+                    && (gc.b - first.b).abs() < f32::EPSILON
+            });
+            assert!(!all_same, "theme {i} has all identical graph lane colours");
+        }
+    }
+
+    #[test]
+    fn error_bg_differs_from_plain_bg() {
+        for i in 0..gitkraft_core::THEME_COUNT {
+            let core = gitkraft_core::theme_by_index(i);
+            let c = ThemeColors::from_core(&core);
+            // error_bg should be a tinted version of bg, not identical
+            let same = (c.error_bg.r - c.bg.r).abs() < f32::EPSILON
+                && (c.error_bg.g - c.bg.g).abs() < f32::EPSILON
+                && (c.error_bg.b - c.bg.b).abs() < f32::EPSILON;
+            assert!(
+                !same,
+                "theme {i} error_bg is identical to bg — tint not applied"
+            );
+        }
+    }
+
+    #[test]
+    fn selection_is_valid_color() {
+        for i in 0..gitkraft_core::THEME_COUNT {
+            let core = gitkraft_core::theme_by_index(i);
+            let c = ThemeColors::from_core(&core);
+            assert!(
+                c.selection.r >= 0.0 && c.selection.r <= 1.0,
+                "theme {i} selection.r out of range"
+            );
+            assert!(
+                c.selection.g >= 0.0 && c.selection.g <= 1.0,
+                "theme {i} selection.g out of range"
+            );
+            assert!(
+                c.selection.b >= 0.0 && c.selection.b <= 1.0,
+                "theme {i} selection.b out of range"
+            );
+        }
+    }
+
+    #[test]
+    fn selection_differs_from_bg() {
+        for i in 0..gitkraft_core::THEME_COUNT {
+            let core = gitkraft_core::theme_by_index(i);
+            let c = ThemeColors::from_core(&core);
+            let same = (c.selection.r - c.bg.r).abs() < f32::EPSILON
+                && (c.selection.g - c.bg.g).abs() < f32::EPSILON
+                && (c.selection.b - c.bg.b).abs() < f32::EPSILON;
+            assert!(
+                !same,
+                "theme {i} selection is identical to bg — should be distinguishable"
             );
         }
     }

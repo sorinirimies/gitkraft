@@ -6,19 +6,8 @@ use ratatui::Frame;
 
 use crate::app::{ActivePane, App};
 
-const GRAPH_COLORS: [Color; 8] = [
-    Color::Green,
-    Color::Cyan,
-    Color::Magenta,
-    Color::Yellow,
-    Color::Blue,
-    Color::Red,
-    Color::LightGreen,
-    Color::LightCyan,
-];
-
-fn graph_color(color_index: usize) -> Color {
-    GRAPH_COLORS[color_index % GRAPH_COLORS.len()]
+fn graph_color(color_index: usize, graph_colors: &[Color; 8]) -> Color {
+    graph_colors[color_index % graph_colors.len()]
 }
 
 /// Build the graph column spans for a single row.
@@ -26,7 +15,10 @@ fn graph_color(color_index: usize) -> Color {
 /// Each column occupies 2 characters.  The node column gets `● `, active
 /// pass-through lanes get `│ `, and edges that cross lanes get a simple
 /// horizontal/diagonal representation.
-fn build_graph_spans(row: &gitkraft_core::GraphRow) -> Vec<Span<'static>> {
+fn build_graph_spans(
+    row: &gitkraft_core::GraphRow,
+    graph_colors: &[Color; 8],
+) -> Vec<Span<'static>> {
     // We build a 2-char cell for every column in [0..width).
     // First, figure out what goes in each column.
 
@@ -34,7 +26,7 @@ fn build_graph_spans(row: &gitkraft_core::GraphRow) -> Vec<Span<'static>> {
     if width == 0 {
         return vec![Span::styled(
             "● ",
-            Style::default().fg(graph_color(row.node_color)),
+            Style::default().fg(graph_color(row.node_color, graph_colors)),
         )];
     }
 
@@ -86,7 +78,7 @@ fn build_graph_spans(row: &gitkraft_core::GraphRow) -> Vec<Span<'static>> {
             spans.push(Span::styled(
                 "● ".to_string(),
                 Style::default()
-                    .fg(graph_color(row.node_color))
+                    .fg(graph_color(row.node_color, graph_colors))
                     .add_modifier(Modifier::BOLD),
             ));
         } else if let Some(ci) = column_passthrough.get(col).copied().flatten() {
@@ -105,12 +97,12 @@ fn build_graph_spans(row: &gitkraft_core::GraphRow) -> Vec<Span<'static>> {
                 // Use the crossing edge's color for the combined glyph
                 spans.push(Span::styled(
                     "├─".to_string(),
-                    Style::default().fg(graph_color(cross_ci)),
+                    Style::default().fg(graph_color(cross_ci, graph_colors)),
                 ));
             } else {
                 spans.push(Span::styled(
                     "│ ".to_string(),
-                    Style::default().fg(graph_color(ci)),
+                    Style::default().fg(graph_color(ci, graph_colors)),
                 ));
             }
         } else {
@@ -123,12 +115,12 @@ fn build_graph_spans(row: &gitkraft_core::GraphRow) -> Vec<Span<'static>> {
                     // The target column of the left-crossing edge
                     spans.push(Span::styled(
                         "╭─".to_string(),
-                        Style::default().fg(graph_color(left_cross_color)),
+                        Style::default().fg(graph_color(left_cross_color, graph_colors)),
                     ));
                 } else {
                     spans.push(Span::styled(
                         "──".to_string(),
-                        Style::default().fg(graph_color(left_cross_color)),
+                        Style::default().fg(graph_color(left_cross_color, graph_colors)),
                     ));
                 }
             } else if in_right_range {
@@ -136,12 +128,12 @@ fn build_graph_spans(row: &gitkraft_core::GraphRow) -> Vec<Span<'static>> {
                     // The target column of the right-crossing edge
                     spans.push(Span::styled(
                         "─╮".to_string(),
-                        Style::default().fg(graph_color(right_cross_color)),
+                        Style::default().fg(graph_color(right_cross_color, graph_colors)),
                     ));
                 } else {
                     spans.push(Span::styled(
                         "──".to_string(),
-                        Style::default().fg(graph_color(right_cross_color)),
+                        Style::default().fg(graph_color(right_cross_color, graph_colors)),
                     ));
                 }
             } else {
@@ -200,7 +192,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
 
             // Build graph prefix spans for this row
             let mut spans = if let Some(row) = app.graph_rows.get(idx) {
-                build_graph_spans(row)
+                build_graph_spans(row, &theme.graph_colors)
             } else {
                 vec![Span::raw("  ")]
             };

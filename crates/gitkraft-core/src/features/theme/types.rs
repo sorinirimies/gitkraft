@@ -66,4 +66,10 @@ pub struct AppTheme {
     pub diff_context: Rgb,
     /// Hunk headers.
     pub diff_hunk: Rgb,
+
+    // ── Graph lane colours ───────────────────────────────────────────────
+    /// Eight colours cycled across branch lanes in the commit graph.
+    /// Each theme defines its own palette so that lanes remain legible
+    /// against both dark and light backgrounds.
+    pub graph_colors: [Rgb; 8],
 }

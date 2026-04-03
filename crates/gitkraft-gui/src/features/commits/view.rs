@@ -2,76 +2,35 @@
 //!
 //! Each commit row shows: graph │ short OID │ summary │ author │ relative time.
 //! The currently selected row gets a highlighted background.
+//!
+//! Uses `keyed_column` so that Iced can diff the widget tree efficiently when
+//! the list hasn't changed — this avoids rebuilding hundreds of row widgets
+//! every single frame.
 
-use iced::widget::{button, column, container, row, scrollable, text, Row, Space};
-use iced::{Alignment, Element, Length};
+use iced::widget::{button, column, container, keyed_column, row, scrollable, text, Row, Space};
+use iced::{Alignment, Color, Element, Length};
 
 use crate::message::Message;
 use crate::state::GitKraft;
 use crate::theme;
 
-/// Eight colours cycled by `color_index % GRAPH_COLORS.len()`.
-const GRAPH_COLORS: [iced::Color; 8] = [
-    iced::Color {
-        r: 0.0,
-        g: 0.8,
-        b: 0.0,
-        a: 1.0,
-    }, // green
-    iced::Color {
-        r: 0.0,
-        g: 0.8,
-        b: 0.8,
-        a: 1.0,
-    }, // cyan
-    iced::Color {
-        r: 0.8,
-        g: 0.0,
-        b: 0.8,
-        a: 1.0,
-    }, // magenta
-    iced::Color {
-        r: 0.9,
-        g: 0.9,
-        b: 0.0,
-        a: 1.0,
-    }, // yellow
-    iced::Color {
-        r: 0.3,
-        g: 0.5,
-        b: 1.0,
-        a: 1.0,
-    }, // blue
-    iced::Color {
-        r: 1.0,
-        g: 0.3,
-        b: 0.3,
-        a: 1.0,
-    }, // red
-    iced::Color {
-        r: 0.5,
-        g: 1.0,
-        b: 0.5,
-        a: 1.0,
-    }, // light green
-    iced::Color {
-        r: 0.5,
-        g: 1.0,
-        b: 1.0,
-        a: 1.0,
-    }, // light cyan
-];
-
 /// Build a small `Row` of individually-coloured text elements representing one
 /// row of the commit graph.
-fn graph_cell(graph_row: &gitkraft_core::GraphRow) -> Row<'_, Message> {
+///
+/// `graph_colors` is the per-theme palette of 8 lane colours obtained from
+/// [`ThemeColors::graph_colors`].
+fn graph_cell<'a>(
+    graph_row: &gitkraft_core::GraphRow,
+    graph_colors: &[Color; 8],
+) -> Row<'a, Message> {
     let width = graph_row.width;
-    let mut cells: Vec<Element<'_, Message>> = Vec::with_capacity(width);
+    let len = graph_colors.len();
+    let mut cells: Vec<Element<'a, Message>> = Vec::with_capacity(width);
 
     for col in 0..width {
         if col == graph_row.node_column {
             // Commit node dot
-            let color = GRAPH_COLORS[graph_row.node_color % GRAPH_COLORS.len()];
+            let color = graph_colors[graph_row.node_color % len];
             cells.push(
                 text("● ")
                     .font(iced::Font::MONOSPACE)
@@ -85,7 +44,7 @@ fn graph_cell(graph_row: &gitkraft_core::GraphRow) -> Row<'_, Message> {
             .find(|e| e.from_column == col && e.to_column == col)
         {
             // Passing-through lane
-            let color = GRAPH_COLORS[edge.color_index % GRAPH_COLORS.len()];
+            let color = graph_colors[edge.color_index % len];
             cells.push(
                 text("│ ")
                     .font(iced::Font::MONOSPACE)
@@ -146,87 +105,76 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .style(theme::surface_style)
             .into()
     } else {
-        let commit_rows: Vec<Element<'_, Message>> = state
-            .commits
-            .iter()
-            .enumerate()
-            .map(|(idx, commit)| {
-                let is_selected = state.selected_commit == Some(idx);
+        // Use keyed_column so Iced can diff the tree by a stable key
+        // instead of rebuilding all rows from scratch every frame.
+        // We use the enumeration index as the key (Copy + PartialEq).
+        let list = keyed_column(state.commits.iter().enumerate().map(|(idx, commit)| {
+            let key = idx;
 
-                // ── Graph column ──────────────────────────────────────
-                let graph_elem: Element<'_, Message> = if let Some(grow) = state.graph_rows.get(idx)
-                {
-                    graph_cell(grow).into()
-                } else {
-                    text("").into()
-                };
+            let is_selected = state.selected_commit == Some(idx);
 
-                let oid_label = text(commit.short_oid.as_str())
-                    .size(12)
-                    .color(c.accent)
-                    .font(iced::Font::MONOSPACE);
+            // ── Graph column ──────────────────────────────────
+            let graph_elem: Element<'_, Message> = if let Some(grow) = state.graph_rows.get(idx) {
+                graph_cell(grow, &c.graph_colors).into()
+            } else {
+                text("").into()
+            };
 
-                let sep1 = text("│").size(12).color(c.border);
-                let sep2 = text("│").size(12).color(c.border);
+            let oid_label = text(commit.short_oid.as_str())
+                .size(12)
+                .color(c.accent)
+                .font(iced::Font::MONOSPACE);
 
-                let summary_text = if commit.summary.chars().count() > 60 {
-                    let truncated: String = commit.summary.chars().take(59).collect();
-                    format!("{truncated}…")
-                } else {
-                    commit.summary.clone()
-                };
-                let summary_label = text(summary_text).size(12).color(c.text_primary);
+            let summary_text = if commit.summary.chars().count() > 60 {
+                let truncated: String = commit.summary.chars().take(59).collect();
+                format!("{truncated}…")
+            } else {
+                commit.summary.clone()
+            };
+            let summary_label = text(summary_text).size(12).color(c.text_primary);
 
-                let author_label = text(commit.author_name.as_str())
-                    .size(11)
-                    .color(c.text_secondary);
+            let author_label = text(commit.author_name.as_str())
+                .size(11)
+                .color(c.text_secondary);
 
-                let time_str = gitkraft_core::utils::relative_time(commit.time);
-                let time_label = text(time_str).size(11).color(c.muted);
+            let time_str = gitkraft_core::utils::relative_time(commit.time);
+            let time_label = text(time_str).size(11).color(c.muted);
 
-                let row_content = row![
-                    graph_elem,
-                    oid_label,
-                    Space::with_width(6),
-                    sep1,
-                    Space::with_width(6),
-                    summary_label,
-                    Space::with_width(Length::Fill),
-                    author_label,
-                    Space::with_width(8),
-                    sep2,
-                    Space::with_width(8),
-                    time_label,
-                ]
-                .align_y(Alignment::Center)
-                .padding([4, 10]);
+            let row_content = row![
+                graph_elem,
+                oid_label,
+                Space::with_width(6),
+                summary_label,
+                Space::with_width(Length::Fill),
+                author_label,
+                Space::with_width(8),
+                time_label,
+            ]
+            .align_y(Alignment::Center)
+            .padding([3, 8]);
 
-                let style_fn = if is_selected {
-                    theme::selected_row_style as fn(&iced::Theme) -> iced::widget::container::Style
-                } else {
-                    theme::surface_style as fn(&iced::Theme) -> iced::widget::container::Style
-                };
+            let style_fn = if is_selected {
+                theme::selected_row_style as fn(&iced::Theme) -> iced::widget::container::Style
+            } else {
+                theme::surface_style as fn(&iced::Theme) -> iced::widget::container::Style
+            };
 
-                let row_container = container(
-                    button(row_content)
-                        .padding(0)
-                        .width(Length::Fill)
-                        .on_press(Message::SelectCommit(idx))
-                        .style(theme::ghost_button),
-                )
-                .width(Length::Fill)
-                .style(style_fn);
+            let row_container = container(
+                button(row_content)
+                    .padding(0)
+                    .width(Length::Fill)
+                    .on_press(Message::SelectCommit(idx))
+                    .style(theme::ghost_button),
+            )
+            .width(Length::Fill)
+            .style(style_fn);
 
-                row_container.into()
-            })
-            .collect();
+            let element: Element<'_, Message> = row_container.into();
+            (key, element)
+        }))
+        .width(Length::Fill);
 
-        let mut list_col = column![].spacing(1).width(Length::Fill);
-        for row_el in commit_rows {
-            list_col = list_col.push(row_el);
-        }
-
-        let content = column![header_row, scrollable(list_col).height(Length::Fill),]
+        let content = column![header_row, scrollable(list).height(Length::Fill),]
             .width(Length::Fill)
             .height(Length::Fill);
 

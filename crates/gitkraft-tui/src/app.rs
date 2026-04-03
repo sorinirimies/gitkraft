@@ -2,8 +2,45 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use ratatui::widgets::ListState;
+use tokio::sync::mpsc;
 
 use gitkraft_core::*;
+
+// ── Background task results ───────────────────────────────────────────────────
+
+/// Payload produced by a background `refresh` / `open_repo` task.
+#[derive(Debug)]
+pub struct RepoPayload {
+    pub info: RepoInfo,
+    pub branches: Vec<BranchInfo>,
+    pub commits: Vec<CommitInfo>,
+    pub graph_rows: Vec<gitkraft_core::GraphRow>,
+    pub unstaged: Vec<DiffInfo>,
+    pub staged: Vec<DiffInfo>,
+    pub stashes: Vec<StashEntry>,
+    pub remotes: Vec<RemoteInfo>,
+}
+
+/// Results produced by background tasks and sent back to the main loop.
+#[derive(Debug)]
+pub enum BackgroundResult {
+    /// A repo open / refresh completed.
+    RepoLoaded(Result<RepoPayload, String>),
+    /// A fetch completed.
+    FetchDone(Result<(), String>),
+    /// A commit-diff load completed.
+    CommitDiffLoaded(Result<Vec<DiffInfo>, String>),
+    /// A single-shot operation (stage, unstage, checkout, commit, stash, etc.)
+    /// completed and the staging area should be refreshed.
+    OperationDone {
+        ok_message: Option<String>,
+        err_message: Option<String>,
+        /// If `true`, trigger a full refresh after applying the result.
+        needs_refresh: bool,
+        /// If `true`, trigger only a staging refresh.
+        needs_staging_refresh: bool,
+    },
+}
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
 
@@ -52,6 +89,13 @@ pub struct App {
     pub input_mode: InputMode,
     pub input_purpose: InputPurpose,
     pub tick_count: u64,
+
+    /// True while a background task is in flight.
+    pub is_loading: bool,
+    /// Receiver for results from background tasks.
+    pub bg_rx: mpsc::UnboundedReceiver<BackgroundResult>,
+    /// Sender cloned into each spawned task.
+    bg_tx: mpsc::UnboundedSender<BackgroundResult>,
 
     pub repo_path: Option<PathBuf>,
     pub repo_info: Option<RepoInfo>,
@@ -107,6 +151,8 @@ impl App {
 
         let recent_repos = settings.recent_repos;
 
+        let (bg_tx, bg_rx) = mpsc::unbounded_channel();
+
         Self {
             should_quit: false,
             screen: AppScreen::Welcome,
@@ -114,6 +160,10 @@ impl App {
             input_mode: InputMode::Normal,
             input_purpose: InputPurpose::None,
             tick_count: 0,
+
+            is_loading: false,
+            bg_rx,
+            bg_tx,
 
             repo_path: None,
             repo_info: None,
@@ -217,123 +267,136 @@ impl App {
 
     pub fn open_repo(&mut self, path: PathBuf) {
         self.error_message = None;
-        self.status_message = None;
-
-        let repo = match gitkraft_core::features::repo::open_repo(&path) {
-            Ok(r) => r,
-            Err(e) => {
-                self.error_message = Some(format!("Failed to open repo: {e}"));
-                return;
-            }
-        };
-
-        match gitkraft_core::features::repo::get_repo_info(&repo) {
-            Ok(info) => {
-                // Use the workdir as the canonical path if available
-                let canonical = info.workdir.clone().unwrap_or_else(|| path.clone());
-                self.repo_path = Some(canonical.clone());
-                self.repo_info = Some(info);
-
-                // Record in persistence and refresh the recent repos list
-                let _ = gitkraft_core::features::persistence::record_repo_opened(&canonical);
-                if let Ok(settings) = gitkraft_core::features::persistence::load_settings() {
-                    self.recent_repos = settings.recent_repos;
-                }
-            }
-            Err(e) => {
-                self.repo_path = Some(path);
-                self.error_message = Some(format!("Failed to read repo info: {e}"));
-                return;
-            }
-        }
-
+        self.status_message = Some("Opening repository…".into());
+        self.is_loading = true;
+        self.repo_path = Some(path.clone());
         self.screen = AppScreen::Main;
-        self.refresh();
-        self.status_message = Some("Repository opened".into());
+
+        let tx = self.bg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let result = load_repo_blocking(&path);
+            let _ = tx.send(BackgroundResult::RepoLoaded(result));
+        });
     }
 
     pub fn refresh(&mut self) {
         self.error_message = None;
+        self.is_loading = true;
+        self.status_message = Some("Refreshing…".into());
 
-        let repo = match self.open_current_repo() {
-            Ok(r) => r,
-            Err(e) => {
-                self.error_message = Some(format!("{e}"));
+        let path = match self.repo_path.clone() {
+            Some(p) => p,
+            None => {
+                self.error_message = Some("No repository open".into());
+                self.is_loading = false;
                 return;
             }
         };
 
-        // Repo info
-        match gitkraft_core::features::repo::get_repo_info(&repo) {
-            Ok(info) => self.repo_info = Some(info),
-            Err(e) => self.error_message = Some(format!("repo info: {e}")),
-        }
+        let tx = self.bg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let result = load_repo_blocking(&path);
+            let _ = tx.send(BackgroundResult::RepoLoaded(result));
+        });
+    }
 
-        // Branches
-        match gitkraft_core::features::branches::list_branches(&repo) {
-            Ok(b) => {
-                self.branches = b;
-                // Clamp selection
-                if self.branches.is_empty() {
-                    self.branch_list_state.select(None);
-                } else if self.branch_list_state.selected().is_none() {
-                    self.branch_list_state.select(Some(0));
-                } else if let Some(i) = self.branch_list_state.selected() {
-                    if i >= self.branches.len() {
-                        self.branch_list_state.select(Some(self.branches.len() - 1));
+    /// Process any pending results from background tasks.
+    /// Call this once per tick in the event loop.
+    pub fn poll_background(&mut self) {
+        while let Ok(result) = self.bg_rx.try_recv() {
+            match result {
+                BackgroundResult::RepoLoaded(res) => {
+                    self.is_loading = false;
+                    match res {
+                        Ok(payload) => {
+                            let canonical = payload
+                                .info
+                                .workdir
+                                .clone()
+                                .unwrap_or_else(|| self.repo_path.clone().unwrap_or_default());
+                            self.repo_path = Some(canonical.clone());
+
+                            // Persist
+                            let _ = gitkraft_core::features::persistence::record_repo_opened(
+                                &canonical,
+                            );
+                            if let Ok(settings) =
+                                gitkraft_core::features::persistence::load_settings()
+                            {
+                                self.recent_repos = settings.recent_repos;
+                            }
+
+                            self.repo_info = Some(payload.info);
+                            self.branches = payload.branches;
+                            clamp_list_state(&mut self.branch_list_state, self.branches.len());
+                            self.graph_rows = payload.graph_rows;
+                            self.commits = payload.commits;
+                            clamp_list_state(&mut self.commit_list_state, self.commits.len());
+                            self.unstaged_changes = payload.unstaged;
+                            clamp_list_state(
+                                &mut self.unstaged_list_state,
+                                self.unstaged_changes.len(),
+                            );
+                            self.staged_changes = payload.staged;
+                            clamp_list_state(
+                                &mut self.staged_list_state,
+                                self.staged_changes.len(),
+                            );
+                            self.stashes = payload.stashes;
+                            self.remotes = payload.remotes;
+                            self.screen = AppScreen::Main;
+                            self.status_message = Some("Repository loaded".into());
+                        }
+                        Err(e) => {
+                            self.error_message = Some(e);
+                            self.status_message = None;
+                        }
+                    }
+                }
+                BackgroundResult::FetchDone(res) => {
+                    self.is_loading = false;
+                    match res {
+                        Ok(()) => {
+                            self.status_message = Some("Fetched from origin".into());
+                            self.refresh();
+                        }
+                        Err(e) => self.error_message = Some(format!("fetch: {e}")),
+                    }
+                }
+                BackgroundResult::CommitDiffLoaded(res) => {
+                    self.is_loading = false;
+                    match res {
+                        Ok(diffs) => {
+                            if diffs.is_empty() {
+                                self.selected_diff = None;
+                                self.status_message = Some("No changes in this commit".into());
+                            } else {
+                                self.selected_diff = Some(merge_diffs(&diffs));
+                                self.diff_scroll = 0;
+                            }
+                        }
+                        Err(e) => self.error_message = Some(format!("commit diff: {e}")),
+                    }
+                }
+                BackgroundResult::OperationDone {
+                    ok_message,
+                    err_message,
+                    needs_refresh,
+                    needs_staging_refresh,
+                } => {
+                    self.is_loading = false;
+                    if let Some(msg) = err_message {
+                        self.error_message = Some(msg);
+                    } else if let Some(msg) = ok_message {
+                        self.status_message = Some(msg);
+                    }
+                    if needs_refresh {
+                        self.refresh();
+                    } else if needs_staging_refresh {
+                        self.refresh_staging();
                     }
                 }
             }
-            Err(e) => self.error_message = Some(format!("branches: {e}")),
-        }
-
-        // Commits + graph
-        match gitkraft_core::features::commits::list_commits(&repo, 200) {
-            Ok(c) => {
-                self.graph_rows = gitkraft_core::features::graph::build_graph(&c);
-                self.commits = c;
-                if self.commits.is_empty() {
-                    self.commit_list_state.select(None);
-                } else if self.commit_list_state.selected().is_none() {
-                    self.commit_list_state.select(Some(0));
-                } else if let Some(i) = self.commit_list_state.selected() {
-                    if i >= self.commits.len() {
-                        self.commit_list_state.select(Some(self.commits.len() - 1));
-                    }
-                }
-            }
-            Err(_e) => {
-                // Empty repo has no commits — that's fine
-                self.commits.clear();
-                self.graph_rows.clear();
-                self.commit_list_state.select(None);
-            }
-        }
-
-        // Staging
-        self.refresh_staging_inner(&repo);
-
-        // Stashes (needs mut)
-        drop(repo);
-        match self.open_current_repo() {
-            Ok(mut r) => match gitkraft_core::features::stash::list_stashes(&mut r) {
-                Ok(s) => self.stashes = s,
-                Err(_) => self.stashes.clear(),
-            },
-            Err(_) => self.stashes.clear(),
-        }
-
-        // Remotes
-        match self.open_current_repo() {
-            Ok(r) => match gitkraft_core::features::remotes::list_remotes(&r) {
-                Ok(rem) => self.remotes = rem,
-                Err(_) => self.remotes.clear(),
-            },
-            Err(_) => self.remotes.clear(),
-        }
-
-        if self.error_message.is_none() {
-            self.status_message = Some("Refreshed".into());
         }
     }
 
@@ -399,17 +462,27 @@ impl App {
                 return;
             }
         };
-        let path = self.unstaged_file_path(idx);
-        match self.open_current_repo() {
-            Ok(repo) => match gitkraft_core::features::staging::stage_file(&repo, &path) {
-                Ok(()) => {
-                    self.status_message = Some(format!("Staged: {path}"));
-                    self.refresh_staging();
-                }
-                Err(e) => self.error_message = Some(format!("stage: {e}")),
-            },
-            Err(e) => self.error_message = Some(format!("{e}")),
-        }
+        let file_path = self.unstaged_file_path(idx);
+        let repo_path = match self.repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.is_loading = true;
+        let tx = self.bg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let res = (|| {
+                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
+                    .map_err(|e| e.to_string())?;
+                gitkraft_core::features::staging::stage_file(&repo, &file_path)
+                    .map_err(|e| e.to_string())
+            })();
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res.as_ref().ok().map(|_| format!("Staged: {file_path}")),
+                err_message: res.err().map(|e| format!("stage: {e}")),
+                needs_refresh: false,
+                needs_staging_refresh: true,
+            });
+        });
     }
 
     pub fn unstage_selected(&mut self) {
@@ -420,43 +493,71 @@ impl App {
                 return;
             }
         };
-        let path = self.staged_file_path(idx);
-        match self.open_current_repo() {
-            Ok(repo) => match gitkraft_core::features::staging::unstage_file(&repo, &path) {
-                Ok(()) => {
-                    self.status_message = Some(format!("Unstaged: {path}"));
-                    self.refresh_staging();
-                }
-                Err(e) => self.error_message = Some(format!("unstage: {e}")),
-            },
-            Err(e) => self.error_message = Some(format!("{e}")),
-        }
+        let file_path = self.staged_file_path(idx);
+        let repo_path = match self.repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.is_loading = true;
+        let tx = self.bg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let res = (|| {
+                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
+                    .map_err(|e| e.to_string())?;
+                gitkraft_core::features::staging::unstage_file(&repo, &file_path)
+                    .map_err(|e| e.to_string())
+            })();
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res.as_ref().ok().map(|_| format!("Unstaged: {file_path}")),
+                err_message: res.err().map(|e| format!("unstage: {e}")),
+                needs_refresh: false,
+                needs_staging_refresh: true,
+            });
+        });
     }
 
     pub fn stage_all(&mut self) {
-        match self.open_current_repo() {
-            Ok(repo) => match gitkraft_core::features::staging::stage_all(&repo) {
-                Ok(()) => {
-                    self.status_message = Some("Staged all files".into());
-                    self.refresh_staging();
-                }
-                Err(e) => self.error_message = Some(format!("stage all: {e}")),
-            },
-            Err(e) => self.error_message = Some(format!("{e}")),
-        }
+        let repo_path = match self.repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.is_loading = true;
+        let tx = self.bg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let res = (|| {
+                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
+                    .map_err(|e| e.to_string())?;
+                gitkraft_core::features::staging::stage_all(&repo).map_err(|e| e.to_string())
+            })();
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res.as_ref().ok().map(|_| "Staged all files".into()),
+                err_message: res.err().map(|e| format!("stage all: {e}")),
+                needs_refresh: false,
+                needs_staging_refresh: true,
+            });
+        });
     }
 
     pub fn unstage_all(&mut self) {
-        match self.open_current_repo() {
-            Ok(repo) => match gitkraft_core::features::staging::unstage_all(&repo) {
-                Ok(()) => {
-                    self.status_message = Some("Unstaged all files".into());
-                    self.refresh_staging();
-                }
-                Err(e) => self.error_message = Some(format!("unstage all: {e}")),
-            },
-            Err(e) => self.error_message = Some(format!("{e}")),
-        }
+        let repo_path = match self.repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.is_loading = true;
+        let tx = self.bg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let res = (|| {
+                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
+                    .map_err(|e| e.to_string())?;
+                gitkraft_core::features::staging::unstage_all(&repo).map_err(|e| e.to_string())
+            })();
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res.as_ref().ok().map(|_| "Unstaged all files".into()),
+                err_message: res.err().map(|e| format!("unstage all: {e}")),
+                needs_refresh: false,
+                needs_staging_refresh: true,
+            });
+        });
     }
 
     pub fn discard_selected(&mut self) {
@@ -467,20 +568,31 @@ impl App {
                 return;
             }
         };
-        let path = self.unstaged_file_path(idx);
-        match self.open_current_repo() {
-            Ok(repo) => {
-                match gitkraft_core::features::staging::discard_file_changes(&repo, &path) {
-                    Ok(()) => {
-                        self.status_message = Some(format!("Discarded changes: {path}"));
-                        self.confirm_discard = false;
-                        self.refresh_staging();
-                    }
-                    Err(e) => self.error_message = Some(format!("discard: {e}")),
-                }
-            }
-            Err(e) => self.error_message = Some(format!("{e}")),
-        }
+        let file_path = self.unstaged_file_path(idx);
+        let repo_path = match self.repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.confirm_discard = false;
+        self.is_loading = true;
+        let tx = self.bg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let res = (|| {
+                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
+                    .map_err(|e| e.to_string())?;
+                gitkraft_core::features::staging::discard_file_changes(&repo, &file_path)
+                    .map_err(|e| e.to_string())
+            })();
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res
+                    .as_ref()
+                    .ok()
+                    .map(|_| format!("Discarded changes: {file_path}")),
+                err_message: res.err().map(|e| format!("discard: {e}")),
+                needs_refresh: false,
+                needs_staging_refresh: true,
+            });
+        });
     }
 
     // ── Commit ───────────────────────────────────────────────────────────
@@ -491,18 +603,28 @@ impl App {
             self.error_message = Some("Commit message cannot be empty".into());
             return;
         }
-        match self.open_current_repo() {
-            Ok(repo) => match gitkraft_core::features::commits::create_commit(&repo, &msg) {
-                Ok(info) => {
-                    self.status_message =
-                        Some(format!("Committed: {} {}", info.short_oid, info.summary));
-                    self.input_buffer.clear();
-                    self.refresh();
-                }
-                Err(e) => self.error_message = Some(format!("commit: {e}")),
-            },
-            Err(e) => self.error_message = Some(format!("{e}")),
-        }
+        let repo_path = match self.repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.input_buffer.clear();
+        self.is_loading = true;
+        let tx = self.bg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let res = (|| {
+                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
+                    .map_err(|e| e.to_string())?;
+                let info = gitkraft_core::features::commits::create_commit(&repo, &msg)
+                    .map_err(|e| e.to_string())?;
+                Ok::<_, String>(format!("Committed: {} {}", info.short_oid, info.summary))
+            })();
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res.as_ref().ok().cloned(),
+                err_message: res.err().map(|e| format!("commit: {e}")),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
     }
 
     // ── Branches ─────────────────────────────────────────────────────────
@@ -520,16 +642,27 @@ impl App {
             self.status_message = Some(format!("Already on '{name}'"));
             return;
         }
-        match self.open_current_repo() {
-            Ok(repo) => match gitkraft_core::features::branches::checkout_branch(&repo, &name) {
-                Ok(()) => {
-                    self.status_message = Some(format!("Checked out: {name}"));
-                    self.refresh();
-                }
-                Err(e) => self.error_message = Some(format!("checkout: {e}")),
-            },
-            Err(e) => self.error_message = Some(format!("{e}")),
-        }
+        let repo_path = match self.repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.is_loading = true;
+        let tx = self.bg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let res = (|| {
+                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
+                    .map_err(|e| e.to_string())?;
+                gitkraft_core::features::branches::checkout_branch(&repo, &name)
+                    .map_err(|e| e.to_string())?;
+                Ok::<_, String>(format!("Checked out: {name}"))
+            })();
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res.as_ref().ok().cloned(),
+                err_message: res.err().map(|e| format!("checkout: {e}")),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
     }
 
     pub fn create_branch(&mut self) {
@@ -538,17 +671,28 @@ impl App {
             self.error_message = Some("Branch name cannot be empty".into());
             return;
         }
-        match self.open_current_repo() {
-            Ok(repo) => match gitkraft_core::features::branches::create_branch(&repo, &name) {
-                Ok(_info) => {
-                    self.status_message = Some(format!("Created branch: {name}"));
-                    self.input_buffer.clear();
-                    self.refresh();
-                }
-                Err(e) => self.error_message = Some(format!("create branch: {e}")),
-            },
-            Err(e) => self.error_message = Some(format!("{e}")),
-        }
+        let repo_path = match self.repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.input_buffer.clear();
+        self.is_loading = true;
+        let tx = self.bg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let res = (|| {
+                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
+                    .map_err(|e| e.to_string())?;
+                gitkraft_core::features::branches::create_branch(&repo, &name)
+                    .map_err(|e| e.to_string())?;
+                Ok::<_, String>(format!("Created branch: {name}"))
+            })();
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res.as_ref().ok().cloned(),
+                err_message: res.err().map(|e| format!("create branch: {e}")),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
     }
 
     pub fn delete_selected_branch(&mut self) {
@@ -565,65 +709,101 @@ impl App {
             return;
         }
         let name = branch.name.clone();
-        match self.open_current_repo() {
-            Ok(repo) => match gitkraft_core::features::branches::delete_branch(&repo, &name) {
-                Ok(()) => {
-                    self.status_message = Some(format!("Deleted branch: {name}"));
-                    self.refresh();
-                }
-                Err(e) => self.error_message = Some(format!("delete branch: {e}")),
-            },
-            Err(e) => self.error_message = Some(format!("{e}")),
-        }
+        let repo_path = match self.repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.is_loading = true;
+        let tx = self.bg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let res = (|| {
+                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
+                    .map_err(|e| e.to_string())?;
+                gitkraft_core::features::branches::delete_branch(&repo, &name)
+                    .map_err(|e| e.to_string())?;
+                Ok::<_, String>(format!("Deleted branch: {name}"))
+            })();
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res.as_ref().ok().cloned(),
+                err_message: res.err().map(|e| format!("delete branch: {e}")),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
     }
 
     // ── Stash ────────────────────────────────────────────────────────────
 
     pub fn stash_save(&mut self) {
-        match self.open_current_repo() {
-            Ok(mut repo) => match gitkraft_core::features::stash::stash_save(&mut repo, None) {
-                Ok(entry) => {
-                    self.status_message = Some(format!("Stashed: {}", entry.message));
-                    self.refresh();
-                }
-                Err(e) => self.error_message = Some(format!("stash save: {e}")),
-            },
-            Err(e) => self.error_message = Some(format!("{e}")),
-        }
+        let repo_path = match self.repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.is_loading = true;
+        let tx = self.bg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let res = (|| {
+                let mut repo = gitkraft_core::features::repo::open_repo(&repo_path)
+                    .map_err(|e| e.to_string())?;
+                let entry = gitkraft_core::features::stash::stash_save(&mut repo, None)
+                    .map_err(|e| e.to_string())?;
+                Ok::<_, String>(format!("Stashed: {}", entry.message))
+            })();
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res.as_ref().ok().cloned(),
+                err_message: res.err().map(|e| format!("stash save: {e}")),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
     }
 
     pub fn stash_pop_selected(&mut self) {
-        // Always pop the most recent stash (index 0)
-        let index: usize = 0;
-        match self.open_current_repo() {
-            Ok(mut repo) => match gitkraft_core::features::stash::stash_pop(&mut repo, index) {
-                Ok(()) => {
-                    self.status_message = Some("Stash popped".into());
-                    self.refresh();
-                }
-                Err(e) => self.error_message = Some(format!("stash pop: {e}")),
-            },
-            Err(e) => self.error_message = Some(format!("{e}")),
-        }
+        let repo_path = match self.repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.is_loading = true;
+        let tx = self.bg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let res = (|| {
+                let mut repo = gitkraft_core::features::repo::open_repo(&repo_path)
+                    .map_err(|e| e.to_string())?;
+                gitkraft_core::features::stash::stash_pop(&mut repo, 0).map_err(|e| e.to_string())
+            })();
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res.as_ref().ok().map(|_| "Stash popped".into()),
+                err_message: res.err().map(|e| format!("stash pop: {e}")),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
     }
 
     pub fn stash_drop_selected(&mut self) {
-        let index = if self.stashes.is_empty() {
+        if self.stashes.is_empty() {
             self.error_message = Some("No stashes to drop".into());
             return;
-        } else {
-            0
-        };
-        match self.open_current_repo() {
-            Ok(mut repo) => match gitkraft_core::features::stash::stash_drop(&mut repo, index) {
-                Ok(()) => {
-                    self.status_message = Some("Stash dropped".into());
-                    self.refresh();
-                }
-                Err(e) => self.error_message = Some(format!("stash drop: {e}")),
-            },
-            Err(e) => self.error_message = Some(format!("{e}")),
         }
+        let repo_path = match self.repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.is_loading = true;
+        let tx = self.bg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let res = (|| {
+                let mut repo = gitkraft_core::features::repo::open_repo(&repo_path)
+                    .map_err(|e| e.to_string())?;
+                gitkraft_core::features::stash::stash_drop(&mut repo, 0).map_err(|e| e.to_string())
+            })();
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res.as_ref().ok().map(|_| "Stash dropped".into()),
+                err_message: res.err().map(|e| format!("stash drop: {e}")),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
     }
 
     // ── Diff ─────────────────────────────────────────────────────────────
@@ -638,23 +818,22 @@ impl App {
             return;
         }
         let oid = self.commits[idx].oid.clone();
-        match self.open_current_repo() {
-            Ok(repo) => match gitkraft_core::features::diff::get_commit_diff(&repo, &oid) {
-                Ok(diffs) => {
-                    // Merge all file diffs into a single synthetic DiffInfo for
-                    // display purposes.
-                    if diffs.is_empty() {
-                        self.selected_diff = None;
-                        self.status_message = Some("No changes in this commit".into());
-                    } else {
-                        self.selected_diff = Some(merge_diffs(&diffs));
-                        self.diff_scroll = 0;
-                    }
-                }
-                Err(e) => self.error_message = Some(format!("commit diff: {e}")),
-            },
-            Err(e) => self.error_message = Some(format!("{e}")),
-        }
+        let repo_path = match self.repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.is_loading = true;
+        self.status_message = Some("Loading diff…".into());
+        let tx = self.bg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let res = (|| {
+                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
+                    .map_err(|e| e.to_string())?;
+                gitkraft_core::features::diff::get_commit_diff(&repo, &oid)
+                    .map_err(|e| e.to_string())
+            })();
+            let _ = tx.send(BackgroundResult::CommitDiffLoaded(res));
+        });
     }
 
     /// Load the diff for a selected staging file into the diff pane.
@@ -682,16 +861,22 @@ impl App {
     // ── Remote ───────────────────────────────────────────────────────────
 
     pub fn fetch_remote(&mut self) {
-        match self.open_current_repo() {
-            Ok(repo) => match gitkraft_core::features::remotes::fetch_remote(&repo, "origin") {
-                Ok(()) => {
-                    self.status_message = Some("Fetched from origin".into());
-                    self.refresh();
-                }
-                Err(e) => self.error_message = Some(format!("fetch: {e}")),
-            },
-            Err(e) => self.error_message = Some(format!("{e}")),
-        }
+        let repo_path = match self.repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.is_loading = true;
+        self.status_message = Some("Fetching…".into());
+        let tx = self.bg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let res = (|| {
+                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
+                    .map_err(|e| e.to_string())?;
+                gitkraft_core::features::remotes::fetch_remote(&repo, "origin")
+                    .map_err(|e| e.to_string())
+            })();
+            let _ = tx.send(BackgroundResult::FetchDone(res));
+        });
     }
 
     // ── Path helpers ─────────────────────────────────────────────────────
@@ -726,6 +911,51 @@ impl App {
 /// Map a persisted theme name back to its index (0–26).
 fn theme_name_to_index(name: &str) -> usize {
     gitkraft_core::theme_index_by_name(name)
+}
+
+/// Clamp a `ListState` selection to be within `[0, len)`, or `None` if empty.
+fn clamp_list_state(state: &mut ListState, len: usize) {
+    if len == 0 {
+        state.select(None);
+    } else if state.selected().is_none() {
+        state.select(Some(0));
+    } else if let Some(i) = state.selected() {
+        if i >= len {
+            state.select(Some(len - 1));
+        }
+    }
+}
+
+/// Blocking helper that loads all repo data in one go.
+/// Runs inside `spawn_blocking` — must not touch any async APIs.
+fn load_repo_blocking(path: &std::path::Path) -> Result<RepoPayload, String> {
+    let mut repo = gitkraft_core::features::repo::open_repo(path).map_err(|e| e.to_string())?;
+
+    let info = gitkraft_core::features::repo::get_repo_info(&repo).map_err(|e| e.to_string())?;
+    let branches =
+        gitkraft_core::features::branches::list_branches(&repo).map_err(|e| e.to_string())?;
+    let commits =
+        gitkraft_core::features::commits::list_commits(&repo, 200).map_err(|e| e.to_string())?;
+    let graph_rows = gitkraft_core::features::graph::build_graph(&commits);
+    let unstaged =
+        gitkraft_core::features::diff::get_working_dir_diff(&repo).map_err(|e| e.to_string())?;
+    let staged =
+        gitkraft_core::features::diff::get_staged_diff(&repo).map_err(|e| e.to_string())?;
+    let remotes =
+        gitkraft_core::features::remotes::list_remotes(&repo).map_err(|e| e.to_string())?;
+    let stashes =
+        gitkraft_core::features::stash::list_stashes(&mut repo).map_err(|e| e.to_string())?;
+
+    Ok(RepoPayload {
+        info,
+        branches,
+        commits,
+        graph_rows,
+        unstaged,
+        staged,
+        stashes,
+        remotes,
+    })
 }
 
 /// Merge multiple per-file `DiffInfo`s into one combined view for the diff pane.

@@ -29,12 +29,14 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         Message::CommitDiffLoaded(result) => {
             match result {
                 Ok(diffs) => {
-                    // If there's at least one diff, auto-select the first one
-                    // so the diff viewer shows something right away.
+                    // Store the full file list so the diff viewer can show a
+                    // clickable file sidebar, and auto-select the first file.
                     state.selected_diff = diffs.first().cloned();
                     state.status_message = Some(format!("Loaded {} file(s) in diff.", diffs.len()));
+                    state.commit_diffs = diffs;
                 }
                 Err(e) => {
+                    state.commit_diffs.clear();
                     state.error_message = Some(format!("Failed to load commit diff: {e}"));
                     state.status_message = None;
                 }
