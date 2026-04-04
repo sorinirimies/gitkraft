@@ -165,14 +165,22 @@ jobs:
             libfontconfig1-dev \
             libssl-dev
 
-      # ── MSVC developer environment (Windows only) ──────────────────────────
-      # libz-sys (transitive dep via git2 → libgit2-sys) compiles zlib from
-      # vendored C sources.  On Windows the cc crate invokes cl.exe but needs
-      # VCINSTALLDIR / INCLUDE / LIB set — otherwise the compiler cannot
-      # locate source files and headers (fatal error C1083).
-      - name: Set up MSVC developer command prompt
+      # ── Windows: provide zlib via vcpkg ────────────────────────────────────
+      # libz-sys 1.1.26 ships without vendored zlib C sources (src/zlib/ is
+      # missing from the published crate).  On Linux/macOS pkg-config finds
+      # the system zlib so this is invisible, but on Windows MSVC there is no
+      # system zlib and the build falls through to compile missing files
+      # (fatal error C1083).
+      #
+      # The windows-latest runner ships vcpkg at C:\vcpkg but does not
+      # export VCPKG_ROOT.  We set it for all subsequent steps via
+      # GITHUB_ENV, then install zlib so libz-sys's try_vcpkg() succeeds
+      # before it ever reaches build_zlib().
+      - name: Install zlib via vcpkg
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+        run: |
+          echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+          vcpkg install zlib:x64-windows-static-md
 
       - name: Install Rust stable + target
         uses: dtolnay/rust-toolchain@stable
