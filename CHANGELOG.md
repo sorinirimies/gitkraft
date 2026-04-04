@@ -2,9 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.9 - 2026-04-04
+### ➕ Added
+- Add Nushell script tests to quality checks and improve test cleanup
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.1.8...v0.1.9
 ## 0.1.8 - 2026-04-04
 ### 📦 Other Changes
 - Switch Windows cross-compilation from cargo-xwin to cross
+### 🔧 Chores
+- chore: bump version to 0.1.8
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.1.7...v0.1.8
 ## 0.1.7 - 2026-04-04
 ### ➕ Added
