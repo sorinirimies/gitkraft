@@ -124,8 +124,11 @@ jobs:
             install_gui_libs: false
 
           # ── macOS x86_64 (Intel) ─────────────────────────────────────────────
+          # macos-13 is the last Intel-native runner.  macos-latest is now
+          # aarch64, which would cross-compile and break openssl-sys
+          # (pkg-config refuses cross-compilation without a sysroot).
           - target: x86_64-apple-darwin
-            runner: macos-latest
+            runner: macos-13
             gui_binary: gitkraft
             tui_binary: gitkraft-tui
             suffix: ""
@@ -194,8 +197,27 @@ jobs:
       - name: Install Nushell
         run: cargo install nu --locked
 
+      # The empty-string matrix values ("") vanish after shell expansion,
+      # turning `--suffix  --gui-binary gitkraft` into a mis-parse.
+      # Nushell sees --gui-binary as the value of --suffix and "gitkraft"
+      # as an extra positional.  Pass the values via env vars so they are
+      # never subject to word-splitting or empty-string removal.
+      # Force bash on all platforms (Windows defaults to PowerShell).
       - name: Stage release artifacts
-        run: nu scripts/ci/stage_artifacts.nu ${{ matrix.target }} --suffix "${{ matrix.suffix }}" --gui-binary "${{ matrix.gui_binary }}"
+        shell: bash
+        run: |
+          ARGS="$STAGE_TARGET"
+          if [ -n "$STAGE_SUFFIX" ]; then
+            ARGS="$ARGS --suffix $STAGE_SUFFIX"
+          fi
+          if [ -n "$STAGE_GUI" ]; then
+            ARGS="$ARGS --gui-binary $STAGE_GUI"
+          fi
+          nu scripts/ci/stage_artifacts.nu $ARGS
+        env:
+          STAGE_TARGET: ${{ matrix.target }}
+          STAGE_SUFFIX: ${{ matrix.suffix }}
+          STAGE_GUI: ${{ matrix.gui_binary }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

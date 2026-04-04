@@ -197,8 +197,25 @@ jobs:
       - name: Install Nushell
         run: cargo install nu --locked
 
+      # The empty-string matrix values ("") vanish after shell expansion,
+      # turning `--suffix  --gui-binary gitkraft` into a mis-parse.
+      # Nushell sees --gui-binary as the value of --suffix and "gitkraft"
+      # as an extra positional.  Pass the values via env vars so they are
+      # never subject to word-splitting or empty-string removal.
       - name: Stage release artifacts
-        run: nu scripts/ci/stage_artifacts.nu ${{ matrix.target }} --suffix "${{ matrix.suffix }}" --gui-binary "${{ matrix.gui_binary }}"
+        run: |
+          ARGS="$STAGE_TARGET"
+          if [ -n "$STAGE_SUFFIX" ]; then
+            ARGS="$ARGS --suffix $STAGE_SUFFIX"
+          fi
+          if [ -n "$STAGE_GUI" ]; then
+            ARGS="$ARGS --gui-binary $STAGE_GUI"
+          fi
+          nu scripts/ci/stage_artifacts.nu $ARGS
+        env:
+          STAGE_TARGET: ${{ matrix.target }}
+          STAGE_SUFFIX: ${{ matrix.suffix }}
+          STAGE_GUI: ${{ matrix.gui_binary }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
