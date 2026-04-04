@@ -244,7 +244,7 @@ impl GitKraft {
         ThemeColors::from_core(&gitkraft_core::theme_by_index(self.current_theme_index))
     }
 
-    /// Return a **custom** `iced::Theme` whose [`Palette`] is derived from the
+    /// Return a **custom** `iced::Theme` whose `Palette` is derived from the
     /// active core theme.
     ///
     /// This is the key to making every built-in Iced widget (text inputs,

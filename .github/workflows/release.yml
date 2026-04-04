@@ -118,9 +118,25 @@ jobs:
           # ── Windows x86_64 (MSVC) ────────────────────────────────────────────
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
-            gui_binary: ""
+            gui_binary: gitkraft
             tui_binary: gitkraft-tui
             suffix: ".exe"
+            install_gui_libs: false
+
+          # ── macOS x86_64 (Intel) ─────────────────────────────────────────────
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+            gui_binary: gitkraft
+            tui_binary: gitkraft-tui
+            suffix: ""
+            install_gui_libs: false
+
+          # ── macOS aarch64 (Apple Silicon) ────────────────────────────────────
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            gui_binary: gitkraft
+            tui_binary: gitkraft-tui
+            suffix: ""
             install_gui_libs: false
 
     steps:
