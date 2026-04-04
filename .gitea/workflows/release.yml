@@ -37,7 +37,7 @@ jobs:
       tag: ${{ steps.resolve.outputs.tag }}
       version: ${{ steps.resolve.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -61,7 +61,7 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.validate.outputs.tag }}
 
@@ -129,7 +129,7 @@ jobs:
             install_gui_libs: true
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.validate.outputs.tag }}
 
@@ -213,7 +213,7 @@ jobs:
     needs: [validate, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.validate.outputs.tag }}
           fetch-depth: 0
@@ -270,7 +270,7 @@ jobs:
         if: env.HAS_TOKEN != 'true'
         run: echo "⏭️  CRATES_IO_TOKEN is not configured — skipping crates.io publish."
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: env.HAS_TOKEN == 'true'
         with:
           ref: ${{ needs.validate.outputs.tag }}

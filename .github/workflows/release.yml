@@ -37,7 +37,7 @@ jobs:
       tag: ${{ steps.resolve.outputs.tag }}
       version: ${{ steps.resolve.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -61,7 +61,7 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.validate.outputs.tag }}
 
@@ -140,7 +140,7 @@ jobs:
             install_gui_libs: false
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.validate.outputs.tag }}
 
@@ -161,6 +161,15 @@ jobs:
             libgl1-mesa-dev \
             libfontconfig1-dev \
             libssl-dev
+
+      # ── MSVC developer environment (Windows only) ──────────────────────────
+      # libz-sys (transitive dep via git2 → libgit2-sys) compiles zlib from
+      # vendored C sources.  On Windows the cc crate invokes cl.exe but needs
+      # VCINSTALLDIR / INCLUDE / LIB set — otherwise the compiler cannot
+      # locate source files and headers (fatal error C1083).
+      - name: Set up MSVC developer command prompt
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install Rust stable + target
         uses: dtolnay/rust-toolchain@stable
@@ -201,7 +210,7 @@ jobs:
     needs: [validate, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.validate.outputs.tag }}
           fetch-depth: 0
@@ -259,7 +268,7 @@ jobs:
         if: env.HAS_TOKEN != 'true'
         run: echo "⏭️  CRATES_IO_TOKEN is not configured — skipping crates.io publish."
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: env.HAS_TOKEN == 'true'
         with:
           ref: ${{ needs.validate.outputs.tag }}
