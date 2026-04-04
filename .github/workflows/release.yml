@@ -17,10 +17,10 @@ permissions:
   contents: write
   packages: write
 
-# One release run at a time per tag.  Re-pushing the same tag cancels the
-# previous run instead of queuing a duplicate.
+# Only one release at a time.  Pushing a new tag cancels any in-flight
+# release — regardless of which tag started it.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: true
 
 env:
