@@ -2,11 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.2.3 - 2026-04-04
+### ➕ Added
+- Add Dependabot and auto-merge for GitHub Actions updates
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.2.2...v0.2.3
 ## 0.2.2 - 2026-04-04
 ### ➕ Added
 - Add validate-tag recipe to check version tag format
 ### 📦 Other Changes
 - Print validation messages to stderr instead of stdout
+### 🔧 Chores
+- chore: bump version to 0.2.2
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.2.1...v0.2.2
 ## 0.2.1 - 2026-04-04
 ### ➕ Added
