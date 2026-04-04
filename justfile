@@ -144,8 +144,12 @@ changelog-preview: _check-git-cliff
 
 # ── Version bump ─────────────────────────────────────────────────────────────
 
+# Validate that a version string will produce a valid vX.Y.Z tag.
+validate-tag version: _check-nu
+    @nu scripts/ci/validate_tag.nu "v{{ version }}" 2>&1 >/dev/null
+
 # Bump the workspace version, regenerate Cargo.lock + CHANGELOG.md, commit and tag.
-bump version: check-all _check-git-cliff _check-nu
+bump version: check-all (validate-tag version) _check-git-cliff _check-nu
     nu scripts/bump_version.nu --yes {{ version }}
 
 # ── Publish (crates.io) ───────────────────────────────────────────────────────
