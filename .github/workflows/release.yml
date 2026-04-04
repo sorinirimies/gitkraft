@@ -248,7 +248,7 @@ jobs:
 
       # Download every artifact uploaded by the build matrix
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts/
           pattern: binaries-*
