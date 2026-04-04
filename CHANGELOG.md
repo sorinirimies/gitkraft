@@ -2,9 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.2.1 - 2026-04-04
+### ➕ Added
+- Add macOS targets to release workflow and fix doc links
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.2.0...v0.2.1
 ## 0.2.0 - 2026-04-04
 ### 📦 Other Changes
 - Remove Windows cross-compilation via cross from CI and release
+### 🔧 Chores
+- chore: bump version to 0.2.0
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.1.9...v0.2.0
 ## 0.1.9 - 2026-04-04
 ### ➕ Added
