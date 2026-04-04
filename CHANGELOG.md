@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.3.1 - 2026-04-04
+### 🐛 Bug Fixes
+- fix(ci): use vcpkg zlib on Windows to fix libz-sys build
+### 📦 Other Changes
+- Limit release workflow concurrency to one at a time
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.0...v0.3.1
 ## 0.3.0 - 2026-04-04
 ### 🐛 Bug Fixes
 - Fix artifact staging by passing matrix values via env
@@ -13,6 +19,8 @@ All notable changes to this project will be documented in this file.
 - ci(deps): bump actions/download-artifact from 4 to 8
 - ci(deps): bump actions/checkout from 5 to 6
 - ci(deps): bump actions/upload-artifact from 4 to 7
+### 🔧 Chores
+- chore: bump version to 0.3.0
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.2.3...v0.3.0
 ## 0.2.3 - 2026-04-04
 ### ➕ Added
