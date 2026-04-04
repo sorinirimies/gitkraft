@@ -2,9 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.6 - 2026-04-04
+### ♻️ Refactor
+- Refactor staging refresh to run asynchronously
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.1.4...v0.1.6
 ## 0.1.4 - 2026-04-04
 ### 🔄 Updated
 - Update dependencies in Cargo.lock
+### 🔧 Chores
+- chore: bump version to 0.1.4
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.1.3...v0.1.4
 ## 0.1.3 - 2026-04-04
 ### 🔧 Chores
