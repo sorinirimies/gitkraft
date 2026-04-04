@@ -54,14 +54,14 @@ def main [tag: string] {
     let result = try {
         validate $tag
     } catch { |err|
-        print $"(ansi red)❌ ($err.msg)(ansi reset)"
+        print --stderr $"(ansi red)❌ ($err.msg)(ansi reset)"
         exit 1
     }
 
-    print $"(ansi green)✅ Tag ($result.tag) \(version ($result.version)\) is valid.(ansi reset)"
+    # Human-friendly message goes to stderr so it doesn't pollute $GITHUB_OUTPUT.
+    print --stderr $"(ansi green)✅ Tag ($result.tag) \(version ($result.version)\) is valid.(ansi reset)"
 
-    # Emit lines compatible with $GITHUB_OUTPUT.
-    # The caller can append stdout directly:
+    # Only key=value lines go to stdout — the caller appends directly:
     #   nu scripts/ci/validate_tag.nu "$TAG" >> "$GITHUB_OUTPUT"
     print $"tag=($result.tag)"
     print $"version=($result.version)"
