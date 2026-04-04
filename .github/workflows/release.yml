@@ -114,16 +114,14 @@ jobs:
             tui_binary: gitkraft-tui
             suffix: ""
             install_gui_libs: true
-            use_cross: false
 
-          # ── Windows x86_64 (cross-compiled from Linux via cross) ─────────────
-          - target: x86_64-pc-windows-gnu
-            runner: ubuntu-latest
+          # ── Windows x86_64 (MSVC) ────────────────────────────────────────────
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
             gui_binary: ""
             tui_binary: gitkraft-tui
             suffix: ".exe"
             install_gui_libs: false
-            use_cross: true
 
     steps:
       - uses: actions/checkout@v4
@@ -148,11 +146,6 @@ jobs:
             libfontconfig1-dev \
             libssl-dev
 
-      # ── Cross-compilation via cross (Docker-based) ──────────────────────────
-      - name: Install cross
-        if: matrix.use_cross
-        run: cargo install cross --locked
-
       - name: Install Rust stable + target
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -164,17 +157,12 @@ jobs:
           key: ${{ matrix.target }}
 
       # ── Build TUI (all targets) ──────────────────────────────────────────────
-      - name: Build TUI release binary (native)
-        if: ${{ !matrix.use_cross }}
+      - name: Build TUI release binary
         run: cargo build --release -p gitkraft-tui --target ${{ matrix.target }}
-
-      - name: Build TUI release binary (cross)
-        if: matrix.use_cross
-        run: cross build --release -p gitkraft-tui --target ${{ matrix.target }}
 
       # ── Build GUI ───────────────────────────────────────────────────────────
       - name: Build GUI release binary
-        if: matrix.gui_binary != '' && !matrix.use_cross
+        if: matrix.gui_binary != ''
         run: cargo build --release -p gitkraft --target ${{ matrix.target }}
 
       # ── Stage artifacts ──────────────────────────────────────────────────────

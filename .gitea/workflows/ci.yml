@@ -151,32 +151,6 @@ jobs:
       - name: Build TUI (dev)
         run: cargo build -p gitkraft-tui
 
-  # ── 4b. Windows cross-check (TUI only) ──────────────────────────────────────
-  # Verify the TUI crate cross-compiles for Windows from Linux via cross.
-  # This catches Windows-specific compilation issues without needing a Windows runner.
-  cross-check-windows:
-    name: cross-check (windows)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cross
-        run: cargo install cross --locked
-
-      - name: Cache Cargo dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: cross-windows
-
-      - name: Cross-check TUI for Windows
-        run: cross check -p gitkraft-tui --target x86_64-pc-windows-gnu
-
-      - name: Cross-check core for Windows
-        run: cross check -p gitkraft-core --target x86_64-pc-windows-gnu
-
   # ── 5. Docs ──────────────────────────────────────────────────────────────────
   doc:
     name: doc
