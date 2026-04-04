@@ -2,9 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.7 - 2026-04-04
+### ➕ Added
+- Add Nushell CI/release scripts and Windows cross-check
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.1.6...v0.1.7
 ## 0.1.6 - 2026-04-04
 ### ♻️ Refactor
 - Refactor staging refresh to run asynchronously
+### 🔧 Chores
+- chore: bump version to 0.1.6
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.1.4...v0.1.6
 ## 0.1.4 - 2026-04-04
 ### 🔄 Updated
