@@ -13,3 +13,5 @@ All notable changes to this project will be documented in this file.
 - Add CI, release, and dependency update workflows, scripts, and project
 ### 📦 Other Changes
 - iniital implementation of the gitkraft gui and tui editor written fully
+### 🔧 Chores
+- chore: bump version to 0.1.2
