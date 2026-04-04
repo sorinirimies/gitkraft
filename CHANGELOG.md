@@ -2,9 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.3.0 - 2026-04-04
+### 🐛 Bug Fixes
+- Fix artifact staging by passing matrix values via env
+### 📦 Other Changes
+- Merge pull request #3 from sorinirimies/dependabot/github_actions/actions/download-artifact-8
+- Merge pull request #2 from sorinirimies/dependabot/github_actions/actions/checkout-6
+- Merge pull request #1 from sorinirimies/dependabot/github_actions/actions/upload-artifact-7
+### 🔄 CI
+- ci(deps): bump actions/download-artifact from 4 to 8
+- ci(deps): bump actions/checkout from 5 to 6
+- ci(deps): bump actions/upload-artifact from 4 to 7
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.2.3...v0.3.0
 ## 0.2.3 - 2026-04-04
 ### ➕ Added
 - Add Dependabot and auto-merge for GitHub Actions updates
+### 🔧 Chores
+- chore: bump version to 0.2.3
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.2.2...v0.2.3
 ## 0.2.2 - 2026-04-04
 ### ➕ Added
