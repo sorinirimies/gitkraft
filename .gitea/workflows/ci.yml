@@ -151,6 +151,37 @@ jobs:
       - name: Build TUI (dev)
         run: cargo build -p gitkraft-tui
 
+  # ── 4b. Windows cross-check (TUI only) ──────────────────────────────────────
+  # Verify the TUI crate cross-compiles for Windows from Linux via cargo-xwin.
+  # This catches Windows-specific compilation issues without needing a Windows runner.
+  cross-check-windows:
+    name: cross-check (windows)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable + Windows target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install cargo-xwin and dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends lld llvm clang
+          cargo install cargo-xwin --locked
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: cross-windows
+
+      - name: Cross-check TUI for Windows
+        run: cargo xwin check -p gitkraft-tui --target x86_64-pc-windows-msvc
+
+      - name: Cross-check core for Windows
+        run: cargo xwin check -p gitkraft-core --target x86_64-pc-windows-msvc
+
   # ── 5. Docs ──────────────────────────────────────────────────────────────────
   doc:
     name: doc
