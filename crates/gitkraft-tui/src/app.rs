@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use anyhow::Result;
 use ratatui::widgets::ListState;
 use tokio::sync::mpsc;
 
@@ -30,6 +29,8 @@ pub enum BackgroundResult {
     FetchDone(Result<(), String>),
     /// A commit-diff load completed.
     CommitDiffLoaded(Result<Vec<DiffInfo>, String>),
+    /// A staging-only refresh completed (unstaged + staged diffs reloaded).
+    StagingRefreshed(Result<StagingPayload, String>),
     /// A single-shot operation (stage, unstage, checkout, commit, stash, etc.)
     /// completed and the staging area should be refreshed.
     OperationDone {
@@ -40,6 +41,13 @@ pub enum BackgroundResult {
         /// If `true`, trigger only a staging refresh.
         needs_staging_refresh: bool,
     },
+}
+
+/// Payload returned by an async staging refresh.
+#[derive(Debug)]
+pub struct StagingPayload {
+    pub unstaged: Vec<DiffInfo>,
+    pub staged: Vec<DiffInfo>,
 }
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
@@ -251,18 +259,6 @@ impl App {
         let _ = gitkraft_core::features::persistence::save_theme(self.current_theme_name());
     }
 
-    // ── Repo helpers ─────────────────────────────────────────────────────
-
-    /// Open the repository fresh from `self.repo_path`.  We never store
-    /// `git2::Repository` on `App` because it is not `Send`.
-    fn open_current_repo(&self) -> Result<git2::Repository> {
-        let path = self
-            .repo_path
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("No repository open"))?;
-        gitkraft_core::features::repo::open_repo(path)
-    }
-
     // ── High-level operations ────────────────────────────────────────────
 
     pub fn open_repo(&mut self, path: PathBuf) {
@@ -378,6 +374,13 @@ impl App {
                         Err(e) => self.error_message = Some(format!("commit diff: {e}")),
                     }
                 }
+                BackgroundResult::StagingRefreshed(res) => {
+                    self.is_loading = false;
+                    match res {
+                        Ok(payload) => self.apply_staging_payload(payload),
+                        Err(e) => self.error_message = Some(format!("staging refresh: {e}")),
+                    }
+                }
                 BackgroundResult::OperationDone {
                     ok_message,
                     err_message,
@@ -402,52 +405,50 @@ impl App {
 
     /// Reload only the staging area (unstaged + staged diffs).
     pub fn refresh_staging(&mut self) {
-        match self.open_current_repo() {
-            Ok(repo) => self.refresh_staging_inner(&repo),
-            Err(e) => self.error_message = Some(format!("{e}")),
-        }
+        let repo_path = match self.repo_path.clone() {
+            Some(p) => p,
+            None => {
+                self.error_message = Some("No repository open".into());
+                return;
+            }
+        };
+        let tx = self.bg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let res = (|| {
+                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
+                    .map_err(|e| e.to_string())?;
+                let unstaged = gitkraft_core::features::diff::get_working_dir_diff(&repo)
+                    .map_err(|e| e.to_string())?;
+                let staged = gitkraft_core::features::diff::get_staged_diff(&repo)
+                    .map_err(|e| e.to_string())?;
+                Ok::<_, String>(StagingPayload { unstaged, staged })
+            })();
+            let _ = tx.send(BackgroundResult::StagingRefreshed(res));
+        });
     }
 
-    fn refresh_staging_inner(&mut self, repo: &git2::Repository) {
-        // Unstaged
-        match gitkraft_core::features::diff::get_working_dir_diff(repo) {
-            Ok(d) => {
-                self.unstaged_changes = d;
-                if self.unstaged_changes.is_empty() {
-                    self.unstaged_list_state.select(None);
-                } else if self.unstaged_list_state.selected().is_none() {
-                    self.unstaged_list_state.select(Some(0));
-                } else if let Some(i) = self.unstaged_list_state.selected() {
-                    if i >= self.unstaged_changes.len() {
-                        self.unstaged_list_state
-                            .select(Some(self.unstaged_changes.len() - 1));
-                    }
-                }
-            }
-            Err(e) => {
-                self.error_message = Some(format!("unstaged diff: {e}"));
-                self.unstaged_changes.clear();
+    fn apply_staging_payload(&mut self, payload: StagingPayload) {
+        self.unstaged_changes = payload.unstaged;
+        if self.unstaged_changes.is_empty() {
+            self.unstaged_list_state.select(None);
+        } else if self.unstaged_list_state.selected().is_none() {
+            self.unstaged_list_state.select(Some(0));
+        } else if let Some(i) = self.unstaged_list_state.selected() {
+            if i >= self.unstaged_changes.len() {
+                self.unstaged_list_state
+                    .select(Some(self.unstaged_changes.len() - 1));
             }
         }
 
-        // Staged
-        match gitkraft_core::features::diff::get_staged_diff(repo) {
-            Ok(d) => {
-                self.staged_changes = d;
-                if self.staged_changes.is_empty() {
-                    self.staged_list_state.select(None);
-                } else if self.staged_list_state.selected().is_none() {
-                    self.staged_list_state.select(Some(0));
-                } else if let Some(i) = self.staged_list_state.selected() {
-                    if i >= self.staged_changes.len() {
-                        self.staged_list_state
-                            .select(Some(self.staged_changes.len() - 1));
-                    }
-                }
-            }
-            Err(e) => {
-                self.error_message = Some(format!("staged diff: {e}"));
-                self.staged_changes.clear();
+        self.staged_changes = payload.staged;
+        if self.staged_changes.is_empty() {
+            self.staged_list_state.select(None);
+        } else if self.staged_list_state.selected().is_none() {
+            self.staged_list_state.select(Some(0));
+        } else if let Some(i) = self.staged_list_state.selected() {
+            if i >= self.staged_changes.len() {
+                self.staged_list_state
+                    .select(Some(self.staged_changes.len() - 1));
             }
         }
     }
