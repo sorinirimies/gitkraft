@@ -26,6 +26,7 @@ def make_temp_workspace []: nothing -> record<root: string, crate_dir: string> {
 
 def "test copy_readme: copies README into target dir" [] {
     let ws = (make_temp_workspace)
+    let original_dir = ($env.PWD)
     cd $ws.root
 
     copy_readme "crates/gitkraft-core"
@@ -36,12 +37,14 @@ def "test copy_readme: copies README into target dir" [] {
     let content = (open --raw $dst)
     assert ($content | str contains "GitKraft")
 
-    # Cleanup
+    # Restore original dir before cleanup
+    cd $original_dir
     rm -rf $ws.root
 }
 
 def "test copy_readme: overwrites existing README" [] {
     let ws = (make_temp_workspace)
+    let original_dir = ($env.PWD)
     cd $ws.root
 
     # Pre-populate with old content
@@ -54,6 +57,8 @@ def "test copy_readme: overwrites existing README" [] {
     assert ($content | str contains "GitKraft")
     assert (not ($content | str contains "old content"))
 
+    # Restore original dir before cleanup
+    cd $original_dir
     rm -rf $ws.root
 }
 
@@ -61,6 +66,7 @@ def "test copy_readme: handles missing README gracefully" [] {
     let root = (mktemp -d)
     let crate_dir = ($root | path join "crates" "gitkraft-core")
     mkdir $crate_dir
+    let original_dir = ($env.PWD)
     cd $root
 
     # No README.md in root — should print warning but not crash
@@ -69,6 +75,8 @@ def "test copy_readme: handles missing README gracefully" [] {
     let dst = ($crate_dir | path join "README.md")
     assert (not ($dst | path exists))
 
+    # Restore original dir before cleanup
+    cd $original_dir
     rm -rf $root
 }
 

@@ -107,8 +107,8 @@ fmt-check:
 clippy:
     cargo clippy --workspace --all-targets --all-features -- -D warnings -A deprecated
 
-# Run all quality checks (fmt, clippy, test) — must pass before a release
-check-all: fmt-check clippy test
+# Run all quality checks (fmt, clippy, test, nu) — must pass before a release
+check-all: fmt-check clippy test test-nu
     @echo "✅ All checks passed!"
 
 # ── Documentation ─────────────────────────────────────────────────────────────

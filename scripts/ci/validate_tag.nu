@@ -24,31 +24,43 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Validate a tag string and return the tag + bare version.
+#
+# On invalid input this raises a catchable error (via `error make`) so that
+# callers — including test harnesses — can intercept it with `try / catch`.
 export def validate [tag: string]: nothing -> record<tag: string, version: string> {
     if ($tag | is-empty) {
-        print $"(ansi red)❌ Tag is empty — nothing to validate.(ansi reset)"
-        exit 1
+        error make {
+            msg: $"Tag is empty — nothing to validate."
+        }
     }
 
     let pattern = '^v\d+\.\d+\.\d+$'
     if ($tag | find --regex $pattern | is-empty) {
-        print $"(ansi red)❌ Tag '($tag)' does not match vX.Y.Z — aborting.(ansi reset)"
-        exit 1
+        error make {
+            msg: $"Tag '($tag)' does not match vX.Y.Z — aborting."
+        }
     }
 
     let version = ($tag | str replace 'v' '')
-
-    print $"(ansi green)✅ Tag ($tag) \(version ($version)\) is valid.(ansi reset)"
 
     { tag: $tag, version: $version }
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
+# When invoked directly from the command line (or CI), validation errors should
+# terminate the process with a non-zero exit code and a human-friendly message.
 
 def main [tag: string] {
-    let result = (validate $tag)
+    let result = try {
+        validate $tag
+    } catch { |err|
+        print $"(ansi red)❌ ($err.msg)(ansi reset)"
+        exit 1
+    }
 
-    # When running in CI, emit lines compatible with $GITHUB_OUTPUT.
+    print $"(ansi green)✅ Tag ($result.tag) \(version ($result.version)\) is valid.(ansi reset)"
+
+    # Emit lines compatible with $GITHUB_OUTPUT.
     # The caller can append stdout directly:
     #   nu scripts/ci/validate_tag.nu "$TAG" >> "$GITHUB_OUTPUT"
     print $"tag=($result.tag)"

@@ -6,11 +6,13 @@
 #   1. cargo fmt --check
 #   2. cargo clippy (deny warnings, allow deprecated)
 #   3. cargo test
+#   4. nu script tests
 #
 # Usage:
-#   nu scripts/ci/quality_gate.nu              # run all three checks
+#   nu scripts/ci/quality_gate.nu              # run all four checks
 #   nu scripts/ci/quality_gate.nu --skip-fmt   # skip formatting check
 #   nu scripts/ci/quality_gate.nu --skip-test  # skip test suite
+#   nu scripts/ci/quality_gate.nu --skip-nu    # skip Nushell script tests
 #
 # Exit codes:
 #   0  — all checks passed
@@ -28,6 +30,7 @@ def step [label: string] {
 def main [
     --skip-fmt   # Skip the cargo fmt check
     --skip-test  # Skip the cargo test suite
+    --skip-nu    # Skip the Nushell script tests
 ] {
     print ""
     print (cyan "══════════════════════════════════════════════════════════")
@@ -96,6 +99,30 @@ def main [
         print ""
     } else {
         print "  ⏭ Skipping cargo test"
+        print ""
+    }
+
+    # ── 4. Nushell script tests ───────────────────────────────────────────────
+    if not $skip_nu {
+        step "nu scripts/tests/run_all.nu"
+        let nu_result = (do {
+            nu scripts/tests/run_all.nu
+        } | complete)
+        if $nu_result.exit_code != 0 {
+            print (red "  ✗ Nushell script tests failed.")
+            if ($nu_result.stderr | str trim | is-not-empty) {
+                print $nu_result.stderr
+            }
+            if ($nu_result.stdout | str trim | is-not-empty) {
+                print $nu_result.stdout
+            }
+            $failed = true
+        } else {
+            print (green "  ✔ Nushell script tests passed")
+        }
+        print ""
+    } else {
+        print "  ⏭ Skipping Nushell script tests"
         print ""
     }
 
