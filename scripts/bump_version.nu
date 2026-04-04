@@ -59,12 +59,16 @@ def update_readme_badge [version: string] {
         return
     }
     let readme = (open README.md --raw)
-    # Match shields.io crates/v badge URLs and replace the version segment.
-    let updated = ($readme
-        | str replace --all --regex 'crates/v/[^)]+\)' $'crates/v/gitkraft.svg\)\]\(https://crates.io/crates/gitkraft\)'
-    )
-    $updated | save --force README.md
-    print $"(ansi green)✓(ansi reset) Updated README.md version badge."
+    if ($readme =~ 'version-[0-9]+\.[0-9]+\.[0-9]+-blue') {
+        let updated = (
+            $readme
+            | str replace --all --regex 'version-[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?-blue' $"version-($version)-blue"
+        )
+        $updated | save --force README.md
+        print $"(ansi green)✓(ansi reset) Updated README.md version badge."
+    } else {
+        print $"(ansi yellow)⚠(ansi reset) No version badge found in README.md — skipping."
+    }
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
