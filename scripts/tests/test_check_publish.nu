@@ -2,6 +2,7 @@
 # ── GitKraft · test_check_publish.nu ────────────────────────────────────────
 # Tests for scripts/check_publish.nu — dry-run `cargo publish` verification.
 
+use std/assert
 use runner.nu *
 
 # ── Helpers ─────────────────────────────────────────────────────────────────

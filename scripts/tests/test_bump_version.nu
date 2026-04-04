@@ -2,6 +2,7 @@
 # ── GitKraft · test_bump_version.nu ─────────────────────────────────────────
 # Tests for scripts/bump_version.nu — bumping versions across all crate manifests.
 
+use std/assert
 use runner.nu *
 
 # ── Helpers ─────────────────────────────────────────────────────────────────

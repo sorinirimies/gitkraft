@@ -69,7 +69,10 @@ def update_readme_badge [version: string] {
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-def main [new_version: string] {
+def main [
+    new_version: string,  # New version in X.Y.Z format
+    --yes (-y),           # Skip confirmation prompt (non-interactive)
+] {
     print ""
     print $"(ansi cyan)══════════════════════════════════════════════════════════════(ansi reset)"
     print $"(ansi cyan)  GitKraft — Bump Version(ansi reset)"

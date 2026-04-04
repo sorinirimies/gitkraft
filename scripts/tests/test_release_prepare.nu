@@ -3,6 +3,7 @@
 # Tests for scripts/release_prepare.nu — release notes generation, tag format,
 # and full release checklist logic.
 
+use std/assert
 use runner.nu *
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -31,7 +32,7 @@ def parse_version [version: string]: nothing -> record<major: int, minor: int, p
     {
         major: ($parts | get 0 | into int),
         minor: ($parts | get 1 | into int),
-        patch: ($parts | get 2),
+        patch: ($parts | skip 2 | str join "."),
     }
 }
 

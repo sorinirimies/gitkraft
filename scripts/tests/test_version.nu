@@ -2,6 +2,7 @@
 # ── GitKraft · test_version.nu ──────────────────────────────────────────────
 # Tests for scripts/version.nu — reading the workspace version from Cargo.toml.
 
+use std/assert
 use runner.nu *
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -89,13 +90,9 @@ def "test version: rejects cargo without version" [] {
     let cargo = '[workspace]
 members = ["crates/gitkraft-core"]
 '
-    let result = (
-        do {
-            read_workspace_version $cargo
-        } | complete
-    )
     # Should fail because there is no version line.
-    assert ($result.exit_code != 0)
+    let failed = (try { read_workspace_version $cargo; false } catch { true })
+    assert $failed
 }
 
 # ── Main ────────────────────────────────────────────────────────────────────

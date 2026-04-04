@@ -3,6 +3,7 @@
 # Tests for scripts/upgrade_deps.nu — commit_label, all_passed pure functions,
 # and workspace invariant checks.
 
+use std/assert
 use runner.nu *
 use ../upgrade_deps.nu [commit_label all_passed]
 
@@ -56,59 +57,98 @@ def read_core_dep_version [cargo_toml: string]: nothing -> string {
 
 # ── Tests: commit_label ─────────────────────────────────────────────────────
 
-def "test commit_label: single crate" [] {
-    let label = (commit_label ["serde"])
-    assert equal $label "build(deps): upgrade serde"
+def "test commit_label: upgrade when toml dirty" [] {
+    let label = (commit_label true true "2026-03-24")
+    assert ($label | str contains "upgrade")
+    assert ($label | str contains "2026-03-24")
 }
 
-def "test commit_label: two crates" [] {
-    let label = (commit_label ["serde", "tokio"])
-    assert equal $label "build(deps): upgrade serde, tokio"
+def "test commit_label: update when only lock dirty" [] {
+    let label = (commit_label false true "2026-03-24")
+    assert ($label | str contains "update")
+    assert ($label | str contains "2026-03-24")
+    assert (not ($label | str contains "upgrade"))
 }
 
-def "test commit_label: three crates" [] {
-    let label = (commit_label ["a", "b", "c"])
-    assert equal $label "build(deps): upgrade a, b, c"
+def "test commit_label: empty when nothing dirty" [] {
+    let label = (commit_label false false "2026-03-24")
+    assert ($label | is-empty)
 }
 
-def "test commit_label: empty list" [] {
-    let label = (commit_label [])
-    assert equal $label "build(deps): upgrade "
+def "test commit_label: toml dirty takes precedence" [] {
+    let label = (commit_label true true "2026-01-01")
+    assert ($label | str contains "upgrade")
 }
 
-def "test commit_label: single crate with version-like name" [] {
-    let label = (commit_label ["iced_aw"])
-    assert equal $label "build(deps): upgrade iced_aw"
+def "test commit_label: upgrade contains chore prefix" [] {
+    let label = (commit_label true false "2026-03-24")
+    assert ($label | str starts-with "chore:")
+}
+
+def "test commit_label: update contains chore prefix" [] {
+    let label = (commit_label false true "2026-03-24")
+    assert ($label | str starts-with "chore:")
+}
+
+def "test commit_label: contains full date" [] {
+    let label = (commit_label false true "2099-12-31")
+    assert ($label | str contains "2099-12-31")
+}
+
+def "test commit_label: upgrade message is stable" [] {
+    let a = (commit_label true true "2026-03-24")
+    let b = (commit_label true true "2026-03-24")
+    assert equal $a $b
+}
+
+def "test commit_label: update message is stable" [] {
+    let a = (commit_label false true "2026-03-24")
+    let b = (commit_label false true "2026-03-24")
+    assert equal $a $b
 }
 
 # ── Tests: all_passed ────────────────────────────────────────────────────────
 
-def "test all_passed: all zeros" [] {
-    assert (all_passed [0, 0, 0])
+def "test all_passed: all true" [] {
+    assert (all_passed [true, true, true])
 }
 
-def "test all_passed: single zero" [] {
-    assert (all_passed [0])
+def "test all_passed: single true" [] {
+    assert (all_passed [true])
 }
 
 def "test all_passed: empty list" [] {
     assert (all_passed [])
 }
 
-def "test all_passed: one failure" [] {
-    assert (not (all_passed [0, 1, 0]))
+def "test all_passed: one false" [] {
+    assert (not (all_passed [true, false, true]))
 }
 
-def "test all_passed: all failures" [] {
-    assert (not (all_passed [1, 1, 1]))
+def "test all_passed: all false" [] {
+    assert (not (all_passed [false, false, false]))
 }
 
-def "test all_passed: high exit code" [] {
-    assert (not (all_passed [0, 127]))
+def "test all_passed: first element false" [] {
+    assert (not (all_passed [false, true, true, true]))
 }
 
-def "test all_passed: single failure" [] {
-    assert (not (all_passed [1]))
+def "test all_passed: last element false" [] {
+    assert (not (all_passed [true, true, true, false]))
+}
+
+def "test all_passed: single false" [] {
+    assert (not (all_passed [false]))
+}
+
+def "test all_passed: six true mirrors full quality gate" [] {
+    let gate = [true, true, true, true, true, true]
+    assert (all_passed $gate)
+}
+
+def "test all_passed: six with one failure" [] {
+    let gate = [true, false, true, true, true, true]
+    assert (not (all_passed $gate))
 }
 
 # ── Tests: workspace invariants ──────────────────────────────────────────────

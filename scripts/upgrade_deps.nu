@@ -32,6 +32,25 @@ def ok [msg: string] {
     print $"  (ansi green)✔(ansi reset) ($msg)"
 }
 
+# ─── Pure helpers (exported for testing) ───────────────────────────────────────
+
+# Return the short commit label string for the given dirty state.
+# Returns an empty string when nothing needs committing.
+export def commit_label [toml_dirty: bool, lock_dirty: bool, date: string] {
+    if $toml_dirty {
+        $"chore: nightly dependency upgrade ($date)"
+    } else if $lock_dirty {
+        $"chore: nightly dependency update ($date)"
+    } else {
+        ""
+    }
+}
+
+# Return true when every element of a bool list is true.
+export def all_passed [results: list<bool>] {
+    $results | all { |x| $x }
+}
+
 # ─── Pre-flight checks ────────────────────────────────────────────────────────
 
 def preflight [] {
