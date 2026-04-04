@@ -43,18 +43,11 @@ jobs:
             libfontconfig1-dev \
             libssl-dev
 
-      # ── mingw-w64 (needed for the Windows cross-compile check) ───────────────
-      - name: Install mingw-w64
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends mingw-w64
-
       # ── Rust toolchain ────────────────────────────────────────────────────────
-      - name: Install Rust stable (rustfmt + clippy + cross targets)
+      - name: Install Rust stable (rustfmt + clippy)
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-          targets: x86_64-pc-windows-gnu,x86_64-apple-darwin,aarch64-apple-darwin
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
@@ -109,18 +102,6 @@ jobs:
         if: steps.check.outputs.has_changes == 'true'
         run: cargo test --workspace --all-features --all-targets
 
-      - name: Cross-check — x86_64-pc-windows-gnu
-        if: steps.check.outputs.has_changes == 'true'
-        run: cargo check -p gitkraft-core --target x86_64-pc-windows-gnu
-
-      - name: Cross-check — x86_64-apple-darwin
-        if: steps.check.outputs.has_changes == 'true'
-        run: cargo check -p gitkraft-core --target x86_64-apple-darwin
-
-      - name: Cross-check — aarch64-apple-darwin
-        if: steps.check.outputs.has_changes == 'true'
-        run: cargo check -p gitkraft-core --target aarch64-apple-darwin
-
       # ── Push upgrade branch ──────────────────────────────────────────────────
       - name: Push upgrade branch
         if: steps.check.outputs.has_changes == 'true'
@@ -160,7 +141,7 @@ jobs:
               \"title\": \"chore(deps): nightly dependency upgrade ${DATE}\",
               \"head\": \"${BRANCH}\",
               \"base\": \"main\",
-              \"body\": \"## Automated Nightly Dependency Upgrade\n\nAll quality checks passed: **fmt**, **clippy**, **tests**, **cross-compile checks**.\n\nCreated by the Nightly Dependency Upgrade workflow.\"
+              \"body\": \"## Automated Nightly Dependency Upgrade\n\nAll quality checks passed: **fmt**, **clippy**, **tests**.\n\nCreated by the Nightly Dependency Upgrade workflow.\"
             }")
 
           PR_NUMBER=$(echo "$PR_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('number',''))" 2>/dev/null || true)

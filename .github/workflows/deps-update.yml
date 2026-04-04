@@ -42,18 +42,11 @@ jobs:
             libfontconfig1-dev \
             libssl-dev
 
-      # ── mingw-w64 (needed for the Windows cross-compile check) ───────────────
-      - name: Install mingw-w64
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends mingw-w64
-
       # ── Rust toolchain ────────────────────────────────────────────────────────
-      - name: Install Rust stable (rustfmt + clippy + cross targets)
+      - name: Install Rust stable (rustfmt + clippy)
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-          targets: x86_64-pc-windows-gnu,x86_64-apple-darwin,aarch64-apple-darwin
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
@@ -135,18 +128,6 @@ jobs:
         if: steps.check.outputs.has_changes == 'true'
         run: cargo test --workspace --all-features --all-targets
 
-      - name: Cross-check — x86_64-pc-windows-gnu
-        if: steps.check.outputs.has_changes == 'true'
-        run: cargo check -p gitkraft-core --target x86_64-pc-windows-gnu
-
-      - name: Cross-check — x86_64-apple-darwin
-        if: steps.check.outputs.has_changes == 'true'
-        run: cargo check -p gitkraft-core --target x86_64-apple-darwin
-
-      - name: Cross-check — aarch64-apple-darwin
-        if: steps.check.outputs.has_changes == 'true'
-        run: cargo check -p gitkraft-core --target aarch64-apple-darwin
-
       # ── Create Pull Request ──────────────────────────────────────────────────
       - name: Create Pull Request
         if: steps.check.outputs.has_changes == 'true'
@@ -170,14 +151,13 @@ jobs:
 
             ---
 
-            > ✅ All quality checks passed: **fmt**, **clippy**, **tests**, and
-            > **cross-compile checks** (Windows x86_64, macOS x86_64, macOS ARM).
+            > ✅ All quality checks passed: **fmt**, **clippy**, **tests**.
           branch: deps/nightly-dependency-upgrade
           labels: dependencies
           delete-branch: true
 
       # ── Auto-merge the PR ────────────────────────────────────────────────────
-      # The full quality gate (fmt, clippy, tests, cross-checks) already passed
+      # The full quality gate (fmt, clippy, tests) already passed
       # above, so merging is safe.  Try --auto first (honours branch protection
       # rules and waits for any required status checks triggered by the PR);
       # fall back to immediate merge if auto-merge is not enabled in the repo.

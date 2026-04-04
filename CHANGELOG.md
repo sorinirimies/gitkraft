@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.4 - 2026-04-04
+### 🔄 Updated
+- Update dependencies in Cargo.lock
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.1.3...v0.1.4
+## 0.1.3 - 2026-04-04
+### 🔧 Chores
+- chore: bump version to 0.1.3
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.1.2...v0.1.3
 ## 0.1.2 - 2026-04-04
 ### ♻️ Refactor
 - Refactor and simplify logic in core modules and GUI state
