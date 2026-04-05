@@ -201,7 +201,10 @@ def git_commit_and_tag [new_version: string] {
 
 # ── Main ──────────────────────────────────────────────────────
 
-def main [new_version: string] {
+def main [raw_version: string] {
+    # Strip leading 'v' prefix if present (e.g. v0.3.2 → 0.3.2)
+    let new_version = ($raw_version | str replace --regex '^v' '')
+
     print ""
     print (cyan "══════════════════════════════════════════════════")
     print (cyan "  GitKraft Release Preparation")
