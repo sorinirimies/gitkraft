@@ -37,14 +37,6 @@ jobs:
       tag: ${{ steps.resolve.outputs.tag }}
       version: ${{ steps.resolve.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Nushell
-        run: cargo install nu --locked
-
       - name: Resolve and validate tag
         id: resolve
         run: |
@@ -53,7 +45,18 @@ jobs:
           else
             TAG="${{ github.ref_name }}"
           fi
-          nu scripts/ci/validate_tag.nu "$TAG" >> "$GITHUB_OUTPUT"
+
+          echo "Resolved tag: ${TAG}"
+
+          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Tag '${TAG}' does not match vX.Y.Z — aborting."
+            exit 1
+          fi
+
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}"         >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "✅ Tag ${TAG} (version ${VERSION}) is valid."
 
   # ── 1. Quality gate ──────────────────────────────────────────────────────────
   test:
@@ -317,24 +320,61 @@ jobs:
         if: env.HAS_TOKEN == 'true'
         uses: Swatinem/rust-cache@v2
 
-      - name: Install Nushell
-        if: env.HAS_TOKEN == 'true'
-        run: cargo install nu --locked
-
       - name: Publish gitkraft-core
         if: env.HAS_TOKEN == 'true'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
-        run: nu scripts/ci/publish_crate.nu gitkraft-core ${{ needs.validate.outputs.version }} --wait 30
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          if cargo info gitkraft-core@${VERSION} 2>/dev/null | grep -q "^gitkraft-core"; then
+            echo "⏭️  gitkraft-core@${VERSION} already on crates.io — skipping."
+          else
+            echo "📦 Copying README.md into crates/gitkraft-core…"
+            cp README.md crates/gitkraft-core/README.md
+            echo "📦 Publishing gitkraft-core…"
+            output=$(cargo publish -p gitkraft-core --allow-dirty 2>&1) && echo "$output" || {
+              echo "$output"
+              echo "$output" | grep -q "already exists" && echo "⏭️  Already published — skipping." || exit 1
+            }
+            echo "⏳ Waiting 30 s for the index to propagate…"
+            sleep 30
+          fi
 
       - name: Publish gitkraft (GUI)
         if: env.HAS_TOKEN == 'true'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
-        run: nu scripts/ci/publish_crate.nu gitkraft ${{ needs.validate.outputs.version }} --readme-dir crates/gitkraft-gui --wait 20
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          if cargo info gitkraft@${VERSION} 2>/dev/null | grep -q "^gitkraft"; then
+            echo "⏭️  gitkraft@${VERSION} already on crates.io — skipping."
+          else
+            echo "📦 Copying README.md into crates/gitkraft-gui…"
+            cp README.md crates/gitkraft-gui/README.md
+            echo "📦 Publishing gitkraft (GUI)…"
+            output=$(cargo publish -p gitkraft --allow-dirty 2>&1) && echo "$output" || {
+              echo "$output"
+              echo "$output" | grep -q "already exists" && echo "⏭️  Already published — skipping." || exit 1
+            }
+            echo "⏳ Waiting 20 s for the index to propagate…"
+            sleep 20
+          fi
 
       - name: Publish gitkraft-tui
         if: env.HAS_TOKEN == 'true'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
-        run: nu scripts/ci/publish_crate.nu gitkraft-tui ${{ needs.validate.outputs.version }} --wait 0
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          if cargo info gitkraft-tui@${VERSION} 2>/dev/null | grep -q "^gitkraft-tui"; then
+            echo "⏭️  gitkraft-tui@${VERSION} already on crates.io — skipping."
+          else
+            echo "📦 Copying README.md into crates/gitkraft-tui…"
+            cp README.md crates/gitkraft-tui/README.md
+            echo "📦 Publishing gitkraft-tui…"
+            output=$(cargo publish -p gitkraft-tui --allow-dirty 2>&1) && echo "$output" || {
+              echo "$output"
+              echo "$output" | grep -q "already exists" && echo "⏭️  Already published — skipping." || exit 1
+            }
+          fi
+          echo "✅ Publish step complete."
