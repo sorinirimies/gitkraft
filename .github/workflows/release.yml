@@ -123,17 +123,6 @@ jobs:
             suffix: ".exe"
             install_gui_libs: false
 
-          # ── macOS x86_64 (Intel) ─────────────────────────────────────────────
-          # macos-13 is the last Intel-native runner.  macos-latest is now
-          # aarch64, which would cross-compile and break openssl-sys
-          # (pkg-config refuses cross-compilation without a sysroot).
-          - target: x86_64-apple-darwin
-            runner: macos-13
-            gui_binary: gitkraft
-            tui_binary: gitkraft-tui
-            suffix: ""
-            install_gui_libs: false
-
           # ── macOS aarch64 (Apple Silicon) ────────────────────────────────────
           - target: aarch64-apple-darwin
             runner: macos-latest
