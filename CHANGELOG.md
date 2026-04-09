@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 ## 0.3.4 - 2026-04-05
 ### ♻️ Refactor
 - Refactor release workflow to use bash for tag validation and publishing
+### 🔧 Chores
+- chore: bump version to 0.3.4
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.3...v0.3.4
 ## 0.3.3 - 2026-04-05
 ### 📦 Other Changes
