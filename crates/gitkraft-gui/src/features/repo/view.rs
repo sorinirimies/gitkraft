@@ -14,17 +14,17 @@ use crate::theme;
 /// Render the welcome / landing view (no repo open yet).
 pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
     let c = state.colors();
+    let tab = state.active_tab();
 
     // ── Loading state (e.g. auto-opening last repo) ───────────────────────
-    if state.is_loading {
+    if tab.is_loading {
         let spinner_icon = text('\u{F130}') // arrow-repeat (Bootstrap)
             .font(iced_fonts::BOOTSTRAP_FONT)
             .size(32)
             .color(c.accent);
 
         let loading_label = text(
-            state
-                .status_message
+            tab.status_message
                 .as_deref()
                 .unwrap_or("Loading repository..."),
         )

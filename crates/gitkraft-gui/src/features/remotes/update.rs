@@ -12,16 +12,19 @@ use super::commands;
 pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
     match message {
         Message::Fetch => {
-            if let Some(path) = state.repo_path.clone() {
+            let repo_path = state.active_tab().repo_path.clone();
+            if let Some(path) = repo_path {
                 // Fetch from the first configured remote (usually "origin").
                 let remote_name = state
+                    .active_tab()
                     .remotes
                     .first()
                     .map(|r| r.name.clone())
                     .unwrap_or_else(|| "origin".to_string());
 
-                state.is_loading = true;
-                state.status_message = Some(format!("Fetching from '{remote_name}'…"));
+                let tab = state.active_tab_mut();
+                tab.is_loading = true;
+                tab.status_message = Some(format!("Fetching from '{remote_name}'…"));
                 commands::fetch_remote(path, remote_name)
             } else {
                 Task::none()
@@ -29,21 +32,23 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         }
 
         Message::FetchCompleted(result) => {
-            state.is_loading = false;
+            state.active_tab_mut().is_loading = false;
             match result {
                 Ok(()) => {
-                    state.status_message = Some("Fetch completed.".into());
+                    state.active_tab_mut().status_message = Some("Fetch completed.".into());
                     // Trigger a full refresh so branches / commits reflect any
                     // new remote state.
-                    if let Some(path) = state.repo_path.clone() {
+                    let repo_path = state.active_tab().repo_path.clone();
+                    if let Some(path) = repo_path {
                         crate::features::repo::commands::refresh_repo(path)
                     } else {
                         Task::none()
                     }
                 }
                 Err(e) => {
-                    state.error_message = Some(format!("Fetch failed: {e}"));
-                    state.status_message = None;
+                    let tab = state.active_tab_mut();
+                    tab.error_message = Some(format!("Fetch failed: {e}"));
+                    tab.status_message = None;
                     Task::none()
                 }
             }

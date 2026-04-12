@@ -26,8 +26,10 @@ pub enum DragTargetH {
     StagingTop,
 }
 
-/// Top-level application state for the GitKraft GUI.
-pub struct GitKraft {
+// ── Per-repository tab state ──────────────────────────────────────────────────
+
+/// Per-repository state — one instance per open tab.
+pub struct RepoTab {
     // ── Repository ────────────────────────────────────────────────────────
     /// Path to the currently opened repository (workdir root).
     pub repo_path: Option<PathBuf>,
@@ -45,8 +47,6 @@ pub struct GitKraft {
     pub commits: Vec<CommitInfo>,
     /// Index into `commits` of the currently selected commit.
     pub selected_commit: Option<usize>,
-
-    // ── Graph ─────────────────────────────────────────────────────────────
     /// Per-commit graph layout rows for branch visualisation.
     pub graph_rows: Vec<gitkraft_core::GraphRow>,
 
@@ -70,9 +70,79 @@ pub struct GitKraft {
     /// Configured remotes.
     pub remotes: Vec<RemoteInfo>,
 
-    // ── UI state ──────────────────────────────────────────────────────────
+    // ── Per-tab UI state ──────────────────────────────────────────────────
     /// Whether the commit detail pane is visible.
     pub show_commit_detail: bool,
+    /// Text in the "new branch name" input.
+    pub new_branch_name: String,
+    /// Whether the inline branch-creation UI is visible.
+    pub show_branch_create: bool,
+    /// Text in the "stash message" input.
+    pub stash_message: String,
+
+    // ── Feedback ──────────────────────────────────────────────────────────
+    /// Transient status-bar message (e.g. "Branch created").
+    pub status_message: Option<String>,
+    /// Error message shown in a banner / toast.
+    pub error_message: Option<String>,
+    /// True while an async operation is in flight.
+    pub is_loading: bool,
+}
+
+impl RepoTab {
+    /// Create an empty tab (no repo open — shows welcome screen).
+    pub fn new_empty() -> Self {
+        Self {
+            repo_path: None,
+            repo_info: None,
+            branches: Vec::new(),
+            current_branch: None,
+            commits: Vec::new(),
+            selected_commit: None,
+            graph_rows: Vec::new(),
+            unstaged_changes: Vec::new(),
+            staged_changes: Vec::new(),
+            commit_diffs: Vec::new(),
+            selected_diff: None,
+            commit_message: String::new(),
+            stashes: Vec::new(),
+            remotes: Vec::new(),
+            show_commit_detail: false,
+            new_branch_name: String::new(),
+            show_branch_create: false,
+            stash_message: String::new(),
+            status_message: None,
+            error_message: None,
+            is_loading: false,
+        }
+    }
+
+    /// Whether a repository is currently open in this tab.
+    pub fn has_repo(&self) -> bool {
+        self.repo_path.is_some()
+    }
+
+    /// Display name for the tab (last path component, or "New Tab").
+    pub fn display_name(&self) -> &str {
+        self.repo_path
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("New Tab")
+    }
+}
+
+// ── Top-level application state ───────────────────────────────────────────────
+
+/// Top-level application state for the GitKraft GUI.
+pub struct GitKraft {
+    // ── Tabs ──────────────────────────────────────────────────────────────
+    /// All open repository tabs.
+    pub tabs: Vec<RepoTab>,
+    /// Index of the currently active/visible tab.
+    pub active_tab: usize,
+
+    // ── UI state (global, not per-tab) ────────────────────────────────────
     /// Whether the left sidebar is expanded.
     pub sidebar_expanded: bool,
 
@@ -102,27 +172,9 @@ pub struct GitKraft {
     /// Same as `drag_initialized` but for horizontal drags.
     pub drag_initialized_h: bool,
 
-    // ── Feedback ──────────────────────────────────────────────────────────
-    /// Transient status-bar message (e.g. "Branch created").
-    pub status_message: Option<String>,
-    /// Error message shown in a banner / toast.
-    pub error_message: Option<String>,
-    /// True while an async operation is in flight.
-    pub is_loading: bool,
-
     // ── Theme ─────────────────────────────────────────────────────────────
     /// Index into `gitkraft_core::THEME_NAMES` for the currently active theme.
     pub current_theme_index: usize,
-
-    // ── Branch creation ───────────────────────────────────────────────────
-    /// Text in the "new branch name" input.
-    pub new_branch_name: String,
-    /// Whether the inline branch-creation UI is visible.
-    pub show_branch_create: bool,
-
-    // ── Stash message ─────────────────────────────────────────────────────
-    /// Text in the "stash message" input.
-    pub stash_message: String,
 
     // ── Persistence ───────────────────────────────────────────────────────
     /// Recently opened repositories (loaded from settings on startup).
@@ -171,26 +223,9 @@ impl GitKraft {
         };
 
         Self {
-            repo_path: None,
-            repo_info: None,
+            tabs: vec![RepoTab::new_empty()],
+            active_tab: 0,
 
-            branches: Vec::new(),
-            current_branch: None,
-
-            commits: Vec::new(),
-            selected_commit: None,
-            graph_rows: Vec::new(),
-
-            unstaged_changes: Vec::new(),
-            staged_changes: Vec::new(),
-            commit_diffs: Vec::new(),
-            selected_diff: None,
-            commit_message: String::new(),
-
-            stashes: Vec::new(),
-            remotes: Vec::new(),
-
-            show_commit_detail: false,
             sidebar_expanded,
 
             sidebar_width,
@@ -205,33 +240,30 @@ impl GitKraft {
             drag_initialized: false,
             drag_initialized_h: false,
 
-            status_message: None,
-            error_message: None,
-            is_loading: false,
-
             current_theme_index,
-
-            new_branch_name: String::new(),
-            show_branch_create: false,
-
-            stash_message: String::new(),
 
             recent_repos,
         }
     }
 
-    /// Whether a repository is currently open.
-    pub fn has_repo(&self) -> bool {
-        self.repo_path.is_some()
+    /// Get a reference to the currently active tab.
+    pub fn active_tab(&self) -> &RepoTab {
+        &self.tabs[self.active_tab]
     }
 
-    /// Helper: the display name for the repo (last component of the path).
+    /// Get a mutable reference to the currently active tab.
+    pub fn active_tab_mut(&mut self) -> &mut RepoTab {
+        &mut self.tabs[self.active_tab]
+    }
+
+    /// Whether the active tab has a repository open.
+    pub fn has_repo(&self) -> bool {
+        self.active_tab().has_repo()
+    }
+
+    /// Helper: the display name for the active tab's repo.
     pub fn repo_display_name(&self) -> &str {
-        self.repo_path
-            .as_ref()
-            .and_then(|p| p.file_name())
-            .and_then(|n| n.to_str())
-            .unwrap_or("GitKraft")
+        self.active_tab().display_name()
     }
 
     /// Derive the full [`ThemeColors`] from the currently active core theme.
@@ -301,10 +333,10 @@ mod tests {
     #[test]
     fn new_defaults() {
         let state = GitKraft::new();
-        assert!(state.repo_path.is_none());
+        assert!(state.active_tab().repo_path.is_none());
         assert!(!state.has_repo());
-        assert_eq!(state.repo_display_name(), "GitKraft");
-        assert!(state.commits.is_empty());
+        assert_eq!(state.repo_display_name(), "New Tab");
+        assert!(state.active_tab().commits.is_empty());
         assert!(state.sidebar_expanded);
         // Default theme index should be valid
         assert!(state.current_theme_index < gitkraft_core::THEME_COUNT);
@@ -314,12 +346,15 @@ mod tests {
         assert!(state.staging_height > 0.0);
         assert!(state.dragging.is_none());
         assert!(state.dragging_h.is_none());
+        // Should start with one empty tab
+        assert_eq!(state.tabs.len(), 1);
+        assert_eq!(state.active_tab, 0);
     }
 
     #[test]
     fn repo_display_name_extracts_basename() {
         let mut state = GitKraft::new();
-        state.repo_path = Some(std::path::PathBuf::from("/home/user/my-project"));
+        state.active_tab_mut().repo_path = Some(std::path::PathBuf::from("/home/user/my-project"));
         assert_eq!(state.repo_display_name(), "my-project");
     }
 
@@ -389,5 +424,24 @@ mod tests {
         assert_eq!(state.current_theme_name(), "Dracula");
         state.current_theme_index = 0;
         assert_eq!(state.current_theme_name(), "Default");
+    }
+
+    #[test]
+    fn repo_tab_new_empty() {
+        let tab = RepoTab::new_empty();
+        assert!(tab.repo_path.is_none());
+        assert!(!tab.has_repo());
+        assert_eq!(tab.display_name(), "New Tab");
+        assert!(tab.commits.is_empty());
+        assert!(tab.branches.is_empty());
+        assert!(!tab.is_loading);
+    }
+
+    #[test]
+    fn repo_tab_display_name_with_path() {
+        let mut tab = RepoTab::new_empty();
+        tab.repo_path = Some(std::path::PathBuf::from("/some/path/cool-repo"));
+        assert!(tab.has_repo());
+        assert_eq!(tab.display_name(), "cool-repo");
     }
 }

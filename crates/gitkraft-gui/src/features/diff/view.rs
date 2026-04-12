@@ -18,10 +18,11 @@ use crate::theme::ThemeColors;
 /// colored lines; otherwise show a placeholder message.
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let c = state.colors();
+    let tab = state.active_tab();
 
-    match &state.selected_diff {
+    match &tab.selected_diff {
         Some(diff) => {
-            if state.commit_diffs.len() > 1 {
+            if tab.commit_diffs.len() > 1 {
                 // Multiple files in this commit — show file list + divider + diff side by side.
                 let file_list = commit_file_list(state, &c, state.diff_file_list_width);
                 let divider = crate::widgets::divider::vertical_divider(
@@ -58,6 +59,8 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
 /// Clickable file list for the currently selected commit's diffs.
 fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Element<'a, Message> {
+    let tab = state.active_tab();
+
     let header_icon = text('\u{F30A}') // file-diff
         .font(iced_fonts::BOOTSTRAP_FONT)
         .size(13)
@@ -65,7 +68,7 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
 
     let header_text = text("Files").size(13).color(c.text_primary);
 
-    let file_count = text(format!("({})", state.commit_diffs.len()))
+    let file_count = text(format!("({})", tab.commit_diffs.len()))
         .size(11)
         .color(c.muted);
 
@@ -81,7 +84,7 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
 
     let mut file_list_col = column![].spacing(1).width(Length::Fill);
 
-    for diff in &state.commit_diffs {
+    for diff in &tab.commit_diffs {
         let file_path_display = if diff.new_file.is_empty() {
             &diff.old_file
         } else {
@@ -95,7 +98,7 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
             .unwrap_or(file_path_display);
 
         // Determine if this file is the currently selected one
-        let is_selected = state
+        let is_selected = tab
             .selected_diff
             .as_ref()
             .map(|sel| sel.new_file == diff.new_file && sel.old_file == diff.old_file)

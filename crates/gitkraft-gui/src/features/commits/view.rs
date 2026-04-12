@@ -63,6 +63,7 @@ fn graph_cell<'a>(
 
 /// Render the commit log panel.
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
+    let tab = state.active_tab();
     let c = state.colors();
 
     let header_icon = text('\u{F293}')
@@ -72,7 +73,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     let header_text = text("Commit Log").size(14).color(c.text_primary);
 
-    let commit_count = text(format!("({})", state.commits.len()))
+    let commit_count = text(format!("({})", tab.commits.len()))
         .size(12)
         .color(c.muted);
 
@@ -86,7 +87,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     .align_y(Alignment::Center)
     .padding([8, 10]);
 
-    if state.commits.is_empty() {
+    if tab.commits.is_empty() {
         let empty_msg = text("No commits yet.").size(14).color(c.muted);
 
         let content = column![
@@ -108,13 +109,13 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         // Use keyed_column so Iced can diff the tree by a stable key
         // instead of rebuilding all rows from scratch every frame.
         // We use the enumeration index as the key (Copy + PartialEq).
-        let list = keyed_column(state.commits.iter().enumerate().map(|(idx, commit)| {
+        let list = keyed_column(tab.commits.iter().enumerate().map(|(idx, commit)| {
             let key = idx;
 
-            let is_selected = state.selected_commit == Some(idx);
+            let is_selected = tab.selected_commit == Some(idx);
 
             // ── Graph column ──────────────────────────────────
-            let graph_elem: Element<'_, Message> = if let Some(grow) = state.graph_rows.get(idx) {
+            let graph_elem: Element<'_, Message> = if let Some(grow) = tab.graph_rows.get(idx) {
                 graph_cell(grow, &c.graph_colors).into()
             } else {
                 text("").into()

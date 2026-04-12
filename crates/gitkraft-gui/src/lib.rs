@@ -12,4 +12,4 @@ pub mod view;
 pub mod widgets;
 
 pub use message::Message;
-pub use state::GitKraft;
+pub use state::{GitKraft, RepoTab};

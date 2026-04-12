@@ -41,11 +41,26 @@ use crate::widgets;
 impl GitKraft {
     /// Top-level view — called by the Iced runtime on every frame.
     pub fn view(&self) -> Element<'_, Message> {
+        let c = self.colors();
+
+        // ── Tab bar (always visible) ──────────────────────────────────────
+        let tab_bar = widgets::tab_bar::view(self);
+
         if !self.has_repo() {
-            return features::repo::view::welcome_view(self);
+            // Show the tab bar above the welcome screen so users can
+            // switch between tabs even when the active one has no repo.
+            let welcome = features::repo::view::welcome_view(self);
+            let outer = column![tab_bar, welcome]
+                .width(Length::Fill)
+                .height(Length::Fill);
+            return container(outer)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(theme::bg_style)
+                .into();
         }
 
-        let c = self.colors();
+        let tab = self.active_tab();
 
         // ── Header toolbar ────────────────────────────────────────────────
         let header = widgets::header::view(self);
@@ -113,7 +128,9 @@ impl GitKraft {
         // ── Error banner (if any) ─────────────────────────────────────────
         let mut main_col = column![].width(Length::Fill).height(Length::Fill);
 
-        if let Some(ref err) = self.error_message {
+        main_col = main_col.push(tab_bar);
+
+        if let Some(ref err) = tab.error_message {
             main_col = main_col.push(error_banner(err, &c));
         }
 
@@ -142,25 +159,21 @@ impl GitKraft {
 
 /// Render the status bar at the very bottom of the window.
 fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
+    let tab = state.active_tab();
     let c = state.colors();
 
-    let status_text = if state.is_loading {
-        state
-            .status_message
+    let status_text = if tab.is_loading {
+        tab.status_message
             .as_deref()
             .unwrap_or("Loading…")
             .to_string()
     } else {
-        state
-            .status_message
-            .as_deref()
-            .unwrap_or("Ready")
-            .to_string()
+        tab.status_message.as_deref().unwrap_or("Ready").to_string()
     };
 
     let status_label = text(status_text).size(12).color(c.text_secondary);
 
-    let branch_info: Element<'_, Message> = if let Some(ref branch) = state.current_branch {
+    let branch_info: Element<'_, Message> = if let Some(ref branch) = tab.current_branch {
         let icon = text('\u{F404}')
             .font(iced_fonts::BOOTSTRAP_FONT)
             .size(12)
@@ -173,7 +186,7 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
         Space::with_width(0).into()
     };
 
-    let repo_state_info: Element<'_, Message> = if let Some(ref info) = state.repo_info {
+    let repo_state_info: Element<'_, Message> = if let Some(ref info) = tab.repo_info {
         let state_str = format!("{}", info.state);
         if state_str != "Clean" {
             text(state_str).size(12).color(c.yellow).into()
@@ -185,8 +198,8 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
     };
 
     let changes_summary = {
-        let unstaged_count = state.unstaged_changes.len();
-        let staged_count = state.staged_changes.len();
+        let unstaged_count = tab.unstaged_changes.len();
+        let staged_count = tab.staged_changes.len();
         if unstaged_count > 0 || staged_count > 0 {
             text(format!("{unstaged_count} unstaged, {staged_count} staged"))
                 .size(12)

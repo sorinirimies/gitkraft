@@ -35,6 +35,14 @@ pub struct StagingPayload {
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    // ── Tabs ──────────────────────────────────────────────────────────────
+    /// User clicked a tab in the tab bar.
+    SwitchTab(usize),
+    /// User clicked the "+" button to open a new empty tab.
+    NewTab,
+    /// User clicked the close (×) button on a tab.
+    CloseTab(usize),
+
     // ── Repository ────────────────────────────────────────────────────────
     /// User clicked "Open Repository" — launch the folder picker.
     OpenRepo,

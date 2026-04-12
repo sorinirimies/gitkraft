@@ -10,6 +10,7 @@ use crate::theme;
 
 /// Render the stash panel (typically shown in the sidebar beneath branches).
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
+    let tab = state.active_tab();
     let c = state.colors();
 
     let header_icon = text('\u{F577}') // stack icon
@@ -19,7 +20,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     let header_label = text("Stashes").size(14).color(c.text_primary);
 
-    let count_label = text(format!("({})", state.stashes.len()))
+    let count_label = text(format!("({})", tab.stashes.len()))
         .size(11)
         .color(c.muted);
 
@@ -46,7 +47,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     .padding([8, 10]);
 
     // ── Stash message input ───────────────────────────────────────────────
-    let stash_input = text_input("Stash message (optional)…", &state.stash_message)
+    let stash_input = text_input("Stash message (optional)…", &tab.stash_message)
         .on_input(Message::StashMessageChanged)
         .padding(4)
         .size(12);
@@ -54,7 +55,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let input_row = container(stash_input).padding([2, 10]).width(Length::Fill);
 
     // ── Stash entries ─────────────────────────────────────────────────────
-    let stash_entries: Vec<Element<'_, Message>> = state
+    let stash_entries: Vec<Element<'_, Message>> = tab
         .stashes
         .iter()
         .map(|entry| {

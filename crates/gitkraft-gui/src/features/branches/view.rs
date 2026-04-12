@@ -11,6 +11,7 @@ use crate::theme;
 
 /// Render the branches sidebar panel.
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
+    let tab = state.active_tab();
     let c = state.colors();
 
     let header_icon = text('\u{F404}')
@@ -20,7 +21,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     let header_text = text("Branches").size(14).color(c.text_primary);
 
-    let toggle_icon_char = if state.show_branch_create {
+    let toggle_icon_char = if tab.show_branch_create {
         '\u{F2EA}' // dash-circle
     } else {
         '\u{F4FA}' // plus-circle
@@ -46,13 +47,13 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     .padding([8, 10]);
 
     // ── New branch form ───────────────────────────────────────────────────
-    let create_form: Element<'_, Message> = if state.show_branch_create {
-        let input = text_input("new-branch-name", &state.new_branch_name)
+    let create_form: Element<'_, Message> = if tab.show_branch_create {
+        let input = text_input("new-branch-name", &tab.new_branch_name)
             .on_input(Message::NewBranchNameChanged)
             .padding(6)
             .size(13);
 
-        let create_btn = if state.new_branch_name.trim().is_empty() {
+        let create_btn = if tab.new_branch_name.trim().is_empty() {
             button(text("Create").size(13))
                 .padding([4, 10])
                 .style(theme::toolbar_button)
@@ -71,7 +72,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     };
 
     // ── Branch list ───────────────────────────────────────────────────────
-    let local_branches: Vec<Element<'_, Message>> = state
+    let local_branches: Vec<Element<'_, Message>> = tab
         .branches
         .iter()
         .filter(|b| b.branch_type == BranchType::Local)
@@ -137,7 +138,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .collect();
 
     // ── Remote branches (read-only list) ──────────────────────────────────
-    let remote_branches: Vec<Element<'_, Message>> = state
+    let remote_branches: Vec<Element<'_, Message>> = tab
         .branches
         .iter()
         .filter(|b| b.branch_type == BranchType::Remote)

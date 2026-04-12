@@ -13,7 +13,7 @@ use crate::state::GitKraft;
 pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
     match message {
         Message::SelectDiff(diff_info) => {
-            state.selected_diff = Some(diff_info);
+            state.active_tab_mut().selected_diff = Some(diff_info);
             Task::none()
         }
 

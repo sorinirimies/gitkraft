@@ -12,8 +12,10 @@ use super::commands;
 pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
     match message {
         Message::StageFile(path) => {
-            if let Some(repo_path) = state.repo_path.clone() {
-                state.status_message = Some(format!("Staging '{path}'…"));
+            let repo_path = state.active_tab().repo_path.clone();
+            if let Some(repo_path) = repo_path {
+                let tab = state.active_tab_mut();
+                tab.status_message = Some(format!("Staging '{path}'…"));
                 commands::stage_file(repo_path, path)
             } else {
                 Task::none()
@@ -21,8 +23,10 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         }
 
         Message::UnstageFile(path) => {
-            if let Some(repo_path) = state.repo_path.clone() {
-                state.status_message = Some(format!("Unstaging '{path}'…"));
+            let repo_path = state.active_tab().repo_path.clone();
+            if let Some(repo_path) = repo_path {
+                let tab = state.active_tab_mut();
+                tab.status_message = Some(format!("Unstaging '{path}'…"));
                 commands::unstage_file(repo_path, path)
             } else {
                 Task::none()
@@ -30,8 +34,10 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         }
 
         Message::StageAll => {
-            if let Some(repo_path) = state.repo_path.clone() {
-                state.status_message = Some("Staging all files…".into());
+            let repo_path = state.active_tab().repo_path.clone();
+            if let Some(repo_path) = repo_path {
+                let tab = state.active_tab_mut();
+                tab.status_message = Some("Staging all files…".into());
                 commands::stage_all(repo_path)
             } else {
                 Task::none()
@@ -39,8 +45,10 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         }
 
         Message::UnstageAll => {
-            if let Some(repo_path) = state.repo_path.clone() {
-                state.status_message = Some("Unstaging all files…".into());
+            let repo_path = state.active_tab().repo_path.clone();
+            if let Some(repo_path) = repo_path {
+                let tab = state.active_tab_mut();
+                tab.status_message = Some("Unstaging all files…".into());
                 commands::unstage_all(repo_path)
             } else {
                 Task::none()
@@ -48,8 +56,10 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         }
 
         Message::DiscardFile(path) => {
-            if let Some(repo_path) = state.repo_path.clone() {
-                state.status_message = Some(format!("Discarding changes in '{path}'…"));
+            let repo_path = state.active_tab().repo_path.clone();
+            if let Some(repo_path) = repo_path {
+                let tab = state.active_tab_mut();
+                tab.status_message = Some(format!("Discarding changes in '{path}'…"));
                 commands::discard_file(repo_path, path)
             } else {
                 Task::none()
@@ -57,15 +67,16 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         }
 
         Message::StagingUpdated(result) => {
+            let tab = state.active_tab_mut();
             match result {
                 Ok(payload) => {
-                    state.unstaged_changes = payload.unstaged;
-                    state.staged_changes = payload.staged;
-                    state.status_message = Some("Staging area updated.".into());
+                    tab.unstaged_changes = payload.unstaged;
+                    tab.staged_changes = payload.staged;
+                    tab.status_message = Some("Staging area updated.".into());
                 }
                 Err(e) => {
-                    state.error_message = Some(format!("Staging operation failed: {e}"));
-                    state.status_message = None;
+                    tab.error_message = Some(format!("Staging operation failed: {e}"));
+                    tab.status_message = None;
                 }
             }
             Task::none()

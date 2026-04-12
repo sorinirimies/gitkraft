@@ -12,6 +12,7 @@ use crate::theme;
 
 /// Render the top toolbar row.
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
+    let tab = state.active_tab();
     let c = state.colors();
 
     // ── Repo name ─────────────────────────────────────────────────────────
@@ -32,12 +33,12 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .size(14)
         .color(c.green);
 
-    let branch_name_str = state.current_branch.as_deref().unwrap_or("(detached)");
+    let branch_name_str = tab.current_branch.as_deref().unwrap_or("(detached)");
 
     let branch_label = text(branch_name_str).size(14).color(c.text_primary);
 
     // ── Repo state badge (if not clean) ───────────────────────────────────
-    let state_badge: Element<'_, Message> = if let Some(ref info) = state.repo_info {
+    let state_badge: Element<'_, Message> = if let Some(ref info) = tab.repo_info {
         if info.state != gitkraft_core::RepoState::Clean {
             text(format!(" [{}]", info.state))
                 .size(12)
@@ -56,7 +57,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .size(14)
         .color(c.accent);
 
-    let fetch_btn = if state.remotes.is_empty() {
+    let fetch_btn = if tab.remotes.is_empty() {
         button(
             row![fetch_icon, Space::with_width(4), text("Fetch").size(12)]
                 .align_y(Alignment::Center),
@@ -130,7 +131,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .on_press(Message::ToggleSidebar);
 
     // ── Loading indicator ─────────────────────────────────────────────────
-    let loading_indicator: Element<'_, Message> = if state.is_loading {
+    let loading_indicator: Element<'_, Message> = if tab.is_loading {
         text("⟳ Loading…").size(12).color(c.yellow).into()
     } else {
         Space::with_width(0).into()

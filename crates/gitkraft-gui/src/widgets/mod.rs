@@ -2,3 +2,4 @@
 
 pub mod divider;
 pub mod header;
+pub mod tab_bar;

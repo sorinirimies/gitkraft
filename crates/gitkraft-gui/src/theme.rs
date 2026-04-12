@@ -279,6 +279,42 @@ pub fn ghost_button(theme: &iced::Theme, status: button::Status) -> button::Styl
     }
 }
 
+/// Active tab button — has a visible bottom accent border to indicate selection.
+pub fn active_tab_button(theme: &iced::Theme, status: button::Status) -> button::Style {
+    let c = ThemeColors::from_theme(theme);
+    let active_border = iced::Border {
+        color: c.accent,
+        width: 0.0,
+        radius: 0.0.into(),
+    };
+    match status {
+        button::Status::Active => button::Style {
+            background: Some(Background::Color(c.surface)),
+            text_color: c.text_primary,
+            border: active_border,
+            shadow: iced::Shadow::default(),
+        },
+        button::Status::Hovered => button::Style {
+            background: Some(Background::Color(c.surface_highlight)),
+            text_color: c.text_primary,
+            border: active_border,
+            shadow: iced::Shadow::default(),
+        },
+        button::Status::Pressed => button::Style {
+            background: Some(Background::Color(c.border)),
+            text_color: c.text_primary,
+            border: active_border,
+            shadow: iced::Shadow::default(),
+        },
+        button::Status::Disabled => button::Style {
+            background: Some(Background::Color(c.surface)),
+            text_color: c.muted,
+            border: active_border,
+            shadow: iced::Shadow::default(),
+        },
+    }
+}
+
 /// Subtle toolbar button — transparent at rest, light surface on hover.
 pub fn toolbar_button(theme: &iced::Theme, status: button::Status) -> button::Style {
     let c = ThemeColors::from_theme(theme);

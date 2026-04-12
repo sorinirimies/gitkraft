@@ -25,8 +25,9 @@ fn main() -> iced::Result {
             // If there is a recently opened repo in persisted settings, auto-open it.
             let repo_task = match gitkraft_core::features::persistence::ops::get_last_repo() {
                 Ok(Some(path)) if path.exists() => {
-                    state.is_loading = true;
-                    state.status_message = Some("Loading repository...".to_string());
+                    let tab = state.active_tab_mut();
+                    tab.is_loading = true;
+                    tab.status_message = Some("Loading repository...".to_string());
                     gitkraft_gui::features::repo::commands::load_repo(path)
                 }
                 _ => iced::Task::none(),

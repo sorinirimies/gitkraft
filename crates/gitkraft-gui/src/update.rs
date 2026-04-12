@@ -15,6 +15,36 @@ impl GitKraft {
     /// task completing).
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match &message {
+            // ── Tabs ──────────────────────────────────────────────────────
+            Message::SwitchTab(index) => {
+                let index = *index;
+                if index < self.tabs.len() {
+                    self.active_tab = index;
+                }
+                Task::none()
+            }
+
+            Message::NewTab => {
+                self.tabs.push(crate::state::RepoTab::new_empty());
+                self.active_tab = self.tabs.len() - 1;
+                // Refresh recent repos so the welcome screen is up to date.
+                crate::features::repo::commands::load_recent_repos_async()
+            }
+
+            Message::CloseTab(index) => {
+                let index = *index;
+                if self.tabs.len() > 1 && index < self.tabs.len() {
+                    self.tabs.remove(index);
+                    // Adjust active_tab if needed.
+                    if self.active_tab >= self.tabs.len() {
+                        self.active_tab = self.tabs.len() - 1;
+                    } else if self.active_tab > index {
+                        self.active_tab -= 1;
+                    }
+                }
+                Task::none()
+            }
+
             // ── Repository ────────────────────────────────────────────────
             Message::OpenRepo
             | Message::InitRepo
@@ -77,7 +107,7 @@ impl GitKraft {
             Message::SelectDiff(_) => crate::features::diff::update::update(self, message),
 
             Message::DismissError => {
-                self.error_message = None;
+                self.active_tab_mut().error_message = None;
                 Task::none()
             }
 
