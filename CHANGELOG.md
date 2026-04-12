@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.3.6 - 2026-04-12
+### ➕ Added
+- Add multi-repo tab bar with per-tab state management
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.5...v0.3.6
+## 0.3.5 - 2026-04-09
+### 🔧 Chores
+- chore: bump version to 0.3.5
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.4...v0.3.5
 ## 0.3.4 - 2026-04-05
 ### ♻️ Refactor
 - Refactor release workflow to use bash for tag validation and publishing
