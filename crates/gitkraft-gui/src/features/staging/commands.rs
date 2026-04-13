@@ -6,114 +6,76 @@
 
 use std::path::PathBuf;
 
-use futures::channel::oneshot;
 use iced::Task;
 
 use crate::message::{Message, StagingPayload};
 
 /// Stage a single file, then return the refreshed staging state.
 pub fn stage_file(path: PathBuf, file_path: String) -> Task<Message> {
-    Task::perform(
-        async move {
-            let (tx, rx) = oneshot::channel();
-            std::thread::spawn(move || {
-                let result = (|| {
-                    let repo = gitkraft_core::features::repo::open_repo(&path)
-                        .map_err(|e| e.to_string())?;
-                    gitkraft_core::features::staging::stage_file(&repo, &file_path)
-                        .map_err(|e| e.to_string())?;
-                    refresh_staging_state(&path)
-                })();
-                let _ = tx.send(result);
-            });
-            rx.await.map_err(|_| "Task cancelled".to_string())?
-        },
+    git_task!(
         Message::StagingUpdated,
+        (|| {
+            let repo =
+                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            gitkraft_core::features::staging::stage_file(&repo, &file_path)
+                .map_err(|e| e.to_string())?;
+            refresh_staging_state(&path)
+        })()
     )
 }
 
 /// Unstage a single file, then return the refreshed staging state.
 pub fn unstage_file(path: PathBuf, file_path: String) -> Task<Message> {
-    Task::perform(
-        async move {
-            let (tx, rx) = oneshot::channel();
-            std::thread::spawn(move || {
-                let result = (|| {
-                    let repo = gitkraft_core::features::repo::open_repo(&path)
-                        .map_err(|e| e.to_string())?;
-                    gitkraft_core::features::staging::unstage_file(&repo, &file_path)
-                        .map_err(|e| e.to_string())?;
-                    refresh_staging_state(&path)
-                })();
-                let _ = tx.send(result);
-            });
-            rx.await.map_err(|_| "Task cancelled".to_string())?
-        },
+    git_task!(
         Message::StagingUpdated,
+        (|| {
+            let repo =
+                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            gitkraft_core::features::staging::unstage_file(&repo, &file_path)
+                .map_err(|e| e.to_string())?;
+            refresh_staging_state(&path)
+        })()
     )
 }
 
 /// Stage all unstaged files, then return the refreshed staging state.
 pub fn stage_all(path: PathBuf) -> Task<Message> {
-    Task::perform(
-        async move {
-            let (tx, rx) = oneshot::channel();
-            std::thread::spawn(move || {
-                let result = (|| {
-                    let repo = gitkraft_core::features::repo::open_repo(&path)
-                        .map_err(|e| e.to_string())?;
-                    gitkraft_core::features::staging::stage_all(&repo)
-                        .map_err(|e| e.to_string())?;
-                    refresh_staging_state(&path)
-                })();
-                let _ = tx.send(result);
-            });
-            rx.await.map_err(|_| "Task cancelled".to_string())?
-        },
+    git_task!(
         Message::StagingUpdated,
+        (|| {
+            let repo =
+                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            gitkraft_core::features::staging::stage_all(&repo).map_err(|e| e.to_string())?;
+            refresh_staging_state(&path)
+        })()
     )
 }
 
 /// Unstage all staged files, then return the refreshed staging state.
 pub fn unstage_all(path: PathBuf) -> Task<Message> {
-    Task::perform(
-        async move {
-            let (tx, rx) = oneshot::channel();
-            std::thread::spawn(move || {
-                let result = (|| {
-                    let repo = gitkraft_core::features::repo::open_repo(&path)
-                        .map_err(|e| e.to_string())?;
-                    gitkraft_core::features::staging::unstage_all(&repo)
-                        .map_err(|e| e.to_string())?;
-                    refresh_staging_state(&path)
-                })();
-                let _ = tx.send(result);
-            });
-            rx.await.map_err(|_| "Task cancelled".to_string())?
-        },
+    git_task!(
         Message::StagingUpdated,
+        (|| {
+            let repo =
+                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            gitkraft_core::features::staging::unstage_all(&repo).map_err(|e| e.to_string())?;
+            refresh_staging_state(&path)
+        })()
     )
 }
 
 /// Discard working-directory changes for a single file, then return the
 /// refreshed staging state.
 pub fn discard_file(path: PathBuf, file_path: String) -> Task<Message> {
-    Task::perform(
-        async move {
-            let (tx, rx) = oneshot::channel();
-            std::thread::spawn(move || {
-                let result = (|| {
-                    let repo = gitkraft_core::features::repo::open_repo(&path)
-                        .map_err(|e| e.to_string())?;
-                    gitkraft_core::features::staging::discard_file_changes(&repo, &file_path)
-                        .map_err(|e| e.to_string())?;
-                    refresh_staging_state(&path)
-                })();
-                let _ = tx.send(result);
-            });
-            rx.await.map_err(|_| "Task cancelled".to_string())?
-        },
+    git_task!(
         Message::StagingUpdated,
+        (|| {
+            let repo =
+                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            gitkraft_core::features::staging::discard_file_changes(&repo, &file_path)
+                .map_err(|e| e.to_string())?;
+            refresh_staging_state(&path)
+        })()
     )
 }
 

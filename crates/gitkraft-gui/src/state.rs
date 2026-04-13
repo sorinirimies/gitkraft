@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 
 use gitkraft_core::*;
-use iced::Color;
+use iced::{Color, Task};
 
+use crate::message::Message;
 use crate::theme::ThemeColors;
 
 // ── Pane resize ───────────────────────────────────────────────────────────────
@@ -309,6 +310,47 @@ impl GitKraft {
             .get(self.current_theme_index)
             .copied()
             .unwrap_or("Default")
+    }
+
+    /// Refresh all data for the currently active tab's repository.
+    ///
+    /// Returns [`Task::none()`] if no repository is open in the active tab.
+    pub fn refresh_active_tab(&mut self) -> Task<Message> {
+        match self.active_tab().repo_path.clone() {
+            Some(path) => crate::features::repo::commands::refresh_repo(path),
+            None => Task::none(),
+        }
+    }
+
+    /// Handle a `Result<(), String>` from a git operation that should trigger
+    /// a full repository refresh on success.
+    ///
+    /// * `Ok(())` — clears `is_loading`, sets `status_message`, refreshes.
+    /// * `Err(e)` — clears `is_loading`, sets `error_message`, returns
+    ///   [`Task::none()`].
+    pub fn on_ok_refresh(
+        &mut self,
+        result: Result<(), String>,
+        ok_msg: &str,
+        err_prefix: &str,
+    ) -> Task<Message> {
+        match result {
+            Ok(()) => {
+                {
+                    let tab = self.active_tab_mut();
+                    tab.is_loading = false;
+                    tab.status_message = Some(ok_msg.to_string());
+                }
+                self.refresh_active_tab()
+            }
+            Err(e) => {
+                let tab = self.active_tab_mut();
+                tab.is_loading = false;
+                tab.error_message = Some(format!("{err_prefix}: {e}"));
+                tab.status_message = None;
+                Task::none()
+            }
+        }
     }
 
     /// Build a [`LayoutSettings`] snapshot from the current pane dimensions.

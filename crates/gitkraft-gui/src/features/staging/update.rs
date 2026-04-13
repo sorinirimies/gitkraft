@@ -12,47 +12,27 @@ use super::commands;
 pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
     match message {
         Message::StageFile(path) => {
-            let repo_path = state.active_tab().repo_path.clone();
-            if let Some(repo_path) = repo_path {
-                let tab = state.active_tab_mut();
-                tab.status_message = Some(format!("Staging '{path}'…"));
+            with_repo!(state, format!("Staging '{path}'…"), |repo_path| {
                 commands::stage_file(repo_path, path)
-            } else {
-                Task::none()
-            }
+            })
         }
 
         Message::UnstageFile(path) => {
-            let repo_path = state.active_tab().repo_path.clone();
-            if let Some(repo_path) = repo_path {
-                let tab = state.active_tab_mut();
-                tab.status_message = Some(format!("Unstaging '{path}'…"));
+            with_repo!(state, format!("Unstaging '{path}'…"), |repo_path| {
                 commands::unstage_file(repo_path, path)
-            } else {
-                Task::none()
-            }
+            })
         }
 
         Message::StageAll => {
-            let repo_path = state.active_tab().repo_path.clone();
-            if let Some(repo_path) = repo_path {
-                let tab = state.active_tab_mut();
-                tab.status_message = Some("Staging all files…".into());
+            with_repo!(state, "Staging all files…".into(), |repo_path| {
                 commands::stage_all(repo_path)
-            } else {
-                Task::none()
-            }
+            })
         }
 
         Message::UnstageAll => {
-            let repo_path = state.active_tab().repo_path.clone();
-            if let Some(repo_path) = repo_path {
-                let tab = state.active_tab_mut();
-                tab.status_message = Some("Unstaging all files…".into());
+            with_repo!(state, "Unstaging all files…".into(), |repo_path| {
                 commands::unstage_all(repo_path)
-            } else {
-                Task::none()
-            }
+            })
         }
 
         Message::DiscardFile(path) => {
@@ -64,15 +44,14 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         }
 
         Message::ConfirmDiscard(path) => {
-            let repo_path = state.active_tab().repo_path.clone();
-            if let Some(repo_path) = repo_path {
-                let tab = state.active_tab_mut();
-                tab.pending_discard = None;
-                tab.status_message = Some(format!("Discarding changes in '{path}'…"));
-                commands::discard_file(repo_path, path)
-            } else {
-                Task::none()
-            }
+            with_repo!(
+                state,
+                format!("Discarding changes in '{path}'…"),
+                |repo_path| {
+                    state.active_tab_mut().pending_discard = None;
+                    commands::discard_file(repo_path, path)
+                }
+            )
         }
 
         Message::CancelDiscard => {

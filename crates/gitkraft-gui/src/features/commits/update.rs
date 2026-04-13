@@ -25,6 +25,8 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             tab.show_commit_detail = true;
 
             // Load the diff for the selected commit.
+            // SelectCommit has a compound condition (repo_path AND commit_info)
+            // that doesn't fit the with_repo! pattern, so it stays explicit.
             if let (Some(path), Some((oid, short_oid))) = (repo_path, commit_info) {
                 state.active_tab_mut().status_message =
                     Some(format!("Loading diff for {short_oid}…"));
@@ -59,26 +61,21 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         }
 
         Message::CreateCommit => {
+            // Derive the values we need from an immutable borrow before the
+            // with_repo! macro takes its own borrows.
             let msg;
             let staged_empty;
-            let repo_path;
             {
                 let tab = state.active_tab();
                 msg = tab.commit_message.trim().to_string();
                 staged_empty = tab.staged_changes.is_empty();
-                repo_path = tab.repo_path.clone();
             }
             if msg.is_empty() || staged_empty {
                 return Task::none();
             }
-            if let Some(path) = repo_path {
-                let tab = state.active_tab_mut();
-                tab.is_loading = true;
-                tab.status_message = Some("Creating commit…".into());
-                commands::create_commit(path, msg)
-            } else {
-                Task::none()
-            }
+            with_repo!(state, loading, "Creating commit…".into(), |repo_path| {
+                commands::create_commit(repo_path, msg)
+            })
         }
 
         Message::CommitCreated(result) => {
@@ -90,14 +87,7 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                         tab.commit_message.clear();
                         tab.status_message = Some("Commit created.".into());
                     }
-                    // Trigger a full refresh to update the commit log, staging
-                    // area, branches, etc.
-                    let repo_path = state.active_tab().repo_path.clone();
-                    if let Some(path) = repo_path {
-                        crate::features::repo::commands::refresh_repo(path)
-                    } else {
-                        Task::none()
-                    }
+                    state.refresh_active_tab()
                 }
                 Err(e) => {
                     let tab = state.active_tab_mut();

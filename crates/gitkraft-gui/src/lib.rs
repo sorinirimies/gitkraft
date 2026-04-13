@@ -3,6 +3,9 @@
 //! This crate provides the graphical user interface built on top of
 //! [`gitkraft_core`] using the [Iced](https://iced.rs) toolkit.
 
+#[macro_use]
+mod macros;
+
 pub mod features;
 pub mod message;
 pub mod state;

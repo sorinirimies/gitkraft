@@ -53,17 +53,9 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
 
         Message::RepoOpened(result) => handle_repo_loaded(state, result),
 
-        Message::RefreshRepo => {
-            let path = state.active_tab().repo_path.clone();
-            if let Some(path) = path {
-                let tab = state.active_tab_mut();
-                tab.is_loading = true;
-                tab.status_message = Some("Refreshing…".into());
-                commands::refresh_repo(path)
-            } else {
-                Task::none()
-            }
-        }
+        Message::RefreshRepo => with_repo!(state, loading, "Refreshing…".into(), |path| {
+            commands::refresh_repo(path)
+        }),
 
         Message::RepoRefreshed(result) => handle_repo_loaded(state, result),
 

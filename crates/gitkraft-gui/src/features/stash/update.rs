@@ -17,46 +17,34 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         }
 
         Message::StashSave => {
-            let repo_path = state.active_tab().repo_path.clone();
-            if let Some(repo_path) = repo_path {
-                let tab = state.active_tab_mut();
-                let msg = if tab.stash_message.trim().is_empty() {
+            // Derive the optional stash message before the macro borrows state.
+            let msg = {
+                let tab = state.active_tab();
+                if tab.stash_message.trim().is_empty() {
                     None
                 } else {
                     Some(tab.stash_message.trim().to_string())
-                };
-                tab.is_loading = true;
-                tab.status_message = Some("Saving stash…".into());
-                tab.stash_message.clear();
+                }
+            };
+            with_repo!(state, loading, "Saving stash…".into(), |repo_path| {
+                state.active_tab_mut().stash_message.clear();
                 commands::stash_save(repo_path, msg)
-            } else {
-                Task::none()
-            }
+            })
         }
 
-        Message::StashPop(index) => {
-            let repo_path = state.active_tab().repo_path.clone();
-            if let Some(repo_path) = repo_path {
-                let tab = state.active_tab_mut();
-                tab.is_loading = true;
-                tab.status_message = Some(format!("Popping stash@{{{index}}}…"));
-                commands::stash_pop(repo_path, index)
-            } else {
-                Task::none()
-            }
-        }
+        Message::StashPop(index) => with_repo!(
+            state,
+            loading,
+            format!("Popping stash@{{{index}}}…"),
+            |repo_path| commands::stash_pop(repo_path, index)
+        ),
 
-        Message::StashDrop(index) => {
-            let repo_path = state.active_tab().repo_path.clone();
-            if let Some(repo_path) = repo_path {
-                let tab = state.active_tab_mut();
-                tab.is_loading = true;
-                tab.status_message = Some(format!("Dropping stash@{{{index}}}…"));
-                commands::stash_drop(repo_path, index)
-            } else {
-                Task::none()
-            }
-        }
+        Message::StashDrop(index) => with_repo!(
+            state,
+            loading,
+            format!("Dropping stash@{{{index}}}…"),
+            |repo_path| commands::stash_drop(repo_path, index)
+        ),
 
         Message::StashUpdated(result) => {
             state.active_tab_mut().is_loading = false;
@@ -67,14 +55,7 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                         tab.stashes = stashes;
                         tab.status_message = Some("Stash updated.".into());
                     }
-                    // Also refresh the staging area since stash save/pop affects
-                    // the working directory and index.
-                    let path = state.active_tab().repo_path.clone();
-                    if let Some(path) = path {
-                        crate::features::repo::commands::refresh_repo(path)
-                    } else {
-                        Task::none()
-                    }
+                    state.refresh_active_tab()
                 }
                 Err(e) => {
                     let tab = state.active_tab_mut();

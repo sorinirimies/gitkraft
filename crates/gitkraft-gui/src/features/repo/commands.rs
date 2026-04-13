@@ -1,9 +1,8 @@
 //! Async command helpers for repository operations.
 //!
 //! Each function returns an `iced::Task<Message>` that performs blocking git
-//! work on a background thread via `std::thread::spawn` + a `futures` oneshot
-//! channel, then maps the result into a [`Message`] variant the update loop
-//! can handle.
+//! work on a background thread via the [`git_task!`] macro, then maps the
+//! result into a [`Message`] variant the update loop can handle.
 //!
 //! This module also contains async wrappers for persistence operations
 //! (`record_repo_opened`, `load_settings`, `save_theme`) so that redb
@@ -45,48 +44,23 @@ pub fn pick_folder_init() -> Task<Message> {
 
 /// Load (open) a repository at `path` and gather all initial state.
 pub fn load_repo(path: PathBuf) -> Task<Message> {
-    Task::perform(
-        async move {
-            let (tx, rx) = futures::channel::oneshot::channel();
-            std::thread::spawn(move || {
-                let _ = tx.send(load_repo_blocking(&path));
-            });
-            rx.await.map_err(|_| "Task cancelled".to_string())?
-        },
-        Message::RepoOpened,
-    )
+    git_task!(Message::RepoOpened, load_repo_blocking(&path))
 }
 
 /// Initialise a new repository at `path` and then load it.
 pub fn init_repo(path: PathBuf) -> Task<Message> {
-    Task::perform(
-        async move {
-            let (tx, rx) = futures::channel::oneshot::channel();
-            std::thread::spawn(move || {
-                let result = (|| {
-                    gitkraft_core::features::repo::init_repo(&path).map_err(|e| e.to_string())?;
-                    load_repo_blocking(&path)
-                })();
-                let _ = tx.send(result);
-            });
-            rx.await.map_err(|_| "Task cancelled".to_string())?
-        },
+    git_task!(
         Message::RepoOpened,
+        (|| {
+            gitkraft_core::features::repo::init_repo(&path).map_err(|e| e.to_string())?;
+            load_repo_blocking(&path)
+        })()
     )
 }
 
 /// Refresh all data for an already-open repository.
 pub fn refresh_repo(path: PathBuf) -> Task<Message> {
-    Task::perform(
-        async move {
-            let (tx, rx) = futures::channel::oneshot::channel();
-            std::thread::spawn(move || {
-                let _ = tx.send(load_repo_blocking(&path));
-            });
-            rx.await.map_err(|_| "Task cancelled".to_string())?
-        },
-        Message::RepoRefreshed,
-    )
+    git_task!(Message::RepoRefreshed, load_repo_blocking(&path))
 }
 
 /// Blocking helper shared by `load_repo` and `refresh_repo`.
@@ -132,88 +106,51 @@ fn load_repo_blocking(path: &std::path::Path) -> Result<RepoPayload, String> {
 /// Runs `record_repo_opened` + `load_settings` on a background thread so that
 /// the redb database I/O never blocks the Iced event loop.
 pub fn record_repo_opened_async(path: std::path::PathBuf) -> Task<Message> {
-    Task::perform(
-        async move {
-            let (tx, rx) = futures::channel::oneshot::channel();
-            std::thread::spawn(move || {
-                let result = (|| {
-                    gitkraft_core::features::persistence::ops::record_repo_opened(&path)
-                        .map_err(|e| e.to_string())?;
-                    let settings = gitkraft_core::features::persistence::ops::load_settings()
-                        .map_err(|e| e.to_string())?;
-                    Ok(settings.recent_repos)
-                })();
-                let _ = tx.send(result);
-            });
-            rx.await.map_err(|_| "Task cancelled".to_string())?
-        },
+    git_task!(
         Message::RepoRecorded,
+        (|| {
+            gitkraft_core::features::persistence::ops::record_repo_opened(&path)
+                .map_err(|e| e.to_string())?;
+            let settings = gitkraft_core::features::persistence::ops::load_settings()
+                .map_err(|e| e.to_string())?;
+            Ok(settings.recent_repos)
+        })()
     )
 }
 
 /// Load the recent-repos list from persisted settings on a background thread.
 pub fn load_recent_repos_async() -> Task<Message> {
-    Task::perform(
-        async move {
-            let (tx, rx) = futures::channel::oneshot::channel();
-            std::thread::spawn(move || {
-                let result = (|| {
-                    let settings = gitkraft_core::features::persistence::ops::load_settings()
-                        .map_err(|e| e.to_string())?;
-                    Ok(settings.recent_repos)
-                })();
-                let _ = tx.send(result);
-            });
-            rx.await.map_err(|_| "Task cancelled".to_string())?
-        },
+    git_task!(
         Message::SettingsLoaded,
+        (|| {
+            let settings = gitkraft_core::features::persistence::ops::load_settings()
+                .map_err(|e| e.to_string())?;
+            Ok(settings.recent_repos)
+        })()
     )
 }
 
 /// Save the theme preference on a background thread (fire-and-forget).
 pub fn save_theme_async(theme_name: String) -> Task<Message> {
-    Task::perform(
-        async move {
-            let (tx, rx) = futures::channel::oneshot::channel();
-            std::thread::spawn(move || {
-                let result = gitkraft_core::features::persistence::ops::save_theme(&theme_name)
-                    .map_err(|e| e.to_string());
-                let _ = tx.send(result);
-            });
-            rx.await.map_err(|_| "Task cancelled".to_string())?
-        },
+    git_task!(
         Message::ThemeSaved,
+        gitkraft_core::features::persistence::ops::save_theme(&theme_name)
+            .map_err(|e| e.to_string())
     )
 }
 
 /// Save layout preferences on a background thread (fire-and-forget).
 pub fn save_layout_async(layout: gitkraft_core::LayoutSettings) -> Task<Message> {
-    Task::perform(
-        async move {
-            let (tx, rx) = futures::channel::oneshot::channel();
-            std::thread::spawn(move || {
-                let result = gitkraft_core::features::persistence::ops::save_layout(&layout)
-                    .map_err(|e| e.to_string());
-                let _ = tx.send(result);
-            });
-            rx.await.map_err(|_| "Task cancelled".to_string())?
-        },
+    git_task!(
         Message::LayoutSaved,
+        gitkraft_core::features::persistence::ops::save_layout(&layout).map_err(|e| e.to_string())
     )
 }
 
 /// Load layout preferences from persisted settings on a background thread.
 pub fn load_layout_async() -> Task<Message> {
-    Task::perform(
-        async move {
-            let (tx, rx) = futures::channel::oneshot::channel();
-            std::thread::spawn(move || {
-                let result = gitkraft_core::features::persistence::ops::get_saved_layout()
-                    .map_err(|e| e.to_string());
-                let _ = tx.send(result);
-            });
-            rx.await.map_err(|_| "Task cancelled".to_string())?
-        },
+    git_task!(
         Message::LayoutLoaded,
+        gitkraft_core::features::persistence::ops::get_saved_layout().map_err(|e| e.to_string())
     )
 }
