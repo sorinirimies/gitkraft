@@ -94,6 +94,10 @@ pub enum Message {
     UnstageAll,
     /// Discard working-directory changes for a file.
     DiscardFile(String),
+    /// User confirmed the discard for a file.
+    ConfirmDiscard(String),
+    /// User cancelled a pending discard.
+    CancelDiscard,
     /// Async staging operation completed.
     StagingUpdated(Result<StagingPayload, String>),
 

@@ -48,6 +48,9 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                     app.show_options_panel = !app.show_options_panel;
                     app.show_theme_panel = false; // close theme panel if open
                 }
+                KeyCode::Char('W') => {
+                    app.close_repo();
+                }
                 _ => {
                     // Delegate to the active pane's feature handler
                     match app.active_pane {
@@ -115,6 +118,11 @@ fn submit_input(app: &mut App) {
             // Search is not fully wired yet; clear buffer for now
             app.status_message = Some(format!("Search: {}", app.input_buffer));
             app.input_buffer.clear();
+        }
+        InputPurpose::StashMessage => {
+            app.stash_message_buffer = app.input_buffer.clone();
+            app.input_buffer.clear();
+            app.stash_save();
         }
         InputPurpose::None => {
             app.input_buffer.clear();

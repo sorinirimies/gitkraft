@@ -80,6 +80,9 @@ pub struct RepoTab {
     /// Text in the "stash message" input.
     pub stash_message: String,
 
+    /// File path pending discard confirmation (None = no pending discard).
+    pub pending_discard: Option<String>,
+
     // ── Feedback ──────────────────────────────────────────────────────────
     /// Transient status-bar message (e.g. "Branch created").
     pub status_message: Option<String>,
@@ -111,6 +114,7 @@ impl RepoTab {
             new_branch_name: String::new(),
             show_branch_create: false,
             stash_message: String::new(),
+            pending_discard: None,
             status_message: None,
             error_message: None,
             is_loading: false,

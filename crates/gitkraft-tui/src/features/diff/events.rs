@@ -35,6 +35,14 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::PageUp | KeyCode::Char('u') => {
             app.diff_scroll = app.diff_scroll.saturating_sub(20);
         }
+        // Previous file in commit diff
+        KeyCode::Char('h') | KeyCode::Left => {
+            app.prev_diff_file();
+        }
+        // Next file in commit diff
+        KeyCode::Char('l') | KeyCode::Right => {
+            app.next_diff_file();
+        }
         _ => {}
     }
 }

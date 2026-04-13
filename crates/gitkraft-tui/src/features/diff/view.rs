@@ -28,6 +28,13 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
             };
             if name.is_empty() {
                 " Diff ".to_string()
+            } else if app.commit_diffs.len() > 1 {
+                format!(
+                    " Diff: {} [{}/{}] ",
+                    name,
+                    app.commit_diff_file_index + 1,
+                    app.commit_diffs.len()
+                )
             } else {
                 format!(" Diff: {} ", name)
             }

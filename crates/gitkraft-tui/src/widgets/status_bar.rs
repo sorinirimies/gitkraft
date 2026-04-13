@@ -23,6 +23,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
             InputPurpose::BranchName => "INPUT: Branch",
             InputPurpose::RepoPath => "INPUT: Path",
             InputPurpose::SearchQuery => "INPUT: Search",
+            InputPurpose::StashMessage => "INPUT: Stash Msg",
             InputPurpose::None => "INPUT",
         },
     };

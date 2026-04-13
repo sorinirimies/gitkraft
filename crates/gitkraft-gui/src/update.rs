@@ -87,6 +87,8 @@ impl GitKraft {
             | Message::StageAll
             | Message::UnstageAll
             | Message::DiscardFile(_)
+            | Message::ConfirmDiscard(_)
+            | Message::CancelDiscard
             | Message::StagingUpdated(_) => crate::features::staging::update::update(self, message),
 
             // ── Stash ─────────────────────────────────────────────────────

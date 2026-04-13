@@ -32,8 +32,8 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         .stashes
         .iter()
         .map(|entry| {
-            let truncated_msg = if entry.message.len() > 20 {
-                format!("{}…", &entry.message[..19])
+            let truncated_msg = if entry.message.len() > 40 {
+                format!("{}…", &entry.message[..39])
             } else {
                 entry.message.clone()
             };
@@ -55,7 +55,14 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items).block(block);
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(
+            Style::default()
+                .bg(theme.sel_bg)
+                .add_modifier(Modifier::REVERSED),
+        )
+        .highlight_symbol("▶ ");
 
-    frame.render_widget(list, area);
+    frame.render_stateful_widget(list, area, &mut app.stash_list_state);
 }

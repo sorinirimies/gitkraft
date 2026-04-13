@@ -106,15 +106,23 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
             .style(theme::icon_button)
             .on_press(Message::StageFile(file_path_display.to_string()));
 
-            let discard_btn = button(
-                text('\u{F5DE}')
-                    .font(iced_fonts::BOOTSTRAP_FONT)
-                    .size(11)
-                    .color(c.red),
-            )
-            .padding([2, 4])
-            .style(theme::icon_button)
-            .on_press(Message::DiscardFile(file_path_display.to_string()));
+            let is_pending_discard = tab.pending_discard.as_deref() == Some(file_path_display);
+            let discard_btn = if is_pending_discard {
+                button(text("Confirm?").size(10).color(c.red))
+                    .padding([2, 6])
+                    .style(theme::toolbar_button)
+                    .on_press(Message::ConfirmDiscard(file_path_display.to_string()))
+            } else {
+                button(
+                    text('\u{F5DE}')
+                        .font(iced_fonts::BOOTSTRAP_FONT)
+                        .size(11)
+                        .color(c.red),
+                )
+                .padding([2, 4])
+                .style(theme::icon_button)
+                .on_press(Message::DiscardFile(file_path_display.to_string()))
+            };
 
             let file_row = row![
                 status_badge,

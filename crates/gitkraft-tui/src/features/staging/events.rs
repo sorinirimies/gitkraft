@@ -70,7 +70,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         // Stash save
         KeyCode::Char('z') => {
             app.confirm_discard = false;
-            app.stash_save();
+            app.stash_message_buffer.clear();
+            app.input_mode = InputMode::Input;
+            app.input_purpose = InputPurpose::StashMessage;
+            app.status_message = Some("Enter stash message (or leave empty):".into());
         }
 
         // Stash pop

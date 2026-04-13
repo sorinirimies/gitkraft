@@ -79,6 +79,7 @@ pub enum InputPurpose {
     BranchName,
     RepoPath,
     SearchQuery,
+    StashMessage,
 }
 
 /// Which sub-list within the staging pane has focus.
@@ -122,11 +123,18 @@ pub struct App {
     pub staging_focus: StagingFocus,
     pub selected_diff: Option<DiffInfo>,
     pub diff_scroll: u16,
+    /// All file diffs for the currently viewed commit (for per-file navigation).
+    pub commit_diffs: Vec<DiffInfo>,
+    /// Index of the currently selected file in `commit_diffs`.
+    pub commit_diff_file_index: usize,
 
     pub stashes: Vec<StashEntry>,
+    pub stash_list_state: ListState,
     pub remotes: Vec<RemoteInfo>,
 
     pub input_buffer: String,
+    /// Optional stash message (set via input mode before saving).
+    pub stash_message_buffer: String,
 
     pub status_message: Option<String>,
     pub error_message: Option<String>,
@@ -190,11 +198,15 @@ impl App {
             staging_focus: StagingFocus::Unstaged,
             selected_diff: None,
             diff_scroll: 0,
+            commit_diffs: Vec::new(),
+            commit_diff_file_index: 0,
 
             stashes: Vec::new(),
+            stash_list_state: ListState::default(),
             remotes: Vec::new(),
 
             input_buffer: String::new(),
+            stash_message_buffer: String::new(),
 
             status_message: None,
             error_message: None,
@@ -339,6 +351,7 @@ impl App {
                                 self.staged_changes.len(),
                             );
                             self.stashes = payload.stashes;
+                            clamp_list_state(&mut self.stash_list_state, self.stashes.len());
                             self.remotes = payload.remotes;
                             self.screen = AppScreen::Main;
                             self.status_message = Some("Repository loaded".into());
@@ -365,10 +378,20 @@ impl App {
                         Ok(diffs) => {
                             if diffs.is_empty() {
                                 self.selected_diff = None;
+                                self.commit_diffs.clear();
+                                self.commit_diff_file_index = 0;
                                 self.status_message = Some("No changes in this commit".into());
                             } else {
-                                self.selected_diff = Some(merge_diffs(&diffs));
+                                self.commit_diffs = diffs.clone();
+                                self.commit_diff_file_index = 0;
+                                self.selected_diff = Some(diffs[0].clone());
                                 self.diff_scroll = 0;
+                                if diffs.len() > 1 {
+                                    self.status_message = Some(format!(
+                                        "Showing file 1/{} — use h/l to switch files",
+                                        diffs.len()
+                                    ));
+                                }
                             }
                         }
                         Err(e) => self.error_message = Some(format!("commit diff: {e}")),
@@ -740,13 +763,19 @@ impl App {
             Some(p) => p,
             None => return,
         };
+        let msg = if self.stash_message_buffer.trim().is_empty() {
+            None
+        } else {
+            Some(self.stash_message_buffer.trim().to_string())
+        };
+        self.stash_message_buffer.clear();
         self.is_loading = true;
         let tx = self.bg_tx.clone();
         tokio::task::spawn_blocking(move || {
             let res = (|| {
                 let mut repo = gitkraft_core::features::repo::open_repo(&repo_path)
                     .map_err(|e| e.to_string())?;
-                let entry = gitkraft_core::features::stash::stash_save(&mut repo, None)
+                let entry = gitkraft_core::features::stash::stash_save(&mut repo, msg.as_deref())
                     .map_err(|e| e.to_string())?;
                 Ok::<_, String>(format!("Stashed: {}", entry.message))
             })();
@@ -760,30 +789,9 @@ impl App {
     }
 
     pub fn stash_pop_selected(&mut self) {
-        let repo_path = match self.repo_path.clone() {
-            Some(p) => p,
-            None => return,
-        };
-        self.is_loading = true;
-        let tx = self.bg_tx.clone();
-        tokio::task::spawn_blocking(move || {
-            let res = (|| {
-                let mut repo = gitkraft_core::features::repo::open_repo(&repo_path)
-                    .map_err(|e| e.to_string())?;
-                gitkraft_core::features::stash::stash_pop(&mut repo, 0).map_err(|e| e.to_string())
-            })();
-            let _ = tx.send(BackgroundResult::OperationDone {
-                ok_message: res.as_ref().ok().map(|_| "Stash popped".into()),
-                err_message: res.err().map(|e| format!("stash pop: {e}")),
-                needs_refresh: true,
-                needs_staging_refresh: false,
-            });
-        });
-    }
-
-    pub fn stash_drop_selected(&mut self) {
-        if self.stashes.is_empty() {
-            self.error_message = Some("No stashes to drop".into());
+        let idx = self.stash_list_state.selected().unwrap_or(0);
+        if idx >= self.stashes.len() {
+            self.error_message = Some("No stash selected".into());
             return;
         }
         let repo_path = match self.repo_path.clone() {
@@ -796,10 +804,44 @@ impl App {
             let res = (|| {
                 let mut repo = gitkraft_core::features::repo::open_repo(&repo_path)
                     .map_err(|e| e.to_string())?;
-                gitkraft_core::features::stash::stash_drop(&mut repo, 0).map_err(|e| e.to_string())
+                gitkraft_core::features::stash::stash_pop(&mut repo, idx).map_err(|e| e.to_string())
             })();
             let _ = tx.send(BackgroundResult::OperationDone {
-                ok_message: res.as_ref().ok().map(|_| "Stash dropped".into()),
+                ok_message: res
+                    .as_ref()
+                    .ok()
+                    .map(|_| format!("Stash @{{{idx}}} popped")),
+                err_message: res.err().map(|e| format!("stash pop: {e}")),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
+    }
+
+    pub fn stash_drop_selected(&mut self) {
+        let idx = self.stash_list_state.selected().unwrap_or(0);
+        if idx >= self.stashes.len() {
+            self.error_message = Some("No stash to drop".into());
+            return;
+        }
+        let repo_path = match self.repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.is_loading = true;
+        let tx = self.bg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let res = (|| {
+                let mut repo = gitkraft_core::features::repo::open_repo(&repo_path)
+                    .map_err(|e| e.to_string())?;
+                gitkraft_core::features::stash::stash_drop(&mut repo, idx)
+                    .map_err(|e| e.to_string())
+            })();
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res
+                    .as_ref()
+                    .ok()
+                    .map(|_| format!("Stash @{{{idx}}} dropped")),
                 err_message: res.err().map(|e| format!("stash drop: {e}")),
                 needs_refresh: true,
                 needs_staging_refresh: false,
@@ -835,6 +877,75 @@ impl App {
             })();
             let _ = tx.send(BackgroundResult::CommitDiffLoaded(res));
         });
+    }
+
+    /// Switch to the next file in the commit diff list.
+    pub fn next_diff_file(&mut self) {
+        if self.commit_diffs.is_empty() {
+            return;
+        }
+        self.commit_diff_file_index = (self.commit_diff_file_index + 1) % self.commit_diffs.len();
+        self.selected_diff = Some(self.commit_diffs[self.commit_diff_file_index].clone());
+        self.diff_scroll = 0;
+        self.status_message = Some(format!(
+            "File {}/{}",
+            self.commit_diff_file_index + 1,
+            self.commit_diffs.len()
+        ));
+    }
+
+    /// Switch to the previous file in the commit diff list.
+    pub fn prev_diff_file(&mut self) {
+        if self.commit_diffs.is_empty() {
+            return;
+        }
+        if self.commit_diff_file_index == 0 {
+            self.commit_diff_file_index = self.commit_diffs.len() - 1;
+        } else {
+            self.commit_diff_file_index -= 1;
+        }
+        self.selected_diff = Some(self.commit_diffs[self.commit_diff_file_index].clone());
+        self.diff_scroll = 0;
+        self.status_message = Some(format!(
+            "File {}/{}",
+            self.commit_diff_file_index + 1,
+            self.commit_diffs.len()
+        ));
+    }
+
+    /// Close the current repository and return to the welcome screen.
+    pub fn close_repo(&mut self) {
+        self.repo_path = None;
+        self.repo_info = None;
+        self.branches.clear();
+        self.branch_list_state = ListState::default();
+        self.commits.clear();
+        self.graph_rows.clear();
+        self.commit_list_state = ListState::default();
+        self.unstaged_changes.clear();
+        self.staged_changes.clear();
+        self.unstaged_list_state = ListState::default();
+        self.staged_list_state = ListState::default();
+        self.staging_focus = StagingFocus::Unstaged;
+        self.selected_diff = None;
+        self.commit_diffs.clear();
+        self.commit_diff_file_index = 0;
+        self.diff_scroll = 0;
+        self.stashes.clear();
+        self.stash_list_state = ListState::default();
+        self.remotes.clear();
+        self.input_buffer.clear();
+        self.stash_message_buffer.clear();
+        self.status_message = None;
+        self.error_message = None;
+        self.confirm_discard = false;
+        self.show_theme_panel = false;
+        self.show_options_panel = false;
+        self.screen = AppScreen::Welcome;
+        // Reload recent repos
+        if let Ok(settings) = gitkraft_core::features::persistence::load_settings() {
+            self.recent_repos = settings.recent_repos;
+        }
     }
 
     /// Load the diff for a selected staging file into the diff pane.
@@ -936,7 +1047,7 @@ fn load_repo_blocking(path: &std::path::Path) -> Result<RepoPayload, String> {
     let branches =
         gitkraft_core::features::branches::list_branches(&repo).map_err(|e| e.to_string())?;
     let commits =
-        gitkraft_core::features::commits::list_commits(&repo, 200).map_err(|e| e.to_string())?;
+        gitkraft_core::features::commits::list_commits(&repo, 500).map_err(|e| e.to_string())?;
     let graph_rows = gitkraft_core::features::graph::build_graph(&commits);
     let unstaged =
         gitkraft_core::features::diff::get_working_dir_diff(&repo).map_err(|e| e.to_string())?;
@@ -957,47 +1068,6 @@ fn load_repo_blocking(path: &std::path::Path) -> Result<RepoPayload, String> {
         stashes,
         remotes,
     })
-}
-
-/// Merge multiple per-file `DiffInfo`s into one combined view for the diff pane.
-fn merge_diffs(diffs: &[DiffInfo]) -> DiffInfo {
-    use gitkraft_core::{DiffHunk, DiffLine, FileStatus};
-
-    let mut hunks = Vec::new();
-    for d in diffs {
-        let file_name = if d.new_file.is_empty() {
-            &d.old_file
-        } else {
-            &d.new_file
-        };
-        // Add a synthetic hunk header for the file
-        hunks.push(DiffHunk {
-            header: format!("── {} ({}) ──", file_name, d.status),
-            lines: vec![DiffLine::HunkHeader(format!(
-                "── {} ({}) ──",
-                file_name, d.status
-            ))],
-        });
-        for h in &d.hunks {
-            hunks.push(h.clone());
-        }
-    }
-
-    DiffInfo {
-        old_file: String::new(),
-        new_file: if diffs.len() == 1 {
-            let d = &diffs[0];
-            if d.new_file.is_empty() {
-                d.old_file.clone()
-            } else {
-                d.new_file.clone()
-            }
-        } else {
-            format!("{} files", diffs.len())
-        },
-        status: FileStatus::Modified,
-        hunks,
-    }
 }
 
 #[cfg(test)]

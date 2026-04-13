@@ -25,11 +25,50 @@ fn graph_cell<'a>(
 ) -> Row<'a, Message> {
     let width = graph_row.width;
     let len = graph_colors.len();
+
+    if width == 0 {
+        return Row::new().push(
+            text("● ")
+                .font(iced::Font::MONOSPACE)
+                .size(12)
+                .color(graph_colors[graph_row.node_color % len]),
+        );
+    }
+
+    // Collect pass-through edges per column and crossing edge info.
+    let mut column_passthrough: Vec<Option<usize>> = vec![None; width];
+    let mut has_left_cross = false;
+    let mut has_right_cross = false;
+    let mut left_cross_color: usize = 0;
+    let mut right_cross_color: usize = 0;
+    let mut cross_left_col: usize = graph_row.node_column;
+    let mut cross_right_col: usize = graph_row.node_column;
+
+    for edge in &graph_row.edges {
+        if edge.from_column == edge.to_column {
+            column_passthrough[edge.to_column] = Some(edge.color_index);
+        } else {
+            let target = edge.to_column;
+            if target < graph_row.node_column {
+                has_left_cross = true;
+                left_cross_color = edge.color_index;
+                if target < cross_left_col {
+                    cross_left_col = target;
+                }
+            } else if target > graph_row.node_column {
+                has_right_cross = true;
+                right_cross_color = edge.color_index;
+                if target > cross_right_col {
+                    cross_right_col = target;
+                }
+            }
+        }
+    }
+
     let mut cells: Vec<Element<'a, Message>> = Vec::with_capacity(width);
 
     for col in 0..width {
         if col == graph_row.node_column {
-            // Commit node dot
             let color = graph_colors[graph_row.node_color % len];
             cells.push(
                 text("● ")
@@ -38,23 +77,77 @@ fn graph_cell<'a>(
                     .color(color)
                     .into(),
             );
-        } else if let Some(edge) = graph_row
-            .edges
-            .iter()
-            .find(|e| e.from_column == col && e.to_column == col)
-        {
-            // Passing-through lane
-            let color = graph_colors[edge.color_index % len];
-            cells.push(
-                text("│ ")
-                    .font(iced::Font::MONOSPACE)
-                    .size(12)
-                    .color(color)
-                    .into(),
-            );
+        } else if let Some(ci) = column_passthrough.get(col).copied().flatten() {
+            let in_left = has_left_cross && col >= cross_left_col && col < graph_row.node_column;
+            let in_right = has_right_cross && col > graph_row.node_column && col <= cross_right_col;
+
+            if in_left || in_right {
+                let cross_ci = if in_left {
+                    left_cross_color
+                } else {
+                    right_cross_color
+                };
+                cells.push(
+                    text("├─")
+                        .font(iced::Font::MONOSPACE)
+                        .size(12)
+                        .color(graph_colors[cross_ci % len])
+                        .into(),
+                );
+            } else {
+                cells.push(
+                    text("│ ")
+                        .font(iced::Font::MONOSPACE)
+                        .size(12)
+                        .color(graph_colors[ci % len])
+                        .into(),
+                );
+            }
         } else {
-            // Empty column
-            cells.push(text("  ").font(iced::Font::MONOSPACE).size(12).into());
+            let in_left = has_left_cross && col >= cross_left_col && col < graph_row.node_column;
+            let in_right = has_right_cross && col > graph_row.node_column && col <= cross_right_col;
+
+            if in_left {
+                let color = graph_colors[left_cross_color % len];
+                if col == cross_left_col {
+                    cells.push(
+                        text("╭─")
+                            .font(iced::Font::MONOSPACE)
+                            .size(12)
+                            .color(color)
+                            .into(),
+                    );
+                } else {
+                    cells.push(
+                        text("──")
+                            .font(iced::Font::MONOSPACE)
+                            .size(12)
+                            .color(color)
+                            .into(),
+                    );
+                }
+            } else if in_right {
+                let color = graph_colors[right_cross_color % len];
+                if col == cross_right_col {
+                    cells.push(
+                        text("─╮")
+                            .font(iced::Font::MONOSPACE)
+                            .size(12)
+                            .color(color)
+                            .into(),
+                    );
+                } else {
+                    cells.push(
+                        text("──")
+                            .font(iced::Font::MONOSPACE)
+                            .size(12)
+                            .color(color)
+                            .into(),
+                    );
+                }
+            } else {
+                cells.push(text("  ").font(iced::Font::MONOSPACE).size(12).into());
+            }
         }
     }
 

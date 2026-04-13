@@ -56,14 +56,30 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         }
 
         Message::DiscardFile(path) => {
+            let tab = state.active_tab_mut();
+            tab.pending_discard = Some(path);
+            tab.status_message =
+                Some("Click discard again to confirm, or press elsewhere to cancel.".into());
+            Task::none()
+        }
+
+        Message::ConfirmDiscard(path) => {
             let repo_path = state.active_tab().repo_path.clone();
             if let Some(repo_path) = repo_path {
                 let tab = state.active_tab_mut();
+                tab.pending_discard = None;
                 tab.status_message = Some(format!("Discarding changes in '{path}'…"));
                 commands::discard_file(repo_path, path)
             } else {
                 Task::none()
             }
+        }
+
+        Message::CancelDiscard => {
+            let tab = state.active_tab_mut();
+            tab.pending_discard = None;
+            tab.status_message = None;
+            Task::none()
         }
 
         Message::StagingUpdated(result) => {
