@@ -77,8 +77,17 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             state.drag_initialized = false;
             state.drag_initialized_h = false;
 
-            // Refresh recent repos from disk asynchronously.
-            commands::load_recent_repos_async()
+            // Persist the updated session and refresh recent repos from disk.
+            let open_tabs = state.open_tab_paths();
+            let active = state.active_tab;
+            Task::batch([
+                commands::load_recent_repos_async(),
+                commands::save_session_async(open_tabs, active),
+            ])
+        }
+
+        Message::RepoRestoredAt(tab_index, result) => {
+            handle_repo_loaded_at(state, tab_index, result)
         }
 
         // ── Async persistence results ─────────────────────────────────────
@@ -137,12 +146,60 @@ fn handle_repo_loaded(state: &mut GitKraft, result: Result<RepoPayload, String>)
             tab.error_message = None;
             tab.status_message = Some("Repository loaded.".into());
 
-            // Record the repo open and refresh the recent-repos list
-            // on a background thread so redb I/O doesn't block the UI.
-            commands::record_repo_opened_async(path)
+            // Record the repo open AND persist the full session in one DB
+            // write, on a background thread so redb I/O doesn't block the UI.
+            let open_tabs = state.open_tab_paths();
+            let active = state.active_tab;
+            commands::record_repo_and_save_session_async(path, open_tabs, active)
         }
         Err(e) => {
             let tab = state.active_tab_mut();
+            tab.error_message = Some(e);
+            tab.status_message = None;
+            Task::none()
+        }
+    }
+}
+
+/// Like `handle_repo_loaded` but writes into a specific tab index.
+/// Used for parallel startup restore; does NOT record a repo open.
+fn handle_repo_loaded_at(
+    state: &mut GitKraft,
+    tab_index: usize,
+    result: Result<RepoPayload, String>,
+) -> Task<Message> {
+    if tab_index >= state.tabs.len() {
+        return Task::none(); // tab closed before restore completed
+    }
+    state.tabs[tab_index].is_loading = false;
+    match result {
+        Ok(payload) => {
+            let path = payload
+                .info
+                .workdir
+                .clone()
+                .unwrap_or_else(|| payload.info.path.clone());
+            let tab = &mut state.tabs[tab_index];
+            tab.current_branch = payload.info.head_branch.clone();
+            tab.repo_path = Some(path);
+            tab.repo_info = Some(payload.info);
+            tab.branches = payload.branches;
+            tab.commits = payload.commits;
+            tab.graph_rows = payload.graph_rows;
+            tab.unstaged_changes = payload.unstaged;
+            tab.staged_changes = payload.staged;
+            tab.stashes = payload.stashes;
+            tab.remotes = payload.remotes;
+            tab.selected_commit = None;
+            tab.selected_diff = None;
+            tab.commit_message.clear();
+            tab.error_message = None;
+            tab.status_message = Some("Repository loaded.".into());
+            // Already in recent_repos — no need to re-record.
+            Task::none()
+        }
+        Err(e) => {
+            let tab = &mut state.tabs[tab_index];
             tab.error_message = Some(e);
             tab.status_message = None;
             Task::none()

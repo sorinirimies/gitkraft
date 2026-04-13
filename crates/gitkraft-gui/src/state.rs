@@ -193,14 +193,12 @@ impl Default for GitKraft {
 }
 
 impl GitKraft {
-    /// Create a fresh application state with sensible defaults.
+    /// Build application state from persisted [`AppSettings`].
     ///
-    /// Loads persisted settings (theme, recent repos) from disk when available.
-    pub fn new() -> Self {
-        // Attempt to load persisted settings; fall back to defaults on any error.
-        let settings =
-            gitkraft_core::features::persistence::ops::load_settings().unwrap_or_default();
-
+    /// Starts with a single empty tab regardless of what was saved — callers
+    /// that want to restore the full session should use
+    /// [`new_with_session_paths`] instead.
+    fn from_settings(settings: gitkraft_core::AppSettings) -> Self {
         let current_theme_index = settings
             .theme_name
             .as_deref()
@@ -249,6 +247,67 @@ impl GitKraft {
 
             recent_repos,
         }
+    }
+
+    /// Create a fresh application state with sensible defaults.
+    ///
+    /// Loads persisted settings (theme, recent repos) from disk when available.
+    /// Always starts with one empty tab — use [`new_with_session_paths`] to
+    /// restore the full multi-tab session.
+    pub fn new() -> Self {
+        Self::from_settings(
+            gitkraft_core::features::persistence::ops::load_settings().unwrap_or_default(),
+        )
+    }
+
+    /// Create state and also return the saved tab paths for startup restore.
+    ///
+    /// Call this from `main.rs` instead of [`new`]; it sets up loading tabs
+    /// for every path in the persisted session and returns those paths so the
+    /// caller can spawn parallel `load_repo_at` tasks.
+    pub fn new_with_session_paths() -> (Self, Vec<PathBuf>) {
+        let settings =
+            gitkraft_core::features::persistence::ops::load_settings().unwrap_or_default();
+        let open_tabs = settings.open_tabs.clone();
+        let active_tab_index = settings.active_tab_index;
+
+        let mut state = Self::from_settings(settings);
+
+        if !open_tabs.is_empty() {
+            state.tabs = open_tabs
+                .iter()
+                .map(|path| {
+                    let mut tab = RepoTab::new_empty();
+                    // Set the path now so the tab bar shows the right name
+                    // while the repo is being loaded in the background.
+                    tab.repo_path = Some(path.clone());
+                    if path.exists() {
+                        tab.is_loading = true;
+                        tab.status_message = Some(format!(
+                            "Loading {}…",
+                            path.file_name().unwrap_or_default().to_string_lossy()
+                        ));
+                    } else {
+                        tab.error_message =
+                            Some(format!("Repository not found: {}", path.display()));
+                    }
+                    tab
+                })
+                .collect();
+            state.active_tab = active_tab_index.min(state.tabs.len().saturating_sub(1));
+        }
+
+        (state, open_tabs)
+    }
+
+    /// Paths of all tabs where a repository has been fully loaded
+    /// (`repo_info` is populated). Used to persist the multi-tab session.
+    pub fn open_tab_paths(&self) -> Vec<PathBuf> {
+        self.tabs
+            .iter()
+            .filter(|t| t.repo_info.is_some())
+            .filter_map(|t| t.repo_path.clone())
+            .collect()
     }
 
     /// Get a reference to the currently active tab.

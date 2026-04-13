@@ -154,3 +154,38 @@ pub fn load_layout_async() -> Task<Message> {
         gitkraft_core::features::persistence::ops::get_saved_layout().map_err(|e| e.to_string())
     )
 }
+
+/// Load a repository at `path` directly into tab `tab_index`.
+/// Used on startup to restore all saved tabs in parallel.
+pub fn load_repo_at(tab_index: usize, path: PathBuf) -> Task<Message> {
+    git_task!(
+        move |result| Message::RepoRestoredAt(tab_index, result),
+        load_repo_blocking(&path)
+    )
+}
+
+/// Record a repo open AND save the full session in one DB write.
+pub fn record_repo_and_save_session_async(
+    path: PathBuf,
+    open_tabs: Vec<PathBuf>,
+    active_tab_index: usize,
+) -> Task<Message> {
+    git_task!(
+        Message::RepoRecorded,
+        gitkraft_core::features::persistence::ops::record_repo_and_save_session(
+            &path,
+            &open_tabs,
+            active_tab_index,
+        )
+        .map_err(|e| e.to_string())
+    )
+}
+
+/// Save the session (open tab paths + active tab index) asynchronously.
+pub fn save_session_async(open_tabs: Vec<PathBuf>, active_tab_index: usize) -> Task<Message> {
+    git_task!(
+        Message::SessionSaved,
+        gitkraft_core::features::persistence::ops::save_session(&open_tabs, active_tab_index)
+            .map_err(|e| e.to_string())
+    )
+}

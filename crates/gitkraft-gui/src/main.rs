@@ -15,26 +15,35 @@ fn main() -> iced::Result {
             ..Default::default()
         })
         .run_with(|| {
-            let mut state = GitKraft::new();
+            let (mut state, open_tabs) = GitKraft::new_with_session_paths();
 
-            // Maximize the window on startup by finding the main window ID
-            // and then requesting maximization.
             let maximize_task: iced::Task<gitkraft_gui::Message> =
                 iced::window::get_oldest().and_then(|id| iced::window::maximize(id, true));
 
-            // If there is a recently opened repo in persisted settings, auto-open it.
-            let repo_task = match gitkraft_core::features::persistence::ops::get_last_repo() {
-                Ok(Some(path)) if path.exists() => {
-                    let tab = state.active_tab_mut();
-                    tab.is_loading = true;
-                    tab.status_message = Some("Loading repository...".to_string());
-                    gitkraft_gui::features::repo::commands::load_repo(path)
+            let restore_task = if !open_tabs.is_empty() {
+                // Restore every saved tab in parallel, each loading into its own index.
+                let tasks: Vec<iced::Task<gitkraft_gui::Message>> = open_tabs
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, p)| p.exists())
+                    .map(|(i, p)| {
+                        gitkraft_gui::features::repo::commands::load_repo_at(i, p.clone())
+                    })
+                    .collect();
+                iced::Task::batch(tasks)
+            } else {
+                // Legacy fallback: restore the single last-opened repo.
+                match gitkraft_core::features::persistence::ops::get_last_repo() {
+                    Ok(Some(path)) if path.exists() => {
+                        let tab = state.active_tab_mut();
+                        tab.is_loading = true;
+                        tab.status_message = Some("Loading repository...".to_string());
+                        gitkraft_gui::features::repo::commands::load_repo(path)
+                    }
+                    _ => iced::Task::none(),
                 }
-                _ => iced::Task::none(),
             };
 
-            let startup_task = iced::Task::batch([maximize_task, repo_task]);
-
-            (state, startup_task)
+            (state, iced::Task::batch([maximize_task, restore_task]))
         })
 }

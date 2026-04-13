@@ -33,6 +33,12 @@ pub struct AppSettings {
     /// Persisted pane layout dimensions.
     #[serde(default)]
     pub layout: Option<LayoutSettings>,
+    /// Paths of all tabs open when the app was last closed, in tab order.
+    #[serde(default)]
+    pub open_tabs: Vec<PathBuf>,
+    /// Index of the active tab within open_tabs.
+    #[serde(default)]
+    pub active_tab_index: usize,
 }
 
 fn default_max_recent() -> usize {
@@ -47,6 +53,8 @@ impl Default for AppSettings {
             theme_name: None,
             max_recent: default_max_recent(),
             layout: None,
+            open_tabs: Vec::new(),
+            active_tab_index: 0,
         }
     }
 }

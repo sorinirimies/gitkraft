@@ -3,7 +3,7 @@
 
 use super::types::{AppSettings, RepoHistoryEntry};
 use anyhow::{Context, Result};
-use redb::{Database, ReadableTable, TableDefinition};
+use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use std::path::{Path, PathBuf};
 
 const SETTINGS_TABLE: TableDefinition<&str, &str> = TableDefinition::new("settings");
@@ -21,13 +21,24 @@ fn db_path() -> Result<PathBuf> {
 }
 
 /// Open or create the database.
+/// If the file exists but cannot be opened (e.g. stale format from an older
+/// redb version), the file is deleted and a fresh database is created.
 fn open_db() -> Result<Database> {
     let dir = settings_dir()?;
     std::fs::create_dir_all(&dir)
         .with_context(|| format!("failed to create settings directory {}", dir.display()))?;
     let path = db_path()?;
-    Database::create(&path)
-        .with_context(|| format!("failed to open database at {}", path.display()))
+    match Database::create(&path) {
+        Ok(db) => Ok(db),
+        Err(e) => {
+            tracing::warn!(
+                "Could not open database ({e}); removing stale file and creating fresh one."
+            );
+            let _ = std::fs::remove_file(&path);
+            Database::create(&path)
+                .with_context(|| format!("failed to open database at {}", path.display()))
+        }
+    }
 }
 
 /// Load settings from the database. Returns default settings if the database
@@ -52,6 +63,16 @@ pub fn load_settings() -> Result<AppSettings> {
         if let Ok(Some(val)) = table.get("layout") {
             if let Ok(layout) = serde_json::from_str::<super::types::LayoutSettings>(val.value()) {
                 settings.layout = Some(layout);
+            }
+        }
+        if let Ok(Some(val)) = table.get("open_tabs") {
+            if let Ok(tabs) = serde_json::from_str::<Vec<PathBuf>>(val.value()) {
+                settings.open_tabs = tabs;
+            }
+        }
+        if let Ok(Some(val)) = table.get("active_tab_index") {
+            if let Ok(idx) = val.value().parse::<usize>() {
+                settings.active_tab_index = idx;
             }
         }
     }
@@ -93,6 +114,15 @@ pub fn save_settings(settings: &AppSettings) -> Result<()> {
                 serde_json::to_string(layout).context("failed to serialize layout settings")?;
             table.insert("layout", layout_json.as_str())?;
         }
+        if !settings.open_tabs.is_empty() {
+            let tabs_json = serde_json::to_string(&settings.open_tabs)
+                .context("failed to serialize open_tabs")?;
+            table.insert("open_tabs", tabs_json.as_str())?;
+        } else {
+            let _ = table.remove("open_tabs");
+        }
+        let idx_str = settings.active_tab_index.to_string();
+        table.insert("active_tab_index", idx_str.as_str())?;
     }
 
     // Write recent repos — clear existing entries then rewrite
@@ -159,6 +189,29 @@ pub fn save_layout(layout: &super::types::LayoutSettings) -> Result<()> {
 pub fn get_saved_layout() -> Result<Option<super::types::LayoutSettings>> {
     let settings = load_settings()?;
     Ok(settings.layout)
+}
+
+/// Record that a repo was opened AND update the session in one DB write.
+/// Returns the updated recent-repos list.
+pub fn record_repo_and_save_session(
+    path: &Path,
+    open_tabs: &[PathBuf],
+    active_tab_index: usize,
+) -> Result<Vec<RepoHistoryEntry>> {
+    let mut settings = load_settings()?;
+    settings.add_recent_repo(path.to_path_buf());
+    settings.open_tabs = open_tabs.to_vec();
+    settings.active_tab_index = active_tab_index;
+    save_settings(&settings)?;
+    Ok(settings.recent_repos)
+}
+
+/// Persist the open-tab session without touching the recent-repos list.
+pub fn save_session(open_tabs: &[PathBuf], active_tab_index: usize) -> Result<()> {
+    let mut settings = load_settings()?;
+    settings.open_tabs = open_tabs.to_vec();
+    settings.active_tab_index = active_tab_index;
+    save_settings(&settings)
 }
 
 #[cfg(test)]

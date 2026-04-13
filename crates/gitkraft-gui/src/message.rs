@@ -158,6 +158,10 @@ pub enum Message {
     LayoutSaved(Result<(), String>),
     /// Layout loaded from persisted settings on startup.
     LayoutLoaded(Result<Option<gitkraft_core::LayoutSettings>, String>),
+    /// Background session save completed (fire-and-forget).
+    SessionSaved(Result<(), String>),
+    /// Async restore of a specific tab (by index) completed on startup.
+    RepoRestoredAt(usize, Result<RepoPayload, String>),
 
     /// User selected a different theme from the picker (by index into
     /// `gitkraft_core::THEME_NAMES`).

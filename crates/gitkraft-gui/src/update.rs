@@ -42,7 +42,9 @@ impl GitKraft {
                         self.active_tab -= 1;
                     }
                 }
-                Task::none()
+                let open_tabs = self.open_tab_paths();
+                let active = self.active_tab;
+                crate::features::repo::commands::save_session_async(open_tabs, active)
             }
 
             // ── Repository ────────────────────────────────────────────────
@@ -56,6 +58,7 @@ impl GitKraft {
             | Message::OpenRecentRepo(_)
             | Message::CloseRepo
             | Message::RepoRecorded(_)
+            | Message::RepoRestoredAt(_, _)
             | Message::SettingsLoaded(_) => crate::features::repo::update::update(self, message),
 
             // ── Branches ──────────────────────────────────────────────────
@@ -207,6 +210,11 @@ impl GitKraft {
             }
 
             Message::LayoutSaved(_result) => {
+                // Fire-and-forget — errors are silently ignored.
+                Task::none()
+            }
+
+            Message::SessionSaved(_) => {
                 // Fire-and-forget — errors are silently ignored.
                 Task::none()
             }
