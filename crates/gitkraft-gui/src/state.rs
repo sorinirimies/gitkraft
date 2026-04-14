@@ -91,6 +91,20 @@ pub struct RepoTab {
     pub error_message: Option<String>,
     /// True while an async operation is in flight.
     pub is_loading: bool,
+
+    /// Current scroll offset of the commit log in pixels.
+    /// Tracked via `on_scroll` so virtual scrolling can render only the
+    /// visible window of rows.
+    pub commit_scroll_offset: f32,
+
+    /// Pre-computed display strings for each commit: (truncated_summary, relative_time).
+    /// Computed once when commits load to avoid per-frame string allocations.
+    pub commit_display: Vec<(String, String)>,
+
+    /// Whether there are potentially more commits to load beyond those already shown.
+    pub has_more_commits: bool,
+    /// Guard: true while a background load-more task is in flight (prevents duplicates).
+    pub is_loading_more_commits: bool,
 }
 
 impl RepoTab {
@@ -119,6 +133,10 @@ impl RepoTab {
             status_message: None,
             error_message: None,
             is_loading: false,
+            commit_scroll_offset: 0.0,
+            commit_display: Vec::new(),
+            has_more_commits: true,
+            is_loading_more_commits: false,
         }
     }
 

@@ -59,6 +59,7 @@ impl GitKraft {
             | Message::CloseRepo
             | Message::RepoRecorded(_)
             | Message::RepoRestoredAt(_, _)
+            | Message::MoreCommitsLoaded(_)
             | Message::SettingsLoaded(_) => crate::features::repo::update::update(self, message),
 
             // ── Branches ──────────────────────────────────────────────────
@@ -83,6 +84,35 @@ impl GitKraft {
             Message::CommitMessageChanged(_)
             | Message::CreateCommit
             | Message::CommitCreated(_) => crate::features::commits::update::update(self, message),
+
+            Message::CommitLogScrolled(abs_y, rel_y) => {
+                // relative_y is 0.0 at the top and 1.0 at the very bottom of
+                // the scrollable content.  Using it (rather than absolute_y)
+                // avoids needing to know the viewport height.
+                const COMMITS_PAGE_SIZE: usize = 200;
+                // Trigger a load when the user is in the last 15 % of the
+                // scrollable area — roughly 2–3 screen-heights from the end.
+                const LOAD_TRIGGER_RELATIVE: f32 = 0.85;
+
+                self.active_tab_mut().commit_scroll_offset = *abs_y;
+
+                let tab = self.active_tab();
+                if *rel_y >= LOAD_TRIGGER_RELATIVE
+                    && tab.has_more_commits
+                    && !tab.is_loading_more_commits
+                {
+                    if let Some(path) = tab.repo_path.clone() {
+                        let current = tab.commits.len();
+                        self.active_tab_mut().is_loading_more_commits = true;
+                        return crate::features::repo::commands::load_more_commits(
+                            path,
+                            current,
+                            COMMITS_PAGE_SIZE,
+                        );
+                    }
+                }
+                Task::none()
+            }
 
             // ── Staging ───────────────────────────────────────────────────
             Message::StageFile(_)

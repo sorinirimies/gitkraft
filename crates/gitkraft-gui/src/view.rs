@@ -21,12 +21,10 @@
 //! user can resize the sidebar, commit-log, diff-viewer, and staging area by
 //! grabbing the thin divider lines and dragging.
 //!
-//! The outer-most widget is **always** a `mouse_area` that captures
-//! `on_move` and `on_release` events.  This ensures that once a drag starts
-//! (via the divider's `on_press`), subsequent mouse-move events are tracked
-//! even if the pointer leaves the narrow divider hit-zone.  When no drag is
-//! active the update handler simply ignores the events, so there is no
-//! measurable cost.
+//! The outer-most widget is a `mouse_area` that captures `on_release` events
+//! unconditionally, and `on_move` events **only while a drag is in progress**.
+//! This avoids firing `PaneDragMove → update() → view()` on every cursor
+//! movement when no resize drag is active.
 
 use iced::widget::{column, container, mouse_area, row, text, Space};
 use iced::{Alignment, Element, Length};
@@ -146,14 +144,15 @@ impl GitKraft {
             .height(Length::Fill)
             .style(theme::bg_style);
 
-        // Always-active mouse_area.  The `on_move` and `on_release` handlers
-        // fire on every frame the mouse moves, but the update function
-        // short-circuits to `Task::none()` when no drag is active — so there
-        // is no performance penalty during normal use.
-        mouse_area(body)
-            .on_move(|point| Message::PaneDragMove(point.x, point.y))
-            .on_release(Message::PaneDragEnd)
-            .into()
+        // Only wire on_move while a drag is actually in progress.
+        // Without this, every cursor movement fires PaneDragMove which forces a
+        // full view rebuild (including the O(n_commits) commit log) on every frame.
+        let ma = mouse_area(body).on_release(Message::PaneDragEnd);
+        if self.dragging.is_some() || self.dragging_h.is_some() {
+            ma.on_move(|p| Message::PaneDragMove(p.x, p.y)).into()
+        } else {
+            ma.into()
+        }
     }
 }
 

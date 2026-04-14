@@ -1,24 +1,40 @@
 //! Commit log view — scrollable list of commits with highlighted selection.
 //!
-//! Each commit row shows: graph │ short OID │ summary │ author │ relative time.
-//! The currently selected row gets a highlighted background.
-//!
-//! Uses `keyed_column` so that Iced can diff the widget tree efficiently when
-//! the list hasn't changed — this avoids rebuilding hundreds of row widgets
-//! every single frame.
+//! Renders only the rows currently visible in the viewport plus a small
+//! overscan buffer.  Space widgets above and below maintain the correct
+//! total scroll height so the scrollbar behaves naturally.
 
-use iced::widget::{button, column, container, keyed_column, row, scrollable, text, Row, Space};
+use iced::widget::{button, column, container, row, scrollable, text, Row, Space};
 use iced::{Alignment, Color, Element, Length};
 
 use crate::message::Message;
-use crate::state::GitKraft;
+use crate::state::{GitKraft, RepoTab};
 use crate::theme;
+use crate::theme::ThemeColors;
+
+/// Estimated height of one commit row in pixels.  Used for virtual scrolling.
+/// A slight over- or under-estimate only affects scrollbar thumb precision,
+/// not correctness of the rendered content.
+const ROW_HEIGHT: f32 = 26.0;
+
+/// Rows rendered above and below the visible window (avoids pop-in during
+/// fast scrolling).
+const OVERSCAN: usize = 8;
+
+/// Assumed visible rows (covers a 1300 px tall viewport at ROW_HEIGHT).
+/// Making this generous costs almost nothing — we cap at `total` anyway.
+const VISIBLE_ROWS: usize = 50;
+
+/// Per-tab stable scroll id — Iced maintains a separate scroll position for
+/// each open tab so no programmatic `scroll_to` is needed on tab switches.
+pub fn commit_log_scroll_id(tab_index: usize) -> scrollable::Id {
+    scrollable::Id::new(format!("commit_log_{tab_index}"))
+}
+
+// ── graph_cell ────────────────────────────────────────────────────────────────
 
 /// Build a small `Row` of individually-coloured text elements representing one
 /// row of the commit graph.
-///
-/// `graph_colors` is the per-theme palette of 8 lane colours obtained from
-/// [`ThemeColors::graph_colors`].
 fn graph_cell<'a>(
     graph_row: &gitkraft_core::GraphRow,
     graph_colors: &[Color; 8],
@@ -35,7 +51,6 @@ fn graph_cell<'a>(
         );
     }
 
-    // Collect pass-through edges per column and crossing edge info.
     let mut column_passthrough: Vec<Option<usize>> = vec![None; width];
     let mut has_left_cross = false;
     let mut has_right_cross = false;
@@ -154,6 +169,73 @@ fn graph_cell<'a>(
     Row::with_children(cells).align_y(Alignment::Center)
 }
 
+// ── single row element ────────────────────────────────────────────────────────
+
+/// Build the widget for a single commit row.
+fn commit_row_element<'a>(tab: &'a RepoTab, idx: usize, c: &ThemeColors) -> Element<'a, Message> {
+    let commit = &tab.commits[idx];
+    let is_selected = tab.selected_commit == Some(idx);
+
+    // Graph column
+    let graph_elem: Element<'_, Message> = if let Some(grow) = tab.graph_rows.get(idx) {
+        graph_cell(grow, &c.graph_colors).into()
+    } else {
+        text("").into()
+    };
+
+    let oid_label = text(commit.short_oid.as_str())
+        .size(12)
+        .color(c.accent)
+        .font(iced::Font::MONOSPACE);
+
+    // Use pre-computed display strings; fall back gracefully if out of sync.
+    let (summary_str, time_str) = tab
+        .commit_display
+        .get(idx)
+        .map(|(s, t)| (s.as_str(), t.as_str()))
+        .unwrap_or((commit.summary.as_str(), ""));
+
+    let summary_label = text(summary_str).size(12).color(c.text_primary);
+
+    let author_label = text(commit.author_name.as_str())
+        .size(11)
+        .color(c.text_secondary);
+
+    let time_label = text(time_str).size(11).color(c.muted);
+
+    let row_content = row![
+        graph_elem,
+        oid_label,
+        Space::with_width(6),
+        summary_label,
+        Space::with_width(Length::Fill),
+        author_label,
+        Space::with_width(8),
+        time_label,
+    ]
+    .align_y(Alignment::Center)
+    .padding([3, 8]);
+
+    let style_fn = if is_selected {
+        theme::selected_row_style as fn(&iced::Theme) -> iced::widget::container::Style
+    } else {
+        theme::surface_style as fn(&iced::Theme) -> iced::widget::container::Style
+    };
+
+    container(
+        button(row_content)
+            .padding(0)
+            .width(Length::Fill)
+            .on_press(Message::SelectCommit(idx))
+            .style(theme::ghost_button),
+    )
+    .width(Length::Fill)
+    .style(style_fn)
+    .into()
+}
+
+// ── view ─────────────────────────────────────────────────────────────────────
+
 /// Render the commit log panel.
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let tab = state.active_tab();
@@ -193,89 +275,74 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .width(Length::Fill)
         .height(Length::Fill);
 
-        container(content)
+        return container(content)
             .width(Length::Fill)
             .height(Length::Fill)
             .style(theme::surface_style)
-            .into()
-    } else {
-        // Use keyed_column so Iced can diff the tree by a stable key
-        // instead of rebuilding all rows from scratch every frame.
-        // We use the enumeration index as the key (Copy + PartialEq).
-        let list = keyed_column(tab.commits.iter().enumerate().map(|(idx, commit)| {
-            let key = idx;
-
-            let is_selected = tab.selected_commit == Some(idx);
-
-            // ── Graph column ──────────────────────────────────
-            let graph_elem: Element<'_, Message> = if let Some(grow) = tab.graph_rows.get(idx) {
-                graph_cell(grow, &c.graph_colors).into()
-            } else {
-                text("").into()
-            };
-
-            let oid_label = text(commit.short_oid.as_str())
-                .size(12)
-                .color(c.accent)
-                .font(iced::Font::MONOSPACE);
-
-            let summary_text = if commit.summary.chars().count() > 60 {
-                let truncated: String = commit.summary.chars().take(59).collect();
-                format!("{truncated}…")
-            } else {
-                commit.summary.clone()
-            };
-            let summary_label = text(summary_text).size(12).color(c.text_primary);
-
-            let author_label = text(commit.author_name.as_str())
-                .size(11)
-                .color(c.text_secondary);
-
-            let time_str = gitkraft_core::utils::relative_time(commit.time);
-            let time_label = text(time_str).size(11).color(c.muted);
-
-            let row_content = row![
-                graph_elem,
-                oid_label,
-                Space::with_width(6),
-                summary_label,
-                Space::with_width(Length::Fill),
-                author_label,
-                Space::with_width(8),
-                time_label,
-            ]
-            .align_y(Alignment::Center)
-            .padding([3, 8]);
-
-            let style_fn = if is_selected {
-                theme::selected_row_style as fn(&iced::Theme) -> iced::widget::container::Style
-            } else {
-                theme::surface_style as fn(&iced::Theme) -> iced::widget::container::Style
-            };
-
-            let row_container = container(
-                button(row_content)
-                    .padding(0)
-                    .width(Length::Fill)
-                    .on_press(Message::SelectCommit(idx))
-                    .style(theme::ghost_button),
-            )
-            .width(Length::Fill)
-            .style(style_fn);
-
-            let element: Element<'_, Message> = row_container.into();
-            (key, element)
-        }))
-        .width(Length::Fill);
-
-        let content = column![header_row, scrollable(list).height(Length::Fill),]
-            .width(Length::Fill)
-            .height(Length::Fill);
-
-        container(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(theme::surface_style)
-            .into()
+            .into();
     }
+
+    // ── Virtual scroll window ─────────────────────────────────────────────
+    //
+    // Only the rows visible in the viewport (plus OVERSCAN above/below) are
+    // constructed as widgets.  The remaining space is filled with two Space
+    // widgets so the scrollable keeps the correct total height and the
+    // scrollbar thumb stays proportional.
+
+    let total = tab.commits.len();
+    let scroll_y = tab.commit_scroll_offset;
+
+    let first = ((scroll_y / ROW_HEIGHT) as usize).saturating_sub(OVERSCAN);
+    let last = (first + VISIBLE_ROWS + 2 * OVERSCAN).min(total);
+
+    let top_space = first as f32 * ROW_HEIGHT;
+    let bottom_space = (total - last) as f32 * ROW_HEIGHT;
+
+    let mut list_col = column![].width(Length::Fill);
+
+    if top_space > 0.0 {
+        list_col = list_col.push(Space::with_height(top_space));
+    }
+
+    for idx in first..last {
+        list_col = list_col.push(commit_row_element(tab, idx, &c));
+    }
+
+    if bottom_space > 0.0 {
+        list_col = list_col.push(Space::with_height(bottom_space));
+    }
+
+    // Loading spinner shown while a background fetch is in progress.
+    if tab.is_loading_more_commits {
+        list_col = list_col.push(
+            container(text("Loading more commits…").size(12).color(c.muted))
+                .width(Length::Fill)
+                .center_x(Length::Fill)
+                .padding([10, 0]),
+        );
+    }
+    // End-of-history marker once all commits are loaded.
+    if !tab.has_more_commits {
+        list_col = list_col.push(
+            container(text("— end of history —").size(11).color(c.muted))
+                .width(Length::Fill)
+                .center_x(Length::Fill)
+                .padding([10, 0]),
+        );
+    }
+
+    let commit_scroll = scrollable(list_col)
+        .height(Length::Fill)
+        .id(commit_log_scroll_id(state.active_tab))
+        .on_scroll(|vp| Message::CommitLogScrolled(vp.absolute_offset().y, vp.relative_offset().y));
+
+    let content = column![header_row, commit_scroll]
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+    container(content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(theme::surface_style)
+        .into()
 }

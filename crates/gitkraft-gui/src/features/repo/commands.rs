@@ -181,6 +181,28 @@ pub fn record_repo_and_save_session_async(
     )
 }
 
+/// Load the next page of commit history.
+///
+/// Fetches all commits up to `skip + count` from HEAD, rebuilds the full graph,
+/// and returns a [`CommitPage`] for the update handler to swap in.
+pub fn load_more_commits(path: PathBuf, skip: usize, count: usize) -> Task<Message> {
+    let total = skip + count;
+    git_task!(
+        Message::MoreCommitsLoaded,
+        (|| {
+            let repo =
+                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            let commits = gitkraft_core::features::commits::list_commits(&repo, total)
+                .map_err(|e| e.to_string())?;
+            let graph_rows = gitkraft_core::features::graph::build_graph(&commits);
+            Ok(crate::message::CommitPage {
+                commits,
+                graph_rows,
+            })
+        })()
+    )
+}
+
 /// Save the session (open tab paths + active tab index) asynchronously.
 pub fn save_session_async(open_tabs: Vec<PathBuf>, active_tab_index: usize) -> Task<Message> {
     git_task!(

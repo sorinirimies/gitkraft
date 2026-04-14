@@ -106,6 +106,8 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             Task::none()
         }
 
+        Message::MoreCommitsLoaded(result) => handle_more_commits_loaded(state, result),
+
         _ => Task::none(),
     }
 }
@@ -145,12 +147,22 @@ fn handle_repo_loaded(state: &mut GitKraft, result: Result<RepoPayload, String>)
             tab.commit_message.clear();
             tab.error_message = None;
             tab.status_message = Some("Repository loaded.".into());
+            tab.commit_display = compute_commit_display(&tab.commits);
+            tab.commit_scroll_offset = 0.0;
+            tab.has_more_commits = true;
+            tab.is_loading_more_commits = false;
 
             // Record the repo open AND persist the full session in one DB
             // write, on a background thread so redb I/O doesn't block the UI.
             let open_tabs = state.open_tab_paths();
             let active = state.active_tab;
-            commands::record_repo_and_save_session_async(path, open_tabs, active)
+            Task::batch([
+                commands::record_repo_and_save_session_async(path, open_tabs, active),
+                iced::widget::scrollable::scroll_to(
+                    crate::features::commits::view::commit_log_scroll_id(active),
+                    iced::widget::scrollable::AbsoluteOffset { x: 0.0, y: 0.0 },
+                ),
+            ])
         }
         Err(e) => {
             let tab = state.active_tab_mut();
@@ -195,6 +207,10 @@ fn handle_repo_loaded_at(
             tab.commit_message.clear();
             tab.error_message = None;
             tab.status_message = Some("Repository loaded.".into());
+            tab.commit_display = compute_commit_display(&tab.commits);
+            tab.commit_scroll_offset = 0.0;
+            tab.has_more_commits = true;
+            tab.is_loading_more_commits = false;
             // Already in recent_repos — no need to re-record.
             Task::none()
         }
@@ -205,4 +221,51 @@ fn handle_repo_loaded_at(
             Task::none()
         }
     }
+}
+
+/// Append a newly loaded commit page to the active tab's commit log.
+fn handle_more_commits_loaded(
+    state: &mut GitKraft,
+    result: Result<crate::message::CommitPage, String>,
+) -> Task<Message> {
+    let tab = state.active_tab_mut();
+    tab.is_loading_more_commits = false;
+    match result {
+        Ok(page) => {
+            let prev_count = tab.commits.len();
+            let new_total = page.commits.len();
+            // If the server returned no new commits, we've hit the end.
+            tab.has_more_commits = new_total > prev_count;
+            if new_total > prev_count {
+                // Only compute display strings for the newly added commits.
+                let new_display = compute_commit_display(&page.commits[prev_count..]);
+                tab.commit_display.extend(new_display);
+            }
+            tab.commits = page.commits;
+            tab.graph_rows = page.graph_rows;
+        }
+        Err(e) => {
+            tab.status_message = Some(format!("Failed to load more commits: {e}"));
+        }
+    }
+    Task::none()
+}
+
+/// Pre-compute display strings for the commit log so the view function
+/// never allocates strings on the hot rendering path.
+fn compute_commit_display(commits: &[gitkraft_core::CommitInfo]) -> Vec<(String, String)> {
+    commits
+        .iter()
+        .map(|c| {
+            let summary = if c.summary.chars().count() > 60 {
+                let mut s: String = c.summary.chars().take(59).collect();
+                s.push('…');
+                s
+            } else {
+                c.summary.clone()
+            };
+            let time = gitkraft_core::utils::relative_time(c.time);
+            (summary, time)
+        })
+        .collect()
 }

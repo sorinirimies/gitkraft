@@ -31,6 +31,13 @@ pub struct StagingPayload {
     pub staged: Vec<DiffInfo>,
 }
 
+/// Payload returned by a lazy-load page request.
+#[derive(Debug, Clone)]
+pub struct CommitPage {
+    pub commits: Vec<gitkraft_core::CommitInfo>,
+    pub graph_rows: Vec<gitkraft_core::GraphRow>,
+}
+
 // ── Message enum ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -82,6 +89,12 @@ pub enum Message {
     SelectCommit(usize),
     /// Async commit-diff load completed.
     CommitDiffLoaded(Result<Vec<DiffInfo>, String>),
+    /// The commit log scrollable was scrolled.
+    /// Carries `(absolute_y, relative_y)` — absolute for virtual-window
+    /// positioning, relative (0.0 = top, 1.0 = bottom) for load-more trigger.
+    CommitLogScrolled(f32, f32),
+    /// A lazy-loaded page of additional commits was fetched from the background.
+    MoreCommitsLoaded(Result<CommitPage, String>),
 
     // ── Staging ───────────────────────────────────────────────────────────
     /// Stage a single file by its path.
