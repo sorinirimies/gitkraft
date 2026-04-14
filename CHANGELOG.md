@@ -2,9 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.3.8 - 2026-04-14
+### ♻️ Refactor
+- Refactor async command handling with git_task! and with_repo! macros
+### ➕ Added
+- Add discard confirmation to GUI and improve TUI features
+- Add context menu support for branches and commits in GUI
+- Add git reset (soft, mixed, hard) to commit context menu
+### 📦 Other Changes
+- Persist and restore open tabs and active tab index
+- Implement virtual scrolling and lazy loading for commit log
+- Bump version to 0.3.7 and update doc code blocks
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.6...v0.3.8
 ## 0.3.6 - 2026-04-12
 ### ➕ Added
 - Add multi-repo tab bar with per-tab state management
+### 🔧 Chores
+- chore: bump version to 0.3.6
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.5...v0.3.6
 ## 0.3.5 - 2026-04-09
 ### 🔧 Chores
