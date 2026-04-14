@@ -189,26 +189,34 @@ fn commit_row_element<'a>(tab: &'a RepoTab, idx: usize, c: &ThemeColors) -> Elem
         .font(iced::Font::MONOSPACE);
 
     // Use pre-computed display strings; fall back gracefully if out of sync.
-    let (summary_str, time_str) = tab
+    let (summary_str, time_str, author_str) = tab
         .commit_display
         .get(idx)
-        .map(|(s, t)| (s.as_str(), t.as_str()))
-        .unwrap_or((commit.summary.as_str(), ""));
+        .map(|(s, t, a)| (s.as_str(), t.as_str(), a.as_str()))
+        .unwrap_or((commit.summary.as_str(), "", commit.author_name.as_str()));
 
-    let summary_label = text(summary_str).size(12).color(c.text_primary);
+    // Summary fills all remaining horizontal space and clips — never wraps.
+    let summary_label = container(
+        text(summary_str)
+            .size(12)
+            .color(c.text_primary)
+            .wrapping(iced::widget::text::Wrapping::None),
+    )
+    .width(Length::Fill)
+    .clip(true);
 
-    let author_label = text(commit.author_name.as_str())
-        .size(11)
-        .color(c.text_secondary);
+    // Fixed-width columns prevent author / time from being squeezed to zero
+    // and wrapping character-by-character.  Text is pre-truncated so it fits.
+    let author_label = container(text(author_str).size(11).color(c.text_secondary)).width(90);
 
-    let time_label = text(time_str).size(11).color(c.muted);
+    let time_label = container(text(time_str).size(11).color(c.muted)).width(72);
 
     let row_content = row![
         graph_elem,
         oid_label,
         Space::with_width(6),
         summary_label,
-        Space::with_width(Length::Fill),
+        Space::with_width(8),
         author_label,
         Space::with_width(8),
         time_label,

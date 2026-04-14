@@ -255,7 +255,7 @@ fn handle_more_commits_loaded(
 
 /// Pre-compute display strings for the commit log so the view function
 /// never allocates strings on the hot rendering path.
-fn compute_commit_display(commits: &[gitkraft_core::CommitInfo]) -> Vec<(String, String)> {
+fn compute_commit_display(commits: &[gitkraft_core::CommitInfo]) -> Vec<(String, String, String)> {
     commits
         .iter()
         .map(|c| {
@@ -267,7 +267,15 @@ fn compute_commit_display(commits: &[gitkraft_core::CommitInfo]) -> Vec<(String,
                 c.summary.clone()
             };
             let time = gitkraft_core::utils::relative_time(c.time);
-            (summary, time)
+            // Truncate author to fit in the fixed-width author column (~90 px).
+            let author = if c.author_name.chars().count() > 14 {
+                let mut s: String = c.author_name.chars().take(13).collect();
+                s.push('…');
+                s
+            } else {
+                c.author_name.clone()
+            };
+            (summary, time, author)
         })
         .collect()
 }

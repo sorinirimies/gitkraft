@@ -126,9 +126,10 @@ pub struct RepoTab {
     /// visible window of rows.
     pub commit_scroll_offset: f32,
 
-    /// Pre-computed display strings for each commit: (truncated_summary, relative_time).
+    /// Pre-computed display strings for each commit:
+    /// `(truncated_summary, relative_time, truncated_author)`.
     /// Computed once when commits load to avoid per-frame string allocations.
-    pub commit_display: Vec<(String, String)>,
+    pub commit_display: Vec<(String, String, String)>,
 
     /// Whether there are potentially more commits to load beyond those already shown.
     pub has_more_commits: bool,
