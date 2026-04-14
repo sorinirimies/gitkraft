@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.3.9 - 2026-04-14
+### 📦 Other Changes
+- Make branches sidebar width responsive
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.8...v0.3.9
 ## 0.3.8 - 2026-04-14
 ### ♻️ Refactor
 - Refactor async command handling with git_task! and with_repo! macros
@@ -13,6 +17,8 @@ All notable changes to this project will be documented in this file.
 - Persist and restore open tabs and active tab index
 - Implement virtual scrolling and lazy loading for commit log
 - Bump version to 0.3.7 and update doc code blocks
+### 🔧 Chores
+- chore: bump version to 0.3.8
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.6...v0.3.8
 ## 0.3.6 - 2026-04-12
 ### ➕ Added
