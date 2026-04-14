@@ -234,11 +234,11 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         rename_form,
         scrollable(list_col).height(Length::Fill),
     ]
-    .width(220)
+    .width(Length::Fill)
     .height(Length::Fill);
 
     container(content)
-        .width(220)
+        .width(Length::Fill)
         .height(Length::Fill)
         .style(theme::sidebar_style)
         .into()
