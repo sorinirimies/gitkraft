@@ -352,6 +352,55 @@ pub fn active_tab_button(theme: &iced::Theme, status: button::Status) -> button:
     }
 }
 
+/// Context menu item button — transparent at rest, accent-tinted on hover.
+pub fn context_menu_item(theme: &iced::Theme, status: button::Status) -> button::Style {
+    let c = ThemeColors::from_theme(theme);
+    match status {
+        button::Status::Active => button::Style {
+            background: None,
+            text_color: c.text_primary,
+            border: iced::Border::default(),
+            shadow: iced::Shadow::default(),
+        },
+        button::Status::Hovered => button::Style {
+            background: Some(Background::Color(iced::Color {
+                r: c.accent.r,
+                g: c.accent.g,
+                b: c.accent.b,
+                a: 0.15,
+            })),
+            text_color: c.text_primary,
+            border: iced::Border {
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+                radius: 4.0.into(),
+            },
+            shadow: iced::Shadow::default(),
+        },
+        button::Status::Pressed => button::Style {
+            background: Some(Background::Color(iced::Color {
+                r: c.accent.r,
+                g: c.accent.g,
+                b: c.accent.b,
+                a: 0.28,
+            })),
+            text_color: c.text_primary,
+            border: iced::Border {
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+                radius: 4.0.into(),
+            },
+            shadow: iced::Shadow::default(),
+        },
+        button::Status::Disabled => button::Style {
+            background: None,
+            text_color: c.muted,
+            border: iced::Border::default(),
+            shadow: iced::Shadow::default(),
+        },
+    }
+}
+
 /// Subtle toolbar button — transparent at rest, light surface on hover.
 pub fn toolbar_button(theme: &iced::Theme, status: button::Status) -> button::Style {
     let c = ThemeColors::from_theme(theme);

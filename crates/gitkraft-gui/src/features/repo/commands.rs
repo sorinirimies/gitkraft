@@ -189,6 +189,20 @@ pub fn revert_commit_async(path: PathBuf, oid: String) -> Task<Message> {
     )
 }
 
+/// Reset the current branch to `oid` using the given `mode`
+/// (`"soft"`, `"mixed"`, or `"hard"`).
+pub fn reset_to_commit_async(path: PathBuf, oid: String, mode: String) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let wd = workdir(&path)?;
+            gitkraft_core::features::repo::reset_to_commit(&wd, &oid, &mode)
+                .map_err(|e| e.to_string())?;
+            load_repo_blocking(&path)
+        })()
+    )
+}
+
 // ── Async persistence helpers ─────────────────────────────────────────────────
 
 /// Record that a repo was opened and return the refreshed recent-repos list.

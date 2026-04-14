@@ -173,6 +173,9 @@ impl GitKraft {
             Message::PaneDragMove(x, y) => {
                 use crate::state::{DragTarget, DragTargetH};
 
+                // Always record cursor position so context menus open at the pointer.
+                self.cursor_pos = iced::Point::new(*x, *y);
+
                 if let Some(target) = self.dragging {
                     if !self.drag_initialized {
                         // First move after press — just record the position.
@@ -229,7 +232,10 @@ impl GitKraft {
 
             // ── Context menu lifecycle ────────────────────────────────────────────────
             Message::OpenBranchContextMenu(name, local_index, is_current) => {
-                self.active_tab_mut().context_menu = Some(crate::state::ContextMenu::Branch {
+                let pos = (self.cursor_pos.x, self.cursor_pos.y);
+                let tab = self.active_tab_mut();
+                tab.context_menu_pos = pos;
+                tab.context_menu = Some(crate::state::ContextMenu::Branch {
                     name: name.clone(),
                     is_current: *is_current,
                     local_index: *local_index,
@@ -239,9 +245,11 @@ impl GitKraft {
 
             Message::OpenCommitContextMenu(idx) => {
                 let oid = self.active_tab().commits.get(*idx).map(|c| c.oid.clone());
+                let pos = (self.cursor_pos.x, self.cursor_pos.y);
                 if let Some(oid) = oid {
-                    self.active_tab_mut().context_menu =
-                        Some(crate::state::ContextMenu::Commit { index: *idx, oid });
+                    let tab = self.active_tab_mut();
+                    tab.context_menu_pos = pos;
+                    tab.context_menu = Some(crate::state::ContextMenu::Commit { index: *idx, oid });
                 }
                 Task::none()
             }
@@ -374,6 +382,54 @@ impl GitKraft {
                 with_repo!(self, loading, format!("Reverting {short}…"), |path| {
                     crate::features::repo::commands::revert_commit_async(path, oid)
                 })
+            }
+
+            Message::ResetSoft(oid) => {
+                let oid = oid.clone();
+                let short = oid[..7.min(oid.len())].to_string();
+                self.active_tab_mut().context_menu = None;
+                with_repo!(
+                    self,
+                    loading,
+                    format!("Resetting (soft) to {short}…"),
+                    |path| crate::features::repo::commands::reset_to_commit_async(
+                        path,
+                        oid,
+                        "soft".to_string()
+                    )
+                )
+            }
+
+            Message::ResetMixed(oid) => {
+                let oid = oid.clone();
+                let short = oid[..7.min(oid.len())].to_string();
+                self.active_tab_mut().context_menu = None;
+                with_repo!(
+                    self,
+                    loading,
+                    format!("Resetting (mixed) to {short}…"),
+                    |path| crate::features::repo::commands::reset_to_commit_async(
+                        path,
+                        oid,
+                        "mixed".to_string()
+                    )
+                )
+            }
+
+            Message::ResetHard(oid) => {
+                let oid = oid.clone();
+                let short = oid[..7.min(oid.len())].to_string();
+                self.active_tab_mut().context_menu = None;
+                with_repo!(
+                    self,
+                    loading,
+                    format!("Resetting (hard) to {short}…"),
+                    |path| crate::features::repo::commands::reset_to_commit_async(
+                        path,
+                        oid,
+                        "hard".to_string()
+                    )
+                )
             }
 
             // ── Shared ───────────────────────────────────────────────────────────────

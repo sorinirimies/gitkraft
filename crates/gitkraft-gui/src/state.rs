@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use gitkraft_core::*;
-use iced::{Color, Task};
+use iced::{Color, Point, Task};
 
 use crate::message::Message;
 use crate::theme::ThemeColors;
@@ -106,6 +106,9 @@ pub struct RepoTab {
     pub error_message: Option<String>,
     /// True while an async operation is in flight.
     pub is_loading: bool,
+    /// Cursor position captured at the moment the context menu was opened.
+    /// Used to anchor the menu so it doesn't follow the mouse after appearing.
+    pub context_menu_pos: (f32, f32),
 
     /// Currently open context menu, if any.
     pub context_menu: Option<ContextMenu>,
@@ -156,6 +159,7 @@ impl RepoTab {
             error_message: None,
             is_loading: false,
             context_menu: None,
+            context_menu_pos: (0.0, 0.0),
             rename_branch_target: None,
             rename_branch_input: String::new(),
             commit_scroll_offset: 0.0,
@@ -219,6 +223,12 @@ pub struct GitKraft {
     pub drag_initialized: bool,
     /// Same as `drag_initialized` but for horizontal drags.
     pub drag_initialized_h: bool,
+
+    // ── Cursor ────────────────────────────────────────────────────────────
+    /// Last known cursor position in window coordinates.
+    /// Updated on every mouse-move event so context menus open at the
+    /// exact spot the user right-clicked.
+    pub cursor_pos: Point,
 
     // ── Theme ─────────────────────────────────────────────────────────────
     /// Index into `gitkraft_core::THEME_NAMES` for the currently active theme.
@@ -285,6 +295,7 @@ impl GitKraft {
             drag_start_y: 0.0,
             drag_initialized: false,
             drag_initialized_h: false,
+            cursor_pos: Point::ORIGIN,
 
             current_theme_index,
 
