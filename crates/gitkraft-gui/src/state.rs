@@ -93,6 +93,10 @@ pub struct RepoTab {
     pub new_branch_name: String,
     /// Whether the inline branch-creation UI is visible.
     pub show_branch_create: bool,
+    /// Whether the Local branches section is expanded.
+    pub local_branches_expanded: bool,
+    /// Whether the Remote branches section is expanded.
+    pub remote_branches_expanded: bool,
     /// Text in the "stash message" input.
     pub stash_message: String,
 
@@ -153,6 +157,8 @@ impl RepoTab {
             show_commit_detail: false,
             new_branch_name: String::new(),
             show_branch_create: false,
+            local_branches_expanded: true,
+            remote_branches_expanded: true,
             stash_message: String::new(),
             pending_discard: None,
             status_message: None,

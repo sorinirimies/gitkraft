@@ -211,20 +211,87 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     let mut list_col = column![].spacing(1).width(Length::Fill);
 
-    if !local_branches.is_empty() {
-        let local_header = text("Local").size(11).color(c.muted);
-        list_col = list_col.push(container(local_header).padding([6, 10]));
-        for item in local_branches {
-            list_col = list_col.push(item);
+    if !local_branches.is_empty() || tab.local_branches_expanded {
+        let local_count = tab
+            .branches
+            .iter()
+            .filter(|b| b.branch_type == BranchType::Local)
+            .count();
+
+        let chevron_char = if tab.local_branches_expanded {
+            '\u{F284}' // chevron-down
+        } else {
+            '\u{F285}' // chevron-right
+        };
+        let chevron = text(chevron_char)
+            .font(iced_fonts::BOOTSTRAP_FONT)
+            .size(11)
+            .color(c.muted);
+
+        let local_header_btn = button(
+            row![
+                chevron,
+                Space::with_width(4),
+                text("Local").size(11).color(c.muted),
+                Space::with_width(4),
+                text(format!("({local_count})")).size(10).color(c.muted),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .padding([4, 8])
+        .width(Length::Fill)
+        .style(theme::ghost_button)
+        .on_press(Message::ToggleLocalBranches);
+
+        list_col = list_col.push(local_header_btn);
+
+        if tab.local_branches_expanded {
+            for item in local_branches {
+                list_col = list_col.push(item);
+            }
         }
     }
 
-    if !remote_branches.is_empty() {
-        list_col = list_col.push(Space::with_height(8));
-        let remote_header = text("Remote").size(11).color(c.muted);
-        list_col = list_col.push(container(remote_header).padding([6, 10]));
-        for item in remote_branches {
-            list_col = list_col.push(item);
+    if !remote_branches.is_empty() || tab.remote_branches_expanded {
+        let remote_count = tab
+            .branches
+            .iter()
+            .filter(|b| b.branch_type == BranchType::Remote)
+            .count();
+
+        list_col = list_col.push(Space::with_height(4));
+
+        let chevron_char = if tab.remote_branches_expanded {
+            '\u{F284}' // chevron-down
+        } else {
+            '\u{F285}' // chevron-right
+        };
+        let chevron = text(chevron_char)
+            .font(iced_fonts::BOOTSTRAP_FONT)
+            .size(11)
+            .color(c.muted);
+
+        let remote_header_btn = button(
+            row![
+                chevron,
+                Space::with_width(4),
+                text("Remote").size(11).color(c.muted),
+                Space::with_width(4),
+                text(format!("({remote_count})")).size(10).color(c.muted),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .padding([4, 8])
+        .width(Length::Fill)
+        .style(theme::ghost_button)
+        .on_press(Message::ToggleRemoteBranches);
+
+        list_col = list_col.push(remote_header_btn);
+
+        if tab.remote_branches_expanded {
+            for item in remote_branches {
+                list_col = list_col.push(item);
+            }
         }
     }
 
@@ -232,7 +299,12 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         header_row,
         create_form,
         rename_form,
-        scrollable(list_col).height(Length::Fill),
+        scrollable(list_col)
+            .height(Length::Fill)
+            .direction(scrollable::Direction::Vertical(
+                scrollable::Scrollbar::new().width(6).scroller_width(4),
+            ))
+            .style(crate::theme::overlay_scrollbar),
     ]
     .width(Length::Fill)
     .height(Length::Fill);

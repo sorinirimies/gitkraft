@@ -5,7 +5,7 @@
 //! every theme.  The old `from_theme()` constructor is kept as a convenience
 //! fallback that maps an `iced::Theme` to the closest core theme index.
 
-use iced::widget::{button, container};
+use iced::widget::{button, container, scrollable};
 use iced::{Background, Color};
 
 // ── ThemeColors ───────────────────────────────────────────────────────────────
@@ -398,6 +398,59 @@ pub fn context_menu_item(theme: &iced::Theme, status: button::Status) -> button:
             border: iced::Border::default(),
             shadow: iced::Shadow::default(),
         },
+    }
+}
+
+/// Overlay scrollbar — invisible at rest, thin rounded thumb on hover/drag.
+///
+/// - **Active** / not hovered: completely invisible — the scrollbar takes no
+///   visual space and the content fills the full width.
+/// - **Hovered** (cursor anywhere over the scrollable, not just the rail):
+///   a thin, semi-transparent rounded thumb floats over the right edge.
+/// - **Dragged**: same thumb, slightly more opaque for feedback.
+///
+/// Apply with a 6 px `Direction::Vertical` width so there is a small grab
+/// target even though the rendered thumb is only 4 px wide.
+pub fn overlay_scrollbar(theme: &iced::Theme, status: scrollable::Status) -> scrollable::Style {
+    let c = ThemeColors::from_theme(theme);
+
+    let hidden = scrollable::Rail {
+        background: None,
+        border: iced::Border::default(),
+        scroller: scrollable::Scroller {
+            color: Color::TRANSPARENT,
+            border: iced::Border::default(),
+        },
+    };
+
+    let thumb = |alpha: f32| scrollable::Rail {
+        background: None,
+        border: iced::Border::default(),
+        scroller: scrollable::Scroller {
+            color: Color {
+                r: c.muted.r,
+                g: c.muted.g,
+                b: c.muted.b,
+                a: alpha,
+            },
+            border: iced::Border {
+                radius: 3.0.into(),
+                ..Default::default()
+            },
+        },
+    };
+
+    let v_rail = match status {
+        scrollable::Status::Active => hidden,
+        scrollable::Status::Hovered { .. } => thumb(0.45),
+        scrollable::Status::Dragged { .. } => thumb(0.70),
+    };
+
+    scrollable::Style {
+        container: container::Style::default(),
+        vertical_rail: v_rail,
+        horizontal_rail: hidden,
+        gap: None,
     }
 }
 

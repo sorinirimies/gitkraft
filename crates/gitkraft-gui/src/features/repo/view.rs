@@ -153,7 +153,12 @@ pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
             recent_list = recent_list.push(entry_btn);
         }
 
-        let scrollable_recent = scrollable(recent_list).height(Length::Shrink);
+        let scrollable_recent = scrollable(recent_list)
+            .height(Length::Shrink)
+            .direction(scrollable::Direction::Vertical(
+                scrollable::Scrollbar::new().width(6).scroller_width(4),
+            ))
+            .style(crate::theme::overlay_scrollbar);
         card_col = card_col.push(scrollable_recent);
     }
 

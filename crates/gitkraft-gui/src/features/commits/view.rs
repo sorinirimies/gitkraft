@@ -337,7 +337,11 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let commit_scroll = scrollable(list_col)
         .height(Length::Fill)
         .id(commit_log_scroll_id(state.active_tab))
-        .on_scroll(|vp| Message::CommitLogScrolled(vp.absolute_offset().y, vp.relative_offset().y));
+        .on_scroll(|vp| Message::CommitLogScrolled(vp.absolute_offset().y, vp.relative_offset().y))
+        .direction(scrollable::Direction::Vertical(
+            scrollable::Scrollbar::new().width(6).scroller_width(4),
+        ))
+        .style(crate::theme::overlay_scrollbar);
 
     let content = column![header_row, commit_scroll]
         .width(Length::Fill)

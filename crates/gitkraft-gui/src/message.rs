@@ -83,6 +83,10 @@ pub enum Message {
     BranchDeleted(Result<(), String>),
     /// Toggle visibility of the new-branch inline form.
     ToggleBranchCreate,
+    /// Collapse or expand the Local branches section.
+    ToggleLocalBranches,
+    /// Collapse or expand the Remote branches section.
+    ToggleRemoteBranches,
 
     // ── Commits ───────────────────────────────────────────────────────────
     /// User clicked a commit row in the log.

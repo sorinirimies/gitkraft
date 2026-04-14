@@ -93,6 +93,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .direction(scrollable::Direction::Horizontal(
             scrollable::Scrollbar::new(),
         ))
+        .style(crate::theme::overlay_scrollbar)
         .width(Length::Fill);
 
     container(scrollable_tabs)

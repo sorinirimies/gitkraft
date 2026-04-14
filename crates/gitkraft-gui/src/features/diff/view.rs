@@ -169,7 +169,12 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
         file_list_col = file_list_col.push(file_row);
     }
 
-    let scrollable_files = scrollable(file_list_col).height(Length::Fill);
+    let scrollable_files = scrollable(file_list_col)
+        .height(Length::Fill)
+        .direction(scrollable::Direction::Vertical(
+            scrollable::Scrollbar::new().width(6).scroller_width(4),
+        ))
+        .style(crate::theme::overlay_scrollbar);
 
     container(
         column![header_row, scrollable_files]
@@ -246,7 +251,12 @@ fn diff_content<'a>(diff: &DiffInfo, c: &ThemeColors) -> Element<'a, Message> {
         }
     }
 
-    let scrollable_content = scrollable(lines_col).height(Length::Fill);
+    let scrollable_content = scrollable(lines_col)
+        .height(Length::Fill)
+        .direction(scrollable::Direction::Vertical(
+            scrollable::Scrollbar::new().width(6).scroller_width(4),
+        ))
+        .style(crate::theme::overlay_scrollbar);
 
     column![file_header, scrollable_content]
         .width(Length::Fill)

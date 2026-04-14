@@ -122,7 +122,12 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let content = column![
         header_row,
         input_row,
-        scrollable(list_col).height(Length::Fill),
+        scrollable(list_col)
+            .height(Length::Fill)
+            .direction(scrollable::Direction::Vertical(
+                scrollable::Scrollbar::new().width(6).scroller_width(4),
+            ))
+            .style(crate::theme::overlay_scrollbar),
     ]
     .width(Length::Fill);
 

@@ -22,6 +22,18 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             state.on_ok_refresh(result, "Branch checked out.", "Checkout failed")
         }
 
+        Message::ToggleLocalBranches => {
+            let tab = state.active_tab_mut();
+            tab.local_branches_expanded = !tab.local_branches_expanded;
+            Task::none()
+        }
+
+        Message::ToggleRemoteBranches => {
+            let tab = state.active_tab_mut();
+            tab.remote_branches_expanded = !tab.remote_branches_expanded;
+            Task::none()
+        }
+
         Message::ToggleBranchCreate => {
             let tab = state.active_tab_mut();
             tab.show_branch_create = !tab.show_branch_create;

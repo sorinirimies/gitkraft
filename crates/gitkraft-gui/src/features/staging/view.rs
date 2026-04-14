@@ -158,9 +158,17 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
         }
     }
 
-    let content = column![header_row, scrollable(list_col).height(Length::Fill)]
-        .width(Length::Fill)
-        .height(Length::Fill);
+    let content = column![
+        header_row,
+        scrollable(list_col)
+            .height(Length::Fill)
+            .direction(scrollable::Direction::Vertical(
+                scrollable::Scrollbar::new().width(6).scroller_width(4),
+            ))
+            .style(crate::theme::overlay_scrollbar)
+    ]
+    .width(Length::Fill)
+    .height(Length::Fill);
 
     container(content)
         .width(Length::FillPortion(3))
@@ -281,9 +289,17 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
         }
     }
 
-    let content = column![header_row, scrollable(list_col).height(Length::Fill)]
-        .width(Length::Fill)
-        .height(Length::Fill);
+    let content = column![
+        header_row,
+        scrollable(list_col)
+            .height(Length::Fill)
+            .direction(scrollable::Direction::Vertical(
+                scrollable::Scrollbar::new().width(6).scroller_width(4),
+            ))
+            .style(crate::theme::overlay_scrollbar)
+    ]
+    .width(Length::Fill)
+    .height(Length::Fill);
 
     container(content)
         .width(Length::FillPortion(3))

@@ -73,7 +73,9 @@ impl GitKraft {
             | Message::BranchCreated(_)
             | Message::DeleteBranch(_)
             | Message::BranchDeleted(_)
-            | Message::ToggleBranchCreate => {
+            | Message::ToggleBranchCreate
+            | Message::ToggleLocalBranches
+            | Message::ToggleRemoteBranches => {
                 crate::features::branches::update::update(self, message)
             }
 
