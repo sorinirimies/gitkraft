@@ -108,6 +108,8 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
 
         Message::MoreCommitsLoaded(result) => handle_more_commits_loaded(state, result),
 
+        Message::GitOperationResult(result) => handle_repo_loaded(state, result),
+
         _ => Task::none(),
     }
 }

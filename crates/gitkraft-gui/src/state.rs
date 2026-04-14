@@ -27,6 +27,21 @@ pub enum DragTargetH {
     StagingTop,
 }
 
+/// What item was right-clicked to open the context menu.
+#[derive(Debug, Clone)]
+pub enum ContextMenu {
+    /// A local branch.
+    Branch {
+        name: String,
+        is_current: bool,
+        /// Index in the filtered local-branch list, used to approximate
+        /// the menu's on-screen position.
+        local_index: usize,
+    },
+    /// A commit in the log.
+    Commit { index: usize, oid: String },
+}
+
 // ── Per-repository tab state ──────────────────────────────────────────────────
 
 /// Per-repository state — one instance per open tab.
@@ -92,6 +107,13 @@ pub struct RepoTab {
     /// True while an async operation is in flight.
     pub is_loading: bool,
 
+    /// Currently open context menu, if any.
+    pub context_menu: Option<ContextMenu>,
+    /// Name of the branch currently being renamed (None = not renaming).
+    pub rename_branch_target: Option<String>,
+    /// The new name being typed in the rename input.
+    pub rename_branch_input: String,
+
     /// Current scroll offset of the commit log in pixels.
     /// Tracked via `on_scroll` so virtual scrolling can render only the
     /// visible window of rows.
@@ -133,6 +155,9 @@ impl RepoTab {
             status_message: None,
             error_message: None,
             is_loading: false,
+            context_menu: None,
+            rename_branch_target: None,
+            rename_branch_input: String::new(),
             commit_scroll_offset: 0.0,
             commit_display: Vec::new(),
             has_more_commits: true,

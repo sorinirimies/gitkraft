@@ -4,7 +4,7 @@
 //! overscan buffer.  Space widgets above and below maintain the correct
 //! total scroll height so the scrollbar behaves naturally.
 
-use iced::widget::{button, column, container, row, scrollable, text, Row, Space};
+use iced::widget::{button, column, container, mouse_area, row, scrollable, text, Row, Space};
 use iced::{Alignment, Color, Element, Length};
 
 use crate::message::Message;
@@ -222,15 +222,18 @@ fn commit_row_element<'a>(tab: &'a RepoTab, idx: usize, c: &ThemeColors) -> Elem
         theme::surface_style as fn(&iced::Theme) -> iced::widget::container::Style
     };
 
-    container(
-        button(row_content)
-            .padding(0)
-            .width(Length::Fill)
-            .on_press(Message::SelectCommit(idx))
-            .style(theme::ghost_button),
+    mouse_area(
+        container(
+            button(row_content)
+                .padding(0)
+                .width(Length::Fill)
+                .on_press(Message::SelectCommit(idx))
+                .style(theme::ghost_button),
+        )
+        .width(Length::Fill)
+        .style(style_fn),
     )
-    .width(Length::Fill)
-    .style(style_fn)
+    .on_right_press(Message::OpenCommitContextMenu(idx))
     .into()
 }
 

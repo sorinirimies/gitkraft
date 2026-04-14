@@ -2,7 +2,9 @@
 //! create, and delete actions.
 
 use gitkraft_core::BranchType;
-use iced::widget::{button, column, container, row, scrollable, text, text_input, Space};
+use iced::widget::{
+    button, column, container, mouse_area, row, scrollable, text, text_input, Space,
+};
 use iced::{Alignment, Element, Length};
 
 use crate::message::Message;
@@ -71,12 +73,56 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         Space::with_height(0).into()
     };
 
+    // ── Inline rename form ────────────────────────────────────────────────
+    let rename_form: Element<'_, Message> = if let Some(ref orig) = tab.rename_branch_target {
+        let input = iced::widget::text_input("new branch name", &tab.rename_branch_input)
+            .on_input(Message::RenameBranchInputChanged)
+            .on_submit(Message::ConfirmRenameBranch)
+            .padding(6)
+            .size(13);
+
+        let confirm_btn = if tab.rename_branch_input.trim().is_empty()
+            || tab.rename_branch_input.trim() == orig.as_str()
+        {
+            button(text("Rename").size(13))
+                .padding([4, 10])
+                .style(theme::toolbar_button)
+        } else {
+            button(text("Rename").size(13))
+                .padding([4, 10])
+                .style(theme::toolbar_button)
+                .on_press(Message::ConfirmRenameBranch)
+        };
+
+        let cancel_btn = button(text("Cancel").size(13))
+            .padding([4, 10])
+            .style(theme::toolbar_button)
+            .on_press(Message::CancelRename);
+
+        let hint = text(format!("Renaming '{orig}'")).size(11).color(c.muted);
+
+        container(
+            column![
+                hint,
+                input,
+                row![confirm_btn, Space::with_width(4), cancel_btn],
+            ]
+            .spacing(4)
+            .width(Length::Fill),
+        )
+        .padding([4, 10])
+        .into()
+    } else {
+        Space::with_height(0).into()
+    };
+
     // ── Branch list ───────────────────────────────────────────────────────
     let local_branches: Vec<Element<'_, Message>> = tab
         .branches
         .iter()
         .filter(|b| b.branch_type == BranchType::Local)
-        .map(|branch| {
+        .enumerate()
+        .map(|(local_index, branch)| {
             let is_current = branch.is_head;
 
             let indicator: Element<'_, Message> = if is_current {
@@ -133,7 +179,13 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .align_y(Alignment::Center)
                 .width(Length::Fill);
 
-            container(branch_row).width(Length::Fill).into()
+            mouse_area(container(branch_row).width(Length::Fill))
+                .on_right_press(Message::OpenBranchContextMenu(
+                    branch.name.clone(),
+                    local_index,
+                    branch.is_head,
+                ))
+                .into()
         })
         .collect();
 
@@ -179,6 +231,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let content = column![
         header_row,
         create_form,
+        rename_form,
         scrollable(list_col).height(Length::Fill),
     ]
     .width(220)

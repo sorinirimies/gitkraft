@@ -147,11 +147,37 @@ impl GitKraft {
         // Only wire on_move while a drag is actually in progress.
         // Without this, every cursor movement fires PaneDragMove which forces a
         // full view rebuild (including the O(n_commits) commit log) on every frame.
-        let ma = mouse_area(body).on_release(Message::PaneDragEnd);
-        if self.dragging.is_some() || self.dragging_h.is_some() {
-            ma.on_move(|p| Message::PaneDragMove(p.x, p.y)).into()
+        let drag_area = mouse_area(body).on_release(Message::PaneDragEnd);
+        let ma: Element<'_, Message> = if self.dragging.is_some() || self.dragging_h.is_some() {
+            drag_area
+                .on_move(|p| Message::PaneDragMove(p.x, p.y))
+                .into()
         } else {
-            ma.into()
+            drag_area.into()
+        };
+
+        // ── Context menu overlay ──────────────────────────────────────────
+        if self.active_tab().context_menu.is_some() {
+            // Transparent full-screen backdrop — clicking it dismisses the menu.
+            let backdrop = mouse_area(
+                container(Space::new(Length::Fill, Length::Fill)).style(theme::backdrop_style),
+            )
+            .on_press(Message::CloseContextMenu)
+            .on_right_press(Message::CloseContextMenu);
+
+            let (menu_x, menu_y) = context_menu_position(self);
+            let menu_panel = context_menu_panel(self, &c);
+
+            let positioned = column![
+                Space::with_height(menu_y),
+                row![Space::with_width(menu_x), menu_panel,],
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+            iced::widget::stack![ma, backdrop, positioned].into()
+        } else {
+            ma
         }
     }
 }
@@ -259,5 +285,160 @@ fn error_banner<'a>(message: &str, c: &ThemeColors) -> Element<'a, Message> {
     container(banner_row)
         .width(Length::Fill)
         .style(theme::error_banner_style)
+        .into()
+}
+
+/// Approximate pixel position of the context menu based on what was right-clicked.
+fn context_menu_position(state: &GitKraft) -> (f32, f32) {
+    // Layout constants — keep in sync with the actual widget sizes.
+    const TAB_BAR_H: f32 = 34.0;
+    const HEADER_H: f32 = 46.0;
+    const SECTION_HEADER_H: f32 = 38.0;
+    const BRANCH_ROW_H: f32 = 32.0;
+    const COMMIT_LOG_HEADER_H: f32 = 38.0;
+    const COMMIT_ROW_H: f32 = 26.0; // matches commits/view.rs ROW_HEIGHT
+
+    // Branch menus open overlapping the sidebar (x ≈ 5) so they appear
+    // right next to the branch row rather than all the way over in the
+    // commit-log panel.
+    // Commit menus open inside the commit-log panel, just after the sidebar.
+    let commit_log_x = if state.sidebar_expanded {
+        state.sidebar_width + 10.0
+    } else {
+        10.0
+    };
+
+    match &state.active_tab().context_menu {
+        Some(crate::state::ContextMenu::Branch { local_index, .. }) => {
+            let y = (TAB_BAR_H + HEADER_H + SECTION_HEADER_H + *local_index as f32 * BRANCH_ROW_H)
+                .min(500.0);
+            // Start at the left edge of the sidebar so the menu overlays it.
+            (5.0, y)
+        }
+        Some(crate::state::ContextMenu::Commit { index, .. }) => {
+            let scroll_y = state.active_tab().commit_scroll_offset;
+            let first_visible = (scroll_y / COMMIT_ROW_H) as usize;
+            let visible_row = index.saturating_sub(first_visible);
+            let y =
+                (TAB_BAR_H + HEADER_H + COMMIT_LOG_HEADER_H + visible_row as f32 * COMMIT_ROW_H)
+                    .min(500.0);
+            (commit_log_x, y)
+        }
+        None => (0.0, 0.0),
+    }
+}
+
+/// Build the context menu panel widget for the currently active menu.
+fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Message> {
+    use iced::widget::{button, column, container, horizontal_rule, row, text, Space};
+    use iced::{Alignment, Length};
+
+    let text_primary = c.text_primary;
+    let menu_item = move |label: &str, msg: Message| {
+        button(
+            row![
+                Space::with_width(4),
+                text(label.to_string()).size(13).color(text_primary),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .padding([7, 12])
+        .width(Length::Fill)
+        .style(theme::ghost_button)
+        .on_press(msg)
+    };
+
+    let content: Element<'a, Message> = match &state.active_tab().context_menu {
+        Some(crate::state::ContextMenu::Branch {
+            name, is_current, ..
+        }) => {
+            let remote = state
+                .active_tab()
+                .remotes
+                .first()
+                .map(|r| r.name.clone())
+                .unwrap_or_else(|| "origin".to_string());
+
+            let header = container(text(format!("Branch: {name}")).size(12).color(c.muted))
+                .padding(iced::Padding {
+                    top: 8.0,
+                    right: 14.0,
+                    bottom: 6.0,
+                    left: 14.0,
+                })
+                .width(Length::Fill);
+
+            let mut col = column![header, horizontal_rule(1)];
+
+            if !is_current {
+                col = col.push(menu_item("Checkout", Message::CheckoutBranch(name.clone())));
+            }
+
+            let push_label = format!("Push to {remote}");
+            let pull_label = format!("Pull from {remote} (rebase)");
+            let rebase_label = format!("Rebase current onto '{name}'");
+
+            col = col
+                .push(menu_item(&push_label, Message::PushBranch(name.clone())))
+                .push(menu_item(&pull_label, Message::PullBranch(name.clone())))
+                .push(menu_item(&rebase_label, Message::RebaseOnto(name.clone())))
+                .push(horizontal_rule(1))
+                .push(menu_item(
+                    "Rename\u{2026}",
+                    Message::BeginRenameBranch(name.clone()),
+                ))
+                .push(menu_item("Delete", Message::DeleteBranch(name.clone())))
+                .push(horizontal_rule(1))
+                .push(menu_item(
+                    "Copy branch name",
+                    Message::CopyText(name.clone()),
+                ));
+
+            col.into()
+        }
+
+        Some(crate::state::ContextMenu::Commit { index, oid }) => {
+            let tab = state.active_tab();
+            let short = &oid[..7.min(oid.len())];
+            let msg_text = tab
+                .commits
+                .get(*index)
+                .map(|c| c.message.clone())
+                .unwrap_or_default();
+
+            let header = container(text(format!("Commit: {short}")).size(12).color(c.muted))
+                .padding(iced::Padding {
+                    top: 8.0,
+                    right: 14.0,
+                    bottom: 6.0,
+                    left: 14.0,
+                })
+                .width(Length::Fill);
+
+            column![
+                header,
+                horizontal_rule(1),
+                menu_item(
+                    "Checkout (detached HEAD)",
+                    Message::CheckoutCommitDetached(oid.clone()),
+                ),
+                menu_item(
+                    "Rebase current branch onto this",
+                    Message::RebaseOntoCommit(oid.clone()),
+                ),
+                menu_item("Revert commit", Message::RevertCommit(oid.clone())),
+                horizontal_rule(1),
+                menu_item("Copy commit SHA", Message::CopyText(oid.clone())),
+                menu_item("Copy commit message", Message::CopyText(msg_text)),
+            ]
+            .into()
+        }
+
+        None => Space::with_width(0).into(),
+    };
+
+    container(content)
+        .width(280)
+        .style(theme::context_menu_style)
         .into()
 }

@@ -176,6 +176,57 @@ pub enum Message {
     /// Async restore of a specific tab (by index) completed on startup.
     RepoRestoredAt(usize, Result<RepoPayload, String>),
 
+    // ── Context menus ─────────────────────────────────────────────────────────────
+    /// User right-clicked a local branch.
+    /// Payload: (branch_name, index_in_local_list, is_current_branch).
+    OpenBranchContextMenu(String, usize, bool),
+
+    /// User right-clicked a commit row.
+    OpenCommitContextMenu(usize),
+
+    /// Dismiss the context menu without taking an action.
+    CloseContextMenu,
+
+    // ── Branch actions ────────────────────────────────────────────────────────────
+    /// Push the named branch to its default remote.
+    PushBranch(String),
+
+    /// Pull the current branch from its remote, rebasing local commits on top.
+    PullBranch(String),
+
+    /// Rebase the current HEAD onto `target` (a branch name or OID string).
+    RebaseOnto(String),
+
+    /// Begin an inline rename: record the branch being renamed and pre-fill input.
+    BeginRenameBranch(String),
+
+    /// User is typing in the rename input.
+    RenameBranchInputChanged(String),
+
+    /// User confirmed the rename.
+    ConfirmRenameBranch,
+
+    /// User cancelled the rename.
+    CancelRename,
+
+    // ── Commit actions ────────────────────────────────────────────────────────────
+    /// Checkout a specific commit in detached HEAD mode.
+    CheckoutCommitDetached(String),
+
+    /// Rebase the current branch on top of a specific commit.
+    RebaseOntoCommit(String),
+
+    /// Revert a specific commit (creates a revert commit).
+    RevertCommit(String),
+
+    // ── Shared ───────────────────────────────────────────────────────────────────
+    /// Copy a string to the system clipboard.
+    CopyText(String),
+
+    /// Generic result for any git operation that produces a full repo refresh.
+    /// The operation itself is responsible for a descriptive error string.
+    GitOperationResult(Result<RepoPayload, String>),
+
     /// User selected a different theme from the picker (by index into
     /// `gitkraft_core::THEME_NAMES`).
     ThemeChanged(usize),

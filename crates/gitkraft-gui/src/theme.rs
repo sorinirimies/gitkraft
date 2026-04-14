@@ -209,6 +209,43 @@ pub fn header_style(theme: &iced::Theme) -> container::Style {
     }
 }
 
+/// Style for the floating context-menu panel.
+pub fn context_menu_style(theme: &iced::Theme) -> container::Style {
+    let c = ThemeColors::from_theme(theme);
+    container::Style {
+        background: Some(Background::Color(c.surface_highlight)),
+        border: iced::Border {
+            color: c.border,
+            width: 1.0,
+            radius: 6.0.into(),
+        },
+        shadow: iced::Shadow {
+            color: iced::Color {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.35,
+            },
+            offset: iced::Vector::new(0.0, 4.0),
+            blur_radius: 12.0,
+        },
+        ..Default::default()
+    }
+}
+
+/// Style for the semi-transparent backdrop behind an open context menu.
+pub fn backdrop_style(_theme: &iced::Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(iced::Color {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 0.15,
+        })),
+        ..Default::default()
+    }
+}
+
 /// Style for a selected / highlighted row.
 pub fn selected_row_style(theme: &iced::Theme) -> container::Style {
     let c = ThemeColors::from_theme(theme);

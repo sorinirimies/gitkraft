@@ -219,6 +219,65 @@ fn head_branch_name(repo: &Repository) -> Result<String> {
     Ok(name)
 }
 
+// ── subprocess helper ─────────────────────────────────────────────────────────
+
+fn run_git(workdir: &std::path::Path, args: &[&str]) -> anyhow::Result<()> {
+    let output = std::process::Command::new("git")
+        .current_dir(workdir)
+        .args(args)
+        .output()
+        .context("failed to spawn git")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("{}", stderr.trim());
+    }
+    Ok(())
+}
+
+// ── new public functions ──────────────────────────────────────────────────────
+
+/// Rename a local branch.
+pub fn rename_branch(repo: &Repository, old_name: &str, new_name: &str) -> Result<()> {
+    let mut branch = repo
+        .find_branch(old_name, Git2BranchType::Local)
+        .with_context(|| format!("branch '{old_name}' not found"))?;
+    branch
+        .rename(new_name, false)
+        .with_context(|| format!("failed to rename '{old_name}' → '{new_name}'"))?;
+    debug!(old_name, new_name, "renamed branch");
+    Ok(())
+}
+
+/// Create a new local branch pointing at a specific commit OID.
+pub fn create_branch_at_commit(repo: &Repository, name: &str, oid_str: &str) -> Result<()> {
+    let oid = git2::Oid::from_str(oid_str).context("invalid OID")?;
+    let commit = repo
+        .find_commit(oid)
+        .with_context(|| format!("commit {oid_str} not found"))?;
+    repo.branch(name, &commit, false)
+        .with_context(|| format!("failed to create branch '{name}' at {oid_str}"))?;
+    debug!(name, oid_str, "created branch at commit");
+    Ok(())
+}
+
+/// Push a local branch to a remote using `git push`.
+///
+/// Uses the system `git` binary so that the user's configured credential
+/// helpers (SSH agent, git-credential-manager, etc.) are respected.
+pub fn push_branch(workdir: &std::path::Path, branch: &str, remote: &str) -> Result<()> {
+    run_git(workdir, &["push", remote, branch])
+}
+
+/// Pull the current branch from a remote with `--rebase`.
+pub fn pull_rebase(workdir: &std::path::Path, remote: &str) -> Result<()> {
+    run_git(workdir, &["pull", "--rebase", remote])
+}
+
+/// Rebase the current HEAD onto `target` (branch name or OID).
+pub fn rebase_onto(workdir: &std::path::Path, target: &str) -> Result<()> {
+    run_git(workdir, &["rebase", target])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

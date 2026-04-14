@@ -60,7 +60,10 @@ impl GitKraft {
             | Message::RepoRecorded(_)
             | Message::RepoRestoredAt(_, _)
             | Message::MoreCommitsLoaded(_)
-            | Message::SettingsLoaded(_) => crate::features::repo::update::update(self, message),
+            | Message::SettingsLoaded(_)
+            | Message::GitOperationResult(_) => {
+                crate::features::repo::update::update(self, message)
+            }
 
             // ── Branches ──────────────────────────────────────────────────
             Message::CheckoutBranch(_)
@@ -224,6 +227,159 @@ impl GitKraft {
                 crate::features::repo::commands::save_layout_async(self.current_layout())
             }
 
+            // ── Context menu lifecycle ────────────────────────────────────────────────
+            Message::OpenBranchContextMenu(name, local_index, is_current) => {
+                self.active_tab_mut().context_menu = Some(crate::state::ContextMenu::Branch {
+                    name: name.clone(),
+                    is_current: *is_current,
+                    local_index: *local_index,
+                });
+                Task::none()
+            }
+
+            Message::OpenCommitContextMenu(idx) => {
+                let oid = self.active_tab().commits.get(*idx).map(|c| c.oid.clone());
+                if let Some(oid) = oid {
+                    self.active_tab_mut().context_menu =
+                        Some(crate::state::ContextMenu::Commit { index: *idx, oid });
+                }
+                Task::none()
+            }
+
+            Message::CloseContextMenu => {
+                self.active_tab_mut().context_menu = None;
+                Task::none()
+            }
+
+            // ── Inline branch rename ──────────────────────────────────────────────────
+            Message::BeginRenameBranch(name) => {
+                let tab = self.active_tab_mut();
+                tab.context_menu = None;
+                tab.rename_branch_input = name.clone();
+                tab.rename_branch_target = Some(name.clone());
+                Task::none()
+            }
+
+            Message::RenameBranchInputChanged(s) => {
+                self.active_tab_mut().rename_branch_input = s.clone();
+                Task::none()
+            }
+
+            Message::CancelRename => {
+                let tab = self.active_tab_mut();
+                tab.rename_branch_target = None;
+                tab.rename_branch_input.clear();
+                Task::none()
+            }
+
+            Message::ConfirmRenameBranch => {
+                let (original, new_name, path) = {
+                    let tab = self.active_tab();
+                    (
+                        tab.rename_branch_target.clone(),
+                        tab.rename_branch_input.trim().to_string(),
+                        tab.repo_path.clone(),
+                    )
+                };
+                if let (Some(orig), false) = (&original, new_name.is_empty()) {
+                    if *orig != new_name {
+                        if let Some(path) = path {
+                            let orig = orig.clone();
+                            {
+                                let tab = self.active_tab_mut();
+                                tab.rename_branch_target = None;
+                                tab.rename_branch_input.clear();
+                                tab.is_loading = true;
+                                tab.status_message =
+                                    Some(format!("Renaming '{orig}' → '{new_name}'…"));
+                            }
+                            return crate::features::repo::commands::rename_branch_async(
+                                path, orig, new_name,
+                            );
+                        }
+                    }
+                }
+                self.active_tab_mut().rename_branch_target = None;
+                Task::none()
+            }
+
+            // ── Branch context menu actions ───────────────────────────────────────────
+            Message::PushBranch(name) => {
+                let name = name.clone();
+                let remote = self
+                    .active_tab()
+                    .remotes
+                    .first()
+                    .map(|r| r.name.clone())
+                    .unwrap_or_else(|| "origin".to_string());
+                self.active_tab_mut().context_menu = None;
+                with_repo!(
+                    self,
+                    loading,
+                    format!("Pushing '{name}' to {remote}…"),
+                    |path| crate::features::repo::commands::push_branch_async(path, name, remote)
+                )
+            }
+
+            Message::PullBranch(_name) => {
+                let remote = self
+                    .active_tab()
+                    .remotes
+                    .first()
+                    .map(|r| r.name.clone())
+                    .unwrap_or_else(|| "origin".to_string());
+                self.active_tab_mut().context_menu = None;
+                with_repo!(
+                    self,
+                    loading,
+                    format!("Pulling from {remote} (rebase)…"),
+                    |path| crate::features::repo::commands::pull_rebase_async(path, remote)
+                )
+            }
+
+            Message::RebaseOnto(target) => {
+                let target = target.clone();
+                self.active_tab_mut().context_menu = None;
+                with_repo!(
+                    self,
+                    loading,
+                    format!("Rebasing onto '{target}'…"),
+                    |path| crate::features::repo::commands::rebase_onto_async(path, target)
+                )
+            }
+
+            // ── Commit context menu actions ───────────────────────────────────────────
+            Message::CheckoutCommitDetached(oid) => {
+                let oid = oid.clone();
+                let short = oid[..7.min(oid.len())].to_string();
+                self.active_tab_mut().context_menu = None;
+                with_repo!(self, loading, format!("Checking out {short}…"), |path| {
+                    crate::features::repo::commands::checkout_commit_async(path, oid)
+                })
+            }
+
+            Message::RebaseOntoCommit(oid) => {
+                let oid = oid.clone();
+                let short = oid[..7.min(oid.len())].to_string();
+                self.active_tab_mut().context_menu = None;
+                with_repo!(self, loading, format!("Rebasing onto {short}…"), |path| {
+                    crate::features::repo::commands::rebase_onto_async(path, oid)
+                })
+            }
+
+            Message::RevertCommit(oid) => {
+                let oid = oid.clone();
+                let short = oid[..7.min(oid.len())].to_string();
+                self.active_tab_mut().context_menu = None;
+                with_repo!(self, loading, format!("Reverting {short}…"), |path| {
+                    crate::features::repo::commands::revert_commit_async(path, oid)
+                })
+            }
+
+            // ── Shared ───────────────────────────────────────────────────────────────
+            Message::CopyText(text) => iced::clipboard::write(text.clone()),
+
+            // ── Persistence / misc ────────────────────────────────────────
             Message::ThemeChanged(index) => {
                 self.current_theme_index = *index;
                 // Persist the selected theme name on a background thread.

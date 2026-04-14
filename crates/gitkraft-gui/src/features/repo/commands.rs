@@ -99,6 +99,96 @@ fn load_repo_blocking(path: &std::path::Path) -> Result<RepoPayload, String> {
     })
 }
 
+/// Get the working directory of a repository, returning a user-friendly error
+/// for bare repositories.
+fn workdir(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let repo = gitkraft_core::features::repo::open_repo(path).map_err(|e| e.to_string())?;
+    repo.workdir()
+        .map(|p| p.to_path_buf())
+        .ok_or_else(|| "bare repository has no working directory".to_string())
+}
+
+// ── Context-menu git commands ─────────────────────────────────────────────────
+
+/// Push `branch` to `remote` then reload the repo.
+pub fn push_branch_async(path: PathBuf, branch: String, remote: String) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let wd = workdir(&path)?;
+            gitkraft_core::features::branches::push_branch(&wd, &branch, &remote)
+                .map_err(|e| e.to_string())?;
+            load_repo_blocking(&path)
+        })()
+    )
+}
+
+/// Pull the current branch from `remote` with `--rebase` then reload.
+pub fn pull_rebase_async(path: PathBuf, remote: String) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let wd = workdir(&path)?;
+            gitkraft_core::features::branches::pull_rebase(&wd, &remote)
+                .map_err(|e| e.to_string())?;
+            load_repo_blocking(&path)
+        })()
+    )
+}
+
+/// Rebase current HEAD onto `target` (branch name or OID) then reload.
+pub fn rebase_onto_async(path: PathBuf, target: String) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let wd = workdir(&path)?;
+            gitkraft_core::features::branches::rebase_onto(&wd, &target)
+                .map_err(|e| e.to_string())?;
+            load_repo_blocking(&path)
+        })()
+    )
+}
+
+/// Rename a local branch then reload.
+pub fn rename_branch_async(path: PathBuf, old_name: String, new_name: String) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let repo =
+                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            gitkraft_core::features::branches::rename_branch(&repo, &old_name, &new_name)
+                .map_err(|e| e.to_string())?;
+            load_repo_blocking(&path)
+        })()
+    )
+}
+
+/// Checkout a commit in detached HEAD mode then reload.
+pub fn checkout_commit_async(path: PathBuf, oid: String) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let repo =
+                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            gitkraft_core::features::repo::checkout_commit_detached(&repo, &oid)
+                .map_err(|e| e.to_string())?;
+            load_repo_blocking(&path)
+        })()
+    )
+}
+
+/// Revert a commit (`git revert --no-edit`) then reload.
+pub fn revert_commit_async(path: PathBuf, oid: String) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let wd = workdir(&path)?;
+            gitkraft_core::features::repo::revert_commit(&wd, &oid).map_err(|e| e.to_string())?;
+            load_repo_blocking(&path)
+        })()
+    )
+}
+
 // ── Async persistence helpers ─────────────────────────────────────────────────
 
 /// Record that a repo was opened and return the refreshed recent-repos list.

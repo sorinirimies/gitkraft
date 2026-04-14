@@ -60,6 +60,36 @@ pub fn get_repo_info(repo: &Repository) -> Result<RepoInfo> {
     })
 }
 
+/// Checkout a specific commit by OID, leaving HEAD in detached state.
+pub fn checkout_commit_detached(repo: &Repository, oid_str: &str) -> Result<()> {
+    let oid = git2::Oid::from_str(oid_str).with_context(|| format!("invalid OID: {oid_str}"))?;
+    let commit = repo
+        .find_commit(oid)
+        .with_context(|| format!("commit {oid_str} not found"))?;
+    repo.set_head_detached(oid)
+        .context("failed to detach HEAD")?;
+    repo.checkout_tree(
+        commit.as_object(),
+        Some(git2::build::CheckoutBuilder::new().force()),
+    )
+    .context("failed to checkout commit tree")?;
+    Ok(())
+}
+
+/// Revert a commit by OID using `git revert --no-edit`.
+pub fn revert_commit(workdir: &std::path::Path, oid_str: &str) -> Result<()> {
+    let output = std::process::Command::new("git")
+        .current_dir(workdir)
+        .args(["revert", "--no-edit", oid_str])
+        .output()
+        .context("failed to spawn git")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("{}", stderr.trim());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
