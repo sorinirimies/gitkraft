@@ -14,7 +14,7 @@
 ///
 /// # Example
 ///
-/// ```rust
+/// ```ignore
 /// git_task!(Message::BranchCheckedOut, (|| {
 ///     let repo = open_repo(&path)?;
 ///     checkout_branch(&repo, &name).map_err(|e| e.to_string())
@@ -44,13 +44,13 @@ macro_rules! git_task {
 /// Two forms:
 ///
 /// * **Plain** – sets only `status_message`, then evaluates `$cmd`:
-///   ```rust
+///   ```ignore
 ///   with_repo!(state, "Staging…".into(), |repo_path|
 ///       commands::stage_file(repo_path, f))
 ///   ```
 ///
 /// * **Loading** – additionally sets `is_loading = true` before `$cmd`:
-///   ```rust
+///   ```ignore
 ///   with_repo!(state, loading, "Checking out…".into(), |repo_path|
 ///       commands::checkout_branch(repo_path, name))
 ///   ```
