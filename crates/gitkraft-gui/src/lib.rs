@@ -12,6 +12,7 @@ pub mod state;
 pub mod theme;
 pub mod update;
 pub mod view;
+pub mod view_utils;
 pub mod widgets;
 
 pub use message::Message;

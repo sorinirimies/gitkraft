@@ -278,6 +278,39 @@ pub fn rebase_onto(workdir: &std::path::Path, target: &str) -> Result<()> {
     run_git(workdir, &["rebase", target])
 }
 
+/// Create a lightweight Git tag pointing at the given OID.
+pub fn create_tag(repo: &Repository, name: &str, oid_str: &str) -> Result<()> {
+    let oid = git2::Oid::from_str(oid_str).context("invalid OID")?;
+    let object = repo
+        .find_object(oid, None)
+        .with_context(|| format!("object {oid_str} not found"))?;
+    repo.tag_lightweight(name, &object, false)
+        .with_context(|| format!("failed to create lightweight tag '{name}'"))?;
+    debug!(name, oid_str, "created lightweight tag");
+    Ok(())
+}
+
+/// Create an annotated Git tag with a tagger signature and message pointing at the given OID.
+pub fn create_annotated_tag(
+    repo: &Repository,
+    name: &str,
+    message: &str,
+    oid_str: &str,
+) -> Result<()> {
+    let oid = git2::Oid::from_str(oid_str).context("invalid OID")?;
+    let object = repo
+        .find_object(oid, None)
+        .with_context(|| format!("object {oid_str} not found"))?;
+    let sig = repo
+        .signature()
+        .or_else(|_| git2::Signature::now("GitKraft User", "user@gitkraft.local"))
+        .context("failed to obtain signature")?;
+    repo.tag(name, &object, &sig, message, false)
+        .with_context(|| format!("failed to create annotated tag '{name}'"))?;
+    debug!(name, oid_str, "created annotated tag");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

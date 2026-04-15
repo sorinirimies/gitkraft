@@ -121,6 +121,15 @@ pub struct RepoTab {
     /// The new name being typed in the rename input.
     pub rename_branch_input: String,
 
+    /// When `Some(oid)`, the tag-creation inline form is visible, targeting that OID.
+    pub create_tag_target_oid: Option<String>,
+    /// True when creating an annotated tag; false for a lightweight tag.
+    pub create_tag_annotated: bool,
+    /// The tag name the user is typing.
+    pub create_tag_name: String,
+    /// The annotated tag message the user is typing (only used when `create_tag_annotated` is true).
+    pub create_tag_message: String,
+
     /// Current scroll offset of the commit log in pixels.
     /// Tracked via `on_scroll` so virtual scrolling can render only the
     /// visible window of rows.
@@ -169,6 +178,10 @@ impl RepoTab {
             context_menu_pos: (0.0, 0.0),
             rename_branch_target: None,
             rename_branch_input: String::new(),
+            create_tag_target_oid: None,
+            create_tag_annotated: false,
+            create_tag_name: String::new(),
+            create_tag_message: String::new(),
             commit_scroll_offset: 0.0,
             commit_display: Vec::new(),
             has_more_commits: true,

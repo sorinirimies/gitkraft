@@ -259,13 +259,7 @@ fn compute_commit_display(commits: &[gitkraft_core::CommitInfo]) -> Vec<(String,
     commits
         .iter()
         .map(|c| {
-            let summary = if c.summary.chars().count() > 60 {
-                let mut s: String = c.summary.chars().take(59).collect();
-                s.push('…');
-                s
-            } else {
-                c.summary.clone()
-            };
+            let summary = c.summary.clone();
             let time = gitkraft_core::utils::relative_time(c.time);
             // Truncate author to fit in the fixed-width author column (~90 px).
             let author = if c.author_name.chars().count() > 14 {

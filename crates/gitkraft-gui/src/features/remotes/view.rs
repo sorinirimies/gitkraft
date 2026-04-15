@@ -53,17 +53,39 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         list_col = list_col.push(container(empty_msg).padding([4, 10]).width(Length::Fill));
     } else {
         for remote in &tab.remotes {
-            let name_label = text(remote.name.as_str()).size(13).color(c.text_primary);
+            let name_label = container(
+                text(remote.name.as_str())
+                    .size(13)
+                    .color(c.text_primary)
+                    .wrapping(iced::widget::text::Wrapping::None),
+            )
+            .width(Length::Fill)
+            .height(Length::Fixed(18.0))
+            .clip(true);
 
             let url_str = remote.url.as_deref().unwrap_or("<no url>");
 
-            let url_label = text(url_str).size(11).color(c.muted);
+            let url_label = container(
+                text(url_str)
+                    .size(11)
+                    .color(c.muted)
+                    .wrapping(iced::widget::text::Wrapping::None),
+            )
+            .width(Length::Fill)
+            .height(Length::Fixed(16.0))
+            .clip(true);
 
-            let remote_item = column![name_label, url_label]
-                .spacing(2)
-                .width(Length::Fill);
+            let remote_item = container(
+                column![name_label, url_label]
+                    .spacing(2)
+                    .width(Length::Fill),
+            )
+            .padding([4, 10])
+            .width(Length::Fill)
+            .height(Length::Fixed(42.0))
+            .clip(true);
 
-            list_col = list_col.push(container(remote_item).padding([4, 10]).width(Length::Fill));
+            list_col = list_col.push(remote_item);
         }
     }
 

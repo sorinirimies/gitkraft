@@ -213,6 +213,25 @@ pub enum Message {
     /// User cancelled the rename.
     CancelRename,
 
+    /// Merge a named branch into the current HEAD branch.
+    MergeBranch(String),
+
+    /// Begin an inline tag-creation form at the given commit OID.
+    /// The bool indicates whether this is an annotated tag (true) or lightweight (false).
+    BeginCreateTag(String, bool),
+
+    /// User is typing in the tag name input.
+    TagNameChanged(String),
+
+    /// User is typing in the annotated tag message input.
+    TagMessageChanged(String),
+
+    /// User confirmed tag creation.
+    ConfirmCreateTag,
+
+    /// User cancelled tag creation.
+    CancelCreateTag,
+
     // ── Commit actions ────────────────────────────────────────────────────────────
     /// Checkout a specific commit in detached HEAD mode.
     CheckoutCommitDetached(String),

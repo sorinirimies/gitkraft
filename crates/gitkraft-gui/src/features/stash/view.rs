@@ -7,11 +7,13 @@ use iced::{Alignment, Element, Length};
 use crate::message::Message;
 use crate::state::GitKraft;
 use crate::theme;
+use crate::view_utils::truncate_to_fit;
 
 /// Render the stash panel (typically shown in the sidebar beneath branches).
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let tab = state.active_tab();
     let c = state.colors();
+    let sidebar_width = state.sidebar_width;
 
     let header_icon = text('\u{F577}') // stack icon
         .font(iced_fonts::BOOTSTRAP_FONT)
@@ -64,13 +66,16 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .color(c.accent)
                 .font(iced::Font::MONOSPACE);
 
-            let msg_text = if entry.message.chars().count() > 40 {
-                let truncated: String = entry.message.chars().take(39).collect();
-                format!("{truncated}…")
-            } else {
-                entry.message.clone()
-            };
-            let msg_label = text(msg_text).size(11).color(c.text_secondary);
+            // Available px: sidebar minus stash-index label (~60px) + gap(6)
+            // + pop-btn(22) + gap(2) + drop-btn(22) + padding(16) + gap(4)
+            // ≈ 132 px overhead.
+            let msg_available = (sidebar_width - 132.0).max(30.0);
+            let display_msg = truncate_to_fit(entry.message.as_str(), msg_available, 6.5);
+
+            let msg_label = text(display_msg)
+                .size(11)
+                .color(c.text_secondary)
+                .wrapping(iced::widget::text::Wrapping::None);
 
             let pop_icon = text('\u{F117}') // box-arrow-up
                 .font(iced_fonts::BOOTSTRAP_FONT)
@@ -104,7 +109,11 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .align_y(Alignment::Center)
             .padding([3, 8]);
 
-            container(entry_row).width(Length::Fill).into()
+            container(entry_row)
+                .width(Length::Fill)
+                .height(Length::Fixed(26.0))
+                .clip(true)
+                .into()
         })
         .collect();
 

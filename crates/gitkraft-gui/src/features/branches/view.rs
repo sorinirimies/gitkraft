@@ -10,11 +10,13 @@ use iced::{Alignment, Element, Length};
 use crate::message::Message;
 use crate::state::GitKraft;
 use crate::theme;
+use crate::view_utils::truncate_to_fit;
 
 /// Render the branches sidebar panel.
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let tab = state.active_tab();
     let c = state.colors();
+    let sidebar_width = state.sidebar_width;
 
     let header_icon = text('\u{F404}')
         .font(iced_fonts::BOOTSTRAP_FONT)
@@ -116,6 +118,55 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         Space::with_height(0).into()
     };
 
+    // ── Tag creation form ─────────────────────────────────────────────────
+    let tag_form: Element<'_, Message> = if let Some(ref oid) = tab.create_tag_target_oid {
+        let short_oid = &oid[..7.min(oid.len())];
+        let label = if tab.create_tag_annotated {
+            format!("Creating annotated tag at {short_oid}")
+        } else {
+            format!("Creating lightweight tag at {short_oid}")
+        };
+        let hint = text(label).size(11).color(c.muted);
+
+        let name_input = iced::widget::text_input("tag-name", &tab.create_tag_name)
+            .on_input(Message::TagNameChanged)
+            .on_submit(Message::ConfirmCreateTag)
+            .padding(6)
+            .size(13);
+
+        let confirm_btn = if tab.create_tag_name.trim().is_empty() {
+            button(text("Create tag").size(13))
+                .padding([4, 10])
+                .style(theme::toolbar_button)
+        } else {
+            button(text("Create tag").size(13))
+                .padding([4, 10])
+                .style(theme::toolbar_button)
+                .on_press(Message::ConfirmCreateTag)
+        };
+
+        let cancel_btn = button(text("Cancel").size(13))
+            .padding([4, 10])
+            .style(theme::toolbar_button)
+            .on_press(Message::CancelCreateTag);
+
+        let mut form_col = column![hint, name_input].spacing(4).width(Length::Fill);
+
+        if tab.create_tag_annotated {
+            let msg_input = iced::widget::text_input("tag message", &tab.create_tag_message)
+                .on_input(Message::TagMessageChanged)
+                .padding(6)
+                .size(13);
+            form_col = form_col.push(msg_input);
+        }
+
+        form_col = form_col.push(row![confirm_btn, Space::with_width(4), cancel_btn]);
+
+        container(form_col).padding([4, 10]).into()
+    } else {
+        Space::with_height(0).into()
+    };
+
     // ── Branch list ───────────────────────────────────────────────────────
     let local_branches: Vec<Element<'_, Message>> = tab
         .branches
@@ -141,7 +192,15 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
             let name_color = if is_current { c.green } else { c.text_primary };
 
-            let name_label = text(branch.name.as_str()).size(13).color(name_color);
+            // Available px: sidebar minus button padding(16) + indicator(14)
+            // + gap(6) + delete-btn(28) + row-spacing(2) ≈ 66 px overhead.
+            let name_available = (sidebar_width - 66.0).max(20.0);
+            let display_name = truncate_to_fit(branch.name.as_str(), name_available, 7.5);
+
+            let name_label = text(display_name)
+                .size(13)
+                .color(name_color)
+                .wrapping(iced::widget::text::Wrapping::None);
 
             let checkout_btn = if is_current {
                 // Already on this branch — no checkout action.
@@ -179,13 +238,18 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .align_y(Alignment::Center)
                 .width(Length::Fill);
 
-            mouse_area(container(branch_row).width(Length::Fill))
-                .on_right_press(Message::OpenBranchContextMenu(
-                    branch.name.clone(),
-                    local_index,
-                    branch.is_head,
-                ))
-                .into()
+            mouse_area(
+                container(branch_row)
+                    .width(Length::Fill)
+                    .height(Length::Fixed(28.0))
+                    .clip(true),
+            )
+            .on_right_press(Message::OpenBranchContextMenu(
+                branch.name.clone(),
+                local_index,
+                branch.is_head,
+            ))
+            .into()
         })
         .collect();
 
@@ -200,11 +264,21 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .size(12)
                 .color(c.muted);
 
-            let label = text(branch.name.as_str()).size(12).color(c.text_secondary);
+            // Available px: sidebar minus item padding(16) + icon(14) + gap(6)
+            // ≈ 36 px overhead.
+            let label_available = (sidebar_width - 36.0).max(20.0);
+            let display_remote = truncate_to_fit(branch.name.as_str(), label_available, 7.0);
+
+            let label = text(display_remote)
+                .size(12)
+                .color(c.text_secondary)
+                .wrapping(iced::widget::text::Wrapping::None);
 
             container(row![icon, Space::with_width(6), label].align_y(Alignment::Center))
                 .padding([2, 8])
                 .width(Length::Fill)
+                .height(Length::Fixed(22.0))
+                .clip(true)
                 .into()
         })
         .collect();
@@ -299,6 +373,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         header_row,
         create_form,
         rename_form,
+        tag_form,
         scrollable(list_col)
             .height(Length::Fill)
             .direction(scrollable::Direction::Vertical(

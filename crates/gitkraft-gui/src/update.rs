@@ -358,6 +358,79 @@ impl GitKraft {
                 )
             }
 
+            Message::MergeBranch(name) => {
+                let name = name.clone();
+                self.active_tab_mut().context_menu = None;
+                with_repo!(
+                    self,
+                    loading,
+                    format!("Merging '{name}' into current branch…"),
+                    |path| crate::features::repo::commands::merge_branch_async(path, name)
+                )
+            }
+
+            Message::BeginCreateTag(oid, annotated) => {
+                let tab = self.active_tab_mut();
+                tab.context_menu = None;
+                tab.create_tag_target_oid = Some(oid.clone());
+                tab.create_tag_annotated = *annotated;
+                tab.create_tag_name.clear();
+                tab.create_tag_message.clear();
+                Task::none()
+            }
+
+            Message::TagNameChanged(s) => {
+                self.active_tab_mut().create_tag_name = s.clone();
+                Task::none()
+            }
+
+            Message::TagMessageChanged(s) => {
+                self.active_tab_mut().create_tag_message = s.clone();
+                Task::none()
+            }
+
+            Message::ConfirmCreateTag => {
+                let (oid, name, message, annotated, path) = {
+                    let tab = self.active_tab();
+                    (
+                        tab.create_tag_target_oid.clone(),
+                        tab.create_tag_name.trim().to_string(),
+                        tab.create_tag_message.trim().to_string(),
+                        tab.create_tag_annotated,
+                        tab.repo_path.clone(),
+                    )
+                };
+                if let (Some(oid), false) = (&oid, name.is_empty()) {
+                    if let Some(path) = path {
+                        let oid = oid.clone();
+                        {
+                            let tab = self.active_tab_mut();
+                            tab.create_tag_target_oid = None;
+                            tab.create_tag_name.clear();
+                            tab.create_tag_message.clear();
+                            tab.is_loading = true;
+                            tab.status_message = Some(format!("Creating tag '{name}'…"));
+                        }
+                        return if annotated {
+                            crate::features::repo::commands::create_annotated_tag_async(
+                                path, name, message, oid,
+                            )
+                        } else {
+                            crate::features::repo::commands::create_tag_async(path, name, oid)
+                        };
+                    }
+                }
+                Task::none()
+            }
+
+            Message::CancelCreateTag => {
+                let tab = self.active_tab_mut();
+                tab.create_tag_target_oid = None;
+                tab.create_tag_name.clear();
+                tab.create_tag_message.clear();
+                Task::none()
+            }
+
             // ── Commit context menu actions ───────────────────────────────────────────
             Message::CheckoutCommitDetached(oid) => {
                 let oid = oid.clone();

@@ -1,8 +1,13 @@
 //! Commit log view — scrollable list of commits with highlighted selection.
 //!
-//! Renders only the rows currently visible in the viewport plus a small
-//! overscan buffer.  Space widgets above and below maintain the correct
-//! total scroll height so the scrollbar behaves naturally.
+//! Commit summaries are pre-truncated with "…" based on the actual available
+//! pixel width so that each row stays on exactly one line — matching
+//! GitKraken's behaviour.
+
+//
+// Renders only the rows currently visible in the viewport plus a small
+// overscan buffer.  Space widgets above and below maintain the correct
+// total scroll height so the scrollbar behaves naturally.
 
 use iced::widget::{button, column, container, mouse_area, row, scrollable, text, Row, Space};
 use iced::{Alignment, Color, Element, Length};
@@ -11,6 +16,7 @@ use crate::message::Message;
 use crate::state::{GitKraft, RepoTab};
 use crate::theme;
 use crate::theme::ThemeColors;
+use crate::view_utils::truncate_to_fit;
 
 /// Estimated height of one commit row in pixels.  Used for virtual scrolling.
 /// A slight over- or under-estimate only affects scrollbar thumb precision,
@@ -172,7 +178,12 @@ fn graph_cell<'a>(
 // ── single row element ────────────────────────────────────────────────────────
 
 /// Build the widget for a single commit row.
-fn commit_row_element<'a>(tab: &'a RepoTab, idx: usize, c: &ThemeColors) -> Element<'a, Message> {
+fn commit_row_element<'a>(
+    tab: &'a RepoTab,
+    idx: usize,
+    c: &ThemeColors,
+    available_summary_px: f32,
+) -> Element<'a, Message> {
     let commit = &tab.commits[idx];
     let is_selected = tab.selected_commit == Some(idx);
 
@@ -195,9 +206,10 @@ fn commit_row_element<'a>(tab: &'a RepoTab, idx: usize, c: &ThemeColors) -> Elem
         .map(|(s, t, a)| (s.as_str(), t.as_str(), a.as_str()))
         .unwrap_or((commit.summary.as_str(), "", commit.author_name.as_str()));
 
-    // Summary fills all remaining horizontal space and clips — never wraps.
+    // Pre-truncate with "…" so the full row stays on one line.
+    let display_summary = truncate_to_fit(summary_str, available_summary_px, 7.0);
     let summary_label = container(
-        text(summary_str)
+        text(display_summary)
             .size(12)
             .color(c.text_primary)
             .wrapping(iced::widget::text::Wrapping::None),
@@ -207,9 +219,23 @@ fn commit_row_element<'a>(tab: &'a RepoTab, idx: usize, c: &ThemeColors) -> Elem
 
     // Fixed-width columns prevent author / time from being squeezed to zero
     // and wrapping character-by-character.  Text is pre-truncated so it fits.
-    let author_label = container(text(author_str).size(11).color(c.text_secondary)).width(90);
+    let author_label = container(
+        text(author_str)
+            .size(11)
+            .color(c.text_secondary)
+            .wrapping(iced::widget::text::Wrapping::None),
+    )
+    .width(90)
+    .clip(true);
 
-    let time_label = container(text(time_str).size(11).color(c.muted)).width(72);
+    let time_label = container(
+        text(time_str)
+            .size(11)
+            .color(c.muted)
+            .wrapping(iced::widget::text::Wrapping::None),
+    )
+    .width(72)
+    .clip(true);
 
     let row_content = row![
         graph_elem,
@@ -239,6 +265,8 @@ fn commit_row_element<'a>(tab: &'a RepoTab, idx: usize, c: &ThemeColors) -> Elem
                 .style(theme::ghost_button),
         )
         .width(Length::Fill)
+        .height(Length::Fixed(ROW_HEIGHT))
+        .clip(true)
         .style(style_fn),
     )
     .on_right_press(Message::OpenCommitContextMenu(idx))
@@ -315,8 +343,13 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         list_col = list_col.push(Space::with_height(top_space));
     }
 
+    // Available px for the summary column:
+    // commit_log_width minus graph (~30) + oid (~56) + spaces + author (90)
+    // + time (72) + row padding (16) ≈ 280 px fixed overhead.
+    let available_summary_px = (state.commit_log_width - 280.0).max(40.0);
+
     for idx in first..last {
-        list_col = list_col.push(commit_row_element(tab, idx, &c));
+        list_col = list_col.push(commit_row_element(tab, idx, &c, available_summary_px));
     }
 
     if bottom_space > 0.0 {

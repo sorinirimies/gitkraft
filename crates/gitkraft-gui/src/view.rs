@@ -317,12 +317,19 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
         Some(crate::state::ContextMenu::Branch {
             name, is_current, ..
         }) => {
-            let remote = state
-                .active_tab()
+            let tab = state.active_tab();
+            let remote = tab
                 .remotes
                 .first()
                 .map(|r| r.name.clone())
                 .unwrap_or_else(|| "origin".to_string());
+
+            // Look up the branch tip OID for SHA copy and tag creation.
+            let tip_oid: Option<String> = tab
+                .branches
+                .iter()
+                .find(|b| &b.name == name)
+                .and_then(|b| b.target_oid.clone());
 
             let header = container(text(format!("Branch: {name}")).size(12).color(c.muted))
                 .padding(iced::Padding {
@@ -333,29 +340,79 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                 })
                 .width(Length::Fill);
 
+            let separator = || -> Element<'a, Message> {
+                container(Space::with_height(1))
+                    .padding(iced::Padding {
+                        top: 4.0,
+                        right: 0.0,
+                        bottom: 4.0,
+                        left: 0.0,
+                    })
+                    .width(Length::Fill)
+                    .into()
+            };
+
             let mut col = column![header];
 
+            // Group 1: Checkout (when not on this branch)
             if !is_current {
                 col = col.push(menu_item("Checkout", Message::CheckoutBranch(name.clone())));
             }
 
+            // Group 2: Remote sync
             let push_label = format!("Push to {remote}");
             let pull_label = format!("Pull from {remote} (rebase)");
-            let rebase_label = format!("Rebase current onto '{name}'");
-
             col = col
                 .push(menu_item(&push_label, Message::PushBranch(name.clone())))
-                .push(menu_item(&pull_label, Message::PullBranch(name.clone())))
-                .push(menu_item(&rebase_label, Message::RebaseOnto(name.clone())))
+                .push(menu_item(&pull_label, Message::PullBranch(name.clone())));
+
+            // Group 3: Rebase / merge
+            col = col.push(separator());
+            let rebase_label = format!("Rebase current onto '{name}'");
+            col = col.push(menu_item(&rebase_label, Message::RebaseOnto(name.clone())));
+            if !is_current {
+                col = col.push(menu_item(
+                    "Merge into current branch",
+                    Message::MergeBranch(name.clone()),
+                ));
+            }
+
+            // Group 4: Branch management
+            col = col.push(separator());
+            col = col
                 .push(menu_item(
                     "Rename\u{2026}",
                     Message::BeginRenameBranch(name.clone()),
                 ))
-                .push(menu_item("Delete", Message::DeleteBranch(name.clone())))
-                .push(menu_item(
-                    "Copy branch name",
-                    Message::CopyText(name.clone()),
+                .push(menu_item("Delete", Message::DeleteBranch(name.clone())));
+
+            // Group 5: Copy info
+            col = col.push(separator());
+            col = col.push(menu_item(
+                "Copy branch name",
+                Message::CopyText(name.clone()),
+            ));
+            if let Some(ref oid) = tip_oid {
+                col = col.push(menu_item(
+                    "Copy tip commit SHA",
+                    Message::CopyText(oid.clone()),
                 ));
+            }
+
+            // Group 6: Tag creation
+            if tip_oid.is_some() {
+                col = col.push(separator());
+                let oid = tip_oid.clone().unwrap();
+                col = col
+                    .push(menu_item(
+                        "Create tag here",
+                        Message::BeginCreateTag(oid.clone(), false),
+                    ))
+                    .push(menu_item(
+                        "Create annotated tag here\u{2026}",
+                        Message::BeginCreateTag(oid, true),
+                    ));
+            }
 
             col.into()
         }

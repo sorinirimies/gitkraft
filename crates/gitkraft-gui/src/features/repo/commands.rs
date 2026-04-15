@@ -203,6 +203,53 @@ pub fn reset_to_commit_async(path: PathBuf, oid: String, mode: String) -> Task<M
     )
 }
 
+/// Merge `branch_name` into the current HEAD then reload.
+pub fn merge_branch_async(path: PathBuf, branch_name: String) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let repo =
+                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            gitkraft_core::features::branches::merge_branch(&repo, &branch_name)
+                .map_err(|e| e.to_string())?;
+            load_repo_blocking(&path)
+        })()
+    )
+}
+
+/// Create a lightweight tag `name` pointing at `oid` then reload.
+pub fn create_tag_async(path: PathBuf, name: String, oid: String) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let repo =
+                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            gitkraft_core::features::branches::create_tag(&repo, &name, &oid)
+                .map_err(|e| e.to_string())?;
+            load_repo_blocking(&path)
+        })()
+    )
+}
+
+/// Create an annotated tag `name` with `message` pointing at `oid` then reload.
+pub fn create_annotated_tag_async(
+    path: PathBuf,
+    name: String,
+    message: String,
+    oid: String,
+) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let repo =
+                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            gitkraft_core::features::branches::create_annotated_tag(&repo, &name, &message, &oid)
+                .map_err(|e| e.to_string())?;
+            load_repo_blocking(&path)
+        })()
+    )
+}
+
 // ── Async persistence helpers ─────────────────────────────────────────────────
 
 /// Record that a repo was opened and return the refreshed recent-repos list.
