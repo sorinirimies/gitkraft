@@ -2,9 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.0 - 2026-04-16
+### ➕ Added
+- Add collapsible branch sections and overlay scrollbars to GUI
+- Add loading spinner to login button
+- Add tag creation actions and truncate-to-fit utility
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.9...v0.4.0
 ## 0.3.9 - 2026-04-14
 ### 📦 Other Changes
 - Make branches sidebar width responsive
+### 🔧 Chores
+- chore: bump version to 0.3.9
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.8...v0.3.9
 ## 0.3.8 - 2026-04-14
 ### ♻️ Refactor
