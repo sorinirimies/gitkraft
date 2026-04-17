@@ -5,11 +5,11 @@ use crate::app::App;
 /// Handle keys when the CommitLog pane is active.
 pub fn handle_key(app: &mut App, key: KeyEvent) {
     match key.code {
-        KeyCode::Char('j') | KeyCode::Down => {
-            next_commit(app);
+        KeyCode::Char('j') => {
+            navigate_down(app);
         }
-        KeyCode::Char('k') | KeyCode::Up => {
-            prev_commit(app);
+        KeyCode::Char('k') => {
+            navigate_up(app);
         }
         KeyCode::Enter => {
             app.load_commit_diff();
@@ -29,7 +29,8 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
     }
 }
 
-fn next_commit(app: &mut App) {
+/// Move commit selection down by one.
+pub fn navigate_down(app: &mut App) {
     if app.commits.is_empty() {
         return;
     }
@@ -46,7 +47,8 @@ fn next_commit(app: &mut App) {
     app.commit_list_state.select(Some(i));
 }
 
-fn prev_commit(app: &mut App) {
+/// Move commit selection up by one.
+pub fn navigate_up(app: &mut App) {
     if app.commits.is_empty() {
         return;
     }

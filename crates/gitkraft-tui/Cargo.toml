@@ -24,8 +24,6 @@ git2               = { workspace = true }
 ratatui            = { workspace = true }
 crossterm          = { workspace = true }
 dirs               = { workspace = true }
-tokio              = { workspace = true }
-futures            = { workspace = true }
 anyhow             = { workspace = true }
 tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }

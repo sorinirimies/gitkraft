@@ -43,7 +43,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                             if path.is_dir() {
                                 // Check if it is a git repo
                                 if path.join(".git").exists() {
-                                    app.screen = AppScreen::Welcome;
+                                    app.screen = app.browser_return_screen.clone();
                                     app.open_repo(path);
                                 } else {
                                     // Navigate into directory
@@ -62,13 +62,13 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                     }
                 }
                 KeyCode::Esc | KeyCode::Char('q') => {
-                    app.screen = AppScreen::Welcome;
+                    app.screen = app.browser_return_screen.clone();
                 }
                 // Allow typing 'o' to open the selected directory even if it is not a git repo
                 KeyCode::Char('o') => {
                     if let Some(idx) = app.browser_list_state.selected() {
                         if let Some(path) = app.browser_entries.get(idx).cloned() {
-                            app.screen = AppScreen::Welcome;
+                            app.screen = app.browser_return_screen.clone();
                             app.open_repo(path);
                         }
                     }
@@ -105,9 +105,70 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                     app.show_options_panel = !app.show_options_panel;
                     app.show_theme_panel = false; // close theme panel if open
                 }
+                KeyCode::Char('o') => {
+                    let start = app
+                        .repo_path
+                        .clone()
+                        .and_then(|p| p.parent().map(|pp| pp.to_path_buf()))
+                        .or_else(dirs::home_dir)
+                        .unwrap_or_else(|| std::path::PathBuf::from("/"));
+                    app.open_browser(start);
+                }
                 KeyCode::Char('W') => {
                     app.close_repo();
                 }
+                // Arrow left/right: switch panes
+                KeyCode::Left => cycle_pane_backward(app),
+                KeyCode::Right => cycle_pane_forward(app),
+
+                // Arrow up/down: navigate within the active pane
+                KeyCode::Up => match app.active_pane {
+                    ActivePane::Branches => {
+                        if !app.branches.is_empty() {
+                            let len = app.branches.len();
+                            let i = app.branch_list_state.selected().unwrap_or(0);
+                            let new = if i == 0 { len - 1 } else { i - 1 };
+                            app.branch_list_state.select(Some(new));
+                        }
+                    }
+                    ActivePane::CommitLog => {
+                        features::commits::events::navigate_up(app);
+                    }
+                    ActivePane::DiffView => {
+                        if app.commit_diffs.len() > 1 {
+                            app.prev_diff_file();
+                        } else {
+                            app.diff_scroll = app.diff_scroll.saturating_sub(1);
+                        }
+                    }
+                    ActivePane::Staging => {
+                        features::staging::events::navigate_up(app);
+                    }
+                },
+                KeyCode::Down => match app.active_pane {
+                    ActivePane::Branches => {
+                        if !app.branches.is_empty() {
+                            let len = app.branches.len();
+                            let i = app.branch_list_state.selected().unwrap_or(0);
+                            let new = (i + 1) % len;
+                            app.branch_list_state.select(Some(new));
+                        }
+                    }
+                    ActivePane::CommitLog => {
+                        features::commits::events::navigate_down(app);
+                    }
+                    ActivePane::DiffView => {
+                        if app.commit_diffs.len() > 1 {
+                            app.next_diff_file();
+                        } else {
+                            app.diff_scroll = app.diff_scroll.saturating_add(1);
+                        }
+                    }
+                    ActivePane::Staging => {
+                        features::staging::events::navigate_down(app);
+                    }
+                },
+
                 _ => {
                     // Delegate to the active pane's feature handler
                     match app.active_pane {

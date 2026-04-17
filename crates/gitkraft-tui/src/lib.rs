@@ -35,7 +35,7 @@ use crate::app::App;
 ///
 /// If `repo_path` is `Some`, the repository at that path is opened immediately.
 /// Otherwise the Welcome screen is shown, letting the user choose a repository.
-pub async fn run(mut repo_path: Option<PathBuf>) -> Result<()> {
+pub fn run(mut repo_path: Option<PathBuf>) -> Result<()> {
     // If no repo path was given, try loading the last-opened repo from settings.
     if repo_path.is_none() {
         repo_path = gitkraft_core::features::persistence::get_last_repo()
@@ -58,7 +58,7 @@ pub async fn run(mut repo_path: Option<PathBuf>) -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run_app(&mut terminal, repo_path).await;
+    let result = run_app(&mut terminal, repo_path);
 
     restore_terminal()?;
     terminal.show_cursor()?;
@@ -66,7 +66,7 @@ pub async fn run(mut repo_path: Option<PathBuf>) -> Result<()> {
 }
 
 /// The inner event loop — draw, poll for input, dispatch, repeat.
-pub async fn run_app<B: ratatui::backend::Backend>(
+pub fn run_app<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     repo_path: Option<PathBuf>,
 ) -> Result<()>

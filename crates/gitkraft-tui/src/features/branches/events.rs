@@ -6,7 +6,7 @@ use crate::app::{App, InputMode, InputPurpose};
 pub fn handle_key(app: &mut App, key: KeyEvent) {
     match key.code {
         // Navigation
-        KeyCode::Char('j') | KeyCode::Down if !app.branches.is_empty() => {
+        KeyCode::Char('j') if !app.branches.is_empty() => {
             let i = match app.branch_list_state.selected() {
                 Some(i) => {
                     if i >= app.branches.len() - 1 {
@@ -19,7 +19,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             };
             app.branch_list_state.select(Some(i));
         }
-        KeyCode::Char('k') | KeyCode::Up if !app.branches.is_empty() => {
+        KeyCode::Char('k') if !app.branches.is_empty() => {
             let i = match app.branch_list_state.selected() {
                 Some(i) => {
                     if i == 0 {

@@ -6,11 +6,11 @@ use crate::app::App;
 pub fn handle_key(app: &mut App, key: KeyEvent) {
     match key.code {
         // Scroll down
-        KeyCode::Char('j') | KeyCode::Down => {
+        KeyCode::Char('j') => {
             app.diff_scroll = app.diff_scroll.saturating_add(1);
         }
         // Scroll up
-        KeyCode::Char('k') | KeyCode::Up => {
+        KeyCode::Char('k') => {
             app.diff_scroll = app.diff_scroll.saturating_sub(1);
         }
         // Scroll to top
@@ -36,11 +36,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             app.diff_scroll = app.diff_scroll.saturating_sub(20);
         }
         // Previous file in commit diff
-        KeyCode::Char('h') | KeyCode::Left => {
+        KeyCode::Char('h') => {
             app.prev_diff_file();
         }
         // Next file in commit diff
-        KeyCode::Char('l') | KeyCode::Right => {
+        KeyCode::Char('l') => {
             app.next_diff_file();
         }
         _ => {}

@@ -6,11 +6,11 @@ use crate::app::{App, InputMode, InputPurpose, StagingFocus};
 pub fn handle_key(app: &mut App, key: KeyEvent) {
     match key.code {
         // Navigate within the currently focused sub-list
-        KeyCode::Char('j') | KeyCode::Down => {
-            next_file(app);
+        KeyCode::Char('j') => {
+            navigate_down(app);
         }
-        KeyCode::Char('k') | KeyCode::Up => {
-            prev_file(app);
+        KeyCode::Char('k') => {
+            navigate_up(app);
         }
 
         // Toggle focus between unstaged and staged sub-lists
@@ -52,7 +52,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             }
         }
 
-        // Commit — enter input mode for commit message
+        // Commit â enter input mode for commit message
         KeyCode::Char('c') => {
             app.confirm_discard = false;
             app.input_buffer.clear();
@@ -93,7 +93,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
 }
 
 /// Move selection down in the currently focused sub-list.
-fn next_file(app: &mut App) {
+pub fn navigate_down(app: &mut App) {
     app.confirm_discard = false;
     match app.staging_focus {
         StagingFocus::Unstaged => {
@@ -132,7 +132,7 @@ fn next_file(app: &mut App) {
 }
 
 /// Move selection up in the currently focused sub-list.
-fn prev_file(app: &mut App) {
+pub fn navigate_up(app: &mut App) {
     app.confirm_discard = false;
     match app.staging_focus {
         StagingFocus::Unstaged => {

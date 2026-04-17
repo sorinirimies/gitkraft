@@ -44,16 +44,76 @@ The desktop application starts **maximised** and presents a multi-pane layout. E
 └──────────────────────────────────────────────┘
 ```
 
+## TUI Layout
+
+The terminal UI mirrors the GUI structure with a keyboard-driven interface:
+
+```
+┌──────────────────────────────────────────────┐
+│  header bar  (repo │ branch │ shortcuts)     │
+├────────┬──────────────┬──────────────────────┤
+│        │              │                      │
+│ side-  │  commit log  │  files + diff viewer │
+│ bar    │              │                      │
+│        │              │                      │
+├────────┴──────────────┴──────────────────────┤
+│  staging area  (unstaged │ staged │ actions) │
+├──────────────────────────────────────────────┤
+│  status bar                                  │
+└──────────────────────────────────────────────┘
+```
+
+### TUI Keyboard Shortcuts
+
+| Key | Context | Action |
+|-----|---------|--------|
+| ←/→ | Global | Switch panes |
+| ↑/↓ | Any pane | Navigate within pane |
+| j/k | Any pane | Vim-style up/down |
+| h/l | Diff pane | Switch files |
+| Enter | Commits | Load diff |
+| Enter | Staging | View diff |
+| s | Staging | Stage file |
+| u | Staging | Unstage file |
+| S/U | Staging | Stage/Unstage all |
+| c | Staging | Commit |
+| d | Staging | Discard (press twice) |
+| z/Z | Global | Stash save/pop |
+| o | Global | Browse & open repo |
+| W | Main | Close repo |
+| r | Main | Refresh |
+| f | Main | Fetch |
+| T | Main | Theme picker |
+| O | Main | Options |
+| Tab | Main | Cycle panes |
+| q | Global | Quit |
+
+### GUI Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| Ctrl/Cmd + + | Zoom in |
+| Ctrl/Cmd + - | Zoom out |
+| Ctrl/Cmd + 0 | Reset zoom |
+
 ## Features
 
 - **Pure Rust Git operations** — all Git work goes through `git2`; no shelling out to `git`.
 - **Branch management** — list, create, checkout, and delete branches.
+- **Remote branch management** — checkout, delete, and inspect remote-tracking branches via right-click context menu.
 - **Commit log with graph visualisation** — canvas-rendered DAG in the GUI, box-drawing in the TUI.
 - **Diff viewer** — working-directory diffs, staged diffs, and per-commit diffs with syntax-highlighted hunks.
+- **Two-phase commit diff loading** — file list appears instantly, diffs load per-file on demand for fast responsiveness.
+- **Commit files sidebar** — both GUI and TUI show a file list when viewing multi-file commit diffs.
 - **Staging area** — stage / unstage individual files or all at once; discard working-directory changes.
 - **Commit creation** — write a message and commit directly from the IDE.
 - **Stash management** — save, pop, drop, and list stash entries with optional messages.
 - **Remote listing & fetch** — view configured remotes and fetch from the primary remote.
+- **Multi-tab support (GUI)** — open multiple repositories in tabs, session is persisted across restarts.
+- **Context menus (GUI)** — right-click branches and commits for checkout, push, pull, rebase, merge, reset, revert, tag creation, copy SHA, etc.
+- **UI zoom (GUI)** — Ctrl+/Ctrl- to zoom in/out (50%–200%), persisted across sessions.
+- **Virtual scrolling** — commit log and diff views use virtual scrolling for smooth performance with large histories.
+- **Interactive directory browser (TUI)** — press `o` to browse the filesystem and open a repo, with git repo detection.
 - **27 built-in colour themes** — from Dracula and Nord to Catppuccin, Tokyo Night, Kanagawa, and more — persisted per-user.
 - **Draggable pane dividers** — resize every panel; the layout is saved and restored automatically.
 - **Recently opened repositories** — persisted list on the welcome screen for quick access.
@@ -258,8 +318,6 @@ Both front-ends depend only on `gitkraft-core` for Git operations; neither calls
 | `ratatui` | 0.30 | Terminal UI framework |
 | `crossterm` | 0.29 | Cross-platform terminal I/O |
 | `git2` | 0.20 | Direct access for TUI-specific operations |
-| `tokio` | 1 | Async runtime for background tasks |
-| `futures` | 0.3 | Async stream/channel utilities |
 | `dirs` | 6.0 | Config directory resolution |
 | `anyhow` | 1 | Error handling |
 | `tracing` | 0.1 | Structured logging |
@@ -290,16 +348,19 @@ Themes are defined once in `gitkraft-core` and shared by both front-ends — cha
 The project uses [`just`](https://github.com/casey/just) as a task runner. Install it with `cargo install just`.
 
 ```sh
-# Common tasks
 just build            # cargo build --workspace
-just release          # cargo build --workspace --release
-just run              # run the GUI (debug)
-just run-tui          # run the TUI (debug)
+just run              # run the GUI
+just run-tui          # run the TUI
 just test             # cargo test --workspace
-just clippy           # cargo clippy --workspace -- -D warnings
-just fmt              # cargo fmt --all
-just check            # cargo check --workspace
-just clean            # cargo clean
+just clippy           # clippy with -D warnings
+just fmt              # auto-format all code
+just check-all        # full quality gate (fmt + clippy + test + nu)
+just check-release    # quality gate + release build
+just install-tools    # install git-cliff and nushell
+just release 0.5.0    # bump, tag, push (runs all checks first)
+just release-all 0.5.0 # release to GitHub + Gitea
+just push-all         # push to both remotes
+just changelog        # regenerate CHANGELOG.md
 ```
 
 ### Nushell scripts
@@ -326,6 +387,10 @@ Continuous integration runs on both **GitHub Actions** and **Gitea Actions**:
 | `ci.yml` | Push / PR | `cargo fmt --check`, `cargo clippy`, `cargo test` |
 | `release.yml` | Tag push | Build release binaries, create GitHub/Gitea release |
 | `deps-update.yml` | Scheduled | Automated dependency update PRs |
+
+### Dual Hosting
+
+GitKraft is hosted on both **GitHub** and **Gitea**. Use `just push-all` to push to both remotes simultaneously, keeping them in sync. Release workflows run on both platforms so binaries are published to each.
 
 ### Changelog
 

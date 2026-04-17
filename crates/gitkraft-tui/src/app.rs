@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use ratatui::widgets::ListState;
-use tokio::sync::mpsc;
+use std::sync::mpsc;
 
 use gitkraft_core::*;
 
@@ -103,9 +103,9 @@ pub struct App {
     /// True while a background task is in flight.
     pub is_loading: bool,
     /// Receiver for results from background tasks.
-    pub bg_rx: mpsc::UnboundedReceiver<BackgroundResult>,
+    pub bg_rx: mpsc::Receiver<BackgroundResult>,
     /// Sender cloned into each spawned task.
-    bg_tx: mpsc::UnboundedSender<BackgroundResult>,
+    bg_tx: mpsc::Sender<BackgroundResult>,
 
     pub repo_path: Option<PathBuf>,
     pub repo_info: Option<RepoInfo>,
@@ -162,6 +162,8 @@ pub struct App {
     pub browser_entries: Vec<std::path::PathBuf>,
     /// List state for the directory browser.
     pub browser_list_state: ListState,
+    /// Screen to return to when the directory browser is dismissed.
+    pub browser_return_screen: AppScreen,
 }
 
 impl App {
@@ -175,7 +177,7 @@ impl App {
 
         let recent_repos = settings.recent_repos;
 
-        let (bg_tx, bg_rx) = mpsc::unbounded_channel();
+        let (bg_tx, bg_rx) = mpsc::channel();
 
         Self {
             should_quit: false,
@@ -235,6 +237,7 @@ impl App {
             browser_dir: dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")),
             browser_entries: Vec::new(),
             browser_list_state: ListState::default(),
+            browser_return_screen: AppScreen::Welcome,
         }
     }
 }
@@ -293,7 +296,7 @@ impl App {
         self.screen = AppScreen::Main;
 
         let tx = self.bg_tx.clone();
-        tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || {
             let result = load_repo_blocking(&path);
             let _ = tx.send(BackgroundResult::RepoLoaded(result));
         });
@@ -314,7 +317,7 @@ impl App {
         };
 
         let tx = self.bg_tx.clone();
-        tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || {
             let result = load_repo_blocking(&path);
             let _ = tx.send(BackgroundResult::RepoLoaded(result));
         });
@@ -448,7 +451,7 @@ impl App {
             }
         };
         let tx = self.bg_tx.clone();
-        tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || {
             let res = (|| {
                 let repo = open_repo_str(&repo_path)?;
                 let unstaged = gitkraft_core::features::diff::get_working_dir_diff(&repo)
@@ -504,7 +507,7 @@ impl App {
         };
         self.is_loading = true;
         let tx = self.bg_tx.clone();
-        tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || {
             let res = (|| {
                 let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::staging::stage_file(&repo, &file_path)
@@ -534,7 +537,7 @@ impl App {
         };
         self.is_loading = true;
         let tx = self.bg_tx.clone();
-        tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || {
             let res = (|| {
                 let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::staging::unstage_file(&repo, &file_path)
@@ -556,7 +559,7 @@ impl App {
         };
         self.is_loading = true;
         let tx = self.bg_tx.clone();
-        tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || {
             let res = (|| {
                 let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::staging::stage_all(&repo).map_err(|e| e.to_string())
@@ -577,7 +580,7 @@ impl App {
         };
         self.is_loading = true;
         let tx = self.bg_tx.clone();
-        tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || {
             let res = (|| {
                 let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::staging::unstage_all(&repo).map_err(|e| e.to_string())
@@ -607,7 +610,7 @@ impl App {
         self.confirm_discard = false;
         self.is_loading = true;
         let tx = self.bg_tx.clone();
-        tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || {
             let res = (|| {
                 let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::staging::discard_file_changes(&repo, &file_path)
@@ -640,7 +643,7 @@ impl App {
         self.input_buffer.clear();
         self.is_loading = true;
         let tx = self.bg_tx.clone();
-        tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || {
             let res = (|| {
                 let repo = open_repo_str(&repo_path)?;
                 let info = gitkraft_core::features::commits::create_commit(&repo, &msg)
@@ -677,7 +680,7 @@ impl App {
         };
         self.is_loading = true;
         let tx = self.bg_tx.clone();
-        tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || {
             let res = (|| {
                 let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::branches::checkout_branch(&repo, &name)
@@ -706,7 +709,7 @@ impl App {
         self.input_buffer.clear();
         self.is_loading = true;
         let tx = self.bg_tx.clone();
-        tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || {
             let res = (|| {
                 let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::branches::create_branch(&repo, &name)
@@ -742,7 +745,7 @@ impl App {
         };
         self.is_loading = true;
         let tx = self.bg_tx.clone();
-        tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || {
             let res = (|| {
                 let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::branches::delete_branch(&repo, &name)
@@ -773,7 +776,7 @@ impl App {
         self.stash_message_buffer.clear();
         self.is_loading = true;
         let tx = self.bg_tx.clone();
-        tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || {
             let res = (|| {
                 let mut repo = open_repo_str(&repo_path)?;
                 let entry = gitkraft_core::features::stash::stash_save(&mut repo, msg.as_deref())
@@ -801,7 +804,7 @@ impl App {
         };
         self.is_loading = true;
         let tx = self.bg_tx.clone();
-        tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || {
             let res = (|| {
                 let mut repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::stash::stash_pop(&mut repo, idx).map_err(|e| e.to_string())
@@ -830,7 +833,7 @@ impl App {
         };
         self.is_loading = true;
         let tx = self.bg_tx.clone();
-        tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || {
             let res = (|| {
                 let mut repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::stash::stash_drop(&mut repo, idx)
@@ -867,7 +870,7 @@ impl App {
         self.is_loading = true;
         self.status_message = Some("Loading diff…".into());
         let tx = self.bg_tx.clone();
-        tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || {
             let res = (|| {
                 let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::diff::get_commit_diff(&repo, &oid)
@@ -983,6 +986,7 @@ impl App {
 
     /// Open the directory browser starting from a given path.
     pub fn open_browser(&mut self, start: PathBuf) {
+        self.browser_return_screen = self.screen.clone();
         self.browser_dir = start;
         self.refresh_browser();
         self.screen = AppScreen::DirBrowser;
@@ -1019,7 +1023,7 @@ impl App {
         self.is_loading = true;
         self.status_message = Some("Fetching…".into());
         let tx = self.bg_tx.clone();
-        tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || {
             let res = (|| {
                 let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::remotes::fetch_remote(&repo, "origin")

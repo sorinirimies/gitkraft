@@ -42,15 +42,31 @@ fn render_main(app: &mut App, frame: &mut Frame) {
     widgets::header::render(app, frame, outer[0]);
 
     // ── Main content: three columns ───────────────────────────────────────
-    //  [0] Sidebar (branches + stashes + remotes) — 25 cols
+    //  [0] Sidebar (branches + stashes + remotes) — dynamic width
     //  [1] Commit log                             — 40 %
     //  [2] Diff view                              — remainder
+
+    // Compute sidebar width from the longest branch name + padding for
+    // the indicator icon, highlight symbol, and borders (~6 chars overhead).
+    let longest_branch = app
+        .branches
+        .iter()
+        .map(|b| b.name.chars().count())
+        .max()
+        .unwrap_or(10);
+    // +6 for: 2 (border) + 2 (highlight "▶ ") + 2 (prefix "* " or "⇄ ")
+    let ideal_sidebar = (longest_branch + 6) as u16;
+    let term_width = outer[1].width;
+    // Sidebar gets up to 30% of terminal width, clamped to [22, 50]
+    let max_sidebar = (term_width * 30 / 100).clamp(22, 50);
+    let sidebar_width = ideal_sidebar.min(max_sidebar).max(22);
+
     let main_cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(25),
+            Constraint::Length(sidebar_width),
             Constraint::Percentage(40),
-            Constraint::Min(30),
+            Constraint::Min(20),
         ])
         .split(outer[1]);
 

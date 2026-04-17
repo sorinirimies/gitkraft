@@ -57,7 +57,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         Span::styled(format!(" {} ", state), Style::default().fg(theme.accent)),
         Span::styled("│", Style::default().fg(theme.text_secondary)),
         Span::styled(
-            " [Tab]",
+            " [←→]",
             Style::default()
                 .fg(theme.warning)
                 .add_modifier(Modifier::BOLD),
@@ -91,6 +91,20 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(" options ", Style::default().fg(theme.text_primary)),
+        Span::styled(
+            "[o]",
+            Style::default()
+                .fg(theme.warning)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" open ", Style::default().fg(theme.text_primary)),
+        Span::styled(
+            "[W]",
+            Style::default()
+                .fg(theme.warning)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" close ", Style::default().fg(theme.text_primary)),
         Span::styled(
             "[q]",
             Style::default()
