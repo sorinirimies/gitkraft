@@ -130,6 +130,19 @@ pub fn on_press_maybe<'a>(
     }
 }
 
+// ── Empty list hint ───────────────────────────────────────────────────────
+
+/// Centered muted text shown when a list has no items.
+pub fn empty_list_hint<'a>(label: &str, muted: iced::Color) -> iced::Element<'a, crate::message::Message> {
+    iced::widget::container(
+        iced::widget::text(label.to_string()).size(12).color(muted),
+    )
+    .padding([12, 8])
+    .width(iced::Length::Fill)
+    .center_x(iced::Length::Fill)
+    .into()
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

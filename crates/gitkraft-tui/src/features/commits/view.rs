@@ -182,13 +182,9 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         .iter()
         .enumerate()
         .map(|(idx, commit)| {
-            let summary = if commit.summary.len() > 50 {
-                format!("{}…", &commit.summary[..49])
-            } else {
-                commit.summary.clone()
-            };
+            let summary = gitkraft_core::truncate_str(&commit.summary, 50);
 
-            let relative = gitkraft_core::utils::relative_time(commit.time);
+            let relative = commit.relative_time();
 
             // Build graph prefix spans for this row
             let mut spans = if let Some(row) = app.graph_rows.get(idx) {

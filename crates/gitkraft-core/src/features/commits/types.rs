@@ -70,3 +70,58 @@ impl CommitInfo {
         crate::utils::truncate_str(&self.summary, max_chars)
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    fn make_commit(parents: usize, summary: &str, author: &str) -> CommitInfo {
+        CommitInfo {
+            oid: "abcdef1234567890".to_string(),
+            short_oid: "abcdef1".to_string(),
+            summary: summary.to_string(),
+            message: summary.to_string(),
+            author_name: author.to_string(),
+            author_email: "test@test.com".to_string(),
+            time: Utc::now(),
+            parent_ids: (0..parents).map(|i| format!("parent{i}")).collect(),
+        }
+    }
+
+    #[test]
+    fn is_merge_false_for_single_parent() {
+        assert!(!make_commit(1, "fix", "alice").is_merge());
+    }
+
+    #[test]
+    fn is_merge_true_for_two_parents() {
+        assert!(make_commit(2, "merge", "alice").is_merge());
+    }
+
+    #[test]
+    fn is_merge_false_for_root() {
+        assert!(!make_commit(0, "init", "alice").is_merge());
+    }
+
+    #[test]
+    fn short_summary_fits() {
+        let c = make_commit(1, "short", "alice");
+        assert_eq!(c.short_summary(20), "short");
+    }
+
+    #[test]
+    fn short_summary_truncates() {
+        let c = make_commit(1, "a very long commit summary message", "alice");
+        let s = c.short_summary(10);
+        assert_eq!(s.chars().count(), 10);
+        assert!(s.ends_with('…'));
+    }
+
+    #[test]
+    fn relative_time_returns_nonempty() {
+        let c = make_commit(1, "fix", "alice");
+        assert!(!c.relative_time().is_empty());
+    }
+}

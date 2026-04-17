@@ -298,6 +298,24 @@ fn diff_content<'a>(diff: &'a DiffInfo, c: &ThemeColors, scroll_offset: f32) -> 
         .into()
 }
 
+/// Build a single diff line widget: prefix + content, monospace, colored, with optional background.
+fn diff_line_widget<'a>(
+    prefix: &'static str,
+    content_str: &str,
+    color: iced::Color,
+    style: Option<fn(&iced::Theme) -> iced::widget::container::Style>,
+) -> Element<'a, Message> {
+    let prefix_w = text(prefix).size(13).font(Font::MONOSPACE).color(color);
+    let content = text(content_str.to_string()).size(13).font(Font::MONOSPACE).color(color);
+    let c = container(row![prefix_w, Space::with_width(4), content])
+        .padding([1, 12])
+        .width(Length::Fill);
+    match style {
+        Some(s) => c.style(s).into(),
+        None => c.into(),
+    }
+}
+
 /// Render a single [`DiffLine`] as a styled container with monospace text.
 fn render_line<'a>(line: &DiffLine, c: &ThemeColors) -> Element<'a, Message> {
     match line {
@@ -306,56 +324,14 @@ fn render_line<'a>(line: &DiffLine, c: &ThemeColors) -> Element<'a, Message> {
                 .size(13)
                 .font(Font::MONOSPACE)
                 .color(c.accent);
-
             container(content)
                 .padding([4, 12])
                 .width(Length::Fill)
                 .style(theme::diff_hunk_style)
                 .into()
         }
-
-        DiffLine::Addition(content_str) => {
-            let prefix = text("+").size(13).font(Font::MONOSPACE).color(c.green);
-
-            let content = text(content_str.clone())
-                .size(13)
-                .font(Font::MONOSPACE)
-                .color(c.green);
-
-            container(row![prefix, Space::with_width(4), content])
-                .padding([1, 12])
-                .width(Length::Fill)
-                .style(theme::diff_add_style)
-                .into()
-        }
-
-        DiffLine::Deletion(content_str) => {
-            let prefix = text("-").size(13).font(Font::MONOSPACE).color(c.red);
-
-            let content = text(content_str.clone())
-                .size(13)
-                .font(Font::MONOSPACE)
-                .color(c.red);
-
-            container(row![prefix, Space::with_width(4), content])
-                .padding([1, 12])
-                .width(Length::Fill)
-                .style(theme::diff_del_style)
-                .into()
-        }
-
-        DiffLine::Context(content_str) => {
-            let prefix = text(" ").size(13).font(Font::MONOSPACE).color(c.muted);
-
-            let content = text(content_str.clone())
-                .size(13)
-                .font(Font::MONOSPACE)
-                .color(c.text_secondary);
-
-            container(row![prefix, Space::with_width(4), content])
-                .padding([1, 12])
-                .width(Length::Fill)
-                .into()
-        }
+        DiffLine::Addition(s) => diff_line_widget("+", s, c.green, Some(theme::diff_add_style)),
+        DiffLine::Deletion(s) => diff_line_widget("-", s, c.red, Some(theme::diff_del_style)),
+        DiffLine::Context(s) => diff_line_widget(" ", s, c.text_secondary, None),
     }
 }

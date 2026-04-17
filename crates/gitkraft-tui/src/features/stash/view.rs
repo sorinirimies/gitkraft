@@ -32,11 +32,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         .stashes
         .iter()
         .map(|entry| {
-            let truncated_msg = if entry.message.len() > 40 {
-                format!("{}…", &entry.message[..39])
-            } else {
-                entry.message.clone()
-            };
+            let truncated_msg = entry.short_message(40);
 
             let line = Line::from(vec![
                 Span::styled(

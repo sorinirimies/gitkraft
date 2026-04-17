@@ -5,6 +5,7 @@ use ratatui::widgets::{Block, Borders, Padding, Paragraph};
 use ratatui::Frame;
 
 use crate::app::App;
+use crate::utils::pad_right;
 
 /// Render the options panel with grouped sections in bordered inner blocks,
 /// matching the tui-file-explorer options style.
@@ -227,14 +228,5 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
 
         let paragraph = Paragraph::new(lines).block(block);
         frame.render_widget(paragraph, sections[8]);
-    }
-}
-
-/// Pad a string to a fixed width with trailing spaces.
-fn pad_right(s: &str, width: usize) -> String {
-    if s.len() >= width {
-        s.to_string()
-    } else {
-        format!("{}{}", s, " ".repeat(width - s.len()))
     }
 }

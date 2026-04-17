@@ -10,6 +10,7 @@ use crate::icons;
 use crate::message::Message;
 use crate::state::GitKraft;
 use crate::theme;
+use crate::view_utils;
 
 /// Render the remotes section for the sidebar.
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
@@ -41,8 +42,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let mut list_col = column![].spacing(2).width(Length::Fill);
 
     if tab.remotes.is_empty() {
-        let empty_msg = text("No remotes configured").size(12).color(c.muted);
-        list_col = list_col.push(container(empty_msg).padding([4, 10]).width(Length::Fill));
+        list_col = list_col.push(view_utils::empty_list_hint("No remotes configured", c.muted));
     } else {
         for remote in &tab.remotes {
             let name_label = container(

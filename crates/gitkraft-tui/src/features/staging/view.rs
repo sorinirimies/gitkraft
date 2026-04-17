@@ -7,6 +7,7 @@ use ratatui::Frame;
 use gitkraft_core::FileStatus;
 
 use crate::app::{ActivePane, App, InputMode, InputPurpose, StagingFocus};
+use crate::utils::pad_right;
 
 /// Render the staging area — split into three columns:
 ///  1. Unstaged changes list
@@ -63,12 +64,7 @@ fn render_unstaged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bo
         .unstaged_changes
         .iter()
         .map(|diff| {
-            let file_name = if diff.new_file.is_empty() {
-                &diff.old_file
-            } else {
-                &diff.new_file
-            };
-
+            let file_name = diff.display_path();
             let (status_char, status_color) = status_display(&diff.status, &theme);
 
             let line = Line::from(vec![
@@ -130,12 +126,7 @@ fn render_staged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool
         .staged_changes
         .iter()
         .map(|diff| {
-            let file_name = if diff.new_file.is_empty() {
-                &diff.old_file
-            } else {
-                &diff.new_file
-            };
-
+            let file_name = diff.display_path();
             let (status_char, status_color) = status_display(&diff.status, &theme);
 
             let line = Line::from(vec![
@@ -317,15 +308,6 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
             let paragraph = Paragraph::new(lines);
             frame.render_widget(paragraph, sections[2]);
         }
-    }
-}
-
-/// Pad a string to a fixed width with trailing spaces.
-fn pad_right(s: &str, width: usize) -> String {
-    if s.len() >= width {
-        s.to_string()
-    } else {
-        format!("{}{}", s, " ".repeat(width - s.len()))
     }
 }
 

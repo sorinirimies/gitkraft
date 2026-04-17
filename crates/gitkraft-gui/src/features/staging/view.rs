@@ -126,13 +126,7 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
     let mut list_col = column![].spacing(1).width(Length::Fill);
 
     if file_rows.is_empty() {
-        let empty_msg = text("No unstaged changes").size(12).color(c.muted);
-        list_col = list_col.push(
-            container(empty_msg)
-                .padding([12, 8])
-                .width(Length::Fill)
-                .center_x(Length::Fill),
-        );
+        list_col = list_col.push(view_utils::empty_list_hint("No unstaged changes", c.muted));
     } else {
         for row_el in file_rows {
             list_col = list_col.push(row_el);
@@ -237,13 +231,7 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
     let mut list_col = column![].spacing(1).width(Length::Fill);
 
     if file_rows.is_empty() {
-        let empty_msg = text("No staged changes").size(12).color(c.muted);
-        list_col = list_col.push(
-            container(empty_msg)
-                .padding([12, 8])
-                .width(Length::Fill)
-                .center_x(Length::Fill),
-        );
+        list_col = list_col.push(view_utils::empty_list_hint("No staged changes", c.muted));
     } else {
         for row_el in file_rows {
             list_col = list_col.push(row_el);

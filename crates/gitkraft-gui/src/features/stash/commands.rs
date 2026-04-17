@@ -15,8 +15,7 @@ pub fn stash_save(path: PathBuf, stash_message: Option<String>) -> Task<Message>
     git_task!(
         Message::StashUpdated,
         (|| {
-            let mut repo =
-                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            let mut repo = open_repo!(&path);
             let msg_ref = stash_message.as_deref();
             gitkraft_core::features::stash::stash_save(&mut repo, msg_ref)
                 .map_err(|e| e.to_string())?;
@@ -31,8 +30,7 @@ pub fn stash_pop(path: PathBuf, index: usize) -> Task<Message> {
     git_task!(
         Message::StashUpdated,
         (|| {
-            let mut repo =
-                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            let mut repo = open_repo!(&path);
             gitkraft_core::features::stash::stash_pop(&mut repo, index)
                 .map_err(|e| e.to_string())?;
             refresh_stash_list(&path)
@@ -46,8 +44,7 @@ pub fn stash_drop(path: PathBuf, index: usize) -> Task<Message> {
     git_task!(
         Message::StashUpdated,
         (|| {
-            let mut repo =
-                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            let mut repo = open_repo!(&path);
             gitkraft_core::features::stash::stash_drop(&mut repo, index)
                 .map_err(|e| e.to_string())?;
             refresh_stash_list(&path)
@@ -59,6 +56,6 @@ pub fn stash_drop(path: PathBuf, index: usize) -> Task<Message> {
 
 /// Re-read the stash list so the caller can update the UI in one shot.
 fn refresh_stash_list(path: &std::path::Path) -> Result<Vec<gitkraft_core::StashEntry>, String> {
-    let mut repo = gitkraft_core::features::repo::open_repo(path).map_err(|e| e.to_string())?;
+    let mut repo = open_repo!(path);
     gitkraft_core::features::stash::list_stashes(&mut repo).map_err(|e| e.to_string())
 }

@@ -31,6 +31,8 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         .iter()
         .map(|remote| {
             let url_part = remote.url.as_deref().unwrap_or("<no url>");
+            let max_url_len =
+                area.width.saturating_sub(remote.name.len() as u16 + 6) as usize;
 
             let line = Line::from(vec![
                 Span::styled(
@@ -38,10 +40,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                     Style::default().fg(theme.accent),
                 ),
                 Span::styled(
-                    truncate_str(
-                        url_part,
-                        area.width.saturating_sub(remote.name.len() as u16 + 6) as usize,
-                    ),
+                    gitkraft_core::truncate_str(url_part, max_url_len),
                     Style::default().fg(theme.text_muted),
                 ),
             ]);
@@ -52,18 +51,4 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
 
     let list = List::new(items).block(block);
     frame.render_widget(list, area);
-}
-
-/// Truncate a string to `max_len` characters, appending `…` if truncated.
-fn truncate_str(s: &str, max_len: usize) -> String {
-    if max_len == 0 {
-        return String::new();
-    }
-    if s.len() <= max_len {
-        s.to_string()
-    } else if max_len <= 1 {
-        "…".to_string()
-    } else {
-        format!("{}…", &s[..max_len - 1])
-    }
 }

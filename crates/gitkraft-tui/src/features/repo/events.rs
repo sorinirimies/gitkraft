@@ -1,15 +1,13 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::app::{App, InputMode, InputPurpose};
+use crate::app::App;
 
 /// Handle keys on the Welcome screen.
 pub fn handle_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Char('o') => {
-            app.input_mode = InputMode::Input;
-            app.input_purpose = InputPurpose::RepoPath;
-            app.input_buffer.clear();
-            app.status_message = Some("Enter repository path:".into());
+            let start = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("/"));
+            app.open_browser(start);
         }
         KeyCode::Char('i') => {
             // Init a repo in the current working directory

@@ -19,6 +19,63 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
 
     match app.screen {
         AppScreen::Welcome => features::repo::events::handle_key(app, key),
+        AppScreen::DirBrowser => {
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    let len = app.browser_entries.len();
+                    if len > 0 {
+                        let i = app.browser_list_state.selected().unwrap_or(0);
+                        let new = if i == 0 { len - 1 } else { i - 1 };
+                        app.browser_list_state.select(Some(new));
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let len = app.browser_entries.len();
+                    if len > 0 {
+                        let i = app.browser_list_state.selected().unwrap_or(0);
+                        let new = (i + 1) % len;
+                        app.browser_list_state.select(Some(new));
+                    }
+                }
+                KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
+                    if let Some(idx) = app.browser_list_state.selected() {
+                        if let Some(path) = app.browser_entries.get(idx).cloned() {
+                            if path.is_dir() {
+                                // Check if it is a git repo
+                                if path.join(".git").exists() {
+                                    app.screen = AppScreen::Welcome;
+                                    app.open_repo(path);
+                                } else {
+                                    // Navigate into directory
+                                    app.browser_dir = path;
+                                    app.refresh_browser();
+                                }
+                            }
+                        }
+                    }
+                }
+                KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => {
+                    // Go up one directory
+                    if let Some(parent) = app.browser_dir.parent().map(|p| p.to_path_buf()) {
+                        app.browser_dir = parent;
+                        app.refresh_browser();
+                    }
+                }
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    app.screen = AppScreen::Welcome;
+                }
+                // Allow typing 'o' to open the selected directory even if it is not a git repo
+                KeyCode::Char('o') => {
+                    if let Some(idx) = app.browser_list_state.selected() {
+                        if let Some(path) = app.browser_entries.get(idx).cloned() {
+                            app.screen = AppScreen::Welcome;
+                            app.open_repo(path);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
         AppScreen::Main => {
             if app.show_theme_panel {
                 features::theme::events::handle_key(app, key);
@@ -179,11 +236,10 @@ mod tests {
     }
 
     #[test]
-    fn o_on_welcome_enters_input() {
+    fn o_on_welcome_opens_browser() {
         let mut app = App::new();
         handle_key(&mut app, key(KeyCode::Char('o')));
-        assert_eq!(app.input_mode, InputMode::Input);
-        assert_eq!(app.input_purpose, InputPurpose::RepoPath);
+        assert_eq!(app.screen, AppScreen::DirBrowser);
     }
 
     #[test]

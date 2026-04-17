@@ -14,8 +14,7 @@ pub fn checkout_branch(path: PathBuf, branch_name: String) -> Task<Message> {
     git_task!(
         Message::BranchCheckedOut,
         (|| {
-            let repo =
-                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            let repo = open_repo!(&path);
             gitkraft_core::features::branches::checkout_branch(&repo, &branch_name)
                 .map_err(|e| e.to_string())
         })()
@@ -27,8 +26,7 @@ pub fn create_branch(path: PathBuf, branch_name: String) -> Task<Message> {
     git_task!(
         Message::BranchCreated,
         (|| {
-            let repo =
-                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            let repo = open_repo!(&path);
             gitkraft_core::features::branches::create_branch(&repo, &branch_name)
                 .map(|_| ())
                 .map_err(|e| e.to_string())
@@ -41,8 +39,7 @@ pub fn delete_branch(path: PathBuf, branch_name: String) -> Task<Message> {
     git_task!(
         Message::BranchDeleted,
         (|| {
-            let repo =
-                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            let repo = open_repo!(&path);
             gitkraft_core::features::branches::delete_branch(&repo, &branch_name)
                 .map_err(|e| e.to_string())
         })()

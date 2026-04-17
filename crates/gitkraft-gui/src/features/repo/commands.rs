@@ -70,7 +70,7 @@ pub fn refresh_repo(path: PathBuf) -> Task<Message> {
 fn load_repo_blocking(path: &std::path::Path) -> Result<RepoPayload, String> {
     // Open the repository once and reuse the handle for every operation.
     // `list_stashes` needs `&mut`, so we declare the binding as `mut`.
-    let mut repo = gitkraft_core::features::repo::open_repo(path).map_err(|e| e.to_string())?;
+    let mut repo = open_repo!(path);
 
     let info = gitkraft_core::features::repo::get_repo_info(&repo).map_err(|e| e.to_string())?;
     let branches =
@@ -102,7 +102,7 @@ fn load_repo_blocking(path: &std::path::Path) -> Result<RepoPayload, String> {
 /// Get the working directory of a repository, returning a user-friendly error
 /// for bare repositories.
 fn workdir(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
-    let repo = gitkraft_core::features::repo::open_repo(path).map_err(|e| e.to_string())?;
+    let repo = open_repo!(path);
     repo.workdir()
         .map(|p| p.to_path_buf())
         .ok_or_else(|| "bare repository has no working directory".to_string())
@@ -154,8 +154,7 @@ pub fn rename_branch_async(path: PathBuf, old_name: String, new_name: String) ->
     git_task!(
         Message::GitOperationResult,
         (|| {
-            let repo =
-                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            let repo = open_repo!(&path);
             gitkraft_core::features::branches::rename_branch(&repo, &old_name, &new_name)
                 .map_err(|e| e.to_string())?;
             load_repo_blocking(&path)
@@ -168,8 +167,7 @@ pub fn checkout_commit_async(path: PathBuf, oid: String) -> Task<Message> {
     git_task!(
         Message::GitOperationResult,
         (|| {
-            let repo =
-                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            let repo = open_repo!(&path);
             gitkraft_core::features::repo::checkout_commit_detached(&repo, &oid)
                 .map_err(|e| e.to_string())?;
             load_repo_blocking(&path)
@@ -208,8 +206,7 @@ pub fn merge_branch_async(path: PathBuf, branch_name: String) -> Task<Message> {
     git_task!(
         Message::GitOperationResult,
         (|| {
-            let repo =
-                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            let repo = open_repo!(&path);
             gitkraft_core::features::branches::merge_branch(&repo, &branch_name)
                 .map_err(|e| e.to_string())?;
             load_repo_blocking(&path)
@@ -248,8 +245,7 @@ pub fn create_tag_async(path: PathBuf, name: String, oid: String) -> Task<Messag
     git_task!(
         Message::GitOperationResult,
         (|| {
-            let repo =
-                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            let repo = open_repo!(&path);
             gitkraft_core::features::branches::create_tag(&repo, &name, &oid)
                 .map_err(|e| e.to_string())?;
             load_repo_blocking(&path)
@@ -267,8 +263,7 @@ pub fn create_annotated_tag_async(
     git_task!(
         Message::GitOperationResult,
         (|| {
-            let repo =
-                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            let repo = open_repo!(&path);
             gitkraft_core::features::branches::create_annotated_tag(&repo, &name, &message, &oid)
                 .map_err(|e| e.to_string())?;
             load_repo_blocking(&path)
@@ -367,8 +362,7 @@ pub fn load_more_commits(path: PathBuf, skip: usize, count: usize) -> Task<Messa
     git_task!(
         Message::MoreCommitsLoaded,
         (|| {
-            let repo =
-                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            let repo = open_repo!(&path);
             let commits = gitkraft_core::features::commits::list_commits(&repo, total)
                 .map_err(|e| e.to_string())?;
             let graph_rows = gitkraft_core::features::graph::build_graph(&commits);

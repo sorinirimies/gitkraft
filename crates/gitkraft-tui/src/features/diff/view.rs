@@ -21,11 +21,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
 
     let title = match &app.selected_diff {
         Some(diff) => {
-            let name = if diff.new_file.is_empty() {
-                &diff.old_file
-            } else {
-                &diff.new_file
-            };
+            let name = diff.display_path();
             if name.is_empty() {
                 " Diff ".to_string()
             } else if app.commit_diffs.len() > 1 {

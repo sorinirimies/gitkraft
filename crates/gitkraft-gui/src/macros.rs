@@ -106,3 +106,13 @@ macro_rules! icon {
             .size($size)
     };
 }
+
+/// Open a git repository at the given path, mapping the error to `String`.
+///
+/// Shorthand for `gitkraft_core::features::repo::open_repo($path).map_err(|e| e.to_string())?`.
+/// Used inside `git_task!` closures where the `?` operator is available.
+macro_rules! open_repo {
+    ($path:expr) => {
+        gitkraft_core::features::repo::open_repo($path).map_err(|e| e.to_string())?
+    };
+}

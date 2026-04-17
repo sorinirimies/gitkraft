@@ -343,4 +343,37 @@ mod tests {
         assert_eq!(diffs[0].new_file, "new_file.txt");
         assert_eq!(diffs[0].status, FileStatus::Untracked);
     }
+
+    #[test]
+    fn commit_file_list_returns_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = init_repo_with_commit(tmp.path());
+        let head_oid = repo.head().unwrap().target().unwrap().to_string();
+        let files = get_commit_file_list(&repo, &head_oid).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].new_file, "hello.txt");
+        assert_eq!(files[0].status, FileStatus::New);
+        assert_eq!(files[0].display_path(), "hello.txt");
+    }
+
+    #[test]
+    fn single_file_diff_returns_correct_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = init_repo_with_commit(tmp.path());
+        let head_oid = repo.head().unwrap().target().unwrap().to_string();
+        let diff = get_single_file_diff(&repo, &head_oid, "hello.txt").unwrap();
+        assert_eq!(diff.new_file, "hello.txt");
+        assert_eq!(diff.status, FileStatus::New);
+        assert!(!diff.hunks.is_empty());
+    }
+
+    #[test]
+    fn single_file_diff_not_found() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = init_repo_with_commit(tmp.path());
+        let head_oid = repo.head().unwrap().target().unwrap().to_string();
+        let result = get_single_file_diff(&repo, &head_oid, "nonexistent.txt");
+        assert!(result.is_err());
+    }
+
 }

@@ -11,6 +11,9 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         AppScreen::Welcome => {
             features::repo::view::render(&*app, frame, frame.area());
         }
+        AppScreen::DirBrowser => {
+            features::repo::view::render_browser(app, frame, frame.area());
+        }
         AppScreen::Main => {
             render_main(app, frame);
         }

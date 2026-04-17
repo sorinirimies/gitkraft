@@ -55,6 +55,7 @@ pub struct StagingPayload {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppScreen {
     Welcome,
+    DirBrowser,
     Main,
 }
 
@@ -154,6 +155,13 @@ pub struct App {
 
     /// Recently opened repositories loaded from persistence.
     pub recent_repos: Vec<gitkraft_core::RepoHistoryEntry>,
+
+    /// Current directory being browsed in the directory picker.
+    pub browser_dir: PathBuf,
+    /// Entries in the current browser directory.
+    pub browser_entries: Vec<std::path::PathBuf>,
+    /// List state for the directory browser.
+    pub browser_list_state: ListState,
 }
 
 impl App {
@@ -223,6 +231,10 @@ impl App {
             },
 
             recent_repos,
+
+            browser_dir: dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")),
+            browser_entries: Vec::new(),
+            browser_list_state: ListState::default(),
         }
     }
 }
@@ -438,8 +450,7 @@ impl App {
         let tx = self.bg_tx.clone();
         tokio::task::spawn_blocking(move || {
             let res = (|| {
-                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
-                    .map_err(|e| e.to_string())?;
+                let repo = open_repo_str(&repo_path)?;
                 let unstaged = gitkraft_core::features::diff::get_working_dir_diff(&repo)
                     .map_err(|e| e.to_string())?;
                 let staged = gitkraft_core::features::diff::get_staged_diff(&repo)
@@ -495,8 +506,7 @@ impl App {
         let tx = self.bg_tx.clone();
         tokio::task::spawn_blocking(move || {
             let res = (|| {
-                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
-                    .map_err(|e| e.to_string())?;
+                let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::staging::stage_file(&repo, &file_path)
                     .map_err(|e| e.to_string())
             })();
@@ -526,8 +536,7 @@ impl App {
         let tx = self.bg_tx.clone();
         tokio::task::spawn_blocking(move || {
             let res = (|| {
-                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
-                    .map_err(|e| e.to_string())?;
+                let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::staging::unstage_file(&repo, &file_path)
                     .map_err(|e| e.to_string())
             })();
@@ -549,8 +558,7 @@ impl App {
         let tx = self.bg_tx.clone();
         tokio::task::spawn_blocking(move || {
             let res = (|| {
-                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
-                    .map_err(|e| e.to_string())?;
+                let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::staging::stage_all(&repo).map_err(|e| e.to_string())
             })();
             let _ = tx.send(BackgroundResult::OperationDone {
@@ -571,8 +579,7 @@ impl App {
         let tx = self.bg_tx.clone();
         tokio::task::spawn_blocking(move || {
             let res = (|| {
-                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
-                    .map_err(|e| e.to_string())?;
+                let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::staging::unstage_all(&repo).map_err(|e| e.to_string())
             })();
             let _ = tx.send(BackgroundResult::OperationDone {
@@ -602,8 +609,7 @@ impl App {
         let tx = self.bg_tx.clone();
         tokio::task::spawn_blocking(move || {
             let res = (|| {
-                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
-                    .map_err(|e| e.to_string())?;
+                let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::staging::discard_file_changes(&repo, &file_path)
                     .map_err(|e| e.to_string())
             })();
@@ -636,8 +642,7 @@ impl App {
         let tx = self.bg_tx.clone();
         tokio::task::spawn_blocking(move || {
             let res = (|| {
-                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
-                    .map_err(|e| e.to_string())?;
+                let repo = open_repo_str(&repo_path)?;
                 let info = gitkraft_core::features::commits::create_commit(&repo, &msg)
                     .map_err(|e| e.to_string())?;
                 Ok::<_, String>(format!("Committed: {} {}", info.short_oid, info.summary))
@@ -674,8 +679,7 @@ impl App {
         let tx = self.bg_tx.clone();
         tokio::task::spawn_blocking(move || {
             let res = (|| {
-                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
-                    .map_err(|e| e.to_string())?;
+                let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::branches::checkout_branch(&repo, &name)
                     .map_err(|e| e.to_string())?;
                 Ok::<_, String>(format!("Checked out: {name}"))
@@ -704,8 +708,7 @@ impl App {
         let tx = self.bg_tx.clone();
         tokio::task::spawn_blocking(move || {
             let res = (|| {
-                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
-                    .map_err(|e| e.to_string())?;
+                let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::branches::create_branch(&repo, &name)
                     .map_err(|e| e.to_string())?;
                 Ok::<_, String>(format!("Created branch: {name}"))
@@ -741,8 +744,7 @@ impl App {
         let tx = self.bg_tx.clone();
         tokio::task::spawn_blocking(move || {
             let res = (|| {
-                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
-                    .map_err(|e| e.to_string())?;
+                let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::branches::delete_branch(&repo, &name)
                     .map_err(|e| e.to_string())?;
                 Ok::<_, String>(format!("Deleted branch: {name}"))
@@ -773,8 +775,7 @@ impl App {
         let tx = self.bg_tx.clone();
         tokio::task::spawn_blocking(move || {
             let res = (|| {
-                let mut repo = gitkraft_core::features::repo::open_repo(&repo_path)
-                    .map_err(|e| e.to_string())?;
+                let mut repo = open_repo_str(&repo_path)?;
                 let entry = gitkraft_core::features::stash::stash_save(&mut repo, msg.as_deref())
                     .map_err(|e| e.to_string())?;
                 Ok::<_, String>(format!("Stashed: {}", entry.message))
@@ -802,8 +803,7 @@ impl App {
         let tx = self.bg_tx.clone();
         tokio::task::spawn_blocking(move || {
             let res = (|| {
-                let mut repo = gitkraft_core::features::repo::open_repo(&repo_path)
-                    .map_err(|e| e.to_string())?;
+                let mut repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::stash::stash_pop(&mut repo, idx).map_err(|e| e.to_string())
             })();
             let _ = tx.send(BackgroundResult::OperationDone {
@@ -832,8 +832,7 @@ impl App {
         let tx = self.bg_tx.clone();
         tokio::task::spawn_blocking(move || {
             let res = (|| {
-                let mut repo = gitkraft_core::features::repo::open_repo(&repo_path)
-                    .map_err(|e| e.to_string())?;
+                let mut repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::stash::stash_drop(&mut repo, idx)
                     .map_err(|e| e.to_string())
             })();
@@ -870,8 +869,7 @@ impl App {
         let tx = self.bg_tx.clone();
         tokio::task::spawn_blocking(move || {
             let res = (|| {
-                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
-                    .map_err(|e| e.to_string())?;
+                let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::diff::get_commit_diff(&repo, &oid)
                     .map_err(|e| e.to_string())
             })();
@@ -948,6 +946,40 @@ impl App {
         }
     }
 
+
+    /// Populate `browser_entries` with the contents of `browser_dir`.
+    pub fn refresh_browser(&mut self) {
+        let mut entries = Vec::new();
+        if let Ok(read_dir) = std::fs::read_dir(&self.browser_dir) {
+            for entry in read_dir.flatten() {
+                let path = entry.path();
+                // Show only directories to help navigate & identify repos
+                if path.is_dir() {
+                    entries.push(path);
+                }
+            }
+        }
+        entries.sort_by(|a, b| {
+            let a_name = a.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
+            let b_name = b.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
+            // Dot-dirs last
+            let a_dot = a_name.starts_with('.');
+            let b_dot = b_name.starts_with('.');
+            a_dot.cmp(&b_dot).then(a_name.cmp(&b_name))
+        });
+        self.browser_entries = entries;
+        self.browser_list_state = ListState::default();
+        if !self.browser_entries.is_empty() {
+            self.browser_list_state.select(Some(0));
+        }
+    }
+
+    /// Open the directory browser starting from a given path.
+    pub fn open_browser(&mut self, start: PathBuf) {
+        self.browser_dir = start;
+        self.refresh_browser();
+        self.screen = AppScreen::DirBrowser;
+    }
     /// Load the diff for a selected staging file into the diff pane.
     pub fn load_staging_diff(&mut self) {
         match self.staging_focus {
@@ -982,8 +1014,7 @@ impl App {
         let tx = self.bg_tx.clone();
         tokio::task::spawn_blocking(move || {
             let res = (|| {
-                let repo = gitkraft_core::features::repo::open_repo(&repo_path)
-                    .map_err(|e| e.to_string())?;
+                let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::remotes::fetch_remote(&repo, "origin")
                     .map_err(|e| e.to_string())
             })();
@@ -997,29 +1028,24 @@ impl App {
         if idx >= self.unstaged_changes.len() {
             return String::new();
         }
-        let d = &self.unstaged_changes[idx];
-        if d.new_file.is_empty() {
-            d.old_file.clone()
-        } else {
-            d.new_file.clone()
-        }
+        self.unstaged_changes[idx].display_path().to_owned()
     }
 
     fn staged_file_path(&self, idx: usize) -> String {
         if idx >= self.staged_changes.len() {
             return String::new();
         }
-        let d = &self.staged_changes[idx];
-        if d.new_file.is_empty() {
-            d.old_file.clone()
-        } else {
-            d.new_file.clone()
-        }
+        self.staged_changes[idx].display_path().to_owned()
     }
 }
 
 // ── Free-standing helpers ─────────────────────────────────────────────────────
 
+
+/// Open a repository, mapping the error to a `String` for background-task results.
+fn open_repo_str(path: &std::path::Path) -> Result<git2::Repository, String> {
+    gitkraft_core::features::repo::open_repo(path).map_err(|e| e.to_string())
+}
 /// Map a persisted theme name back to its index (0–26).
 fn theme_name_to_index(name: &str) -> usize {
     gitkraft_core::theme_index_by_name(name)
@@ -1041,7 +1067,7 @@ fn clamp_list_state(state: &mut ListState, len: usize) {
 /// Blocking helper that loads all repo data in one go.
 /// Runs inside `spawn_blocking` — must not touch any async APIs.
 fn load_repo_blocking(path: &std::path::Path) -> Result<RepoPayload, String> {
-    let mut repo = gitkraft_core::features::repo::open_repo(path).map_err(|e| e.to_string())?;
+    let mut repo = open_repo_str(path)?;
 
     let info = gitkraft_core::features::repo::get_repo_info(&repo).map_err(|e| e.to_string())?;
     let branches =

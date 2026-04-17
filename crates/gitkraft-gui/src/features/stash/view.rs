@@ -110,8 +110,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let mut list_col = column![].spacing(1).width(Length::Fill);
 
     if stash_entries.is_empty() {
-        let empty_msg = text("No stashes").size(12).color(c.muted);
-        list_col = list_col.push(container(empty_msg).padding([8, 10]).width(Length::Fill));
+        list_col = list_col.push(view_utils::empty_list_hint("No stashes", c.muted));
     } else {
         for entry_el in stash_entries {
             list_col = list_col.push(entry_el);

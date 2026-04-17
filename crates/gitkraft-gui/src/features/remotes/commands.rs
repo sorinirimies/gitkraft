@@ -17,8 +17,7 @@ pub fn fetch_remote(path: PathBuf, remote_name: String) -> Task<Message> {
     git_task!(
         Message::FetchCompleted,
         (|| {
-            let repo =
-                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            let repo = open_repo!(&path);
             gitkraft_core::features::remotes::fetch_remote(&repo, &remote_name)
                 .map_err(|e| e.to_string())
         })()

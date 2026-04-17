@@ -15,8 +15,7 @@ pub fn load_commit_file_list(path: PathBuf, oid: String) -> Task<Message> {
     git_task!(
         Message::CommitFileListLoaded,
         (|| {
-            let repo =
-                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            let repo = open_repo!(&path);
             gitkraft_core::features::diff::get_commit_file_list(&repo, &oid)
                 .map_err(|e| e.to_string())
         })()
@@ -28,8 +27,7 @@ pub fn load_single_file_diff(path: PathBuf, oid: String, file_path: String) -> T
     git_task!(
         Message::SingleFileDiffLoaded,
         (|| {
-            let repo =
-                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            let repo = open_repo!(&path);
             gitkraft_core::features::diff::get_single_file_diff(&repo, &oid, &file_path)
                 .map_err(|e| e.to_string())
         })()
@@ -41,8 +39,7 @@ pub fn create_commit(path: PathBuf, message: String) -> Task<Message> {
     git_task!(
         Message::CommitCreated,
         (|| {
-            let repo =
-                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            let repo = open_repo!(&path);
             gitkraft_core::features::commits::create_commit(&repo, &message)
                 .map(|_| ())
                 .map_err(|e| e.to_string())

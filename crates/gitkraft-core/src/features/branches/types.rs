@@ -61,3 +61,86 @@ impl std::fmt::Display for BranchType {
         }
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn local_branch(name: &str) -> BranchInfo {
+        BranchInfo {
+            name: name.to_string(),
+            branch_type: BranchType::Local,
+            is_head: false,
+            target_oid: Some("abcdef1234567890".to_string()),
+        }
+    }
+
+    fn remote_branch(name: &str) -> BranchInfo {
+        BranchInfo {
+            name: name.to_string(),
+            branch_type: BranchType::Remote,
+            is_head: false,
+            target_oid: Some("1234567890abcdef".to_string()),
+        }
+    }
+
+    #[test]
+    fn is_remote_local() {
+        assert!(!local_branch("main").is_remote());
+    }
+
+    #[test]
+    fn is_remote_remote() {
+        assert!(remote_branch("origin/main").is_remote());
+    }
+
+    #[test]
+    fn remote_name_local_returns_none() {
+        assert_eq!(local_branch("main").remote_name(), None);
+    }
+
+    #[test]
+    fn remote_name_remote_returns_remote() {
+        assert_eq!(remote_branch("origin/feature").remote_name(), Some("origin"));
+    }
+
+    #[test]
+    fn short_name_local_unchanged() {
+        assert_eq!(local_branch("main").short_name(), "main");
+    }
+
+    #[test]
+    fn short_name_remote_strips_prefix() {
+        assert_eq!(remote_branch("origin/feature-x").short_name(), "feature-x");
+    }
+
+    #[test]
+    fn short_name_remote_nested_slash() {
+        // Only the first component is the remote name
+        assert_eq!(remote_branch("origin/feat/sub").short_name(), "feat/sub");
+    }
+
+    #[test]
+    fn short_oid_returns_7_chars() {
+        let b = local_branch("main");
+        assert_eq!(b.short_oid(), Some("abcdef1"));
+    }
+
+    #[test]
+    fn short_oid_none_when_no_target() {
+        let mut b = local_branch("main");
+        b.target_oid = None;
+        assert_eq!(b.short_oid(), None);
+    }
+
+    #[test]
+    fn branch_type_display_local() {
+        assert_eq!(format!("{}", BranchType::Local), "local");
+    }
+
+    #[test]
+    fn branch_type_display_remote() {
+        assert_eq!(format!("{}", BranchType::Remote), "remote");
+    }
+}

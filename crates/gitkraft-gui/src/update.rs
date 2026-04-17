@@ -508,50 +508,26 @@ impl GitKraft {
                 })
             }
 
-            Message::ResetSoft(oid) => {
+            Message::ResetSoft(ref oid)
+            | Message::ResetMixed(ref oid)
+            | Message::ResetHard(ref oid) => {
+                let mode = match &message {
+                    Message::ResetSoft(_) => "soft",
+                    Message::ResetMixed(_) => "mixed",
+                    Message::ResetHard(_) => "hard",
+                    _ => unreachable!(),
+                };
                 let oid = oid.clone();
                 let short = gitkraft_core::utils::short_oid_str(&oid).to_string();
                 self.active_tab_mut().context_menu = None;
                 with_repo!(
                     self,
                     loading,
-                    format!("Resetting (soft) to {short}…"),
+                    format!("Resetting ({mode}) to {short}…"),
                     |path| crate::features::repo::commands::reset_to_commit_async(
                         path,
                         oid,
-                        "soft".to_string()
-                    )
-                )
-            }
-
-            Message::ResetMixed(oid) => {
-                let oid = oid.clone();
-                let short = gitkraft_core::utils::short_oid_str(&oid).to_string();
-                self.active_tab_mut().context_menu = None;
-                with_repo!(
-                    self,
-                    loading,
-                    format!("Resetting (mixed) to {short}…"),
-                    |path| crate::features::repo::commands::reset_to_commit_async(
-                        path,
-                        oid,
-                        "mixed".to_string()
-                    )
-                )
-            }
-
-            Message::ResetHard(oid) => {
-                let oid = oid.clone();
-                let short = gitkraft_core::utils::short_oid_str(&oid).to_string();
-                self.active_tab_mut().context_menu = None;
-                with_repo!(
-                    self,
-                    loading,
-                    format!("Resetting (hard) to {short}…"),
-                    |path| crate::features::repo::commands::reset_to_commit_async(
-                        path,
-                        oid,
-                        "hard".to_string()
+                        mode.to_string()
                     )
                 )
             }
