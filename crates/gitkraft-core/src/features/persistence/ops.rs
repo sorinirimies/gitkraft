@@ -88,7 +88,7 @@ pub fn load_settings() -> Result<AppSettings> {
             }
         }
         // Sort by last_opened descending (most recent first)
-        entries.sort_by(|a, b| b.last_opened.cmp(&a.last_opened));
+        entries.sort_by_key(|e| std::cmp::Reverse(e.last_opened));
         settings.recent_repos = entries;
     }
 
