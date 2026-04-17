@@ -274,6 +274,9 @@ pub struct GitKraft {
     /// Width of the diff file-list sidebar in pixels.
     pub diff_file_list_width: f32,
 
+    /// UI scale factor (1.0 = default). Adjusted with Ctrl+/Ctrl- keyboard shortcuts.
+    pub ui_scale: f32,
+
     // ── Drag state ────────────────────────────────────────────────────────
     /// Which vertical divider is being dragged (if any).
     pub dragging: Option<DragTarget>,
@@ -332,6 +335,7 @@ impl GitKraft {
             staging_height,
             diff_file_list_width,
             sidebar_expanded,
+            ui_scale,
         ) = if let Some(ref layout) = settings.layout {
             (
                 layout.sidebar_width.unwrap_or(220.0),
@@ -339,9 +343,10 @@ impl GitKraft {
                 layout.staging_height.unwrap_or(200.0),
                 layout.diff_file_list_width.unwrap_or(180.0),
                 layout.sidebar_expanded.unwrap_or(true),
+                layout.ui_scale.unwrap_or(1.0),
             )
         } else {
-            (220.0, 500.0, 200.0, 180.0, true)
+            (220.0, 500.0, 200.0, 180.0, true, 1.0)
         };
 
         Self {
@@ -354,6 +359,8 @@ impl GitKraft {
             commit_log_width,
             staging_height,
             diff_file_list_width,
+
+            ui_scale,
 
             dragging: None,
             dragging_h: None,
@@ -540,6 +547,7 @@ impl GitKraft {
             staging_height: Some(self.staging_height),
             diff_file_list_width: Some(self.diff_file_list_width),
             sidebar_expanded: Some(self.sidebar_expanded),
+            ui_scale: Some(self.ui_scale),
         }
     }
 }

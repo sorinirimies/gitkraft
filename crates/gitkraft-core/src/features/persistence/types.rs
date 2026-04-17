@@ -17,6 +17,9 @@ pub struct LayoutSettings {
     pub staging_height: Option<f32>,
     pub diff_file_list_width: Option<f32>,
     pub sidebar_expanded: Option<bool>,
+    /// UI scale factor (1.0 = 100%, 0.8 = 80%, 1.2 = 120%).
+    #[serde(default)]
+    pub ui_scale: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

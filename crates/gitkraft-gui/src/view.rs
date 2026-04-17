@@ -229,10 +229,21 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
         }
     };
 
+    let zoom_label: Element<'_, Message> = if (state.ui_scale - 1.0).abs() > 0.01 {
+        text(format!("{}%", (state.ui_scale * 100.0).round() as u32))
+            .size(11)
+            .color(c.muted)
+            .into()
+    } else {
+        Space::with_width(0).into()
+    };
+
     let bar = row![
         status_label,
         Space::with_width(Length::Fill),
         changes_summary,
+        Space::with_width(16),
+        zoom_label,
         Space::with_width(16),
         repo_state_info,
         Space::with_width(16),

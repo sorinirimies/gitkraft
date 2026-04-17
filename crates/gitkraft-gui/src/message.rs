@@ -155,6 +155,12 @@ pub enum Message {
     SelectDiff(DiffInfo),
     /// Dismiss the current error banner.
     DismissError,
+    /// Zoom in (increase UI scale).
+    ZoomIn,
+    /// Zoom out (decrease UI scale).
+    ZoomOut,
+    /// Reset zoom to 100%.
+    ZoomReset,
     /// Toggle the left sidebar.
     ToggleSidebar,
     /// Close the current repository and return to the welcome screen.
