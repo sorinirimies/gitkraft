@@ -2,10 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.5.3 - 2026-04-17
+### ➕ Added
+- Add step to install Rust stable in release workflow
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.2...v0.5.3
 ## 0.5.2 - 2026-04-17
 ### 📦 Other Changes
 - Simplify README to remove toolkit mentions and dependency tables
 - Remove musl and aarch64 targets from release workflow
+### 🔧 Chores
+- chore: bump version to 0.5.2
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.1...v0.5.2
 ## 0.5.1 - 2026-04-17
 ### ➕ Added
