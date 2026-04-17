@@ -23,8 +23,8 @@ _check-nu:
 # Install all recommended development tools
 install-tools:
     @echo "Installing development tools…"
-    @command -v git-cliff >/dev/null 2>&1 || cargo install git-cliff
-    @command -v nu >/dev/null 2>&1 && echo "✅ nu found" || echo "⚠ nu (nushell) not found. Install: https://www.nushell.sh"
+    @command -v git-cliff >/dev/null 2>&1 || cargo install git-cliff --locked
+    @command -v nu >/dev/null 2>&1 || cargo install nu --locked
     @echo "✅ All tools installed!"
 
 # ── Build ─────────────────────────────────────────────────────────────────────
