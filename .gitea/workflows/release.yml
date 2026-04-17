@@ -204,8 +204,8 @@ jobs:
       - name: Install Nushell
         run: cargo install nu --locked
 
-      - name: Prepare release (RELEASE_NOTES.md + CHANGELOG.md)
-        run: nu scripts/release_prepare.nu ${{ needs.validate.outputs.tag }}
+      - name: Generate release notes (RELEASE_NOTES.md + CHANGELOG.md)
+        run: nu scripts/ci/release_notes.nu ${{ needs.validate.outputs.tag }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v3
