@@ -1,7 +1,7 @@
 //! Async command helpers for repository operations.
 //!
 //! Each function returns an `iced::Task<Message>` that performs blocking git
-//! work on a background thread via the [`git_task!`] macro, then maps the
+//! work on a background thread via the `git_task!` macro, then maps the
 //! result into a [`Message`] variant the update loop can handle.
 //!
 //! This module also contains async wrappers for persistence operations
@@ -356,7 +356,7 @@ pub fn record_repo_and_save_session_async(
 /// Load the next page of commit history.
 ///
 /// Fetches all commits up to `skip + count` from HEAD, rebuilds the full graph,
-/// and returns a [`CommitPage`] for the update handler to swap in.
+/// and returns a `CommitPage` for the update handler to swap in.
 pub fn load_more_commits(path: PathBuf, skip: usize, count: usize) -> Task<Message> {
     let total = skip + count;
     git_task!(

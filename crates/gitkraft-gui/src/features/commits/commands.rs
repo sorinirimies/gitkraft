@@ -1,7 +1,7 @@
 //! Async command helpers for commit operations.
 //!
 //! Each function spawns blocking work on a background thread via the
-//! [`git_task!`] macro, performs the git operation, and maps the result into a
+//! `git_task!` macro, performs the git operation, and maps the result into a
 //! [`Message`].
 
 use std::path::PathBuf;

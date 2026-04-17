@@ -14,17 +14,13 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Enter => {
             app.load_commit_diff();
         }
-        KeyCode::Char('g') => {
+        KeyCode::Char('g') if !app.commits.is_empty() => {
             // Jump to first commit
-            if !app.commits.is_empty() {
-                app.commit_list_state.select(Some(0));
-            }
+            app.commit_list_state.select(Some(0));
         }
-        KeyCode::Char('G') => {
+        KeyCode::Char('G') if !app.commits.is_empty() => {
             // Jump to last commit
-            if !app.commits.is_empty() {
-                app.commit_list_state.select(Some(app.commits.len() - 1));
-            }
+            app.commit_list_state.select(Some(app.commits.len() - 1));
         }
         KeyCode::Esc => {
             app.commit_list_state.select(None);

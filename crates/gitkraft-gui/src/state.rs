@@ -320,7 +320,7 @@ impl GitKraft {
     ///
     /// Starts with a single empty tab regardless of what was saved — callers
     /// that want to restore the full session should use
-    /// [`new_with_session_paths`] instead.
+    /// [`Self::new_with_session_paths`] instead.
     fn from_settings(settings: gitkraft_core::AppSettings) -> Self {
         let current_theme_index = settings
             .theme_name
@@ -380,7 +380,7 @@ impl GitKraft {
     /// Create a fresh application state with sensible defaults.
     ///
     /// Loads persisted settings (theme, recent repos) from disk when available.
-    /// Always starts with one empty tab — use [`new_with_session_paths`] to
+    /// Always starts with one empty tab — use [`Self::new_with_session_paths`] to
     /// restore the full multi-tab session.
     pub fn new() -> Self {
         Self::from_settings(
@@ -390,7 +390,7 @@ impl GitKraft {
 
     /// Create state and also return the saved tab paths for startup restore.
     ///
-    /// Call this from `main.rs` instead of [`new`]; it sets up loading tabs
+    /// Call this from `main.rs` instead of [`Self::new`]; it sets up loading tabs
     /// for every path in the persisted session and returns those paths so the
     /// caller can spawn parallel `load_repo_at` tasks.
     pub fn new_with_session_paths() -> (Self, Vec<PathBuf>) {

@@ -264,11 +264,11 @@ pub enum Message {
     /// Revert a specific commit (creates a revert commit).
     RevertCommit(String),
 
-    /// git reset --soft <oid> — move HEAD, keep staged + working changes.
+    /// git reset --soft `oid` — move HEAD, keep staged + working changes.
     ResetSoft(String),
-    /// git reset --mixed <oid> — move HEAD and unstage; keep working directory.
+    /// git reset --mixed `oid` — move HEAD and unstage; keep working directory.
     ResetMixed(String),
-    /// git reset --hard <oid> — move HEAD and discard all uncommitted changes.
+    /// git reset --hard `oid` — move HEAD and discard all uncommitted changes.
     ResetHard(String),
 
     // ── Shared ───────────────────────────────────────────────────────────────────

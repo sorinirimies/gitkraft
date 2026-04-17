@@ -6,35 +6,31 @@ use crate::app::{App, InputMode, InputPurpose};
 pub fn handle_key(app: &mut App, key: KeyEvent) {
     match key.code {
         // Navigation
-        KeyCode::Char('j') | KeyCode::Down => {
-            if !app.branches.is_empty() {
-                let i = match app.branch_list_state.selected() {
-                    Some(i) => {
-                        if i >= app.branches.len() - 1 {
-                            0
-                        } else {
-                            i + 1
-                        }
+        KeyCode::Char('j') | KeyCode::Down if !app.branches.is_empty() => {
+            let i = match app.branch_list_state.selected() {
+                Some(i) => {
+                    if i >= app.branches.len() - 1 {
+                        0
+                    } else {
+                        i + 1
                     }
-                    None => 0,
-                };
-                app.branch_list_state.select(Some(i));
-            }
+                }
+                None => 0,
+            };
+            app.branch_list_state.select(Some(i));
         }
-        KeyCode::Char('k') | KeyCode::Up => {
-            if !app.branches.is_empty() {
-                let i = match app.branch_list_state.selected() {
-                    Some(i) => {
-                        if i == 0 {
-                            app.branches.len() - 1
-                        } else {
-                            i - 1
-                        }
+        KeyCode::Char('k') | KeyCode::Up if !app.branches.is_empty() => {
+            let i = match app.branch_list_state.selected() {
+                Some(i) => {
+                    if i == 0 {
+                        app.branches.len() - 1
+                    } else {
+                        i - 1
                     }
-                    None => 0,
-                };
-                app.branch_list_state.select(Some(i));
-            }
+                }
+                None => 0,
+            };
+            app.branch_list_state.select(Some(i));
         }
 
         // Checkout selected branch
