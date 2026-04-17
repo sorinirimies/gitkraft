@@ -115,22 +115,6 @@ jobs:
             suffix: ""
             install_gui_libs: true
 
-          # ── Linux x86_64 musl (static TUI only) ─────────────────────────────
-          - target: x86_64-unknown-linux-musl
-            runner: ubuntu-latest
-            gui_binary: ""
-            tui_binary: gitkraft-tui
-            suffix: ""
-            install_gui_libs: false
-
-          # ── Linux aarch64 (dynamic) ──────────────────────────────────────────
-          - target: aarch64-unknown-linux-gnu
-            runner: ubuntu-latest
-            gui_binary: gitkraft
-            tui_binary: gitkraft-tui
-            suffix: ""
-            install_gui_libs: true
-
     steps:
       - uses: actions/checkout@v4
         with:
@@ -153,28 +137,6 @@ jobs:
             libfontconfig1-dev \
             libssl-dev
 
-      - name: Install musl tools and static libraries
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            musl-tools \
-            musl-dev
-
-      - name: Install aarch64 cross-compilation toolchain
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            gcc-aarch64-linux-gnu \
-            libxkbcommon-dev:arm64 \
-            libx11-dev:arm64 \
-            libwayland-dev:arm64 \
-            libfontconfig1-dev:arm64 || true
-          # Enable multi-arch so apt can fetch arm64 packages
-          sudo dpkg --add-architecture arm64
-          sudo apt-get update -qq || true
-
       - name: Install Rust stable + target
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -185,24 +147,8 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - name: Set up cross-linker env (aarch64)
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          mkdir -p .cargo
-          cat >> .cargo/config.toml <<'EOF'
-          [target.aarch64-unknown-linux-gnu]
-          linker = "aarch64-linux-gnu-gcc"
-          EOF
-
       - name: Build TUI release binary
-        run: |
-          EXTRA_FEATURES=""
-          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-musl" ]; then
-            # Vendor OpenSSL and libgit2 from source for fully static musl binary.
-            # The host's glibc-linked OpenSSL/zlib headers are not usable with musl.
-            EXTRA_FEATURES="--features git2/vendored-openssl,git2/vendored-libgit2"
-          fi
-          cargo build --release -p gitkraft-tui --target ${{ matrix.target }} $EXTRA_FEATURES
+        run: cargo build --release -p gitkraft-tui --target ${{ matrix.target }}
 
       - name: Build GUI release binary
         if: matrix.gui_binary != ''
