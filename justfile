@@ -229,8 +229,19 @@ changelog-preview: _check-git-cliff
 validate-tag version: _check-nu
     @nu scripts/ci/validate_tag.nu "v{{ version }}" 2>&1 >/dev/null
 
+# Fail fast if the requested version is the same as the current one.
+_check-version-changed version: _check-nu
+    #!/usr/bin/env sh
+    current=$(nu scripts/version.nu)
+    if [ "$current" = "{{ version }}" ]; then
+        echo "❌ Version {{ version }} is already the current version. Nothing to bump."
+        exit 1
+    fi
+    echo "✅ Version will change: $current → {{ version }}"
+
 # Bump the workspace version, regenerate Cargo.lock + CHANGELOG.md, commit and tag.
-bump version: check-release (validate-tag version) _check-git-cliff _check-nu
+# Validation runs first (cheap), quality gate runs second (expensive).
+bump version: (validate-tag version) (_check-version-changed version) check-release _check-git-cliff
     nu scripts/bump_version.nu --yes {{ version }}
 
 # ── Publish (crates.io) ───────────────────────────────────────────────────────
