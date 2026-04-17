@@ -24,7 +24,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     };
 
     // Split into file list + diff content when there are multiple files
-    if app.commit_diffs.len() > 1 {
+    if app.commit_files.len() > 1 {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(30), Constraint::Min(20)])
@@ -47,12 +47,12 @@ fn render_file_list(
     let theme = app.theme();
 
     let block = Block::default()
-        .title(format!(" Files ({}) ", app.commit_diffs.len()))
+        .title(format!(" Files ({}) ", app.commit_files.len()))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
 
     let items: Vec<ListItem> = app
-        .commit_diffs
+        .commit_files
         .iter()
         .enumerate()
         .map(|(i, diff)| {

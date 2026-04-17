@@ -313,11 +313,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .width(Length::Fill)
         .height(Length::Fill);
 
-        return container(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(theme::surface_style)
-            .into();
+        return view_utils::surface_panel(content, Length::Fill);
     }
 
     // ── Virtual scroll window ─────────────────────────────────────────────
@@ -385,9 +381,5 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .width(Length::Fill)
         .height(Length::Fill);
 
-    container(content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(theme::surface_style)
-        .into()
+    view_utils::surface_panel(content, Length::Fill)
 }

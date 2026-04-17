@@ -135,7 +135,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                         features::commits::events::navigate_up(app);
                     }
                     ActivePane::DiffView => {
-                        if app.commit_diffs.len() > 1 {
+                        if app.commit_files.len() > 1 {
                             app.prev_diff_file();
                         } else {
                             app.diff_scroll = app.diff_scroll.saturating_sub(1);
@@ -158,7 +158,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                         features::commits::events::navigate_down(app);
                     }
                     ActivePane::DiffView => {
-                        if app.commit_diffs.len() > 1 {
+                        if app.commit_files.len() > 1 {
                             app.next_diff_file();
                         } else {
                             app.diff_scroll = app.diff_scroll.saturating_add(1);

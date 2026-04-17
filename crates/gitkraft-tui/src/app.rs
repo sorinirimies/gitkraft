@@ -41,6 +41,10 @@ pub enum BackgroundResult {
         /// If `true`, trigger only a staging refresh.
         needs_staging_refresh: bool,
     },
+    /// A commit file list (lightweight, no diff content) was loaded.
+    CommitFileListLoaded(Result<Vec<gitkraft_core::DiffFileEntry>, String>),
+    /// A single file's diff was loaded.
+    SingleFileDiffLoaded(Result<gitkraft_core::DiffInfo, String>),
 }
 
 /// Payload returned by an async staging refresh.
@@ -128,6 +132,10 @@ pub struct App {
     pub commit_diffs: Vec<DiffInfo>,
     /// Index of the currently selected file in `commit_diffs`.
     pub commit_diff_file_index: usize,
+    /// Lightweight file list for the selected commit.
+    pub commit_files: Vec<gitkraft_core::DiffFileEntry>,
+    /// OID of the currently selected commit (for lazy file diff loading).
+    pub selected_commit_oid: Option<String>,
 
     pub stashes: Vec<StashEntry>,
     pub stash_list_state: ListState,
@@ -210,6 +218,8 @@ impl App {
             diff_scroll: 0,
             commit_diffs: Vec::new(),
             commit_diff_file_index: 0,
+            commit_files: Vec::new(),
+            selected_commit_oid: None,
 
             stashes: Vec::new(),
             stash_list_state: ListState::default(),
@@ -410,6 +420,53 @@ impl App {
                             }
                         }
                         Err(e) => self.error_message = Some(format!("commit diff: {e}")),
+                    }
+                }
+                BackgroundResult::CommitFileListLoaded(res) => {
+                    self.is_loading = false;
+                    match res {
+                        Ok(files) => {
+                            let count = files.len();
+                            self.commit_files = files;
+                            self.commit_diffs.clear();
+                            self.commit_diff_file_index = 0;
+                            self.selected_diff = None;
+                            self.diff_scroll = 0;
+
+                            if count == 0 {
+                                self.status_message = Some("No changes in this commit".into());
+                            } else {
+                                self.status_message = Some(format!("{count} file(s) changed"));
+                                // Auto-load the first file's diff
+                                let first_path = self.commit_files[0].display_path().to_string();
+                                self.load_single_file_diff(first_path);
+                            }
+                        }
+                        Err(e) => self.error_message = Some(format!("file list: {e}")),
+                    }
+                }
+                BackgroundResult::SingleFileDiffLoaded(res) => {
+                    self.is_loading = false;
+                    match res {
+                        Ok(diff) => {
+                            // Store in commit_diffs for the file list sidebar.
+                            // If this is the first file, also set selected_diff.
+                            if self.commit_diffs.len() <= self.commit_diff_file_index {
+                                self.commit_diffs.push(diff.clone());
+                            } else {
+                                self.commit_diffs[self.commit_diff_file_index] = diff.clone();
+                            }
+                            self.selected_diff = Some(diff);
+                            self.diff_scroll = 0;
+                            if self.commit_files.len() > 1 {
+                                self.status_message = Some(format!(
+                                    "File {}/{} — use h/l to switch files",
+                                    self.commit_diff_file_index + 1,
+                                    self.commit_files.len()
+                                ));
+                            }
+                        }
+                        Err(e) => self.error_message = Some(format!("file diff: {e}")),
                     }
                 }
                 BackgroundResult::StagingRefreshed(res) => {
@@ -853,7 +910,7 @@ impl App {
 
     // ── Diff ─────────────────────────────────────────────────────────────
 
-    /// Load the diff for the currently selected commit into the diff pane.
+    /// Load the file list for the currently selected commit (phase 1 of two-phase loading).
     pub fn load_commit_diff(&mut self) {
         let idx = match self.commit_list_state.selected() {
             Some(i) => i,
@@ -868,50 +925,79 @@ impl App {
             None => return,
         };
         self.is_loading = true;
-        self.status_message = Some("Loading diff…".into());
+        self.status_message = Some("Loading files…".into());
+        self.selected_commit_oid = Some(oid.clone());
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let res = (|| {
                 let repo = open_repo_str(&repo_path)?;
-                gitkraft_core::features::diff::get_commit_diff(&repo, &oid)
+                gitkraft_core::features::diff::get_commit_file_list(&repo, &oid)
                     .map_err(|e| e.to_string())
             })();
-            let _ = tx.send(BackgroundResult::CommitDiffLoaded(res));
+            let _ = tx.send(BackgroundResult::CommitFileListLoaded(res));
+        });
+    }
+
+    /// Load the diff for a single file in the selected commit (phase 2).
+    pub fn load_single_file_diff(&mut self, file_path: String) {
+        let repo_path = match self.repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        let oid = match self.selected_commit_oid.clone() {
+            Some(o) => o,
+            None => return,
+        };
+        self.is_loading = true;
+        let tx = self.bg_tx.clone();
+        std::thread::spawn(move || {
+            let res = (|| {
+                let repo = open_repo_str(&repo_path)?;
+                gitkraft_core::features::diff::get_single_file_diff(&repo, &oid, &file_path)
+                    .map_err(|e| e.to_string())
+            })();
+            let _ = tx.send(BackgroundResult::SingleFileDiffLoaded(res));
         });
     }
 
     /// Switch to the next file in the commit diff list.
     pub fn next_diff_file(&mut self) {
-        if self.commit_diffs.is_empty() {
+        if self.commit_files.is_empty() {
             return;
         }
-        self.commit_diff_file_index = (self.commit_diff_file_index + 1) % self.commit_diffs.len();
-        self.selected_diff = Some(self.commit_diffs[self.commit_diff_file_index].clone());
+        self.commit_diff_file_index = (self.commit_diff_file_index + 1) % self.commit_files.len();
+        let file_path = self.commit_files[self.commit_diff_file_index]
+            .display_path()
+            .to_string();
         self.diff_scroll = 0;
         self.status_message = Some(format!(
             "File {}/{}",
             self.commit_diff_file_index + 1,
-            self.commit_diffs.len()
+            self.commit_files.len()
         ));
+        self.load_single_file_diff(file_path);
     }
 
     /// Switch to the previous file in the commit diff list.
     pub fn prev_diff_file(&mut self) {
-        if self.commit_diffs.is_empty() {
+        if self.commit_files.is_empty() {
             return;
         }
         if self.commit_diff_file_index == 0 {
-            self.commit_diff_file_index = self.commit_diffs.len() - 1;
+            self.commit_diff_file_index = self.commit_files.len() - 1;
         } else {
             self.commit_diff_file_index -= 1;
         }
-        self.selected_diff = Some(self.commit_diffs[self.commit_diff_file_index].clone());
+        let file_path = self.commit_files[self.commit_diff_file_index]
+            .display_path()
+            .to_string();
         self.diff_scroll = 0;
         self.status_message = Some(format!(
             "File {}/{}",
             self.commit_diff_file_index + 1,
-            self.commit_diffs.len()
+            self.commit_files.len()
         ));
+        self.load_single_file_diff(file_path);
     }
 
     /// Close the current repository and return to the welcome screen.
@@ -931,6 +1017,8 @@ impl App {
         self.selected_diff = None;
         self.commit_diffs.clear();
         self.commit_diff_file_index = 0;
+        self.commit_files.clear();
+        self.selected_commit_oid = None;
         self.diff_scroll = 0;
         self.stashes.clear();
         self.stash_list_state = ListState::default();

@@ -267,28 +267,13 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .filter(|b| b.branch_type == BranchType::Local)
             .count();
 
-        let chevron_char = if tab.local_branches_expanded {
-            icons::CHEVRON_DOWN
-        } else {
-            icons::CHEVRON_RIGHT
-        };
-        let chevron = icon!(chevron_char, 11, c.muted);
-
-        let local_header_btn = button(
-            row![
-                chevron,
-                Space::with_width(4),
-                text("Local").size(11).color(c.muted),
-                Space::with_width(4),
-                text(format!("({local_count})")).size(10).color(c.muted),
-            ]
-            .align_y(Alignment::Center),
-        )
-        .padding([4, 8])
-        .width(Length::Fill)
-        .style(theme::ghost_button)
-        .on_press(Message::ToggleLocalBranches);
-
+        let local_header_btn = view_utils::collapsible_header(
+            tab.local_branches_expanded,
+            "Local",
+            local_count,
+            Message::ToggleLocalBranches,
+            c.muted,
+        );
         list_col = list_col.push(local_header_btn);
 
         if tab.local_branches_expanded {
@@ -307,28 +292,13 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
         list_col = list_col.push(Space::with_height(4));
 
-        let chevron_char = if tab.remote_branches_expanded {
-            icons::CHEVRON_DOWN
-        } else {
-            icons::CHEVRON_RIGHT
-        };
-        let chevron = icon!(chevron_char, 11, c.muted);
-
-        let remote_header_btn = button(
-            row![
-                chevron,
-                Space::with_width(4),
-                text("Remote").size(11).color(c.muted),
-                Space::with_width(4),
-                text(format!("({remote_count})")).size(10).color(c.muted),
-            ]
-            .align_y(Alignment::Center),
-        )
-        .padding([4, 8])
-        .width(Length::Fill)
-        .style(theme::ghost_button)
-        .on_press(Message::ToggleRemoteBranches);
-
+        let remote_header_btn = view_utils::collapsible_header(
+            tab.remote_branches_expanded,
+            "Remote",
+            remote_count,
+            Message::ToggleRemoteBranches,
+            c.muted,
+        );
         list_col = list_col.push(remote_header_btn);
 
         if tab.remote_branches_expanded {

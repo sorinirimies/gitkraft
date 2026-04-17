@@ -129,11 +129,88 @@ pub fn on_press_maybe<'a>(
     }
 }
 
+// ── Collapsible section header ────────────────────────────────────────────
+
+/// A collapsible section header with a chevron, label, count, and toggle message.
+/// Used for "Local (N)" / "Remote (N)" in the branches sidebar.
+pub fn collapsible_header<'a>(
+    expanded: bool,
+    label: &'a str,
+    count: usize,
+    on_toggle: crate::message::Message,
+    muted: iced::Color,
+) -> iced::Element<'a, crate::message::Message> {
+    use iced::widget::{button, row, text, Space};
+    use iced::Alignment;
+
+    let chevron_char = if expanded {
+        crate::icons::CHEVRON_DOWN
+    } else {
+        crate::icons::CHEVRON_RIGHT
+    };
+    let chevron = icon!(chevron_char, 11, muted);
+
+    button(
+        row![
+            chevron,
+            Space::with_width(4),
+            text(label).size(11).color(muted),
+            Space::with_width(4),
+            text(format!("({count})")).size(10).color(muted),
+        ]
+        .align_y(Alignment::Center),
+    )
+    .padding([4, 8])
+    .width(iced::Length::Fill)
+    .style(crate::theme::ghost_button)
+    .on_press(on_toggle)
+    .into()
+}
+
+// ── Toolbar button ────────────────────────────────────────────────────────
+
+/// A toolbar button with an icon and label text.
+/// Used in the header toolbar for Refresh, Open, Close, etc.
+pub fn toolbar_btn<'a>(
+    icon_widget: impl Into<iced::Element<'a, crate::message::Message>>,
+    label: &'a str,
+    msg: crate::message::Message,
+) -> iced::widget::Button<'a, crate::message::Message> {
+    use iced::widget::{button, row, text, Space};
+    use iced::Alignment;
+
+    button(
+        row![
+            icon_widget.into(),
+            Space::with_width(4),
+            text(label).size(12)
+        ]
+        .align_y(Alignment::Center),
+    )
+    .padding([4, 10])
+    .style(crate::theme::toolbar_button)
+    .on_press(msg)
+}
+
+// ── Panel wrapper ─────────────────────────────────────────────────────────
+
+/// Wrap content in a full-size container with the surface background style.
+pub fn surface_panel<'a>(
+    content: impl Into<iced::Element<'a, crate::message::Message>>,
+    width: iced::Length,
+) -> iced::Element<'a, crate::message::Message> {
+    iced::widget::container(content)
+        .width(width)
+        .height(iced::Length::Fill)
+        .style(crate::theme::surface_style)
+        .into()
+}
+
 // ── Empty list hint ───────────────────────────────────────────────────────
 
 /// Centered muted text shown when a list has no items.
 pub fn empty_list_hint<'a>(
-    label: &str,
+    label: &'a str,
     muted: iced::Color,
 ) -> iced::Element<'a, crate::message::Message> {
     iced::widget::container(iced::widget::text(label.to_string()).size(12).color(muted))

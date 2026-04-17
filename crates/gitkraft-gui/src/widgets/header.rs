@@ -10,6 +10,7 @@ use crate::icons;
 use crate::message::Message;
 use crate::state::GitKraft;
 use crate::theme;
+use crate::view_utils;
 
 /// Render the top toolbar row.
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
@@ -63,33 +64,17 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     // ── Refresh button ────────────────────────────────────────────────────
     let refresh_icon = icon!(icons::ARROW_REPEAT, 14, c.accent);
 
-    let refresh_btn = button(
-        row![refresh_icon, Space::with_width(4), text("Refresh").size(12)]
-            .align_y(Alignment::Center),
-    )
-    .padding([4, 10])
-    .style(theme::toolbar_button)
-    .on_press(Message::RefreshRepo);
+    let refresh_btn = view_utils::toolbar_btn(refresh_icon, "Refresh", Message::RefreshRepo);
 
     // ── Open another repo button ──────────────────────────────────────────
     let open_icon = icon!(icons::FOLDER_OPEN, 14, c.text_secondary);
 
-    let open_btn = button(
-        row![open_icon, Space::with_width(4), text("Open").size(12)].align_y(Alignment::Center),
-    )
-    .padding([4, 10])
-    .style(theme::toolbar_button)
-    .on_press(Message::OpenRepo);
+    let open_btn = view_utils::toolbar_btn(open_icon, "Open", Message::OpenRepo);
 
     // ── Close repo button (return to welcome screen) ──────────────────────
     let close_icon = icon!(icons::X_CIRCLE, 14, c.text_secondary);
 
-    let close_btn = button(
-        row![close_icon, Space::with_width(4), text("Close").size(12)].align_y(Alignment::Center),
-    )
-    .padding([4, 10])
-    .style(theme::toolbar_button)
-    .on_press(Message::CloseRepo);
+    let close_btn = view_utils::toolbar_btn(close_icon, "Close", Message::CloseRepo);
 
     // ── Toggle sidebar ────────────────────────────────────────────────────
     let sidebar_icon_char = if state.sidebar_expanded {

@@ -137,11 +137,7 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
     .width(Length::Fill)
     .height(Length::Fill);
 
-    container(content)
-        .width(Length::FillPortion(3))
-        .height(Length::Fill)
-        .style(theme::surface_style)
-        .into()
+    view_utils::surface_panel(content, Length::FillPortion(3))
 }
 
 /// Render the "Staged Changes" file list.
@@ -238,11 +234,7 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
     .width(Length::Fill)
     .height(Length::Fill);
 
-    container(content)
-        .width(Length::FillPortion(3))
-        .height(Length::Fill)
-        .style(theme::surface_style)
-        .into()
+    view_utils::surface_panel(content, Length::FillPortion(3))
 }
 
 /// Render the commit message input and "Commit" button.
@@ -311,9 +303,5 @@ fn commit_view(state: &GitKraft) -> Element<'_, Message> {
     .width(Length::Fill)
     .height(Length::Fill);
 
-    container(content)
-        .width(Length::FillPortion(2))
-        .height(Length::Fill)
-        .style(theme::surface_style)
-        .into()
+    view_utils::surface_panel(content, Length::FillPortion(2))
 }
