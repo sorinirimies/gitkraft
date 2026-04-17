@@ -43,7 +43,9 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
 
     let stage_msg = (!tab.unstaged_changes.is_empty()).then_some(Message::StageAll);
     let stage_all_btn = view_utils::on_press_maybe(
-        button(text("Stage All").size(11)).padding([2, 8]).style(theme::toolbar_button),
+        button(text("Stage All").size(11))
+            .padding([2, 8])
+            .style(theme::toolbar_button),
         stage_msg,
     );
 
@@ -72,23 +74,17 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
                 .font(Font::MONOSPACE)
                 .color(status_color);
 
-            let file_label = text(file_path_display)
-                .size(12)
-                .color(c.text_primary);
+            let file_label = text(file_path_display).size(12).color(c.text_primary);
 
-            let view_btn = button(
-                icon!(icons::CLOUD_UPLOAD, 11, c.accent),
-            )
-            .padding([2, 4])
-            .style(theme::icon_button)
-            .on_press(Message::SelectDiff(diff.clone()));
+            let view_btn = button(icon!(icons::CLOUD_UPLOAD, 11, c.accent))
+                .padding([2, 4])
+                .style(theme::icon_button)
+                .on_press(Message::SelectDiff(diff.clone()));
 
-            let stage_btn = button(
-                icon!(icons::PLUS_CIRCLE, 11, c.green),
-            )
-            .padding([2, 4])
-            .style(theme::icon_button)
-            .on_press(Message::StageFile(file_path_display.to_string()));
+            let stage_btn = button(icon!(icons::PLUS_CIRCLE, 11, c.green))
+                .padding([2, 4])
+                .style(theme::icon_button)
+                .on_press(Message::StageFile(file_path_display.to_string()));
 
             let is_pending_discard = tab.pending_discard.as_deref() == Some(file_path_display);
             let discard_btn = if is_pending_discard {
@@ -97,12 +93,10 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
                     .style(theme::toolbar_button)
                     .on_press(Message::ConfirmDiscard(file_path_display.to_string()))
             } else {
-                button(
-                    icon!(icons::TRASH, 11, c.red),
-                )
-                .padding([2, 4])
-                .style(theme::icon_button)
-                .on_press(Message::DiscardFile(file_path_display.to_string()))
+                button(icon!(icons::TRASH, 11, c.red))
+                    .padding([2, 4])
+                    .style(theme::icon_button)
+                    .on_press(Message::DiscardFile(file_path_display.to_string()))
             };
 
             let file_row = row![
@@ -165,7 +159,9 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
 
     let unstage_msg = (!tab.staged_changes.is_empty()).then_some(Message::UnstageAll);
     let unstage_all_btn = view_utils::on_press_maybe(
-        button(text("Unstage All").size(11)).padding([2, 8]).style(theme::toolbar_button),
+        button(text("Unstage All").size(11))
+            .padding([2, 8])
+            .style(theme::toolbar_button),
         unstage_msg,
     );
 
@@ -194,23 +190,17 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
                 .font(Font::MONOSPACE)
                 .color(status_color);
 
-            let file_label = text(file_path_display)
-                .size(12)
-                .color(c.text_primary);
+            let file_label = text(file_path_display).size(12).color(c.text_primary);
 
-            let view_btn = button(
-                icon!(icons::CLOUD_UPLOAD, 11, c.accent),
-            )
-            .padding([2, 4])
-            .style(theme::icon_button)
-            .on_press(Message::SelectDiff(diff.clone()));
+            let view_btn = button(icon!(icons::CLOUD_UPLOAD, 11, c.accent))
+                .padding([2, 4])
+                .style(theme::icon_button)
+                .on_press(Message::SelectDiff(diff.clone()));
 
-            let unstage_btn = button(
-                icon!(icons::DASH_CIRCLE, 11, c.yellow),
-            )
-            .padding([2, 4])
-            .style(theme::icon_button)
-            .on_press(Message::UnstageFile(file_path_display.to_string()));
+            let unstage_btn = button(icon!(icons::DASH_CIRCLE, 11, c.yellow))
+                .padding([2, 4])
+                .style(theme::icon_button)
+                .on_press(Message::UnstageFile(file_path_display.to_string()));
 
             let file_row = row![
                 status_badge,
@@ -275,14 +265,21 @@ fn commit_view(state: &GitKraft) -> Element<'_, Message> {
 
     let can_commit = !tab.commit_message.trim().is_empty() && !tab.staged_changes.is_empty();
 
-    let commit_icon = icon!(icons::CHECK_CIRCLE_FILL, 14, if can_commit { c.green } else { c.muted });
+    let commit_icon = icon!(
+        icons::CHECK_CIRCLE_FILL,
+        14,
+        if can_commit { c.green } else { c.muted }
+    );
 
     let commit_btn_content = row![commit_icon, Space::with_width(6), text("Commit").size(13),]
         .align_y(Alignment::Center);
 
     let commit_msg = can_commit.then_some(Message::CreateCommit);
     let commit_btn = view_utils::on_press_maybe(
-        button(commit_btn_content).padding([8, 16]).width(Length::Fill).style(theme::toolbar_button),
+        button(commit_btn_content)
+            .padding([8, 16])
+            .width(Length::Fill)
+            .style(theme::toolbar_button),
         commit_msg,
     );
 

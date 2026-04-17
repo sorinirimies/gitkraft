@@ -81,7 +81,6 @@ fn mix(base: Color, tint: Color, amount: f32) -> Color {
     }
 }
 
-
 thread_local! {
     static THEME_CACHE: RefCell<Option<(String, ThemeColors)>> = const { RefCell::new(None) };
 }
@@ -171,7 +170,6 @@ impl ThemeColors {
         })
     }
 }
-
 
 // ── Container styles ──────────────────────────────────────────────────────────
 

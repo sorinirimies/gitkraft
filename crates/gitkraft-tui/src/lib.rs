@@ -12,8 +12,8 @@ pub mod app;
 pub mod events;
 pub mod features;
 pub mod layout;
-pub mod widgets;
 pub mod utils;
+pub mod widgets;
 
 use std::io;
 use std::panic;

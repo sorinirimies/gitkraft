@@ -946,7 +946,6 @@ impl App {
         }
     }
 
-
     /// Populate `browser_entries` with the contents of `browser_dir`.
     pub fn refresh_browser(&mut self) {
         let mut entries = Vec::new();
@@ -960,8 +959,16 @@ impl App {
             }
         }
         entries.sort_by(|a, b| {
-            let a_name = a.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
-            let b_name = b.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
+            let a_name = a
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_lowercase();
+            let b_name = b
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_lowercase();
             // Dot-dirs last
             let a_dot = a_name.starts_with('.');
             let b_dot = b_name.starts_with('.');
@@ -1040,7 +1047,6 @@ impl App {
 }
 
 // ── Free-standing helpers ─────────────────────────────────────────────────────
-
 
 /// Open a repository, mapping the error to a `String` for background-task results.
 fn open_repo_str(path: &std::path::Path) -> Result<git2::Repository, String> {

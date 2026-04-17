@@ -71,7 +71,6 @@ impl CommitInfo {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

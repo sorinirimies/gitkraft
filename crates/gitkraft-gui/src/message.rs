@@ -6,7 +6,9 @@
 
 use std::path::PathBuf;
 
-use gitkraft_core::{BranchInfo, CommitInfo, DiffFileEntry, DiffInfo, GraphRow, RemoteInfo, RepoInfo, StashEntry};
+use gitkraft_core::{
+    BranchInfo, CommitInfo, DiffFileEntry, DiffInfo, GraphRow, RemoteInfo, RepoInfo, StashEntry,
+};
 
 // ── Payload types ─────────────────────────────────────────────────────────────
 
@@ -196,7 +198,6 @@ pub enum Message {
     /// User right-clicked a local branch.
     /// Payload: (branch_name, index_in_local_list, is_current_branch).
     OpenBranchContextMenu(String, usize, bool),
-
 
     /// User right-clicked a remote branch.
     OpenRemoteBranchContextMenu(String),

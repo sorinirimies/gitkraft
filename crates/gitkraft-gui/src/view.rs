@@ -265,11 +265,9 @@ fn error_banner<'a>(message: &str, c: &ThemeColors) -> Element<'a, Message> {
 
     let msg = text(message.to_string()).size(13).color(c.text_primary);
 
-    let dismiss = iced::widget::button(
-        icon!(icons::X_CIRCLE, 14, c.text_secondary),
-    )
-    .padding([2, 6])
-    .on_press(Message::DismissError);
+    let dismiss = iced::widget::button(icon!(icons::X_CIRCLE, 14, c.text_secondary))
+        .padding([2, 6])
+        .on_press(Message::DismissError);
 
     let banner_row = row![
         icon,
@@ -335,9 +333,8 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                 .find(|b| &b.name == name)
                 .and_then(|b| b.target_oid.clone());
 
-            let header = view_utils::context_menu_header::<Message>(format!("Branch: {name}"), c.muted);
-
-
+            let header =
+                view_utils::context_menu_header::<Message>(format!("Branch: {name}"), c.muted);
 
             let mut col = column![header];
 
@@ -406,20 +403,16 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
 
         Some(crate::state::ContextMenu::RemoteBranch { name }) => {
             // Extract remote and branch parts for display
-            let (remote, short_name) = name
-                .split_once('/')
-                .unwrap_or(("", name.as_str()));
+            let (remote, short_name) = name.split_once('/').unwrap_or(("", name.as_str()));
 
-            let header = view_utils::context_menu_header::<Message>(format!("Remote: {name}"), c.muted);
-
-
+            let header =
+                view_utils::context_menu_header::<Message>(format!("Remote: {name}"), c.muted);
 
             // Check if a local branch with the same short name already exists
-            let local_exists = state
-                .active_tab()
-                .branches
-                .iter()
-                .any(|b| b.branch_type == gitkraft_core::BranchType::Local && b.name == short_name);
+            let local_exists =
+                state.active_tab().branches.iter().any(|b| {
+                    b.branch_type == gitkraft_core::BranchType::Local && b.name == short_name
+                });
 
             let mut col = column![header];
 
@@ -476,7 +469,8 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                 .map(|c| c.message.clone())
                 .unwrap_or_default();
 
-            let header = view_utils::context_menu_header::<Message>(format!("Commit: {short}"), c.muted);
+            let header =
+                view_utils::context_menu_header::<Message>(format!("Commit: {short}"), c.muted);
 
             column![
                 header,

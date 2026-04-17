@@ -64,13 +64,9 @@ fn handle_key_press(
                 Some(gitkraft_gui::Message::ZoomIn)
             }
             // Ctrl/Cmd + Minus
-            Key::Character(ref c) if c.as_str() == "-" => {
-                Some(gitkraft_gui::Message::ZoomOut)
-            }
+            Key::Character(ref c) if c.as_str() == "-" => Some(gitkraft_gui::Message::ZoomOut),
             // Ctrl/Cmd + 0 — reset zoom
-            Key::Character(ref c) if c.as_str() == "0" => {
-                Some(gitkraft_gui::Message::ZoomReset)
-            }
+            Key::Character(ref c) if c.as_str() == "0" => Some(gitkraft_gui::Message::ZoomReset),
             _ => None,
         }
     } else {

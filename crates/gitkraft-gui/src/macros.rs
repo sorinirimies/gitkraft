@@ -101,9 +101,7 @@ macro_rules! icon {
             .color($color)
     };
     ($char:expr, $size:expr) => {
-        text($char)
-            .font(iced_fonts::BOOTSTRAP_FONT)
-            .size($size)
+        text($char).font(iced_fonts::BOOTSTRAP_FONT).size($size)
     };
 }
 

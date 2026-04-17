@@ -22,9 +22,17 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
         // Repo icon
         let icon = if tab.has_repo() {
-            icon!(icons::FOLDER_OPEN, 12, if is_active { c.accent } else { c.muted })
+            icon!(
+                icons::FOLDER_OPEN,
+                12,
+                if is_active { c.accent } else { c.muted }
+            )
         } else {
-            icon!(icons::PERSON_FILL, 12, if is_active { c.accent } else { c.muted })
+            icon!(
+                icons::PERSON_FILL,
+                12,
+                if is_active { c.accent } else { c.muted }
+            )
         };
 
         // Tab label
@@ -36,13 +44,11 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
         // Close button (only show if there's more than 1 tab)
         let close_btn: Element<'_, Message> = if state.tabs.len() > 1 {
-            button(
-                icon!(icons::X_CIRCLE, 10, c.muted),
-            )
-            .padding([0, 4])
-            .style(theme::ghost_button)
-            .on_press(Message::CloseTab(idx))
-            .into()
+            button(icon!(icons::X_CIRCLE, 10, c.muted))
+                .padding([0, 4])
+                .style(theme::ghost_button)
+                .on_press(Message::CloseTab(idx))
+                .into()
         } else {
             Space::with_width(0).into()
         };
@@ -69,12 +75,10 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     }
 
     // "+" button to add a new tab
-    let new_tab_btn = button(
-        icon!(icons::PLUS_CIRCLE, 14, c.text_secondary),
-    )
-    .padding([6, 10])
-    .style(theme::ghost_button)
-    .on_press(Message::NewTab);
+    let new_tab_btn = button(icon!(icons::PLUS_CIRCLE, 14, c.text_secondary))
+        .padding([6, 10])
+        .style(theme::ghost_button)
+        .on_press(Message::NewTab);
 
     tabs_row = tabs_row.push(new_tab_btn);
 

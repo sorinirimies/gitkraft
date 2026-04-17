@@ -20,17 +20,20 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let mut lines: Vec<Line> = vec![
         Line::from(""),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("  ╔═╗╦╔╦╗╦╔═╦═╗╔═╗╔═╗╔╦╗", Style::default().fg(theme.accent)),
-        ])
+        Line::from(vec![Span::styled(
+            "  ╔═╗╦╔╦╗╦╔═╦═╗╔═╗╔═╗╔╦╗",
+            Style::default().fg(theme.accent),
+        )])
         .alignment(Alignment::Center),
-        Line::from(vec![
-            Span::styled("  ║ ╦║ ║ ╠╩╗╠╦╝╠═╣╠╣  ║ ", Style::default().fg(theme.accent)),
-        ])
+        Line::from(vec![Span::styled(
+            "  ║ ╦║ ║ ╠╩╗╠╦╝╠═╣╠╣  ║ ",
+            Style::default().fg(theme.accent),
+        )])
         .alignment(Alignment::Center),
-        Line::from(vec![
-            Span::styled("  ╚═╝╩ ╩ ╩ ╩╩╚═╩ ╩╚   ╩ ", Style::default().fg(theme.accent)),
-        ])
+        Line::from(vec![Span::styled(
+            "  ╚═╝╩ ╩ ╩ ╩╩╚═╩ ╩╚   ╩ ",
+            Style::default().fg(theme.accent),
+        )])
         .alignment(Alignment::Center),
         Line::from(""),
         Line::from(Span::styled(

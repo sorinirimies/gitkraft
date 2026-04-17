@@ -39,9 +39,7 @@ pub enum ContextMenu {
         local_index: usize,
     },
     /// A remote-tracking branch (e.g. origin/feature-x).
-    RemoteBranch {
-        name: String,
-    },
+    RemoteBranch { name: String },
     /// A commit in the log.
     Commit { index: usize, oid: String },
 }
@@ -145,7 +143,6 @@ pub struct RepoTab {
     /// visible window of rows.
     pub commit_scroll_offset: f32,
 
-
     /// Current scroll offset of the diff viewer in pixels.
     pub diff_scroll_offset: f32,
     /// Pre-computed display strings for each commit:
@@ -221,7 +218,11 @@ impl RepoTab {
     }
 
     /// Apply a full repo payload to this tab, resetting transient UI state.
-    pub fn apply_payload(&mut self, payload: crate::message::RepoPayload, path: std::path::PathBuf) {
+    pub fn apply_payload(
+        &mut self,
+        payload: crate::message::RepoPayload,
+        path: std::path::PathBuf,
+    ) {
         self.current_branch = payload.info.head_branch.clone();
         self.repo_path = Some(path);
         self.repo_info = Some(payload.info);

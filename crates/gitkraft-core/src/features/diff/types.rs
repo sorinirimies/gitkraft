@@ -186,7 +186,6 @@ impl DiffFileEntry {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,53 +297,85 @@ mod tests {
 
     #[test]
     fn color_category_untracked_is_added() {
-        assert_eq!(FileStatus::Untracked.color_category(), StatusColorCategory::Added);
+        assert_eq!(
+            FileStatus::Untracked.color_category(),
+            StatusColorCategory::Added
+        );
     }
 
     #[test]
     fn color_category_modified_is_modified() {
-        assert_eq!(FileStatus::Modified.color_category(), StatusColorCategory::Modified);
+        assert_eq!(
+            FileStatus::Modified.color_category(),
+            StatusColorCategory::Modified
+        );
     }
 
     #[test]
     fn color_category_typechange_is_modified() {
-        assert_eq!(FileStatus::Typechange.color_category(), StatusColorCategory::Modified);
+        assert_eq!(
+            FileStatus::Typechange.color_category(),
+            StatusColorCategory::Modified
+        );
     }
 
     #[test]
     fn color_category_deleted_is_deleted() {
-        assert_eq!(FileStatus::Deleted.color_category(), StatusColorCategory::Deleted);
+        assert_eq!(
+            FileStatus::Deleted.color_category(),
+            StatusColorCategory::Deleted
+        );
     }
 
     #[test]
     fn color_category_renamed_is_renamed() {
-        assert_eq!(FileStatus::Renamed.color_category(), StatusColorCategory::Renamed);
+        assert_eq!(
+            FileStatus::Renamed.color_category(),
+            StatusColorCategory::Renamed
+        );
     }
 
     #[test]
     fn color_category_copied_is_renamed() {
-        assert_eq!(FileStatus::Copied.color_category(), StatusColorCategory::Renamed);
+        assert_eq!(
+            FileStatus::Copied.color_category(),
+            StatusColorCategory::Renamed
+        );
     }
 
     // FileStatus::Display
     #[test]
-    fn display_new() { assert_eq!(format!("{}", FileStatus::New), "A"); }
+    fn display_new() {
+        assert_eq!(format!("{}", FileStatus::New), "A");
+    }
 
     #[test]
-    fn display_modified() { assert_eq!(format!("{}", FileStatus::Modified), "M"); }
+    fn display_modified() {
+        assert_eq!(format!("{}", FileStatus::Modified), "M");
+    }
 
     #[test]
-    fn display_deleted() { assert_eq!(format!("{}", FileStatus::Deleted), "D"); }
+    fn display_deleted() {
+        assert_eq!(format!("{}", FileStatus::Deleted), "D");
+    }
 
     #[test]
-    fn display_renamed() { assert_eq!(format!("{}", FileStatus::Renamed), "R"); }
+    fn display_renamed() {
+        assert_eq!(format!("{}", FileStatus::Renamed), "R");
+    }
 
     #[test]
-    fn display_copied() { assert_eq!(format!("{}", FileStatus::Copied), "C"); }
+    fn display_copied() {
+        assert_eq!(format!("{}", FileStatus::Copied), "C");
+    }
 
     #[test]
-    fn display_typechange() { assert_eq!(format!("{}", FileStatus::Typechange), "T"); }
+    fn display_typechange() {
+        assert_eq!(format!("{}", FileStatus::Typechange), "T");
+    }
 
     #[test]
-    fn display_untracked() { assert_eq!(format!("{}", FileStatus::Untracked), "?"); }
+    fn display_untracked() {
+        assert_eq!(format!("{}", FileStatus::Untracked), "?");
+    }
 }

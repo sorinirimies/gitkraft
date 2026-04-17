@@ -273,9 +273,9 @@ pub fn push_branch(workdir: &std::path::Path, branch: &str, remote: &str) -> Res
 /// `full_name` is the remote-tracking branch name (e.g. `origin/feature-x`).
 /// The function extracts the remote and branch parts automatically.
 pub fn delete_remote_branch(workdir: &std::path::Path, full_name: &str) -> Result<()> {
-    let (remote, branch) = full_name
-        .split_once('/')
-        .with_context(|| format!("invalid remote branch name '{full_name}' — expected 'remote/branch'"))?;
+    let (remote, branch) = full_name.split_once('/').with_context(|| {
+        format!("invalid remote branch name '{full_name}' — expected 'remote/branch'")
+    })?;
     run_git(workdir, &["push", remote, "--delete", branch])
 }
 
@@ -284,9 +284,9 @@ pub fn delete_remote_branch(workdir: &std::path::Path, full_name: &str) -> Resul
 /// `full_name` is the remote-tracking branch name (e.g. `origin/feature-x`).
 /// Creates a local branch named `feature-x` that tracks `origin/feature-x`.
 pub fn checkout_remote_branch(workdir: &std::path::Path, full_name: &str) -> Result<()> {
-    let (_remote, branch) = full_name
-        .split_once('/')
-        .with_context(|| format!("invalid remote branch name '{full_name}' — expected 'remote/branch'"))?;
+    let (_remote, branch) = full_name.split_once('/').with_context(|| {
+        format!("invalid remote branch name '{full_name}' — expected 'remote/branch'")
+    })?;
     run_git(workdir, &["checkout", "-b", branch, "--track", full_name])
 }
 

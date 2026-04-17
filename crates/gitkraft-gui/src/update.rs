@@ -80,7 +80,9 @@ impl GitKraft {
             }
 
             // ── Commits ───────────────────────────────────────────────────
-            Message::SelectCommit(_) | Message::CommitFileListLoaded(_) | Message::SingleFileDiffLoaded(_) => {
+            Message::SelectCommit(_)
+            | Message::CommitFileListLoaded(_)
+            | Message::SingleFileDiffLoaded(_) => {
                 // Both the commits and diff features care about SelectCommit.
                 // We delegate to the commits handler which also loads the diff.
                 crate::features::commits::update::update(self, message)
@@ -149,7 +151,9 @@ impl GitKraft {
             }
 
             // ── UI / misc ─────────────────────────────────────────────────
-            Message::SelectDiff(_) | Message::SelectDiffByIndex(_) => crate::features::diff::update::update(self, message),
+            Message::SelectDiff(_) | Message::SelectDiffByIndex(_) => {
+                crate::features::diff::update::update(self, message)
+            }
 
             Message::DismissError => {
                 self.active_tab_mut().error_message = None;
@@ -269,9 +273,8 @@ impl GitKraft {
                 let pos = (self.cursor_pos.x, self.cursor_pos.y);
                 let tab = self.active_tab_mut();
                 tab.context_menu_pos = pos;
-                tab.context_menu = Some(crate::state::ContextMenu::RemoteBranch {
-                    name: name.clone(),
-                });
+                tab.context_menu =
+                    Some(crate::state::ContextMenu::RemoteBranch { name: name.clone() });
                 Task::none()
             }
 

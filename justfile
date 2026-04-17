@@ -107,9 +107,16 @@ fmt-check:
 clippy:
     cargo clippy --workspace --all-targets --all-features -- -D warnings -A deprecated
 
-# Run all quality checks (fmt, clippy, test, nu) — must pass before a release
-check-all: fmt-check clippy test test-nu
+# Run all quality checks (format, clippy, test, nu) — must pass before a release.
+# Auto-formats first, then verifies no changes remain (catches unstaged format diffs).
+check-all: fmt clippy test test-nu
+    @echo "🔍 Verifying formatting is clean…"
+    cargo fmt --all -- --check
     @echo "✅ All checks passed!"
+
+# Full pre-release quality gate — everything in check-all plus a release build.
+check-release: check-all build-release
+    @echo "✅ Release quality gate passed (fmt + clippy + test + nu + release build)!"
 
 # ── Documentation ─────────────────────────────────────────────────────────────
 
@@ -149,7 +156,7 @@ validate-tag version: _check-nu
     @nu scripts/ci/validate_tag.nu "v{{ version }}" 2>&1 >/dev/null
 
 # Bump the workspace version, regenerate Cargo.lock + CHANGELOG.md, commit and tag.
-bump version: check-all (validate-tag version) _check-git-cliff _check-nu
+bump version: check-release (validate-tag version) _check-git-cliff _check-nu
     nu scripts/bump_version.nu --yes {{ version }}
 
 # ── Publish (crates.io) ───────────────────────────────────────────────────────

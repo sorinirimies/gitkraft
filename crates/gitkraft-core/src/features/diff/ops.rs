@@ -116,11 +116,7 @@ pub fn get_commit_file_list(
 ///
 /// Uses `pathspec` filtering so that git2 only walks the hunks / lines for the
 /// requested file — much faster than parsing the entire commit diff.
-pub fn get_single_file_diff(
-    repo: &Repository,
-    oid_str: &str,
-    file_path: &str,
-) -> Result<DiffInfo> {
+pub fn get_single_file_diff(repo: &Repository, oid_str: &str, file_path: &str) -> Result<DiffInfo> {
     let oid =
         git2::Oid::from_str(oid_str).with_context(|| format!("invalid OID string: {oid_str}"))?;
     let commit = repo
@@ -375,5 +371,4 @@ mod tests {
         let result = get_single_file_diff(&repo, &head_oid, "nonexistent.txt");
         assert!(result.is_err());
     }
-
 }

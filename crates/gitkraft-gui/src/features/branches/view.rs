@@ -7,9 +7,9 @@ use iced::widget::{
 };
 use iced::{Alignment, Element, Length};
 
+use crate::icons;
 use crate::message::Message;
 use crate::state::GitKraft;
-use crate::icons;
 use crate::theme;
 use crate::view_utils;
 use crate::view_utils::truncate_to_fit;
@@ -53,8 +53,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .padding(6)
             .size(13);
 
-        let create_msg = (!tab.new_branch_name.trim().is_empty())
-            .then_some(Message::CreateBranch);
+        let create_msg = (!tab.new_branch_name.trim().is_empty()).then_some(Message::CreateBranch);
         let create_btn = view_utils::on_press_maybe(
             button(text("Create").size(13))
                 .padding([4, 10])
@@ -164,11 +163,9 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             let is_current = branch.is_head;
 
             let indicator: Element<'_, Message> = if is_current {
-                icon!(icons::CHECK_CIRCLE_FILL, 12, c.green)
-                    .into()
+                icon!(icons::CHECK_CIRCLE_FILL, 12, c.green).into()
             } else {
-                icon!(icons::GIT_BRANCH, 12, c.muted)
-                    .into()
+                icon!(icons::GIT_BRANCH, 12, c.muted).into()
             };
 
             let name_color = if is_current { c.green } else { c.text_primary };
@@ -183,12 +180,15 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .color(name_color)
                 .wrapping(iced::widget::text::Wrapping::None);
 
-            let checkout_msg = (!is_current).then_some(Message::CheckoutBranch(branch.name.clone()));
+            let checkout_msg =
+                (!is_current).then_some(Message::CheckoutBranch(branch.name.clone()));
             let checkout_btn = view_utils::on_press_maybe(
-                button(row![indicator, Space::with_width(6), name_label].align_y(Alignment::Center))
-                    .padding([4, 8])
-                    .width(Length::Fill)
-                    .style(theme::ghost_button),
+                button(
+                    row![indicator, Space::with_width(6), name_label].align_y(Alignment::Center),
+                )
+                .padding([4, 8])
+                .width(Length::Fill)
+                .style(theme::ghost_button),
                 checkout_msg,
             );
 
@@ -240,13 +240,12 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .color(c.text_secondary)
                 .wrapping(iced::widget::text::Wrapping::None);
 
-            let branch_btn = button(
-                row![icon, Space::with_width(6), label].align_y(Alignment::Center),
-            )
-            .padding([2, 8])
-            .width(Length::Fill)
-            .style(theme::ghost_button)
-            .on_press(Message::CheckoutRemoteBranch(branch.name.clone()));
+            let branch_btn =
+                button(row![icon, Space::with_width(6), label].align_y(Alignment::Center))
+                    .padding([2, 8])
+                    .width(Length::Fill)
+                    .style(theme::ghost_button)
+                    .on_press(Message::CheckoutRemoteBranch(branch.name.clone()));
 
             mouse_area(
                 container(branch_btn)

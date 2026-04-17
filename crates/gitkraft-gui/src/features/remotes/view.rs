@@ -42,7 +42,10 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let mut list_col = column![].spacing(2).width(Length::Fill);
 
     if tab.remotes.is_empty() {
-        list_col = list_col.push(view_utils::empty_list_hint("No remotes configured", c.muted));
+        list_col = list_col.push(view_utils::empty_list_hint(
+            "No remotes configured",
+            c.muted,
+        ));
     } else {
         for remote in &tab.remotes {
             let name_label = container(

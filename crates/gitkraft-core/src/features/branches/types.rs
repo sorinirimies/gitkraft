@@ -20,7 +20,6 @@ pub struct BranchInfo {
     pub target_oid: Option<String>,
 }
 
-
 impl BranchInfo {
     /// Whether this is a remote-tracking branch.
     pub fn is_remote(&self) -> bool {
@@ -41,7 +40,10 @@ impl BranchInfo {
     /// For local branches, returns the name unchanged.
     pub fn short_name(&self) -> &str {
         if self.is_remote() {
-            self.name.split_once('/').map(|(_, b)| b).unwrap_or(&self.name)
+            self.name
+                .split_once('/')
+                .map(|(_, b)| b)
+                .unwrap_or(&self.name)
         } else {
             &self.name
         }
@@ -61,7 +63,6 @@ impl std::fmt::Display for BranchType {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -102,7 +103,10 @@ mod tests {
 
     #[test]
     fn remote_name_remote_returns_remote() {
-        assert_eq!(remote_branch("origin/feature").remote_name(), Some("origin"));
+        assert_eq!(
+            remote_branch("origin/feature").remote_name(),
+            Some("origin")
+        );
     }
 
     #[test]

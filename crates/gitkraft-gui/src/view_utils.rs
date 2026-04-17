@@ -45,7 +45,6 @@ pub fn truncate_to_fit(s: &str, available_px: f32, px_per_char: f32) -> String {
     }
 }
 
-
 // ── Scrollbar helper ──────────────────────────────────────────────────────
 
 /// Standard thin vertical scrollbar direction used across all sidebar panels.
@@ -133,14 +132,15 @@ pub fn on_press_maybe<'a>(
 // ── Empty list hint ───────────────────────────────────────────────────────
 
 /// Centered muted text shown when a list has no items.
-pub fn empty_list_hint<'a>(label: &str, muted: iced::Color) -> iced::Element<'a, crate::message::Message> {
-    iced::widget::container(
-        iced::widget::text(label.to_string()).size(12).color(muted),
-    )
-    .padding([12, 8])
-    .width(iced::Length::Fill)
-    .center_x(iced::Length::Fill)
-    .into()
+pub fn empty_list_hint<'a>(
+    label: &str,
+    muted: iced::Color,
+) -> iced::Element<'a, crate::message::Message> {
+    iced::widget::container(iced::widget::text(label.to_string()).size(12).color(muted))
+        .padding([12, 8])
+        .width(iced::Length::Fill)
+        .center_x(iced::Length::Fill)
+        .into()
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

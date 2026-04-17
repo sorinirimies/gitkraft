@@ -208,9 +208,13 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
 
 /// Placeholder shown when no diff is selected.
 fn placeholder_view<'a>(c: &ThemeColors) -> Element<'a, Message> {
-    view_utils::centered_placeholder(icons::FILE_DIFF, 32, "Select a commit or file to view diff", c.muted)
+    view_utils::centered_placeholder(
+        icons::FILE_DIFF,
+        32,
+        "Select a commit or file to view diff",
+        c.muted,
+    )
 }
-
 
 /// Loading indicator shown while a single file’s diff is being fetched.
 fn loading_diff_view<'a>(c: &ThemeColors) -> Element<'a, Message> {
@@ -220,7 +224,11 @@ fn loading_diff_view<'a>(c: &ThemeColors) -> Element<'a, Message> {
 /// Render the full diff content for a single [`DiffInfo`] with virtual
 /// scrolling. Only lines within (or near) the visible viewport are
 /// materialised as widgets.
-fn diff_content<'a>(diff: &'a DiffInfo, c: &ThemeColors, scroll_offset: f32) -> Element<'a, Message> {
+fn diff_content<'a>(
+    diff: &'a DiffInfo,
+    c: &ThemeColors,
+    scroll_offset: f32,
+) -> Element<'a, Message> {
     let file_path_display = diff.display_path().to_string();
 
     let status_color = theme::status_color(&diff.status, c);
@@ -306,7 +314,10 @@ fn diff_line_widget<'a>(
     style: Option<fn(&iced::Theme) -> iced::widget::container::Style>,
 ) -> Element<'a, Message> {
     let prefix_w = text(prefix).size(13).font(Font::MONOSPACE).color(color);
-    let content = text(content_str.to_string()).size(13).font(Font::MONOSPACE).color(color);
+    let content = text(content_str.to_string())
+        .size(13)
+        .font(Font::MONOSPACE)
+        .color(color);
     let c = container(row![prefix_w, Space::with_width(4), content])
         .padding([1, 12])
         .width(Length::Fill);

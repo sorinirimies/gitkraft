@@ -31,8 +31,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         .iter()
         .map(|remote| {
             let url_part = remote.url.as_deref().unwrap_or("<no url>");
-            let max_url_len =
-                area.width.saturating_sub(remote.name.len() as u16 + 6) as usize;
+            let max_url_len = area.width.saturating_sub(remote.name.len() as u16 + 6) as usize;
 
             let line = Line::from(vec![
                 Span::styled(
