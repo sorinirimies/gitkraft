@@ -2,9 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.5.4 - 2026-04-17
+### ♻️ Refactor
+- Refactor GUI view helpers and TUI commit diff loading
+### 📦 Other Changes
+- Fail bump if version is unchanged
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.3...v0.5.4
 ## 0.5.3 - 2026-04-17
 ### ➕ Added
 - Add step to install Rust stable in release workflow
+### 🔧 Chores
+- chore: bump version to 0.5.3
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.2...v0.5.3
 ## 0.5.2 - 2026-04-17
 ### 📦 Other Changes

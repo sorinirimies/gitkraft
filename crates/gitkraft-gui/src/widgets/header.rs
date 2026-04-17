@@ -24,7 +24,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .size(14)
         .color(c.text_primary);
 
-    let separator = || text("│").size(14).color(c.border);
+    let separator = || text("|").size(14).color(c.border);
 
     // ── Branch indicator ──────────────────────────────────────────────────
     let branch_icon = icon!(icons::GIT_BRANCH, 14, c.green);
