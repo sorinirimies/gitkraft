@@ -1,5 +1,6 @@
 # gitkraft workspace — task runner
 # Install just:      cargo install just
+# Install vhs:       brew install vhs  OR  go install github.com/charmbracelet/vhs@latest
 # Install git-cliff: cargo install git-cliff
 # Usage: just <task>
 # ── Default ───────────────────────────────────────────────────────────────────
@@ -18,6 +19,14 @@ _check-git-cliff:
 _check-nu:
     @command -v nu >/dev/null 2>&1 || { \
         echo "❌ nu (nushell) not found. Install: https://www.nushell.sh"; exit 1; \
+    }
+
+_check-vhs:
+    @command -v vhs >/dev/null 2>&1 || { \
+        echo "❌ vhs not found."; \
+        echo "   macOS:      brew install vhs"; \
+        echo "   Any:        go install github.com/charmbracelet/vhs@latest"; \
+        exit 1; \
     }
 
 # Install all recommended development tools
@@ -117,6 +126,71 @@ check-all: fmt clippy test test-nu
 # Full pre-release quality gate — everything in check-all plus a release build.
 check-release: check-all build-release
     @echo "✅ Release quality gate passed (fmt + clippy + test + nu + release build)!"
+
+# ── VHS Demo GIFs ─────────────────────────────────────────────────────────────
+
+GUI_VHS := "crates/gitkraft-gui/examples/vhs"
+TUI_VHS := "crates/gitkraft-tui/examples/vhs"
+GUI_VHS_GENERATED := "crates/gitkraft-gui/examples/vhs/generated"
+TUI_VHS_GENERATED := "crates/gitkraft-tui/examples/vhs/generated"
+
+# Generate all VHS demo GIFs (GUI + TUI)
+vhs-all: vhs-gui vhs-tui
+
+# Generate only the GUI demo GIFs
+vhs-gui: _check-vhs
+    #!/usr/bin/env sh
+    set -e
+    mkdir -p {{GUI_VHS_GENERATED}}
+    echo "╔════════════════════════════════════════════╗"
+    echo "║   GUI Tapes (Iced desktop)                ║"
+    echo "╚════════════════════════════════════════════╝"
+    for tape in {{GUI_VHS}}/*.tape; do
+        [ -f "$tape" ] || continue
+        echo "▶  $tape"
+        vhs "$tape" || echo "❌ Failed: $tape"
+    done
+    echo "✅ GUI demos done → {{GUI_VHS_GENERATED}}/"
+
+# Generate only the TUI demo GIFs
+vhs-tui: _check-vhs
+    #!/usr/bin/env sh
+    set -e
+    mkdir -p {{TUI_VHS_GENERATED}}
+    echo "╔════════════════════════════════════════════╗"
+    echo "║   TUI Tapes (Ratatui terminal)            ║"
+    echo "╚════════════════════════════════════════════╝"
+    for tape in {{TUI_VHS}}/*.tape; do
+        [ -f "$tape" ] || continue
+        echo "▶  $tape"
+        vhs "$tape" || echo "❌ Failed: $tape"
+    done
+    echo "✅ TUI demos done → {{TUI_VHS_GENERATED}}/"
+
+# Render a single tape by name (e.g. just vhs-tape tui-demo)
+vhs-tape name: _check-vhs
+    #!/usr/bin/env sh
+    if [ -f "{{GUI_VHS}}/{{name}}.tape" ]; then
+        echo "▶  {{GUI_VHS}}/{{name}}.tape"
+        vhs "{{GUI_VHS}}/{{name}}.tape" && echo "✅ Done."
+    elif [ -f "{{TUI_VHS}}/{{name}}.tape" ]; then
+        echo "▶  {{TUI_VHS}}/{{name}}.tape"
+        vhs "{{TUI_VHS}}/{{name}}.tape" && echo "✅ Done."
+    else
+        echo "❌ Tape not found: {{name}}.tape"
+        echo ""
+        just vhs-list
+        exit 1
+    fi
+
+# List all available VHS tapes
+vhs-list:
+    #!/usr/bin/env sh
+    echo "GUI tapes  →  {{GUI_VHS}}/"
+    ls {{GUI_VHS}}/*.tape 2>/dev/null | sed 's|.*/||; s|\.tape||' | sed 's/^/  /' || echo "  (none)"
+    echo ""
+    echo "TUI tapes  →  {{TUI_VHS}}/"
+    ls {{TUI_VHS}}/*.tape 2>/dev/null | sed 's|.*/||; s|\.tape||' | sed 's/^/  /' || echo "  (none)"
 
 # ── Documentation ─────────────────────────────────────────────────────────────
 

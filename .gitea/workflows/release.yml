@@ -153,9 +153,13 @@ jobs:
             libfontconfig1-dev \
             libssl-dev
 
-      - name: Install musl tools
+      - name: Install musl tools and static libraries
         if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends musl-tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            musl-tools \
+            musl-dev
 
       - name: Install aarch64 cross-compilation toolchain
         if: matrix.target == 'aarch64-unknown-linux-gnu'
@@ -191,7 +195,14 @@ jobs:
           EOF
 
       - name: Build TUI release binary
-        run: cargo build --release -p gitkraft-tui --target ${{ matrix.target }}
+        run: |
+          EXTRA_FEATURES=""
+          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-musl" ]; then
+            # Vendor OpenSSL and libgit2 from source for fully static musl binary.
+            # The host's glibc-linked OpenSSL/zlib headers are not usable with musl.
+            EXTRA_FEATURES="--features git2/vendored-openssl,git2/vendored-libgit2"
+          fi
+          cargo build --release -p gitkraft-tui --target ${{ matrix.target }} $EXTRA_FEATURES
 
       - name: Build GUI release binary
         if: matrix.gui_binary != ''
