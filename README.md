@@ -2,7 +2,7 @@
 
 # ⚡ GitKraft
 
-**A Git IDE written entirely in Rust — desktop GUI (Iced) & terminal UI (Ratatui)**
+**A Git IDE written entirely in Rust — desktop GUI & terminal UI**
 
 [![Crates.io](https://img.shields.io/crates/v/gitkraft.svg)](https://crates.io/crates/gitkraft)
 [![docs.rs](https://docs.rs/gitkraft-core/badge.svg)](https://docs.rs/gitkraft-core)
@@ -17,11 +17,10 @@
 ---
 
 GitKraft is a pure-Rust Git IDE that ships two front-ends from a single workspace:
-
-| Binary | Toolkit | Use case |
-|--------|---------|----------|
-| `gitkraft` | [Iced 0.13](https://iced.rs) | Desktop GUI with mouse, drag-to-resize panes, canvas-based commit graph |
-| `gitkraft-tui` | [Ratatui](https://ratatui.rs) | Terminal UI — great for SSH sessions, headless machines, or keyboard-only workflows |
+| Binary | Use case |
+|--------|----------|
+| `gitkraft` | Desktop GUI — mouse, drag-to-resize panes, canvas-based commit graph |
+| `gitkraft-tui` | Terminal UI — great for SSH sessions, headless machines, or keyboard-only workflows |
 
 Both binaries share **`gitkraft-core`**, a framework-free library that wraps [libgit2](https://libgit2.org) via the [`git2`](https://crates.io/crates/git2) crate. Zero Git operations live in the UI layer.
 
@@ -194,7 +193,7 @@ gitkraft/
 │   │           ├── stash/       stash save, pop, drop, list
 │   │           └── theme/       27 built-in colour themes
 │   │
-│   ├── gitkraft-gui/           Iced desktop application (binary: gitkraft)
+│   ├── gitkraft-gui/           Desktop GUI application (binary: gitkraft)
 │   │   └── src/
 │   │       ├── main.rs
 │   │       ├── lib.rs
@@ -202,11 +201,11 @@ gitkraft/
 │   │       ├── message.rs      all Message variants
 │   │       ├── update.rs       TEA update function
 │   │       ├── view.rs         layout: header, sidebar, commit log, diff, staging, status bar
-│   │       ├── theme.rs        Iced theme integration
+│   │       ├── theme.rs        Theme integration
 │   │       ├── features/       feature-specific views & updates
 │   │       └── widgets/        reusable UI components (header, dividers)
 │   │
-│   └── gitkraft-tui/           Ratatui terminal application (binary: gitkraft-tui)
+│   └── gitkraft-tui/           Terminal UI application (binary: gitkraft-tui)
 │       └── src/
 │           ├── main.rs
 │           ├── lib.rs
@@ -247,7 +246,7 @@ gitkraft/
 
 ### The Elm Architecture (TEA)
 
-The GUI crate follows **The Elm Architecture**, the pattern native to Iced:
+The GUI crate follows **The Elm Architecture**:
 
 ```
            ┌──────────────┐
@@ -267,7 +266,7 @@ The GUI crate follows **The Elm Architecture**, the pattern native to Iced:
 | **State** | `state.rs` | Single `GitKraft` struct holding *all* application state — repo info, branches, commits, diffs, staging, UI flags, pane dimensions, theme index, etc. |
 | **Message** | `message.rs` | A flat `enum Message` with every possible event: user actions (`OpenRepo`, `StageFile`, `CheckoutBranch`), async results (`RepoOpened(Result<…>)`), and internal signals (`PaneDragMove`, `ThemeChanged`). |
 | **Update** | `update.rs` | Pure `fn update(&mut self, message: Message) -> Task<Message>` that pattern-matches on the message, mutates state, and optionally returns an async `Task` whose result produces a new `Message`. |
-| **View** | `view.rs` | Pure `fn view(&self) -> Element<Message>` that reads state and builds the entire widget tree. Iced diffs the tree and only redraws what changed. |
+| **View** | `view.rs` | Pure `fn view(&self) -> Element<Message>` that reads state and builds the entire widget tree. The framework diffs the tree and only redraws what changed. |
 
 This architecture ensures a **unidirectional data flow**: the view never mutates state directly; it only emits `Message`s that the update function handles.
 
@@ -280,48 +279,6 @@ This architecture ensures a **unidirectional data flow**: the view never mutates
 ```
 
 Both front-ends depend only on `gitkraft-core` for Git operations; neither calls `git2` directly.
-
-### Dependencies by crate
-
-#### `gitkraft-core`
-
-| Dependency | Version | Purpose |
-|------------|---------|---------|
-| `git2` | 0.20 | Rust bindings to libgit2 — all Git operations |
-| `redb` | 2 | Embedded key-value store for settings, layout, and recent repos |
-| `serde` | 1 | (De)serialisation of settings and types |
-| `serde_json` | 1 | JSON serialisation for settings payloads |
-| `chrono` | 0.4 | Timestamp parsing and relative-time formatting |
-| `dirs` | 6.0 | Platform-specific config/data directories |
-| `anyhow` | 1 | Ergonomic error handling |
-| `tracing` | 0.1 | Structured logging |
-
-#### `gitkraft-gui` (`gitkraft`)
-
-| Dependency | Version | Purpose |
-|------------|---------|---------|
-| `gitkraft-core` | workspace | Shared Git logic |
-| `iced` | 0.13.1 | GUI toolkit (with `advanced` + `canvas` features) |
-| `iced_fonts` | 0.1 | Bootstrap icon font |
-| `rfd` | 0.15 | Native file/folder picker dialogs |
-| `futures` | 0.3 | Async combinators for Iced tasks |
-| `serde` | 1 | Settings serialisation |
-| `dirs` | 6.0 | Config directory resolution |
-| `tracing` | 0.1 | Structured logging |
-| `tracing-subscriber` | 0.3 | Log output formatting |
-
-#### `gitkraft-tui`
-
-| Dependency | Version | Purpose |
-|------------|---------|---------|
-| `gitkraft-core` | workspace | Shared Git logic |
-| `ratatui` | 0.30 | Terminal UI framework |
-| `crossterm` | 0.29 | Cross-platform terminal I/O |
-| `git2` | 0.20 | Direct access for TUI-specific operations |
-| `dirs` | 6.0 | Config directory resolution |
-| `anyhow` | 1 | Error handling |
-| `tracing` | 0.1 | Structured logging |
-| `tracing-subscriber` | 0.3 | Log output formatting |
 
 ## Themes
 
@@ -408,7 +365,7 @@ nu scripts/tests/run_all.nu
 
 ## Minimum Supported Rust Version (MSRV)
 
-The workspace uses the **Rust 2021 edition**. The minimum supported version is dictated by the dependency chain (primarily Iced 0.13 and Ratatui 0.30). We recommend using the latest stable toolchain.
+The workspace uses the **Rust 2021 edition**. We recommend using the latest stable toolchain.
 
 ## Contributing
 
