@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.2 - 2026-04-17
+### 📦 Other Changes
+- Sort recent repos using sort_by_key with Reverse
+### 🔄 Updated
+- Update install-tools to install nu if missing
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.4.1...v0.4.2
 ## 0.4.1 - 2026-04-17
 ### ➕ Added
 - Add remote branch delete/checkout, icons module, and file list diff
@@ -9,6 +15,8 @@ All notable changes to this project will be documented in this file.
 - Add tests for core types and refactor repo open logic
 ### 📦 Other Changes
 - Reformat codebase with rustfmt and improve formatting checks
+### 🔧 Chores
+- chore: bump version to 0.4.1
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.4.0...v0.4.1
 ## 0.4.0 - 2026-04-16
 ### ➕ Added
