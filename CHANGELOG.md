@@ -2,11 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.5.1 - 2026-04-17
+### ➕ Added
+- Add VHS demo GIF tasks to justfile and improve musl build
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.0...v0.5.1
 ## 0.5.0 - 2026-04-17
 ### 📦 Other Changes
 - Remove Tokio and futures dependencies from TUI and switch to std::mpsc
 ### 🔄 Updated
 - Update release workflow to fix artifact handling and tool installs
+### 🔧 Chores
+- chore: bump version to 0.5.0
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.4.3...v0.5.0
 ## 0.4.3 - 2026-04-17
 ### ♻️ Refactor
