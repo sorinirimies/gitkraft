@@ -2,11 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.3 - 2026-04-17
+### ♻️ Refactor
+- Refactor key event handlers to reduce nesting and improve clarity
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.4.2...v0.4.3
 ## 0.4.2 - 2026-04-17
 ### 📦 Other Changes
 - Sort recent repos using sort_by_key with Reverse
 ### 🔄 Updated
 - Update install-tools to install nu if missing
+### 🔧 Chores
+- chore: bump version to 0.4.2
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.4.1...v0.4.2
 ## 0.4.1 - 2026-04-17
 ### ➕ Added
