@@ -2,11 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.1 - 2026-04-17
+### ➕ Added
+- Add remote branch delete/checkout, icons module, and file list diff
+- Add UI zoom support with keyboard shortcuts and status bar indicator
+- Add tests for core types and refactor repo open logic
+### 📦 Other Changes
+- Reformat codebase with rustfmt and improve formatting checks
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.4.0...v0.4.1
 ## 0.4.0 - 2026-04-16
 ### ➕ Added
 - Add collapsible branch sections and overlay scrollbars to GUI
 - Add loading spinner to login button
 - Add tag creation actions and truncate-to-fit utility
+### 🔧 Chores
+- chore: bump version to 0.4.0
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.9...v0.4.0
 ## 0.3.9 - 2026-04-14
 ### 📦 Other Changes
