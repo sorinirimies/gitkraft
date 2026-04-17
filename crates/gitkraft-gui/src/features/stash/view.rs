@@ -4,9 +4,11 @@
 use iced::widget::{button, column, container, row, scrollable, text, text_input, Space};
 use iced::{Alignment, Element, Length};
 
+use crate::icons;
 use crate::message::Message;
 use crate::state::GitKraft;
 use crate::theme;
+use crate::view_utils;
 use crate::view_utils::truncate_to_fit;
 
 /// Render the stash panel (typically shown in the sidebar beneath branches).
@@ -15,10 +17,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let c = state.colors();
     let sidebar_width = state.sidebar_width;
 
-    let header_icon = text('\u{F577}') // stack icon
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(14)
-        .color(c.accent);
+    let header_icon = icon!(icons::STACK, 14, c.accent);
 
     let header_label = text("Stashes").size(14).color(c.text_primary);
 
@@ -26,10 +25,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .size(11)
         .color(c.muted);
 
-    let save_icon = text('\u{F4FA}') // plus-circle
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(14)
-        .color(c.green);
+    let save_icon = icon!(icons::PLUS_CIRCLE, 14, c.green);
 
     let save_btn = button(save_icon)
         .padding([2, 6])
@@ -77,20 +73,14 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .color(c.text_secondary)
                 .wrapping(iced::widget::text::Wrapping::None);
 
-            let pop_icon = text('\u{F117}') // box-arrow-up
-                .font(iced_fonts::BOOTSTRAP_FONT)
-                .size(11)
-                .color(c.green);
+            let pop_icon = icon!(icons::BOX_ARROW_UP, 11, c.green);
 
             let pop_btn = button(pop_icon)
                 .padding([2, 4])
                 .style(theme::icon_button)
                 .on_press(Message::StashPop(entry.index));
 
-            let drop_icon = text('\u{F5DE}') // trash
-                .font(iced_fonts::BOOTSTRAP_FONT)
-                .size(11)
-                .color(c.red);
+            let drop_icon = icon!(icons::TRASH, 11, c.red);
 
             let drop_btn = button(drop_icon)
                 .padding([2, 4])
@@ -133,9 +123,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         input_row,
         scrollable(list_col)
             .height(Length::Fill)
-            .direction(scrollable::Direction::Vertical(
-                scrollable::Scrollbar::new().width(6).scroller_width(4),
-            ))
+            .direction(view_utils::thin_scrollbar())
             .style(crate::theme::overlay_scrollbar),
     ]
     .width(Length::Fill);

@@ -7,6 +7,7 @@
 
 use iced::widget::{button, container, scrollable};
 use iced::{Background, Color};
+use std::cell::RefCell;
 
 // ── ThemeColors ───────────────────────────────────────────────────────────────
 
@@ -80,6 +81,11 @@ fn mix(base: Color, tint: Color, amount: f32) -> Color {
     }
 }
 
+
+thread_local! {
+    static THEME_CACHE: RefCell<Option<(String, ThemeColors)>> = const { RefCell::new(None) };
+}
+
 impl ThemeColors {
     /// Build a complete GUI colour set from the core's platform-agnostic theme.
     ///
@@ -150,17 +156,22 @@ impl ThemeColors {
     /// This keeps backward-compatibility for any code that still holds an
     /// `iced::Theme` value.
     pub fn from_theme(theme: &iced::Theme) -> Self {
-        let index = iced_theme_to_core_index(theme);
-        Self::from_core(&gitkraft_core::theme_by_index(index))
+        THEME_CACHE.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            let name = theme.to_string();
+            if let Some((ref cached_name, cached_colors)) = *cache {
+                if *cached_name == name {
+                    return cached_colors;
+                }
+            }
+            let index = gitkraft_core::theme_index_by_name(&name);
+            let colors = Self::from_core(&gitkraft_core::theme_by_index(index));
+            *cache = Some((name, colors));
+            colors
+        })
     }
 }
 
-/// Map an `iced::Theme` to the closest `gitkraft_core` theme index.
-fn iced_theme_to_core_index(theme: &iced::Theme) -> usize {
-    let name = theme.to_string();
-    // theme_index_by_name returns 0 (Default) for unknown names, which is fine.
-    gitkraft_core::theme_index_by_name(&name)
-}
 
 // ── Container styles ──────────────────────────────────────────────────────────
 

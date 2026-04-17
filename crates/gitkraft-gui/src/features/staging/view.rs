@@ -5,9 +5,11 @@
 use iced::widget::{button, column, container, row, scrollable, text, text_input, Space};
 use iced::{Alignment, Element, Font, Length};
 
+use crate::icons;
 use crate::message::Message;
 use crate::state::GitKraft;
 use crate::theme;
+use crate::view_utils;
 
 /// Render the full staging area panel (unstaged | staged | commit input).
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
@@ -31,10 +33,7 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
     let tab = state.active_tab();
     let c = state.colors();
 
-    let header_icon = text('\u{F30A}')
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(13)
-        .color(c.yellow);
+    let header_icon = icon!(icons::FILE_DIFF, 13, c.yellow);
 
     let header_label = text("Unstaged").size(13).color(c.text_primary);
 
@@ -42,16 +41,11 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
         .size(11)
         .color(c.muted);
 
-    let stage_all_btn = if tab.unstaged_changes.is_empty() {
-        button(text("Stage All").size(11))
-            .padding([2, 8])
-            .style(theme::toolbar_button)
-    } else {
-        button(text("Stage All").size(11))
-            .padding([2, 8])
-            .style(theme::toolbar_button)
-            .on_press(Message::StageAll)
-    };
+    let stage_msg = (!tab.unstaged_changes.is_empty()).then_some(Message::StageAll);
+    let stage_all_btn = view_utils::on_press_maybe(
+        button(text("Stage All").size(11)).padding([2, 8]).style(theme::toolbar_button),
+        stage_msg,
+    );
 
     let header_row = row![
         header_icon,
@@ -69,11 +63,7 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
         .unstaged_changes
         .iter()
         .map(|diff| {
-            let file_path_display = if diff.new_file.is_empty() {
-                &diff.old_file
-            } else {
-                &diff.new_file
-            };
+            let file_path_display = diff.display_path();
 
             let status_color = theme::status_color(&diff.status, &c);
 
@@ -82,25 +72,19 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
                 .font(Font::MONOSPACE)
                 .color(status_color);
 
-            let file_label = text(file_path_display.as_str())
+            let file_label = text(file_path_display)
                 .size(12)
                 .color(c.text_primary);
 
             let view_btn = button(
-                text('\u{F2C0}')
-                    .font(iced_fonts::BOOTSTRAP_FONT)
-                    .size(11)
-                    .color(c.accent),
+                icon!(icons::CLOUD_UPLOAD, 11, c.accent),
             )
             .padding([2, 4])
             .style(theme::icon_button)
             .on_press(Message::SelectDiff(diff.clone()));
 
             let stage_btn = button(
-                text('\u{F4FA}')
-                    .font(iced_fonts::BOOTSTRAP_FONT)
-                    .size(11)
-                    .color(c.green),
+                icon!(icons::PLUS_CIRCLE, 11, c.green),
             )
             .padding([2, 4])
             .style(theme::icon_button)
@@ -114,10 +98,7 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
                     .on_press(Message::ConfirmDiscard(file_path_display.to_string()))
             } else {
                 button(
-                    text('\u{F5DE}')
-                        .font(iced_fonts::BOOTSTRAP_FONT)
-                        .size(11)
-                        .color(c.red),
+                    icon!(icons::TRASH, 11, c.red),
                 )
                 .padding([2, 4])
                 .style(theme::icon_button)
@@ -162,9 +143,7 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
         header_row,
         scrollable(list_col)
             .height(Length::Fill)
-            .direction(scrollable::Direction::Vertical(
-                scrollable::Scrollbar::new().width(6).scroller_width(4),
-            ))
+            .direction(view_utils::thin_scrollbar())
             .style(crate::theme::overlay_scrollbar)
     ]
     .width(Length::Fill)
@@ -182,10 +161,7 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
     let tab = state.active_tab();
     let c = state.colors();
 
-    let header_icon = text('\u{F287}')
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(13)
-        .color(c.green);
+    let header_icon = icon!(icons::CHECK_CIRCLE_FILL, 13, c.green);
 
     let header_label = text("Staged").size(13).color(c.text_primary);
 
@@ -193,16 +169,11 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
         .size(11)
         .color(c.muted);
 
-    let unstage_all_btn = if tab.staged_changes.is_empty() {
-        button(text("Unstage All").size(11))
-            .padding([2, 8])
-            .style(theme::toolbar_button)
-    } else {
-        button(text("Unstage All").size(11))
-            .padding([2, 8])
-            .style(theme::toolbar_button)
-            .on_press(Message::UnstageAll)
-    };
+    let unstage_msg = (!tab.staged_changes.is_empty()).then_some(Message::UnstageAll);
+    let unstage_all_btn = view_utils::on_press_maybe(
+        button(text("Unstage All").size(11)).padding([2, 8]).style(theme::toolbar_button),
+        unstage_msg,
+    );
 
     let header_row = row![
         header_icon,
@@ -220,11 +191,7 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
         .staged_changes
         .iter()
         .map(|diff| {
-            let file_path_display = if diff.new_file.is_empty() {
-                &diff.old_file
-            } else {
-                &diff.new_file
-            };
+            let file_path_display = diff.display_path();
 
             let status_color = theme::status_color(&diff.status, &c);
 
@@ -233,25 +200,19 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
                 .font(Font::MONOSPACE)
                 .color(status_color);
 
-            let file_label = text(file_path_display.as_str())
+            let file_label = text(file_path_display)
                 .size(12)
                 .color(c.text_primary);
 
             let view_btn = button(
-                text('\u{F2C0}')
-                    .font(iced_fonts::BOOTSTRAP_FONT)
-                    .size(11)
-                    .color(c.accent),
+                icon!(icons::CLOUD_UPLOAD, 11, c.accent),
             )
             .padding([2, 4])
             .style(theme::icon_button)
             .on_press(Message::SelectDiff(diff.clone()));
 
             let unstage_btn = button(
-                text('\u{F2EA}')
-                    .font(iced_fonts::BOOTSTRAP_FONT)
-                    .size(11)
-                    .color(c.yellow),
+                icon!(icons::DASH_CIRCLE, 11, c.yellow),
             )
             .padding([2, 4])
             .style(theme::icon_button)
@@ -293,9 +254,7 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
         header_row,
         scrollable(list_col)
             .height(Length::Fill)
-            .direction(scrollable::Direction::Vertical(
-                scrollable::Scrollbar::new().width(6).scroller_width(4),
-            ))
+            .direction(view_utils::thin_scrollbar())
             .style(crate::theme::overlay_scrollbar)
     ]
     .width(Length::Fill)
@@ -313,10 +272,7 @@ fn commit_view(state: &GitKraft) -> Element<'_, Message> {
     let tab = state.active_tab();
     let c = state.colors();
 
-    let header_icon = text('\u{F468}')
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(13)
-        .color(c.accent);
+    let header_icon = icon!(icons::COMMIT, 13, c.accent);
 
     let header_label = text("Commit").size(13).color(c.text_primary);
 
@@ -331,26 +287,16 @@ fn commit_view(state: &GitKraft) -> Element<'_, Message> {
 
     let can_commit = !tab.commit_message.trim().is_empty() && !tab.staged_changes.is_empty();
 
-    let commit_icon = text('\u{F287}')
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(14)
-        .color(if can_commit { c.green } else { c.muted });
+    let commit_icon = icon!(icons::CHECK_CIRCLE_FILL, 14, if can_commit { c.green } else { c.muted });
 
     let commit_btn_content = row![commit_icon, Space::with_width(6), text("Commit").size(13),]
         .align_y(Alignment::Center);
 
-    let commit_btn = if can_commit {
-        button(commit_btn_content)
-            .padding([8, 16])
-            .width(Length::Fill)
-            .style(theme::toolbar_button)
-            .on_press(Message::CreateCommit)
-    } else {
-        button(commit_btn_content)
-            .padding([8, 16])
-            .width(Length::Fill)
-            .style(theme::toolbar_button)
-    };
+    let commit_msg = can_commit.then_some(Message::CreateCommit);
+    let commit_btn = view_utils::on_press_maybe(
+        button(commit_btn_content).padding([8, 16]).width(Length::Fill).style(theme::toolbar_button),
+        commit_msg,
+    );
 
     let staged_hint = if tab.staged_changes.is_empty() {
         text("Stage files before committing")

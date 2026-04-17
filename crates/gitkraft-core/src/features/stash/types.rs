@@ -10,3 +10,11 @@ pub struct StashEntry {
     /// The OID of the stash commit as a hex string.
     pub oid: String,
 }
+
+
+impl StashEntry {
+    /// Message truncated to `max_chars` with "..." appended if shortened.
+    pub fn short_message(&self, max_chars: usize) -> String {
+        crate::utils::truncate_str(&self.message, max_chars)
+    }
+}

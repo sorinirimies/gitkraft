@@ -4,6 +4,7 @@
 use iced::widget::{button, container, row, scrollable, text, Space};
 use iced::{Alignment, Element, Length};
 
+use crate::icons;
 use crate::message::Message;
 use crate::state::GitKraft;
 use crate::theme;
@@ -21,15 +22,9 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
         // Repo icon
         let icon = if tab.has_repo() {
-            text('\u{F3D8}') // folder icon
-                .font(iced_fonts::BOOTSTRAP_FONT)
-                .size(12)
-                .color(if is_active { c.accent } else { c.muted })
+            icon!(icons::FOLDER_OPEN, 12, if is_active { c.accent } else { c.muted })
         } else {
-            text('\u{F4DA}') // plus-circle icon for empty tabs
-                .font(iced_fonts::BOOTSTRAP_FONT)
-                .size(12)
-                .color(if is_active { c.accent } else { c.muted })
+            icon!(icons::PERSON_FILL, 12, if is_active { c.accent } else { c.muted })
         };
 
         // Tab label
@@ -42,10 +37,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         // Close button (only show if there's more than 1 tab)
         let close_btn: Element<'_, Message> = if state.tabs.len() > 1 {
             button(
-                text('\u{F62A}') // x-circle
-                    .font(iced_fonts::BOOTSTRAP_FONT)
-                    .size(10)
-                    .color(c.muted),
+                icon!(icons::X_CIRCLE, 10, c.muted),
             )
             .padding([0, 4])
             .style(theme::ghost_button)
@@ -78,10 +70,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     // "+" button to add a new tab
     let new_tab_btn = button(
-        text('\u{F4FA}') // plus icon
-            .font(iced_fonts::BOOTSTRAP_FONT)
-            .size(14)
-            .color(c.text_secondary),
+        icon!(icons::PLUS_CIRCLE, 14, c.text_secondary),
     )
     .padding([6, 10])
     .style(theme::ghost_button)

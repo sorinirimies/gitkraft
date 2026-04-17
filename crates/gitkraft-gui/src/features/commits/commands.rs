@@ -9,18 +9,29 @@ use std::path::PathBuf;
 use iced::Task;
 
 use crate::message::Message;
-use gitkraft_core::DiffInfo;
 
-/// Load the diff introduced by a specific commit (by OID string).
-pub fn load_commit_diff(path: PathBuf, oid: String) -> Task<Message> {
+/// Load just the file list (paths + statuses) for a commit — no line parsing.
+pub fn load_commit_file_list(path: PathBuf, oid: String) -> Task<Message> {
     git_task!(
-        Message::CommitDiffLoaded,
+        Message::CommitFileListLoaded,
         (|| {
             let repo =
                 gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
-            let diffs: Vec<DiffInfo> = gitkraft_core::features::diff::get_commit_diff(&repo, &oid)
-                .map_err(|e| e.to_string())?;
-            Ok(diffs)
+            gitkraft_core::features::diff::get_commit_file_list(&repo, &oid)
+                .map_err(|e| e.to_string())
+        })()
+    )
+}
+
+/// Load the full diff for a single file in a commit.
+pub fn load_single_file_diff(path: PathBuf, oid: String, file_path: String) -> Task<Message> {
+    git_task!(
+        Message::SingleFileDiffLoaded,
+        (|| {
+            let repo =
+                gitkraft_core::features::repo::open_repo(&path).map_err(|e| e.to_string())?;
+            gitkraft_core::features::diff::get_single_file_diff(&repo, &oid, &file_path)
+                .map_err(|e| e.to_string())
         })()
     )
 }

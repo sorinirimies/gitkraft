@@ -54,4 +54,19 @@ impl CommitInfo {
             parent_ids,
         }
     }
+
+    /// Whether this is a merge commit (2+ parents).
+    pub fn is_merge(&self) -> bool {
+        self.parent_ids.len() > 1
+    }
+
+    /// Human-readable relative time (e.g. "3 hours ago").
+    pub fn relative_time(&self) -> String {
+        crate::utils::relative_time(self.time)
+    }
+
+    /// Summary truncated to `max_chars` with "..." appended if shortened.
+    pub fn short_summary(&self, max_chars: usize) -> String {
+        crate::utils::truncate_str(&self.summary, max_chars)
+    }
 }

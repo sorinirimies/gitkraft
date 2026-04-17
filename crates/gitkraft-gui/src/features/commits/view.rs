@@ -12,10 +12,12 @@
 use iced::widget::{button, column, container, mouse_area, row, scrollable, text, Row, Space};
 use iced::{Alignment, Color, Element, Length};
 
+use crate::icons;
 use crate::message::Message;
 use crate::state::{GitKraft, RepoTab};
 use crate::theme;
 use crate::theme::ThemeColors;
+use crate::view_utils;
 use crate::view_utils::truncate_to_fit;
 
 /// Estimated height of one commit row in pixels.  Used for virtual scrolling.
@@ -280,10 +282,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let tab = state.active_tab();
     let c = state.colors();
 
-    let header_icon = text('\u{F293}')
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(14)
-        .color(c.accent);
+    let header_icon = icon!(icons::CLOCK, 14, c.accent);
 
     let header_text = text("Commit Log").size(14).color(c.text_primary);
 
@@ -379,9 +378,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .height(Length::Fill)
         .id(commit_log_scroll_id(state.active_tab))
         .on_scroll(|vp| Message::CommitLogScrolled(vp.absolute_offset().y, vp.relative_offset().y))
-        .direction(scrollable::Direction::Vertical(
-            scrollable::Scrollbar::new().width(6).scroller_width(4),
-        ))
+        .direction(view_utils::thin_scrollbar())
         .style(crate::theme::overlay_scrollbar);
 
     let content = column![header_row, commit_scroll]

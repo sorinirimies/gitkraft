@@ -4,15 +4,28 @@
 //! When a commit is selected and its diff contains multiple files, a clickable
 //! file list is shown on the left side of the diff panel so the user can
 //! switch between files.
+//!
+//! The diff content uses virtual scrolling: only the lines that fall within
+//! (or near) the visible viewport are materialised as widgets, keeping the
+//! widget tree small even for multi-thousand-line diffs.
 
-use gitkraft_core::{DiffHunk, DiffInfo, DiffLine};
+use gitkraft_core::{DiffInfo, DiffLine};
 use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Element, Font, Length};
 
+use crate::icons;
 use crate::message::Message;
 use crate::state::GitKraft;
 use crate::theme;
 use crate::theme::ThemeColors;
+use crate::view_utils;
+
+/// Estimated height of one diff line in pixels.
+const DIFF_LINE_HEIGHT: f32 = 22.0;
+/// Lines rendered above and below the visible window.
+const DIFF_OVERSCAN: usize = 20;
+/// Assumed visible lines (covers a tall viewport).
+const DIFF_VISIBLE_LINES: usize = 60;
 
 /// Render the diff viewer panel. If a diff is selected, render its hunks with
 /// colored lines; otherwise show a placeholder message.
@@ -22,14 +35,14 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     match &tab.selected_diff {
         Some(diff) => {
-            if tab.commit_diffs.len() > 1 {
+            if tab.commit_files.len() > 1 {
                 // Multiple files in this commit — show file list + divider + diff side by side.
                 let file_list = commit_file_list(state, &c, state.diff_file_list_width);
                 let divider = crate::widgets::divider::vertical_divider(
                     crate::state::DragTarget::DiffFileListRight,
                     &c,
                 );
-                let diff_panel = diff_content(diff, &c);
+                let diff_panel = diff_content(diff, &c, tab.diff_scroll_offset);
 
                 let layout = row![file_list, divider, diff_panel]
                     .width(Length::Fill)
@@ -42,18 +55,43 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                     .into()
             } else {
                 // Single file (or staging diff) — show diff only.
-                container(diff_content(diff, &c))
+                container(diff_content(diff, &c, tab.diff_scroll_offset))
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .style(theme::surface_style)
                     .into()
             }
         }
-        None => container(placeholder_view(&c))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(theme::surface_style)
-            .into(),
+        None => {
+            if !tab.commit_files.is_empty() {
+                // Files loaded but no diff selected yet — show file list + loading/placeholder.
+                let file_list = commit_file_list(state, &c, state.diff_file_list_width);
+                let divider = crate::widgets::divider::vertical_divider(
+                    crate::state::DragTarget::DiffFileListRight,
+                    &c,
+                );
+                let right_panel = if tab.is_loading_file_diff {
+                    loading_diff_view(&c)
+                } else {
+                    placeholder_view(&c)
+                };
+                container(
+                    row![file_list, divider, right_panel]
+                        .width(Length::Fill)
+                        .height(Length::Fill),
+                )
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(theme::surface_style)
+                .into()
+            } else {
+                container(placeholder_view(&c))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(theme::surface_style)
+                    .into()
+            }
+        }
     }
 }
 
@@ -61,14 +99,11 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Element<'a, Message> {
     let tab = state.active_tab();
 
-    let header_icon = text('\u{F30A}') // file-diff
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(13)
-        .color(c.accent);
+    let header_icon = icon!(icons::FILE_DIFF, 13, c.accent);
 
     let header_text = text("Files").size(13).color(c.text_primary);
 
-    let file_count = text(format!("({})", tab.commit_diffs.len()))
+    let file_count = text(format!("({})", tab.commit_files.len()))
         .size(11)
         .color(c.muted);
 
@@ -84,35 +119,16 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
 
     let mut file_list_col = column![].spacing(1).width(Length::Fill);
 
-    for diff in &tab.commit_diffs {
-        let file_path_display = if diff.new_file.is_empty() {
-            &diff.old_file
-        } else {
-            &diff.new_file
-        };
-
+    for (idx, diff) in tab.commit_files.iter().enumerate() {
         // Extract just the filename for a compact display
-        let file_name = file_path_display
-            .rsplit('/')
-            .next()
-            .unwrap_or(file_path_display);
+        let file_name = diff.file_name();
 
         // Determine if this file is the currently selected one
-        let is_selected = tab
-            .selected_diff
-            .as_ref()
-            .map(|sel| sel.new_file == diff.new_file && sel.old_file == diff.old_file)
-            .unwrap_or(false);
+        let is_selected = tab.selected_file_index == Some(idx);
 
         let status_color = theme::status_color(&diff.status, c);
 
-        let status_char = match diff.status {
-            gitkraft_core::FileStatus::New | gitkraft_core::FileStatus::Untracked => "A",
-            gitkraft_core::FileStatus::Modified | gitkraft_core::FileStatus::Typechange => "M",
-            gitkraft_core::FileStatus::Deleted => "D",
-            gitkraft_core::FileStatus::Renamed => "R",
-            gitkraft_core::FileStatus::Copied => "C",
-        };
+        let status_char = format!("{}", diff.status);
 
         let status_badge = text(status_char)
             .size(11)
@@ -125,20 +141,22 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
             c.text_secondary
         };
 
-        let name_label = text(file_name.to_string()).size(12).color(name_color);
+        let name_label = text(file_name.to_string())
+            .size(12)
+            .color(name_color)
+            .wrapping(iced::widget::text::Wrapping::None);
 
         // Show parent directory as a subtle hint when names might be ambiguous
         let dir_hint: Element<'a, Message> = {
-            let parent = file_path_display
-                .rsplit_once('/')
-                .map(|(dir, _)| dir)
-                .unwrap_or("");
-            if parent.is_empty() {
+            let short_dir = diff.short_parent_dir();
+            if short_dir.is_empty() {
                 Space::with_width(0).into()
             } else {
-                // Show only the last directory component
-                let short_dir = parent.rsplit('/').next().unwrap_or(parent);
-                text(format!("{short_dir}/")).size(10).color(c.muted).into()
+                text(format!("{short_dir}/"))
+                    .size(10)
+                    .color(c.muted)
+                    .wrapping(iced::widget::text::Wrapping::None)
+                    .into()
             }
         };
 
@@ -157,23 +175,24 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
             theme::surface_style as fn(&iced::Theme) -> iced::widget::container::Style
         };
 
-        let diff_clone = diff.clone();
         let file_btn = button(row_content)
             .padding(0)
             .width(Length::Fill)
             .style(theme::ghost_button)
-            .on_press(Message::SelectDiff(diff_clone));
+            .on_press(Message::SelectDiffByIndex(idx));
 
-        let file_row = container(file_btn).width(Length::Fill).style(style_fn);
+        let file_row = container(file_btn)
+            .width(Length::Fill)
+            .height(Length::Fixed(26.0))
+            .clip(true)
+            .style(style_fn);
 
         file_list_col = file_list_col.push(file_row);
     }
 
     let scrollable_files = scrollable(file_list_col)
         .height(Length::Fill)
-        .direction(scrollable::Direction::Vertical(
-            scrollable::Scrollbar::new().width(6).scroller_width(4),
-        ))
+        .direction(view_utils::thin_scrollbar())
         .style(crate::theme::overlay_scrollbar);
 
     container(
@@ -189,34 +208,20 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
 
 /// Placeholder shown when no diff is selected.
 fn placeholder_view<'a>(c: &ThemeColors) -> Element<'a, Message> {
-    let icon = text('\u{F30A}') // file-diff icon
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(32)
-        .color(c.muted);
-
-    let label = text("Select a commit or file to view diff")
-        .size(14)
-        .color(c.muted);
-
-    container(
-        column![icon, Space::with_height(8), label]
-            .spacing(4)
-            .align_x(iced::Alignment::Center),
-    )
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .center_x(Length::Fill)
-    .center_y(Length::Fill)
-    .into()
+    view_utils::centered_placeholder(icons::FILE_DIFF, 32, "Select a commit or file to view diff", c.muted)
 }
 
-/// Render the full diff content for a single [`DiffInfo`].
-fn diff_content<'a>(diff: &DiffInfo, c: &ThemeColors) -> Element<'a, Message> {
-    let file_path_display = if diff.new_file.is_empty() {
-        diff.old_file.clone()
-    } else {
-        diff.new_file.clone()
-    };
+
+/// Loading indicator shown while a single file’s diff is being fetched.
+fn loading_diff_view<'a>(c: &ThemeColors) -> Element<'a, Message> {
+    view_utils::centered_placeholder(icons::ARROW_REPEAT, 24, "Loading diff…", c.muted)
+}
+
+/// Render the full diff content for a single [`DiffInfo`] with virtual
+/// scrolling. Only lines within (or near) the visible viewport are
+/// materialised as widgets.
+fn diff_content<'a>(diff: &'a DiffInfo, c: &ThemeColors, scroll_offset: f32) -> Element<'a, Message> {
+    let file_path_display = diff.display_path().to_string();
 
     let status_color = theme::status_color(&diff.status, c);
 
@@ -246,35 +251,51 @@ fn diff_content<'a>(diff: &DiffInfo, c: &ThemeColors) -> Element<'a, Message> {
             .font(Font::MONOSPACE);
         lines_col = lines_col.push(container(empty_msg).padding([8, 12]));
     } else {
+        // Flatten all lines for virtual scrolling
+        let total_lines: usize = diff.hunks.iter().map(|h| h.lines.len()).sum();
+
+        let first = ((scroll_offset / DIFF_LINE_HEIGHT) as usize).saturating_sub(DIFF_OVERSCAN);
+        let last = (first + DIFF_VISIBLE_LINES + 2 * DIFF_OVERSCAN).min(total_lines);
+
+        let top_space = first as f32 * DIFF_LINE_HEIGHT;
+        let bottom_space = (total_lines - last) as f32 * DIFF_LINE_HEIGHT;
+
+        if top_space > 0.0 {
+            lines_col = lines_col.push(Space::with_height(top_space));
+        }
+
+        // Iterate through hunks to find lines in range [first..last)
+        let mut global_idx = 0usize;
         for hunk in &diff.hunks {
-            lines_col = append_hunk_lines(lines_col, hunk, c);
+            for line in &hunk.lines {
+                if global_idx >= first && global_idx < last {
+                    lines_col = lines_col.push(render_line(line, c));
+                }
+                global_idx += 1;
+                if global_idx >= last {
+                    break;
+                }
+            }
+            if global_idx >= last {
+                break;
+            }
+        }
+
+        if bottom_space > 0.0 {
+            lines_col = lines_col.push(Space::with_height(bottom_space));
         }
     }
 
     let scrollable_content = scrollable(lines_col)
         .height(Length::Fill)
-        .direction(scrollable::Direction::Vertical(
-            scrollable::Scrollbar::new().width(6).scroller_width(4),
-        ))
+        .on_scroll(|vp| Message::DiffViewScrolled(vp.absolute_offset().y))
+        .direction(view_utils::thin_scrollbar())
         .style(crate::theme::overlay_scrollbar);
 
     column![file_header, scrollable_content]
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
-}
-
-/// Append all lines from a single [`DiffHunk`] into the column.
-fn append_hunk_lines<'a>(
-    mut col: iced::widget::Column<'a, Message>,
-    hunk: &DiffHunk,
-    c: &ThemeColors,
-) -> iced::widget::Column<'a, Message> {
-    for line in &hunk.lines {
-        let line_element = render_line(line, c);
-        col = col.push(line_element);
-    }
-    col
 }
 
 /// Render a single [`DiffLine`] as a styled container with monospace text.

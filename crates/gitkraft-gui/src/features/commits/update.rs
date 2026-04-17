@@ -23,33 +23,66 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             let tab = state.active_tab_mut();
             tab.selected_commit = Some(index);
             tab.show_commit_detail = true;
+            // Clear previous diff state immediately for snappy feedback.
+            tab.commit_files.clear();
+            tab.selected_diff = None;
+            tab.selected_file_index = None;
+            tab.diff_scroll_offset = 0.0;
 
-            // Load the diff for the selected commit.
-            // SelectCommit has a compound condition (repo_path AND commit_info)
-            // that doesn't fit the with_repo! pattern, so it stays explicit.
+            // Load just the file list (instant — no line parsing).
             if let (Some(path), Some((oid, short_oid))) = (repo_path, commit_info) {
-                state.active_tab_mut().status_message =
-                    Some(format!("Loading diff for {short_oid}…"));
-                commands::load_commit_diff(path, oid)
+                let tab = state.active_tab_mut();
+                tab.status_message = Some(format!("Loading files for {short_oid}…"));
+                tab.selected_commit_oid = Some(oid.clone());
+                commands::load_commit_file_list(path, oid)
             } else {
                 Task::none()
             }
         }
 
-        Message::CommitDiffLoaded(result) => {
-            let tab = state.active_tab_mut();
+        Message::CommitFileListLoaded(result) => {
             match result {
-                Ok(diffs) => {
-                    // Store the full file list so the diff viewer can show a
-                    // clickable file sidebar, and auto-select the first file.
-                    tab.selected_diff = diffs.first().cloned();
-                    tab.status_message = Some(format!("Loaded {} file(s) in diff.", diffs.len()));
-                    tab.commit_diffs = diffs;
+                Ok(files) => {
+                    let file_count = files.len();
+                    let tab = state.active_tab_mut();
+                    tab.commit_files = files;
+                    tab.status_message = Some(format!("{file_count} file(s) changed."));
+
+                    // Auto-select the first file and load its diff.
+                    if file_count > 0 {
+                        let first_file = &tab.commit_files[0];
+                        let file_path = first_file.display_path().to_string();
+                        tab.selected_file_index = Some(0);
+                        tab.is_loading_file_diff = true;
+
+                        if let (Some(repo_path), Some(oid)) =
+                            (tab.repo_path.clone(), tab.selected_commit_oid.clone())
+                        {
+                            return commands::load_single_file_diff(repo_path, oid, file_path);
+                        }
+                    }
                 }
                 Err(e) => {
-                    tab.commit_diffs.clear();
-                    tab.error_message = Some(format!("Failed to load commit diff: {e}"));
+                    let tab = state.active_tab_mut();
+                    tab.commit_files.clear();
+                    tab.error_message = Some(format!("Failed to load commit files: {e}"));
                     tab.status_message = None;
+                }
+            }
+            Task::none()
+        }
+
+        Message::SingleFileDiffLoaded(result) => {
+            let tab = state.active_tab_mut();
+            tab.is_loading_file_diff = false;
+            match result {
+                Ok(diff) => {
+                    tab.selected_diff = Some(diff);
+                    tab.diff_scroll_offset = 0.0;
+                }
+                Err(e) => {
+                    tab.selected_diff = None;
+                    tab.error_message = Some(format!("Failed to load file diff: {e}"));
                 }
             }
             Task::none()
@@ -61,8 +94,6 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         }
 
         Message::CreateCommit => {
-            // Derive the values we need from an immutable borrow before the
-            // with_repo! macro takes its own borrows.
             let msg;
             let staged_empty;
             {

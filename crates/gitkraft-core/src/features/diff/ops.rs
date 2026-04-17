@@ -67,6 +67,88 @@ pub fn get_commit_diff(repo: &Repository, oid_str: &str) -> Result<Vec<DiffInfo>
     parse_diff(&diff)
 }
 
+/// Return just the list of changed files for a commit — no hunk / line parsing.
+///
+/// This is much faster than [`get_commit_diff`] because it only reads the
+/// tree-level delta metadata.  The GUI uses this to instantly populate the
+/// file sidebar when a commit is selected.
+pub fn get_commit_file_list(
+    repo: &Repository,
+    oid_str: &str,
+) -> Result<Vec<super::types::DiffFileEntry>> {
+    let oid =
+        git2::Oid::from_str(oid_str).with_context(|| format!("invalid OID string: {oid_str}"))?;
+    let commit = repo
+        .find_commit(oid)
+        .with_context(|| format!("commit {oid_str} not found"))?;
+    let commit_tree = commit.tree().context("commit has no tree")?;
+
+    let parent_tree = if commit.parent_count() > 0 {
+        let parent = commit.parent(0).context("failed to read parent commit")?;
+        Some(parent.tree().context("parent commit has no tree")?)
+    } else {
+        None
+    };
+
+    let diff = repo
+        .diff_tree_to_tree(parent_tree.as_ref(), Some(&commit_tree), None)
+        .context("failed to diff commit against parent")?;
+
+    Ok(diff
+        .deltas()
+        .map(|delta| super::types::DiffFileEntry {
+            old_file: delta
+                .old_file()
+                .path()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            new_file: delta
+                .new_file()
+                .path()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            status: FileStatus::from_delta(delta.status()),
+        })
+        .collect())
+}
+
+/// Return the diff for a **single file** within a commit.
+///
+/// Uses `pathspec` filtering so that git2 only walks the hunks / lines for the
+/// requested file — much faster than parsing the entire commit diff.
+pub fn get_single_file_diff(
+    repo: &Repository,
+    oid_str: &str,
+    file_path: &str,
+) -> Result<DiffInfo> {
+    let oid =
+        git2::Oid::from_str(oid_str).with_context(|| format!("invalid OID string: {oid_str}"))?;
+    let commit = repo
+        .find_commit(oid)
+        .with_context(|| format!("commit {oid_str} not found"))?;
+    let commit_tree = commit.tree().context("commit has no tree")?;
+
+    let parent_tree = if commit.parent_count() > 0 {
+        let parent = commit.parent(0).context("failed to read parent commit")?;
+        Some(parent.tree().context("parent commit has no tree")?)
+    } else {
+        None
+    };
+
+    let mut opts = DiffOptions::new();
+    opts.pathspec(file_path);
+
+    let diff = repo
+        .diff_tree_to_tree(parent_tree.as_ref(), Some(&commit_tree), Some(&mut opts))
+        .context("failed to diff commit against parent for single file")?;
+
+    let infos = parse_diff(&diff)?;
+    infos
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("file '{}' not found in commit diff", file_path))
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Walk every delta / hunk / line in a `git2::Diff` and produce our domain

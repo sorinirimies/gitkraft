@@ -89,3 +89,20 @@ macro_rules! with_repo {
         }
     }};
 }
+
+/// Create a Bootstrap icon text widget.
+///
+/// Two forms: 3-arg `icon!(CHAR, SIZE, COLOR)` or 2-arg `icon!(CHAR, SIZE)`.
+macro_rules! icon {
+    ($char:expr, $size:expr, $color:expr) => {
+        text($char)
+            .font(iced_fonts::BOOTSTRAP_FONT)
+            .size($size)
+            .color($color)
+    };
+    ($char:expr, $size:expr) => {
+        text($char)
+            .font(iced_fonts::BOOTSTRAP_FONT)
+            .size($size)
+    };
+}

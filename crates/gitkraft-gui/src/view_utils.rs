@@ -45,6 +45,91 @@ pub fn truncate_to_fit(s: &str, available_px: f32, px_per_char: f32) -> String {
     }
 }
 
+
+// ── Scrollbar helper ──────────────────────────────────────────────────────
+
+/// Standard thin vertical scrollbar direction used across all sidebar panels.
+///
+/// Apply as: `scrollable(content).direction(thin_scrollbar()).style(overlay_scrollbar)`
+pub fn thin_scrollbar() -> iced::widget::scrollable::Direction {
+    iced::widget::scrollable::Direction::Vertical(
+        iced::widget::scrollable::Scrollbar::new()
+            .width(6)
+            .scroller_width(4),
+    )
+}
+
+// ── Context menu helpers ──────────────────────────────────────────────────
+
+/// Thin horizontal separator line for context menus.
+pub fn context_menu_separator<'a, M: 'a>() -> iced::Element<'a, M> {
+    iced::widget::container(iced::widget::Space::with_height(1))
+        .padding(iced::Padding {
+            top: 4.0,
+            right: 0.0,
+            bottom: 4.0,
+            left: 0.0,
+        })
+        .width(iced::Length::Fill)
+        .into()
+}
+
+/// Header label for a context menu panel.
+pub fn context_menu_header<'a, M: 'a>(label: String, muted: iced::Color) -> iced::Element<'a, M> {
+    iced::widget::container(iced::widget::text(label).size(12).color(muted))
+        .padding(iced::Padding {
+            top: 8.0,
+            right: 14.0,
+            bottom: 6.0,
+            left: 14.0,
+        })
+        .width(iced::Length::Fill)
+        .into()
+}
+
+// ── Centered placeholder ──────────────────────────────────────────────────
+
+/// A centered placeholder with an icon and a label, used for empty/loading states.
+pub fn centered_placeholder<'a>(
+    icon_char: char,
+    icon_size: u16,
+    label_text: &str,
+    muted: iced::Color,
+) -> iced::Element<'a, crate::message::Message> {
+    use iced::widget::{column, container, text, Space};
+    use iced::{Alignment, Length};
+
+    let icon_widget = icon!(icon_char, icon_size, muted);
+    let label = text(label_text.to_string()).size(14).color(muted);
+
+    container(
+        column![icon_widget, Space::with_height(8), label]
+            .spacing(4)
+            .align_x(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .center_x(Length::Fill)
+    .center_y(Length::Fill)
+    .into()
+}
+
+// ── Button helpers ────────────────────────────────────────────────────────
+
+/// Conditionally attach an `on_press` handler to a button.
+///
+/// Replaces the common pattern of building the same button twice in an
+/// if/else just to add or omit `.on_press(msg)`.
+pub fn on_press_maybe<'a>(
+    btn: iced::widget::Button<'a, crate::message::Message>,
+    msg: Option<crate::message::Message>,
+) -> iced::widget::Button<'a, crate::message::Message> {
+    match msg {
+        Some(m) => btn.on_press(m),
+        None => btn,
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

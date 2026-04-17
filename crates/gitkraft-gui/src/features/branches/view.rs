@@ -9,7 +9,9 @@ use iced::{Alignment, Element, Length};
 
 use crate::message::Message;
 use crate::state::GitKraft;
+use crate::icons;
 use crate::theme;
+use crate::view_utils;
 use crate::view_utils::truncate_to_fit;
 
 /// Render the branches sidebar panel.
@@ -18,22 +20,16 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let c = state.colors();
     let sidebar_width = state.sidebar_width;
 
-    let header_icon = text('\u{F404}')
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(14)
-        .color(c.accent);
+    let header_icon = icon!(icons::GIT_BRANCH, 14, c.accent);
 
     let header_text = text("Branches").size(14).color(c.text_primary);
 
     let toggle_icon_char = if tab.show_branch_create {
-        '\u{F2EA}' // dash-circle
+        icons::DASH_CIRCLE
     } else {
-        '\u{F4FA}' // plus-circle
+        icons::PLUS_CIRCLE
     };
-    let toggle_icon = text(toggle_icon_char)
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(14)
-        .color(c.accent);
+    let toggle_icon = icon!(toggle_icon_char, 14, c.accent);
 
     let toggle_btn = button(toggle_icon)
         .padding([2, 6])
@@ -57,16 +53,14 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .padding(6)
             .size(13);
 
-        let create_btn = if tab.new_branch_name.trim().is_empty() {
+        let create_msg = (!tab.new_branch_name.trim().is_empty())
+            .then_some(Message::CreateBranch);
+        let create_btn = view_utils::on_press_maybe(
             button(text("Create").size(13))
                 .padding([4, 10])
-                .style(theme::toolbar_button)
-        } else {
-            button(text("Create").size(13))
-                .padding([4, 10])
-                .style(theme::toolbar_button)
-                .on_press(Message::CreateBranch)
-        };
+                .style(theme::toolbar_button),
+            create_msg,
+        );
 
         container(column![input, create_btn,].spacing(4).width(Length::Fill))
             .padding([4, 10])
@@ -83,18 +77,14 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .padding(6)
             .size(13);
 
-        let confirm_btn = if tab.rename_branch_input.trim().is_empty()
-            || tab.rename_branch_input.trim() == orig.as_str()
-        {
+        let rename_enabled = !tab.rename_branch_input.trim().is_empty()
+            && tab.rename_branch_input.trim() != orig.as_str();
+        let confirm_btn = view_utils::on_press_maybe(
             button(text("Rename").size(13))
                 .padding([4, 10])
-                .style(theme::toolbar_button)
-        } else {
-            button(text("Rename").size(13))
-                .padding([4, 10])
-                .style(theme::toolbar_button)
-                .on_press(Message::ConfirmRenameBranch)
-        };
+                .style(theme::toolbar_button),
+            rename_enabled.then_some(Message::ConfirmRenameBranch),
+        );
 
         let cancel_btn = button(text("Cancel").size(13))
             .padding([4, 10])
@@ -120,7 +110,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     // ── Tag creation form ─────────────────────────────────────────────────
     let tag_form: Element<'_, Message> = if let Some(ref oid) = tab.create_tag_target_oid {
-        let short_oid = &oid[..7.min(oid.len())];
+        let short_oid = gitkraft_core::utils::short_oid_str(oid);
         let label = if tab.create_tag_annotated {
             format!("Creating annotated tag at {short_oid}")
         } else {
@@ -134,16 +124,13 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .padding(6)
             .size(13);
 
-        let confirm_btn = if tab.create_tag_name.trim().is_empty() {
+        let tag_msg = (!tab.create_tag_name.trim().is_empty()).then_some(Message::ConfirmCreateTag);
+        let confirm_btn = view_utils::on_press_maybe(
             button(text("Create tag").size(13))
                 .padding([4, 10])
-                .style(theme::toolbar_button)
-        } else {
-            button(text("Create tag").size(13))
-                .padding([4, 10])
-                .style(theme::toolbar_button)
-                .on_press(Message::ConfirmCreateTag)
-        };
+                .style(theme::toolbar_button),
+            tag_msg,
+        );
 
         let cancel_btn = button(text("Cancel").size(13))
             .padding([4, 10])
@@ -177,16 +164,10 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             let is_current = branch.is_head;
 
             let indicator: Element<'_, Message> = if is_current {
-                text('\u{F287}') // check-circle-fill
-                    .font(iced_fonts::BOOTSTRAP_FONT)
-                    .size(12)
-                    .color(c.green)
+                icon!(icons::CHECK_CIRCLE_FILL, 12, c.green)
                     .into()
             } else {
-                text('\u{F404}') // git-branch icon
-                    .font(iced_fonts::BOOTSTRAP_FONT)
-                    .size(12)
-                    .color(c.muted)
+                icon!(icons::GIT_BRANCH, 12, c.muted)
                     .into()
             };
 
@@ -202,36 +183,24 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .color(name_color)
                 .wrapping(iced::widget::text::Wrapping::None);
 
-            let checkout_btn = if is_current {
-                // Already on this branch — no checkout action.
+            let checkout_msg = (!is_current).then_some(Message::CheckoutBranch(branch.name.clone()));
+            let checkout_btn = view_utils::on_press_maybe(
                 button(row![indicator, Space::with_width(6), name_label].align_y(Alignment::Center))
                     .padding([4, 8])
                     .width(Length::Fill)
-                    .style(theme::ghost_button)
-            } else {
-                button(row![indicator, Space::with_width(6), name_label].align_y(Alignment::Center))
-                    .padding([4, 8])
-                    .width(Length::Fill)
-                    .style(theme::ghost_button)
-                    .on_press(Message::CheckoutBranch(branch.name.clone()))
-            };
+                    .style(theme::ghost_button),
+                checkout_msg,
+            );
 
-            let delete_icon = text('\u{F5DE}')
-                .font(iced_fonts::BOOTSTRAP_FONT)
-                .size(12)
-                .color(c.red);
+            let delete_icon = icon!(icons::TRASH, 12, c.red);
 
-            let delete_btn = if is_current {
-                // Can't delete the current branch.
+            let delete_msg = (!is_current).then_some(Message::DeleteBranch(branch.name.clone()));
+            let delete_btn = view_utils::on_press_maybe(
                 button(delete_icon)
                     .padding([4, 6])
-                    .style(theme::icon_button)
-            } else {
-                button(delete_icon)
-                    .padding([4, 6])
-                    .style(theme::icon_button)
-                    .on_press(Message::DeleteBranch(branch.name.clone()))
-            };
+                    .style(theme::icon_button),
+                delete_msg,
+            );
 
             let branch_row = row![checkout_btn, delete_btn]
                 .spacing(2)
@@ -253,16 +222,13 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         })
         .collect();
 
-    // ── Remote branches (read-only list) ──────────────────────────────────
+    // ── Remote branches (with context menu) ───────────────────────────────
     let remote_branches: Vec<Element<'_, Message>> = tab
         .branches
         .iter()
         .filter(|b| b.branch_type == BranchType::Remote)
         .map(|branch| {
-            let icon = text('\u{F469}') // cloud
-                .font(iced_fonts::BOOTSTRAP_FONT)
-                .size(12)
-                .color(c.muted);
+            let icon = icon!(icons::CLOUD, 12, c.muted);
 
             // Available px: sidebar minus item padding(16) + icon(14) + gap(6)
             // ≈ 36 px overhead.
@@ -274,12 +240,22 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .color(c.text_secondary)
                 .wrapping(iced::widget::text::Wrapping::None);
 
-            container(row![icon, Space::with_width(6), label].align_y(Alignment::Center))
-                .padding([2, 8])
-                .width(Length::Fill)
-                .height(Length::Fixed(22.0))
-                .clip(true)
-                .into()
+            let branch_btn = button(
+                row![icon, Space::with_width(6), label].align_y(Alignment::Center),
+            )
+            .padding([2, 8])
+            .width(Length::Fill)
+            .style(theme::ghost_button)
+            .on_press(Message::CheckoutRemoteBranch(branch.name.clone()));
+
+            mouse_area(
+                container(branch_btn)
+                    .width(Length::Fill)
+                    .height(Length::Fixed(22.0))
+                    .clip(true),
+            )
+            .on_right_press(Message::OpenRemoteBranchContextMenu(branch.name.clone()))
+            .into()
         })
         .collect();
 
@@ -293,14 +269,11 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .count();
 
         let chevron_char = if tab.local_branches_expanded {
-            '\u{F284}' // chevron-down
+            icons::CHEVRON_DOWN
         } else {
-            '\u{F285}' // chevron-right
+            icons::CHEVRON_RIGHT
         };
-        let chevron = text(chevron_char)
-            .font(iced_fonts::BOOTSTRAP_FONT)
-            .size(11)
-            .color(c.muted);
+        let chevron = icon!(chevron_char, 11, c.muted);
 
         let local_header_btn = button(
             row![
@@ -336,14 +309,11 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         list_col = list_col.push(Space::with_height(4));
 
         let chevron_char = if tab.remote_branches_expanded {
-            '\u{F284}' // chevron-down
+            icons::CHEVRON_DOWN
         } else {
-            '\u{F285}' // chevron-right
+            icons::CHEVRON_RIGHT
         };
-        let chevron = text(chevron_char)
-            .font(iced_fonts::BOOTSTRAP_FONT)
-            .size(11)
-            .color(c.muted);
+        let chevron = icon!(chevron_char, 11, c.muted);
 
         let remote_header_btn = button(
             row![
@@ -376,9 +346,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         tag_form,
         scrollable(list_col)
             .height(Length::Fill)
-            .direction(scrollable::Direction::Vertical(
-                scrollable::Scrollbar::new().width(6).scroller_width(4),
-            ))
+            .direction(view_utils::thin_scrollbar())
             .style(crate::theme::overlay_scrollbar),
     ]
     .width(Length::Fill)

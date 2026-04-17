@@ -7,9 +7,11 @@
 use iced::widget::{button, column, container, horizontal_rule, row, scrollable, text, Space};
 use iced::{Alignment, Element, Length};
 
+use crate::icons;
 use crate::message::Message;
 use crate::state::GitKraft;
 use crate::theme;
+use crate::view_utils;
 
 /// Render the welcome / landing view (no repo open yet).
 pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
@@ -18,10 +20,7 @@ pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
 
     // ── Loading state (e.g. auto-opening last repo) ───────────────────────
     if tab.is_loading {
-        let spinner_icon = text('\u{F130}') // arrow-repeat (Bootstrap)
-            .font(iced_fonts::BOOTSTRAP_FONT)
-            .size(32)
-            .color(c.accent);
+        let spinner_icon = icon!(icons::ARROW_REPEAT, 32, c.accent);
 
         let loading_label = text(
             tab.status_message
@@ -47,7 +46,7 @@ pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
 
     let subtitle = text("A modern Git IDE").size(18).color(c.text_secondary);
 
-    let open_icon = text('\u{F3D8}').font(iced_fonts::BOOTSTRAP_FONT).size(16);
+    let open_icon = icon!(icons::FOLDER_OPEN, 16);
 
     let open_btn = button(
         iced::widget::row![open_icon, text(" Open Repository").size(16)]
@@ -58,7 +57,7 @@ pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
     .style(theme::toolbar_button)
     .on_press(Message::OpenRepo);
 
-    let init_icon = text('\u{F4DA}').font(iced_fonts::BOOTSTRAP_FONT).size(16);
+    let init_icon = icon!(icons::PERSON_FILL, 16);
 
     let init_btn = button(
         iced::widget::row![init_icon, text(" Init Repository").size(16)]
@@ -96,10 +95,7 @@ pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
             .push(horizontal_rule(1))
             .push(Space::with_height(12));
 
-        let recent_header_icon = text('\u{F292}') // clock-history
-            .font(iced_fonts::BOOTSTRAP_FONT)
-            .size(14)
-            .color(c.accent);
+        let recent_header_icon = icon!(icons::CLOCK_HISTORY, 14, c.accent);
 
         let recent_header_label = text("Recent Repositories").size(14).color(c.text_primary);
 
@@ -125,10 +121,7 @@ pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
 
             let path_str = entry.path.display().to_string();
 
-            let folder_icon = text('\u{F3D8}')
-                .font(iced_fonts::BOOTSTRAP_FONT)
-                .size(13)
-                .color(c.muted);
+            let folder_icon = icon!(icons::FOLDER_OPEN, 13, c.muted);
 
             let name_label = text(display_name.to_string())
                 .size(13)
@@ -155,9 +148,7 @@ pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
 
         let scrollable_recent = scrollable(recent_list)
             .height(Length::Shrink)
-            .direction(scrollable::Direction::Vertical(
-                scrollable::Scrollbar::new().width(6).scroller_width(4),
-            ))
+            .direction(view_utils::thin_scrollbar())
             .style(crate::theme::overlay_scrollbar);
         card_col = card_col.push(scrollable_recent);
     }

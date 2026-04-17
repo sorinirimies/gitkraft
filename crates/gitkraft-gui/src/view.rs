@@ -30,10 +30,12 @@ use iced::widget::{column, container, mouse_area, row, text, Space};
 use iced::{Alignment, Element, Length};
 
 use crate::features;
+use crate::icons;
 use crate::message::Message;
 use crate::state::{DragTarget, DragTargetH, GitKraft};
 use crate::theme;
 use crate::theme::ThemeColors;
+use crate::view_utils;
 use crate::widgets;
 
 impl GitKraft {
@@ -195,10 +197,7 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
     let status_label = text(status_text).size(12).color(c.text_secondary);
 
     let branch_info: Element<'_, Message> = if let Some(ref branch) = tab.current_branch {
-        let icon = text('\u{F404}')
-            .font(iced_fonts::BOOTSTRAP_FONT)
-            .size(12)
-            .color(c.accent);
+        let icon = icon!(icons::GIT_BRANCH, 12, c.accent);
         let label = text(branch.as_str()).size(12).color(c.text_primary);
         row![icon, Space::with_width(4), label]
             .align_y(Alignment::Center)
@@ -251,18 +250,12 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
 
 /// Render an error banner at the top of the window with a dismiss button.
 fn error_banner<'a>(message: &str, c: &ThemeColors) -> Element<'a, Message> {
-    let icon = text('\u{F333}') // exclamation-triangle
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(14)
-        .color(c.red);
+    let icon = icon!(icons::EXCLAMATION_TRIANGLE, 14, c.red);
 
     let msg = text(message.to_string()).size(13).color(c.text_primary);
 
     let dismiss = iced::widget::button(
-        text('\u{F62A}') // x-circle
-            .font(iced_fonts::BOOTSTRAP_FONT)
-            .size(14)
-            .color(c.text_secondary),
+        icon!(icons::X_CIRCLE, 14, c.text_secondary),
     )
     .padding([2, 6])
     .on_press(Message::DismissError);
@@ -331,26 +324,9 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                 .find(|b| &b.name == name)
                 .and_then(|b| b.target_oid.clone());
 
-            let header = container(text(format!("Branch: {name}")).size(12).color(c.muted))
-                .padding(iced::Padding {
-                    top: 8.0,
-                    right: 14.0,
-                    bottom: 6.0,
-                    left: 14.0,
-                })
-                .width(Length::Fill);
+            let header = view_utils::context_menu_header::<Message>(format!("Branch: {name}"), c.muted);
 
-            let separator = || -> Element<'a, Message> {
-                container(Space::with_height(1))
-                    .padding(iced::Padding {
-                        top: 4.0,
-                        right: 0.0,
-                        bottom: 4.0,
-                        left: 0.0,
-                    })
-                    .width(Length::Fill)
-                    .into()
-            };
+
 
             let mut col = column![header];
 
@@ -367,7 +343,7 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                 .push(menu_item(&pull_label, Message::PullBranch(name.clone())));
 
             // Group 3: Rebase / merge
-            col = col.push(separator());
+            col = col.push(view_utils::context_menu_separator::<Message>());
             let rebase_label = format!("Rebase current onto '{name}'");
             col = col.push(menu_item(&rebase_label, Message::RebaseOnto(name.clone())));
             if !is_current {
@@ -378,7 +354,7 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
             }
 
             // Group 4: Branch management
-            col = col.push(separator());
+            col = col.push(view_utils::context_menu_separator::<Message>());
             col = col
                 .push(menu_item(
                     "Rename\u{2026}",
@@ -387,7 +363,7 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                 .push(menu_item("Delete", Message::DeleteBranch(name.clone())));
 
             // Group 5: Copy info
-            col = col.push(separator());
+            col = col.push(view_utils::context_menu_separator::<Message>());
             col = col.push(menu_item(
                 "Copy branch name",
                 Message::CopyText(name.clone()),
@@ -401,7 +377,7 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
 
             // Group 6: Tag creation
             if tip_oid.is_some() {
-                col = col.push(separator());
+                col = col.push(view_utils::context_menu_separator::<Message>());
                 let oid = tip_oid.clone().unwrap();
                 col = col
                     .push(menu_item(
@@ -417,23 +393,79 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
             col.into()
         }
 
+        Some(crate::state::ContextMenu::RemoteBranch { name }) => {
+            // Extract remote and branch parts for display
+            let (remote, short_name) = name
+                .split_once('/')
+                .unwrap_or(("", name.as_str()));
+
+            let header = view_utils::context_menu_header::<Message>(format!("Remote: {name}"), c.muted);
+
+
+
+            // Check if a local branch with the same short name already exists
+            let local_exists = state
+                .active_tab()
+                .branches
+                .iter()
+                .any(|b| b.branch_type == gitkraft_core::BranchType::Local && b.name == short_name);
+
+            let mut col = column![header];
+
+            // Checkout (only if no local branch with same name exists)
+            if !local_exists {
+                col = col.push(menu_item(
+                    &format!("Checkout as '{short_name}'"),
+                    Message::CheckoutRemoteBranch(name.clone()),
+                ));
+            }
+
+            // Delete from remote
+            col = col.push(view_utils::context_menu_separator::<Message>());
+            col = col.push(menu_item(
+                &format!("Delete from {remote}"),
+                Message::DeleteRemoteBranch(name.clone()),
+            ));
+
+            // Copy info
+            col = col.push(view_utils::context_menu_separator::<Message>());
+            col = col.push(menu_item(
+                "Copy branch name",
+                Message::CopyText(name.clone()),
+            ));
+            col = col.push(menu_item(
+                &format!("Copy short name '{short_name}'"),
+                Message::CopyText(short_name.to_string()),
+            ));
+
+            // Look up tip OID
+            let tip_oid: Option<String> = state
+                .active_tab()
+                .branches
+                .iter()
+                .find(|b| &b.name == name)
+                .and_then(|b| b.target_oid.clone());
+
+            if let Some(ref oid) = tip_oid {
+                col = col.push(menu_item(
+                    "Copy tip commit SHA",
+                    Message::CopyText(oid.clone()),
+                ));
+            }
+
+            col.into()
+        }
+
         Some(crate::state::ContextMenu::Commit { index, oid }) => {
             let tab = state.active_tab();
-            let short = &oid[..7.min(oid.len())];
+            let short = gitkraft_core::utils::short_oid_str(oid);
             let msg_text = tab
                 .commits
                 .get(*index)
                 .map(|c| c.message.clone())
                 .unwrap_or_default();
 
-            let header = container(text(format!("Commit: {short}")).size(12).color(c.muted))
-                .padding(iced::Padding {
-                    top: 8.0,
-                    right: 14.0,
-                    bottom: 6.0,
-                    left: 14.0,
-                })
-                .width(Length::Fill);
+            let header = view_utils::context_menu_header::<Message>(format!("Commit: {short}"), c.muted);
 
             column![
                 header,

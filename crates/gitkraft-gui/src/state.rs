@@ -38,6 +38,10 @@ pub enum ContextMenu {
         /// the menu's on-screen position.
         local_index: usize,
     },
+    /// A remote-tracking branch (e.g. origin/feature-x).
+    RemoteBranch {
+        name: String,
+    },
     /// A commit in the log.
     Commit { index: usize, oid: String },
 }
@@ -71,8 +75,14 @@ pub struct RepoTab {
     pub unstaged_changes: Vec<DiffInfo>,
     /// Staged (index) changes.
     pub staged_changes: Vec<DiffInfo>,
-    /// All file diffs for the currently selected commit.
-    pub commit_diffs: Vec<DiffInfo>,
+    /// Lightweight file list for the currently selected commit (path + status only).
+    pub commit_files: Vec<gitkraft_core::DiffFileEntry>,
+    /// OID of the currently selected commit (needed for on-demand file diff loading).
+    pub selected_commit_oid: Option<String>,
+    /// Index of the selected file in `commit_files`.
+    pub selected_file_index: Option<usize>,
+    /// True while a single-file diff is being loaded.
+    pub is_loading_file_diff: bool,
     /// The diff currently displayed in the diff viewer panel.
     pub selected_diff: Option<DiffInfo>,
     /// Text in the commit-message input.
@@ -135,6 +145,9 @@ pub struct RepoTab {
     /// visible window of rows.
     pub commit_scroll_offset: f32,
 
+
+    /// Current scroll offset of the diff viewer in pixels.
+    pub diff_scroll_offset: f32,
     /// Pre-computed display strings for each commit:
     /// `(truncated_summary, relative_time, truncated_author)`.
     /// Computed once when commits load to avoid per-frame string allocations.
@@ -159,7 +172,10 @@ impl RepoTab {
             graph_rows: Vec::new(),
             unstaged_changes: Vec::new(),
             staged_changes: Vec::new(),
-            commit_diffs: Vec::new(),
+            commit_files: Vec::new(),
+            selected_commit_oid: None,
+            selected_file_index: None,
+            is_loading_file_diff: false,
             selected_diff: None,
             commit_message: String::new(),
             stashes: Vec::new(),
@@ -183,6 +199,7 @@ impl RepoTab {
             create_tag_name: String::new(),
             create_tag_message: String::new(),
             commit_scroll_offset: 0.0,
+            diff_scroll_offset: 0.0,
             commit_display: Vec::new(),
             has_more_commits: true,
             is_loading_more_commits: false,
@@ -201,6 +218,35 @@ impl RepoTab {
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
             .unwrap_or("New Tab")
+    }
+
+    /// Apply a full repo payload to this tab, resetting transient UI state.
+    pub fn apply_payload(&mut self, payload: crate::message::RepoPayload, path: std::path::PathBuf) {
+        self.current_branch = payload.info.head_branch.clone();
+        self.repo_path = Some(path);
+        self.repo_info = Some(payload.info);
+        self.branches = payload.branches;
+        self.commits = payload.commits;
+        self.graph_rows = payload.graph_rows;
+        self.unstaged_changes = payload.unstaged;
+        self.staged_changes = payload.staged;
+        self.stashes = payload.stashes;
+        self.remotes = payload.remotes;
+
+        // Reset transient UI state.
+        self.selected_commit = None;
+        self.selected_diff = None;
+        self.commit_files.clear();
+        self.selected_commit_oid = None;
+        self.selected_file_index = None;
+        self.is_loading_file_diff = false;
+        self.commit_message.clear();
+        self.error_message = None;
+        self.status_message = Some("Repository loaded.".into());
+        self.commit_scroll_offset = 0.0;
+        self.diff_scroll_offset = 0.0;
+        self.has_more_commits = true;
+        self.is_loading_more_commits = false;
     }
 }
 

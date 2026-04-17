@@ -132,27 +132,8 @@ fn handle_repo_loaded(state: &mut GitKraft, result: Result<RepoPayload, String>)
                 .unwrap_or_else(|| payload.info.path.clone());
 
             let tab = state.active_tab_mut();
-            tab.current_branch = payload.info.head_branch.clone();
-            tab.repo_path = Some(path.clone());
-            tab.repo_info = Some(payload.info);
-            tab.branches = payload.branches;
-            tab.commits = payload.commits;
-            tab.graph_rows = payload.graph_rows;
-            tab.unstaged_changes = payload.unstaged;
-            tab.staged_changes = payload.staged;
-            tab.stashes = payload.stashes;
-            tab.remotes = payload.remotes;
-
-            // Reset transient UI state.
-            tab.selected_commit = None;
-            tab.selected_diff = None;
-            tab.commit_message.clear();
-            tab.error_message = None;
-            tab.status_message = Some("Repository loaded.".into());
+            tab.apply_payload(payload, path.clone());
             tab.commit_display = compute_commit_display(&tab.commits);
-            tab.commit_scroll_offset = 0.0;
-            tab.has_more_commits = true;
-            tab.is_loading_more_commits = false;
 
             // Record the repo open AND persist the full session in one DB
             // write, on a background thread so redb I/O doesn't block the UI.
@@ -194,25 +175,8 @@ fn handle_repo_loaded_at(
                 .clone()
                 .unwrap_or_else(|| payload.info.path.clone());
             let tab = &mut state.tabs[tab_index];
-            tab.current_branch = payload.info.head_branch.clone();
-            tab.repo_path = Some(path);
-            tab.repo_info = Some(payload.info);
-            tab.branches = payload.branches;
-            tab.commits = payload.commits;
-            tab.graph_rows = payload.graph_rows;
-            tab.unstaged_changes = payload.unstaged;
-            tab.staged_changes = payload.staged;
-            tab.stashes = payload.stashes;
-            tab.remotes = payload.remotes;
-            tab.selected_commit = None;
-            tab.selected_diff = None;
-            tab.commit_message.clear();
-            tab.error_message = None;
-            tab.status_message = Some("Repository loaded.".into());
+            tab.apply_payload(payload, path);
             tab.commit_display = compute_commit_display(&tab.commits);
-            tab.commit_scroll_offset = 0.0;
-            tab.has_more_commits = true;
-            tab.is_loading_more_commits = false;
             // Already in recent_repos — no need to re-record.
             Task::none()
         }
@@ -262,13 +226,7 @@ fn compute_commit_display(commits: &[gitkraft_core::CommitInfo]) -> Vec<(String,
             let summary = c.summary.clone();
             let time = gitkraft_core::utils::relative_time(c.time);
             // Truncate author to fit in the fixed-width author column (~90 px).
-            let author = if c.author_name.chars().count() > 14 {
-                let mut s: String = c.author_name.chars().take(13).collect();
-                s.push('…');
-                s
-            } else {
-                c.author_name.clone()
-            };
+            let author = gitkraft_core::truncate_str(&c.author_name, 14);
             (summary, time, author)
         })
         .collect()

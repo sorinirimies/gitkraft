@@ -6,6 +6,7 @@
 use iced::widget::{button, column, container, row, text, Space};
 use iced::{Alignment, Element, Length};
 
+use crate::icons;
 use crate::message::Message;
 use crate::state::GitKraft;
 use crate::theme;
@@ -15,26 +16,17 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let tab = state.active_tab();
     let c = state.colors();
 
-    let header_icon = text('\u{F469}') // cloud icon
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(14)
-        .color(c.accent);
+    let header_icon = icon!(icons::CLOUD, 14, c.accent);
 
     let header_text = text("Remotes").size(14).color(c.text_primary);
 
-    let fetch_icon = text('\u{F116}') // arrow-down-circle
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(14)
-        .color(c.accent);
+    let fetch_icon = icon!(icons::CLOUD_ARROW_DOWN, 14, c.accent);
 
-    let fetch_btn = if tab.remotes.is_empty() {
-        button(fetch_icon).padding([2, 6]).style(theme::icon_button)
-    } else {
-        button(fetch_icon)
-            .padding([2, 6])
-            .style(theme::icon_button)
-            .on_press(Message::Fetch)
-    };
+    let fetch_msg = (!tab.remotes.is_empty()).then_some(Message::Fetch);
+    let fetch_btn = crate::view_utils::on_press_maybe(
+        button(fetch_icon).padding([2, 6]).style(theme::icon_button),
+        fetch_msg,
+    );
 
     let header_row = row![
         header_icon,

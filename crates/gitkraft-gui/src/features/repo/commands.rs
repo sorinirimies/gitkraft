@@ -217,6 +217,32 @@ pub fn merge_branch_async(path: PathBuf, branch_name: String) -> Task<Message> {
     )
 }
 
+/// Delete a remote branch using `git push --delete`.
+pub fn delete_remote_branch_async(path: PathBuf, full_name: String) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let wd = workdir(&path)?;
+            gitkraft_core::features::branches::delete_remote_branch(&wd, &full_name)
+                .map_err(|e| e.to_string())?;
+            load_repo_blocking(&path)
+        })()
+    )
+}
+
+/// Checkout a remote branch by creating a local tracking branch.
+pub fn checkout_remote_branch_async(path: PathBuf, full_name: String) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let wd = workdir(&path)?;
+            gitkraft_core::features::branches::checkout_remote_branch(&wd, &full_name)
+                .map_err(|e| e.to_string())?;
+            load_repo_blocking(&path)
+        })()
+    )
+}
+
 /// Create a lightweight tag `name` pointing at `oid` then reload.
 pub fn create_tag_async(path: PathBuf, name: String, oid: String) -> Task<Message> {
     git_task!(

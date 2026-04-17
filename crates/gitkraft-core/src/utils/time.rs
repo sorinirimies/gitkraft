@@ -67,6 +67,11 @@ pub fn short_oid(oid: git2::Oid) -> String {
     full[..7.min(full.len())].to_string()
 }
 
+/// Abbreviate a hex OID string to the first 7 characters.
+pub fn short_oid_str(oid: &str) -> &str {
+    &oid[..7.min(oid.len())]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,5 +171,15 @@ mod tests {
     fn short_oid_seven_chars() {
         let oid = git2::Oid::from_str("abcdef1234567890abcdef1234567890abcdef12").unwrap();
         assert_eq!(short_oid(oid), "abcdef1");
+    }
+
+    #[test]
+    fn short_oid_str_abbreviates() {
+        assert_eq!(short_oid_str("abcdef1234567890"), "abcdef1");
+    }
+
+    #[test]
+    fn short_oid_str_short_input() {
+        assert_eq!(short_oid_str("abc"), "abc");
     }
 }

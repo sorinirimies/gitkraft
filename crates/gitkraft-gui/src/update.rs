@@ -80,7 +80,7 @@ impl GitKraft {
             }
 
             // ── Commits ───────────────────────────────────────────────────
-            Message::SelectCommit(_) | Message::CommitDiffLoaded(_) => {
+            Message::SelectCommit(_) | Message::CommitFileListLoaded(_) | Message::SingleFileDiffLoaded(_) => {
                 // Both the commits and diff features care about SelectCommit.
                 // We delegate to the commits handler which also loads the diff.
                 crate::features::commits::update::update(self, message)
@@ -119,6 +119,11 @@ impl GitKraft {
                 Task::none()
             }
 
+            Message::DiffViewScrolled(abs_y) => {
+                self.active_tab_mut().diff_scroll_offset = *abs_y;
+                Task::none()
+            }
+
             // ── Staging ───────────────────────────────────────────────────
             Message::StageFile(_)
             | Message::UnstageFile(_)
@@ -144,7 +149,7 @@ impl GitKraft {
             }
 
             // ── UI / misc ─────────────────────────────────────────────────
-            Message::SelectDiff(_) => crate::features::diff::update::update(self, message),
+            Message::SelectDiff(_) | Message::SelectDiffByIndex(_) => crate::features::diff::update::update(self, message),
 
             Message::DismissError => {
                 self.active_tab_mut().error_message = None;
@@ -241,6 +246,16 @@ impl GitKraft {
                     name: name.clone(),
                     is_current: *is_current,
                     local_index: *local_index,
+                });
+                Task::none()
+            }
+
+            Message::OpenRemoteBranchContextMenu(name) => {
+                let pos = (self.cursor_pos.x, self.cursor_pos.y);
+                let tab = self.active_tab_mut();
+                tab.context_menu_pos = pos;
+                tab.context_menu = Some(crate::state::ContextMenu::RemoteBranch {
+                    name: name.clone(),
                 });
                 Task::none()
             }
@@ -369,6 +384,25 @@ impl GitKraft {
                 )
             }
 
+            Message::CheckoutRemoteBranch(name) => {
+                let name = name.clone();
+                self.active_tab_mut().context_menu = None;
+                with_repo!(self, loading, format!("Checking out '{name}'…"), |path| {
+                    crate::features::repo::commands::checkout_remote_branch_async(path, name)
+                })
+            }
+
+            Message::DeleteRemoteBranch(name) => {
+                let name = name.clone();
+                self.active_tab_mut().context_menu = None;
+                with_repo!(
+                    self,
+                    loading,
+                    format!("Deleting remote branch '{name}'…"),
+                    |path| crate::features::repo::commands::delete_remote_branch_async(path, name)
+                )
+            }
+
             Message::BeginCreateTag(oid, annotated) => {
                 let tab = self.active_tab_mut();
                 tab.context_menu = None;
@@ -434,7 +468,7 @@ impl GitKraft {
             // ── Commit context menu actions ───────────────────────────────────────────
             Message::CheckoutCommitDetached(oid) => {
                 let oid = oid.clone();
-                let short = oid[..7.min(oid.len())].to_string();
+                let short = gitkraft_core::utils::short_oid_str(&oid).to_string();
                 self.active_tab_mut().context_menu = None;
                 with_repo!(self, loading, format!("Checking out {short}…"), |path| {
                     crate::features::repo::commands::checkout_commit_async(path, oid)
@@ -443,7 +477,7 @@ impl GitKraft {
 
             Message::RebaseOntoCommit(oid) => {
                 let oid = oid.clone();
-                let short = oid[..7.min(oid.len())].to_string();
+                let short = gitkraft_core::utils::short_oid_str(&oid).to_string();
                 self.active_tab_mut().context_menu = None;
                 with_repo!(self, loading, format!("Rebasing onto {short}…"), |path| {
                     crate::features::repo::commands::rebase_onto_async(path, oid)
@@ -452,7 +486,7 @@ impl GitKraft {
 
             Message::RevertCommit(oid) => {
                 let oid = oid.clone();
-                let short = oid[..7.min(oid.len())].to_string();
+                let short = gitkraft_core::utils::short_oid_str(&oid).to_string();
                 self.active_tab_mut().context_menu = None;
                 with_repo!(self, loading, format!("Reverting {short}…"), |path| {
                     crate::features::repo::commands::revert_commit_async(path, oid)
@@ -461,7 +495,7 @@ impl GitKraft {
 
             Message::ResetSoft(oid) => {
                 let oid = oid.clone();
-                let short = oid[..7.min(oid.len())].to_string();
+                let short = gitkraft_core::utils::short_oid_str(&oid).to_string();
                 self.active_tab_mut().context_menu = None;
                 with_repo!(
                     self,
@@ -477,7 +511,7 @@ impl GitKraft {
 
             Message::ResetMixed(oid) => {
                 let oid = oid.clone();
-                let short = oid[..7.min(oid.len())].to_string();
+                let short = gitkraft_core::utils::short_oid_str(&oid).to_string();
                 self.active_tab_mut().context_menu = None;
                 with_repo!(
                     self,
@@ -493,7 +527,7 @@ impl GitKraft {
 
             Message::ResetHard(oid) => {
                 let oid = oid.clone();
-                let short = oid[..7.min(oid.len())].to_string();
+                let short = gitkraft_core::utils::short_oid_str(&oid).to_string();
                 self.active_tab_mut().context_menu = None;
                 with_repo!(
                     self,

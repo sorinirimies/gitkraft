@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use gitkraft_core::{BranchInfo, CommitInfo, DiffInfo, GraphRow, RemoteInfo, RepoInfo, StashEntry};
+use gitkraft_core::{BranchInfo, CommitInfo, DiffFileEntry, DiffInfo, GraphRow, RemoteInfo, RepoInfo, StashEntry};
 
 // ── Payload types ─────────────────────────────────────────────────────────────
 
@@ -91,12 +91,16 @@ pub enum Message {
     // ── Commits ───────────────────────────────────────────────────────────
     /// User clicked a commit row in the log.
     SelectCommit(usize),
-    /// Async commit-diff load completed.
-    CommitDiffLoaded(Result<Vec<DiffInfo>, String>),
+    /// Async commit file-list load completed (lightweight — no diff content).
+    CommitFileListLoaded(Result<Vec<DiffFileEntry>, String>),
+    /// Async single-file diff load completed.
+    SingleFileDiffLoaded(Result<DiffInfo, String>),
     /// The commit log scrollable was scrolled.
     /// Carries `(absolute_y, relative_y)` — absolute for virtual-window
     /// positioning, relative (0.0 = top, 1.0 = bottom) for load-more trigger.
     CommitLogScrolled(f32, f32),
+    /// The diff viewer scrollable was scrolled — carries `absolute_y`.
+    DiffViewScrolled(f32),
     /// A lazy-loaded page of additional commits was fetched from the background.
     MoreCommitsLoaded(Result<CommitPage, String>),
 
@@ -145,6 +149,8 @@ pub enum Message {
     FetchCompleted(Result<(), String>),
 
     // ── UI ────────────────────────────────────────────────────────────────
+    /// User clicked a file in the commit-diff file list (by index into `commit_files`).
+    SelectDiffByIndex(usize),
     /// User clicked a file in the staging area to view its diff.
     SelectDiff(DiffInfo),
     /// Dismiss the current error banner.
@@ -185,6 +191,15 @@ pub enum Message {
     /// Payload: (branch_name, index_in_local_list, is_current_branch).
     OpenBranchContextMenu(String, usize, bool),
 
+
+    /// User right-clicked a remote branch.
+    OpenRemoteBranchContextMenu(String),
+
+    /// Checkout a remote branch (creates local tracking branch).
+    CheckoutRemoteBranch(String),
+
+    /// Delete a remote branch.
+    DeleteRemoteBranch(String),
     /// User right-clicked a commit row.
     OpenCommitContextMenu(usize),
 

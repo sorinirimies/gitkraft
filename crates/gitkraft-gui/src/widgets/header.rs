@@ -6,6 +6,7 @@ use iced::widget::{button, container, row, text, Space};
 use iced::{Alignment, Element, Length};
 
 use crate::features::theme::view::theme_selector;
+use crate::icons;
 use crate::message::Message;
 use crate::state::GitKraft;
 use crate::theme;
@@ -16,10 +17,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let c = state.colors();
 
     // ── Repo name ─────────────────────────────────────────────────────────
-    let repo_icon = text('\u{F3D8}') // folder icon
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(14)
-        .color(c.accent);
+    let repo_icon = icon!(icons::FOLDER_OPEN, 14, c.accent);
 
     let repo_name = text(state.repo_display_name())
         .size(14)
@@ -28,10 +26,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let separator = || text("│").size(14).color(c.border);
 
     // ── Branch indicator ──────────────────────────────────────────────────
-    let branch_icon = text('\u{F404}') // git-branch icon
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(14)
-        .color(c.green);
+    let branch_icon = icon!(icons::GIT_BRANCH, 14, c.green);
 
     let branch_name_str = tab.current_branch.as_deref().unwrap_or("(detached)");
 
@@ -52,33 +47,21 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     };
 
     // ── Fetch button ──────────────────────────────────────────────────────
-    let fetch_icon = text('\u{F116}') // arrow-down-circle
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(14)
-        .color(c.accent);
+    let fetch_icon = icon!(icons::CLOUD_ARROW_DOWN, 14, c.accent);
 
-    let fetch_btn = if tab.remotes.is_empty() {
+    let fetch_msg = (!tab.remotes.is_empty()).then_some(Message::Fetch);
+    let fetch_btn = crate::view_utils::on_press_maybe(
         button(
             row![fetch_icon, Space::with_width(4), text("Fetch").size(12)]
                 .align_y(Alignment::Center),
         )
         .padding([4, 10])
-        .style(theme::toolbar_button)
-    } else {
-        button(
-            row![fetch_icon, Space::with_width(4), text("Fetch").size(12)]
-                .align_y(Alignment::Center),
-        )
-        .padding([4, 10])
-        .style(theme::toolbar_button)
-        .on_press(Message::Fetch)
-    };
+        .style(theme::toolbar_button),
+        fetch_msg,
+    );
 
     // ── Refresh button ────────────────────────────────────────────────────
-    let refresh_icon = text('\u{F130}') // arrow-clockwise
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(14)
-        .color(c.accent);
+    let refresh_icon = icon!(icons::ARROW_REPEAT, 14, c.accent);
 
     let refresh_btn = button(
         row![refresh_icon, Space::with_width(4), text("Refresh").size(12)]
@@ -89,10 +72,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     .on_press(Message::RefreshRepo);
 
     // ── Open another repo button ──────────────────────────────────────────
-    let open_icon = text('\u{F3D8}') // folder-open
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(14)
-        .color(c.text_secondary);
+    let open_icon = icon!(icons::FOLDER_OPEN, 14, c.text_secondary);
 
     let open_btn = button(
         row![open_icon, Space::with_width(4), text("Open").size(12)].align_y(Alignment::Center),
@@ -102,10 +82,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     .on_press(Message::OpenRepo);
 
     // ── Close repo button (return to welcome screen) ──────────────────────
-    let close_icon = text('\u{F62A}') // x-circle
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(14)
-        .color(c.text_secondary);
+    let close_icon = icon!(icons::X_CIRCLE, 14, c.text_secondary);
 
     let close_btn = button(
         row![close_icon, Space::with_width(4), text("Close").size(12)].align_y(Alignment::Center),
@@ -116,14 +93,11 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     // ── Toggle sidebar ────────────────────────────────────────────────────
     let sidebar_icon_char = if state.sidebar_expanded {
-        '\u{F284}' // chevron-left
+        icons::CHEVRON_LEFT
     } else {
-        '\u{F285}' // chevron-right
+        icons::CHEVRON_RIGHT
     };
-    let sidebar_icon = text(sidebar_icon_char)
-        .font(iced_fonts::BOOTSTRAP_FONT)
-        .size(14)
-        .color(c.text_secondary);
+    let sidebar_icon = icon!(sidebar_icon_char, 14, c.text_secondary);
 
     let sidebar_btn = button(sidebar_icon)
         .padding([4, 8])
