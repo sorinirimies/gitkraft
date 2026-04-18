@@ -117,6 +117,7 @@ clippy:
     cargo clippy --workspace --all-targets --all-features -- -D warnings -A deprecated
 
 # Run all quality checks (format, clippy, test, nu) — must pass before a release.
+
 # Auto-formats first, then verifies no changes remain (catches unstaged format diffs).
 check-all: fmt clippy test test-nu
     @echo "🔍 Verifying formatting is clean…"
@@ -141,43 +142,43 @@ vhs-all: vhs-gui vhs-tui
 vhs-gui: _check-vhs
     #!/usr/bin/env sh
     set -e
-    mkdir -p {{GUI_VHS_GENERATED}}
+    mkdir -p {{ GUI_VHS_GENERATED }}
     echo "╔════════════════════════════════════════════╗"
     echo "║   GUI Tapes (Iced desktop)                ║"
     echo "╚════════════════════════════════════════════╝"
-    for tape in {{GUI_VHS}}/*.tape; do
+    for tape in {{ GUI_VHS }}/*.tape; do
         [ -f "$tape" ] || continue
         echo "▶  $tape"
         vhs "$tape" || echo "❌ Failed: $tape"
     done
-    echo "✅ GUI demos done → {{GUI_VHS_GENERATED}}/"
+    echo "✅ GUI demos done → {{ GUI_VHS_GENERATED }}/"
 
 # Generate only the TUI demo GIFs
 vhs-tui: _check-vhs
     #!/usr/bin/env sh
     set -e
-    mkdir -p {{TUI_VHS_GENERATED}}
+    mkdir -p {{ TUI_VHS_GENERATED }}
     echo "╔════════════════════════════════════════════╗"
     echo "║   TUI Tapes (Ratatui terminal)            ║"
     echo "╚════════════════════════════════════════════╝"
-    for tape in {{TUI_VHS}}/*.tape; do
+    for tape in {{ TUI_VHS }}/*.tape; do
         [ -f "$tape" ] || continue
         echo "▶  $tape"
         vhs "$tape" || echo "❌ Failed: $tape"
     done
-    echo "✅ TUI demos done → {{TUI_VHS_GENERATED}}/"
+    echo "✅ TUI demos done → {{ TUI_VHS_GENERATED }}/"
 
 # Render a single tape by name (e.g. just vhs-tape tui-demo)
 vhs-tape name: _check-vhs
     #!/usr/bin/env sh
-    if [ -f "{{GUI_VHS}}/{{name}}.tape" ]; then
-        echo "▶  {{GUI_VHS}}/{{name}}.tape"
-        vhs "{{GUI_VHS}}/{{name}}.tape" && echo "✅ Done."
-    elif [ -f "{{TUI_VHS}}/{{name}}.tape" ]; then
-        echo "▶  {{TUI_VHS}}/{{name}}.tape"
-        vhs "{{TUI_VHS}}/{{name}}.tape" && echo "✅ Done."
+    if [ -f "{{ GUI_VHS }}/{{ name }}.tape" ]; then
+        echo "▶  {{ GUI_VHS }}/{{ name }}.tape"
+        vhs "{{ GUI_VHS }}/{{ name }}.tape" && echo "✅ Done."
+    elif [ -f "{{ TUI_VHS }}/{{ name }}.tape" ]; then
+        echo "▶  {{ TUI_VHS }}/{{ name }}.tape"
+        vhs "{{ TUI_VHS }}/{{ name }}.tape" && echo "✅ Done."
     else
-        echo "❌ Tape not found: {{name}}.tape"
+        echo "❌ Tape not found: {{ name }}.tape"
         echo ""
         just vhs-list
         exit 1
@@ -186,11 +187,11 @@ vhs-tape name: _check-vhs
 # List all available VHS tapes
 vhs-list:
     #!/usr/bin/env sh
-    echo "GUI tapes  →  {{GUI_VHS}}/"
-    ls {{GUI_VHS}}/*.tape 2>/dev/null | sed 's|.*/||; s|\.tape||' | sed 's/^/  /' || echo "  (none)"
+    echo "GUI tapes  →  {{ GUI_VHS }}/"
+    ls {{ GUI_VHS }}/*.tape 2>/dev/null | sed 's|.*/||; s|\.tape||' | sed 's/^/  /' || echo "  (none)"
     echo ""
-    echo "TUI tapes  →  {{TUI_VHS}}/"
-    ls {{TUI_VHS}}/*.tape 2>/dev/null | sed 's|.*/||; s|\.tape||' | sed 's/^/  /' || echo "  (none)"
+    echo "TUI tapes  →  {{ TUI_VHS }}/"
+    ls {{ TUI_VHS }}/*.tape 2>/dev/null | sed 's|.*/||; s|\.tape||' | sed 's/^/  /' || echo "  (none)"
 
 # ── Documentation ─────────────────────────────────────────────────────────────
 
@@ -240,6 +241,7 @@ _check-version-changed version: _check-nu
     echo "✅ Version will change: $current → {{ version }}"
 
 # Bump the workspace version, regenerate Cargo.lock + CHANGELOG.md, commit and tag.
+
 # Validation runs first (cheap), quality gate runs second (expensive).
 bump version: (validate-tag version) (_check-version-changed version) check-release _check-git-cliff
     nu scripts/bump_version.nu --yes {{ version }}
@@ -339,11 +341,16 @@ push:
 push-gitea:
     git push gitea main
 
-# Push the current branch to both GitHub and Gitea
+# Push the current branch to Gitea Starscream
+push-gitea-starscream:
+    git push gitea_starscream main
+
+# Push the current branch to all remotes
 push-all:
     git push origin main
     git push gitea main
-    @echo "✅ Pushed to both GitHub and Gitea!"
+    git push gitea_starscream main
+    @echo "✅ Pushed to GitHub, Gitea, and Gitea Starscream!"
 
 # Pull the current branch from GitHub (origin)
 pull:
@@ -353,21 +360,27 @@ pull:
 pull-gitea:
     git pull gitea main
 
-# Pull the current branch from both remotes
+# Pull the current branch from Gitea Starscream
+pull-gitea-starscream:
+    git pull gitea_starscream main
+
+# Pull the current branch from all remotes
 pull-all:
     git pull origin main
     git pull gitea main
-    @echo "✅ Pulled from both GitHub and Gitea!"
+    git pull gitea_starscream main
+    @echo "✅ Pulled from GitHub, Gitea, and Gitea Starscream!"
 
 # Push all tags to GitHub
 push-tags:
     git push origin --tags
 
-# Push all tags to both remotes
+# Push all tags to all remotes
 push-tags-all:
     git push origin --tags
     git push gitea --tags
-    @echo "✅ Tags pushed to both remotes!"
+    git push gitea_starscream --tags
+    @echo "✅ Tags pushed to all remotes!"
 
 # ── Release workflows ─────────────────────────────────────────────────────────
 
@@ -384,17 +397,25 @@ release-gitea version: (bump version)
     git push --follow-tags gitea main
     @echo "✅ Release v{{ version }} live on Gitea."
 
-# Bump, commit, tag, then push to both GitHub and Gitea.
+# Bump, commit, tag, then push to Gitea Starscream only.
+release-gitea-starscream version: (bump version)
+    @echo "Pushing release v{{ version }} to Gitea Starscream…"
+    git push --follow-tags gitea_starscream main
+    @echo "✅ Release v{{ version }} live on Gitea Starscream."
+
+# Bump, commit, tag, then push to all remotes.
 release-all version: (bump version)
     @echo "Pushing release v{{ version }} to all remotes…"
     git push --follow-tags origin main
     git push --follow-tags gitea main
-    @echo "✅ Release v{{ version }} pushed to GitHub and Gitea!"
+    git push --follow-tags gitea_starscream main
+    @echo "✅ Release v{{ version }} pushed to GitHub, Gitea, and Gitea Starscream!"
 
 # Push the latest commit and all tags to every remote (no bump).
 push-release-all: check-all
     git push --follow-tags origin main
     git push --follow-tags gitea main
+    git push --follow-tags gitea_starscream main
     @echo "✅ Latest commit + tags pushed to all remotes."
 
 # Manually re-trigger the Release workflow for an existing tag via the gh CLI.
@@ -411,6 +432,20 @@ sync-gitea:
     git push gitea main --force
     git push gitea --tags --force
     @echo "✅ Gitea force-synced with GitHub."
+
+# Force-sync Gitea Starscream with GitHub
+sync-gitea-starscream:
+    git push gitea_starscream main --force
+    git push gitea_starscream --tags --force
+    @echo "✅ Gitea Starscream force-synced with GitHub."
+
+# Force-sync all Gitea instances with GitHub
+sync-all-gitea:
+    git push gitea main --force
+    git push gitea --tags --force
+    git push gitea_starscream main --force
+    git push gitea_starscream --tags --force
+    @echo "✅ All Gitea instances force-synced with GitHub."
 
 # Add a Gitea remote and optionally push — interactive (nu script)
 setup-gitea url: _check-nu
