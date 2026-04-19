@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.5.6 - 2026-04-19
+### 🔧 Chores
+- chore: bump version to 0.5.6
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.5...v0.5.6
 ## 0.5.5 - 2026-04-19
 ### ♻️ Refactor
 - Refactor key event handlers to reduce nesting and improve clarity
