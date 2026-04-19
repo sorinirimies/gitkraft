@@ -39,6 +39,7 @@ All notable changes to this project will be documented in this file.
 - chore: bump version to 0.5.2
 - chore: bump version to 0.5.3
 - chore: bump version to 0.5.4
+- chore: bump version to 0.5.5
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.9...v0.5.5
 ## 0.3.9 - 2026-04-14
 ### 📦 Other Changes
