@@ -85,9 +85,12 @@ jobs:
             libssl-dev
 
       - name: Install Rust stable (rustfmt + clippy)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          . "$HOME/.cargo/env"
+          rustup component add rustfmt
+          rustup component add clippy
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
@@ -138,9 +141,11 @@ jobs:
             libssl-dev
 
       - name: Install Rust stable + target
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          . "$HOME/.cargo/env"
+          rustup target add ${{ matrix.target }}
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
@@ -196,7 +201,9 @@ jobs:
           fetch-depth: 0
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Install git-cliff
         run: cargo install git-cliff --locked
@@ -280,7 +287,9 @@ jobs:
 
       - name: Install Rust stable
         if: env.HAS_TOKEN == 'true'
-        uses: dtolnay/rust-toolchain@stable
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Cache Cargo dependencies
         if: env.HAS_TOKEN == 'true'
