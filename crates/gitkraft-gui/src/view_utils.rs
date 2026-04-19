@@ -180,12 +180,7 @@ pub fn toolbar_btn<'a>(
     use iced::Alignment;
 
     button(
-        row![
-            icon_widget.into(),
-            Space::new(4, 0),
-            text(label).size(12)
-        ]
-        .align_y(Alignment::Center),
+        row![icon_widget.into(), Space::new(4, 0), text(label).size(12)].align_y(Alignment::Center),
     )
     .padding([4, 10])
     .style(crate::theme::toolbar_button)

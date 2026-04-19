@@ -7,8 +7,6 @@
 [![Crates.io](https://img.shields.io/crates/v/gitkraft.svg)](https://crates.io/crates/gitkraft)
 [![docs.rs](https://docs.rs/gitkraft-core/badge.svg)](https://docs.rs/gitkraft-core)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![CI](https://github.com/sorinirimies/gitkraft/actions/workflows/ci.yml/badge.svg)](https://github.com/sorinirimies/gitkraft/actions/workflows/ci.yml)
-[![Release](https://github.com/sorinirimies/gitkraft/actions/workflows/release.yml/badge.svg)](https://github.com/sorinirimies/gitkraft/actions/workflows/release.yml)
 
 [Features](#features) · [Installation](#installation) · [Building from Source](#building-from-source) · [Architecture](#architecture) · [Themes](#themes) · [Development](#development) · [License](#license)
 

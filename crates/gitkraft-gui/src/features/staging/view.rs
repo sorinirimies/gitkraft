@@ -263,8 +263,8 @@ fn commit_view(state: &GitKraft) -> Element<'_, Message> {
         if can_commit { c.green } else { c.muted }
     );
 
-    let commit_btn_content = row![commit_icon, Space::new(6, 0), text("Commit").size(13),]
-        .align_y(Alignment::Center);
+    let commit_btn_content =
+        row![commit_icon, Space::new(6, 0), text("Commit").size(13),].align_y(Alignment::Center);
 
     let commit_msg = can_commit.then_some(Message::CreateCommit);
     let commit_btn = view_utils::on_press_maybe(

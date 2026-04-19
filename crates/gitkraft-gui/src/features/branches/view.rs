@@ -93,13 +93,9 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         let hint = text(format!("Renaming '{orig}'")).size(11).color(c.muted);
 
         container(
-            column![
-                hint,
-                input,
-                row![confirm_btn, Space::new(4, 0), cancel_btn],
-            ]
-            .spacing(4)
-            .width(Length::Fill),
+            column![hint, input, row![confirm_btn, Space::new(4, 0), cancel_btn],]
+                .spacing(4)
+                .width(Length::Fill),
         )
         .padding([4, 10])
         .into()
@@ -183,12 +179,10 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             let checkout_msg =
                 (!is_current).then_some(Message::CheckoutBranch(branch.name.clone()));
             let checkout_btn = view_utils::on_press_maybe(
-                button(
-                    row![indicator, Space::new(6, 0), name_label].align_y(Alignment::Center),
-                )
-                .padding([4, 8])
-                .width(Length::Fill)
-                .style(theme::ghost_button),
+                button(row![indicator, Space::new(6, 0), name_label].align_y(Alignment::Center))
+                    .padding([4, 8])
+                    .width(Length::Fill)
+                    .style(theme::ghost_button),
                 checkout_msg,
             );
 
@@ -240,12 +234,11 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .color(c.text_secondary)
                 .wrapping(iced::widget::text::Wrapping::None);
 
-            let branch_btn =
-                button(row![icon, Space::new(6, 0), label].align_y(Alignment::Center))
-                    .padding([2, 8])
-                    .width(Length::Fill)
-                    .style(theme::ghost_button)
-                    .on_press(Message::CheckoutRemoteBranch(branch.name.clone()));
+            let branch_btn = button(row![icon, Space::new(6, 0), label].align_y(Alignment::Center))
+                .padding([2, 8])
+                .width(Length::Fill)
+                .style(theme::ghost_button)
+                .on_press(Message::CheckoutRemoteBranch(branch.name.clone()));
 
             mouse_area(
                 container(branch_btn)

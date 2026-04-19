@@ -100,12 +100,8 @@ pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
         let recent_header_label = text("Recent Repositories").size(14).color(c.text_primary);
 
         card_col = card_col.push(
-            row![
-                recent_header_icon,
-                Space::new(6, 0),
-                recent_header_label
-            ]
-            .align_y(Alignment::Center),
+            row![recent_header_icon, Space::new(6, 0), recent_header_label]
+                .align_y(Alignment::Center),
         );
 
         card_col = card_col.push(Space::new(0, 8));

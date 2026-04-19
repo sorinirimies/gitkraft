@@ -53,8 +53,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let fetch_msg = (!tab.remotes.is_empty()).then_some(Message::Fetch);
     let fetch_btn = crate::view_utils::on_press_maybe(
         button(
-            row![fetch_icon, Space::new(4, 0), text("Fetch").size(12)]
-                .align_y(Alignment::Center),
+            row![fetch_icon, Space::new(4, 0), text("Fetch").size(12)].align_y(Alignment::Center),
         )
         .padding([4, 10])
         .style(theme::toolbar_button),
