@@ -345,12 +345,18 @@ push-gitea:
 push-gitea-starscream:
     git push gitea_starscream main
 
-# Push the current branch to all remotes
+# Push the current branch to all remotes (continues on failure)
 push-all:
-    git push origin main
-    git push gitea main
-    git push gitea_starscream main
-    @echo "✅ Pushed to GitHub, Gitea, and Gitea Starscream!"
+    #!/usr/bin/env sh
+    failed=""
+    git push origin main             || failed="$failed origin"
+    git push gitea main              || failed="$failed gitea"
+    git push gitea_starscream main   || failed="$failed gitea_starscream"
+    if [ -n "$failed" ]; then
+        echo "⚠️  Failed to push to:$failed"
+    else
+        echo "✅ Pushed to GitHub, Gitea, and Gitea Starscream!"
+    fi
 
 # Pull the current branch from GitHub (origin)
 pull:
@@ -364,23 +370,35 @@ pull-gitea:
 pull-gitea-starscream:
     git pull gitea_starscream main
 
-# Pull the current branch from all remotes
+# Pull the current branch from all remotes (continues on failure)
 pull-all:
-    git pull origin main
-    git pull gitea main
-    git pull gitea_starscream main
-    @echo "✅ Pulled from GitHub, Gitea, and Gitea Starscream!"
+    #!/usr/bin/env sh
+    failed=""
+    git pull origin main             || failed="$failed origin"
+    git pull gitea main              || failed="$failed gitea"
+    git pull gitea_starscream main   || failed="$failed gitea_starscream"
+    if [ -n "$failed" ]; then
+        echo "⚠️  Failed to pull from:$failed"
+    else
+        echo "✅ Pulled from GitHub, Gitea, and Gitea Starscream!"
+    fi
 
 # Push all tags to GitHub
 push-tags:
     git push origin --tags
 
-# Push all tags to all remotes
+# Push all tags to all remotes (continues on failure)
 push-tags-all:
-    git push origin --tags
-    git push gitea --tags
-    git push gitea_starscream --tags
-    @echo "✅ Tags pushed to all remotes!"
+    #!/usr/bin/env sh
+    failed=""
+    git push origin --tags             || failed="$failed origin"
+    git push gitea --tags              || failed="$failed gitea"
+    git push gitea_starscream --tags   || failed="$failed gitea_starscream"
+    if [ -n "$failed" ]; then
+        echo "⚠️  Failed to push tags to:$failed"
+    else
+        echo "✅ Tags pushed to all remotes!"
+    fi
 
 # ── Release workflows ─────────────────────────────────────────────────────────
 
@@ -403,20 +421,32 @@ release-gitea-starscream version: (bump version)
     git push --follow-tags gitea_starscream main
     @echo "✅ Release v{{ version }} live on Gitea Starscream."
 
-# Bump, commit, tag, then push to all remotes.
+# Bump, commit, tag, then push to all remotes (continues on failure).
 release-all version: (bump version)
-    @echo "Pushing release v{{ version }} to all remotes…"
-    git push --follow-tags origin main
-    git push --follow-tags gitea main
-    git push --follow-tags gitea_starscream main
-    @echo "✅ Release v{{ version }} pushed to GitHub, Gitea, and Gitea Starscream!"
+    #!/usr/bin/env sh
+    echo "Pushing release v{{ version }} to all remotes…"
+    failed=""
+    git push --follow-tags origin main             || failed="$failed origin"
+    git push --follow-tags gitea main              || failed="$failed gitea"
+    git push --follow-tags gitea_starscream main   || failed="$failed gitea_starscream"
+    if [ -n "$failed" ]; then
+        echo "⚠️  Release v{{ version }} failed to push to:$failed"
+    else
+        echo "✅ Release v{{ version }} pushed to GitHub, Gitea, and Gitea Starscream!"
+    fi
 
-# Push the latest commit and all tags to every remote (no bump).
+# Push the latest commit and all tags to every remote (no bump, continues on failure).
 push-release-all: check-all
-    git push --follow-tags origin main
-    git push --follow-tags gitea main
-    git push --follow-tags gitea_starscream main
-    @echo "✅ Latest commit + tags pushed to all remotes."
+    #!/usr/bin/env sh
+    failed=""
+    git push --follow-tags origin main             || failed="$failed origin"
+    git push --follow-tags gitea main              || failed="$failed gitea"
+    git push --follow-tags gitea_starscream main   || failed="$failed gitea_starscream"
+    if [ -n "$failed" ]; then
+        echo "⚠️  Failed to push to:$failed"
+    else
+        echo "✅ Latest commit + tags pushed to all remotes."
+    fi
 
 # Manually re-trigger the Release workflow for an existing tag via the gh CLI.
 release-retrigger version:
@@ -439,13 +469,19 @@ sync-gitea-starscream:
     git push gitea_starscream --tags --force
     @echo "✅ Gitea Starscream force-synced with GitHub."
 
-# Force-sync all Gitea instances with GitHub
+# Force-sync all Gitea instances with GitHub (continues on failure)
 sync-all-gitea:
-    git push gitea main --force
-    git push gitea --tags --force
-    git push gitea_starscream main --force
-    git push gitea_starscream --tags --force
-    @echo "✅ All Gitea instances force-synced with GitHub."
+    #!/usr/bin/env sh
+    failed=""
+    git push gitea main --force                  || failed="$failed gitea"
+    git push gitea --tags --force                || failed="$failed gitea-tags"
+    git push gitea_starscream main --force       || failed="$failed gitea_starscream"
+    git push gitea_starscream --tags --force     || failed="$failed gitea_starscream-tags"
+    if [ -n "$failed" ]; then
+        echo "⚠️  Failed to sync:$failed"
+    else
+        echo "✅ All Gitea instances force-synced with GitHub."
+    fi
 
 # Add a Gitea remote and optionally push — interactive (nu script)
 setup-gitea url: _check-nu
