@@ -62,7 +62,7 @@ pub fn thin_scrollbar() -> iced::widget::scrollable::Direction {
 
 /// Thin horizontal separator line for context menus.
 pub fn context_menu_separator<'a, M: 'a>() -> iced::Element<'a, M> {
-    iced::widget::container(iced::widget::Space::with_height(1))
+    iced::widget::container(iced::widget::Space::new(0, 1))
         .padding(iced::Padding {
             top: 4.0,
             right: 0.0,
@@ -102,7 +102,7 @@ pub fn centered_placeholder<'a>(
     let label = text(label_text.to_string()).size(14).color(muted);
 
     container(
-        column![icon_widget, Space::with_height(8), label]
+        column![icon_widget, Space::new(0, 8), label]
             .spacing(4)
             .align_x(Alignment::Center),
     )
@@ -153,9 +153,9 @@ pub fn collapsible_header<'a>(
     button(
         row![
             chevron,
-            Space::with_width(4),
+            Space::new(4, 0),
             text(label).size(11).color(muted),
-            Space::with_width(4),
+            Space::new(4, 0),
             text(format!("({count})")).size(10).color(muted),
         ]
         .align_y(Alignment::Center),
@@ -182,7 +182,7 @@ pub fn toolbar_btn<'a>(
     button(
         row![
             icon_widget.into(),
-            Space::with_width(4),
+            Space::new(4, 0),
             text(label).size(12)
         ]
         .align_y(Alignment::Center),

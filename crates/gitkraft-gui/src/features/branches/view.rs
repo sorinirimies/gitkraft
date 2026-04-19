@@ -38,9 +38,9 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     let header_row = row![
         header_icon,
-        Space::with_width(6),
+        Space::new(6, 0),
         header_text,
-        Space::with_width(Length::Fill),
+        Space::new(Length::Fill, 0),
         toggle_btn,
     ]
     .align_y(Alignment::Center)
@@ -65,7 +65,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .padding([4, 10])
             .into()
     } else {
-        Space::with_height(0).into()
+        Space::new(0, 0).into()
     };
 
     // ── Inline rename form ────────────────────────────────────────────────
@@ -96,7 +96,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             column![
                 hint,
                 input,
-                row![confirm_btn, Space::with_width(4), cancel_btn],
+                row![confirm_btn, Space::new(4, 0), cancel_btn],
             ]
             .spacing(4)
             .width(Length::Fill),
@@ -104,7 +104,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .padding([4, 10])
         .into()
     } else {
-        Space::with_height(0).into()
+        Space::new(0, 0).into()
     };
 
     // ── Tag creation form ─────────────────────────────────────────────────
@@ -146,11 +146,11 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             form_col = form_col.push(msg_input);
         }
 
-        form_col = form_col.push(row![confirm_btn, Space::with_width(4), cancel_btn]);
+        form_col = form_col.push(row![confirm_btn, Space::new(4, 0), cancel_btn]);
 
         container(form_col).padding([4, 10]).into()
     } else {
-        Space::with_height(0).into()
+        Space::new(0, 0).into()
     };
 
     // ── Branch list ───────────────────────────────────────────────────────
@@ -184,7 +184,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 (!is_current).then_some(Message::CheckoutBranch(branch.name.clone()));
             let checkout_btn = view_utils::on_press_maybe(
                 button(
-                    row![indicator, Space::with_width(6), name_label].align_y(Alignment::Center),
+                    row![indicator, Space::new(6, 0), name_label].align_y(Alignment::Center),
                 )
                 .padding([4, 8])
                 .width(Length::Fill)
@@ -241,7 +241,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .wrapping(iced::widget::text::Wrapping::None);
 
             let branch_btn =
-                button(row![icon, Space::with_width(6), label].align_y(Alignment::Center))
+                button(row![icon, Space::new(6, 0), label].align_y(Alignment::Center))
                     .padding([2, 8])
                     .width(Length::Fill)
                     .style(theme::ghost_button)
@@ -290,7 +290,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .filter(|b| b.branch_type == BranchType::Remote)
             .count();
 
-        list_col = list_col.push(Space::with_height(4));
+        list_col = list_col.push(Space::new(0, 4));
 
         let remote_header_btn = view_utils::collapsible_header(
             tab.remote_branches_expanded,

@@ -242,11 +242,11 @@ fn commit_row_element<'a>(
     let row_content = row![
         graph_elem,
         oid_label,
-        Space::with_width(6),
+        Space::new(6, 0),
         summary_label,
-        Space::with_width(8),
+        Space::new(8, 0),
         author_label,
-        Space::with_width(8),
+        Space::new(8, 0),
         time_label,
     ]
     .align_y(Alignment::Center)
@@ -292,9 +292,9 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     let header_row = row![
         header_icon,
-        Space::with_width(6),
+        Space::new(6, 0),
         header_text,
-        Space::with_width(6),
+        Space::new(6, 0),
         commit_count,
     ]
     .align_y(Alignment::Center)
@@ -335,7 +335,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let mut list_col = column![].width(Length::Fill);
 
     if top_space > 0.0 {
-        list_col = list_col.push(Space::with_height(top_space));
+        list_col = list_col.push(Space::new(0, top_space));
     }
 
     // Available px for the summary column:
@@ -348,7 +348,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     }
 
     if bottom_space > 0.0 {
-        list_col = list_col.push(Space::with_height(bottom_space));
+        list_col = list_col.push(Space::new(0, bottom_space));
     }
 
     // Loading spinner shown while a background fetch is in progress.

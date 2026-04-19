@@ -31,7 +31,7 @@ pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
         .color(c.text_secondary);
 
         let loading_col =
-            column![spinner_icon, Space::with_height(12), loading_label].align_x(Alignment::Center);
+            column![spinner_icon, Space::new(0, 12), loading_label].align_x(Alignment::Center);
 
         return container(loading_col)
             .width(Length::Fill)
@@ -75,13 +75,13 @@ pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
     let mut card_col = column![
         title,
         subtitle,
-        Space::with_height(24),
+        Space::new(0, 24),
         open_btn,
-        Space::with_height(8),
+        Space::new(0, 8),
         horizontal_rule(1),
-        Space::with_height(8),
+        Space::new(0, 8),
         init_btn,
-        Space::with_height(16),
+        Space::new(0, 16),
         hint,
     ]
     .spacing(4)
@@ -91,9 +91,9 @@ pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
     // ── Recent repositories ───────────────────────────────────────────────
     if !state.recent_repos.is_empty() {
         card_col = card_col
-            .push(Space::with_height(20))
+            .push(Space::new(0, 20))
             .push(horizontal_rule(1))
-            .push(Space::with_height(12));
+            .push(Space::new(0, 12));
 
         let recent_header_icon = icon!(icons::CLOCK_HISTORY, 14, c.accent);
 
@@ -102,13 +102,13 @@ pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
         card_col = card_col.push(
             row![
                 recent_header_icon,
-                Space::with_width(6),
+                Space::new(6, 0),
                 recent_header_label
             ]
             .align_y(Alignment::Center),
         );
 
-        card_col = card_col.push(Space::with_height(8));
+        card_col = card_col.push(Space::new(0, 8));
 
         let mut recent_list = column![].spacing(2).width(Length::Fill);
 
@@ -131,7 +131,7 @@ pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
 
             let entry_content = row![
                 folder_icon,
-                Space::with_width(8),
+                Space::new(8, 0),
                 column![name_label, path_label].spacing(1),
             ]
             .align_y(Alignment::Center)

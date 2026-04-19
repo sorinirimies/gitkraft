@@ -51,11 +51,11 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
 
     let header_row = row![
         header_icon,
-        Space::with_width(4),
+        Space::new(4, 0),
         header_label,
-        Space::with_width(4),
+        Space::new(4, 0),
         count_label,
-        Space::with_width(Length::Fill),
+        Space::new(Length::Fill, 0),
         stage_all_btn,
     ]
     .align_y(Alignment::Center)
@@ -101,13 +101,13 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
 
             let file_row = row![
                 status_badge,
-                Space::with_width(6),
+                Space::new(6, 0),
                 file_label,
-                Space::with_width(Length::Fill),
+                Space::new(Length::Fill, 0),
                 view_btn,
-                Space::with_width(2),
+                Space::new(2, 0),
                 stage_btn,
-                Space::with_width(2),
+                Space::new(2, 0),
                 discard_btn,
             ]
             .align_y(Alignment::Center)
@@ -163,11 +163,11 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
 
     let header_row = row![
         header_icon,
-        Space::with_width(4),
+        Space::new(4, 0),
         header_label,
-        Space::with_width(4),
+        Space::new(4, 0),
         count_label,
-        Space::with_width(Length::Fill),
+        Space::new(Length::Fill, 0),
         unstage_all_btn,
     ]
     .align_y(Alignment::Center)
@@ -200,11 +200,11 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
 
             let file_row = row![
                 status_badge,
-                Space::with_width(6),
+                Space::new(6, 0),
                 file_label,
-                Space::with_width(Length::Fill),
+                Space::new(Length::Fill, 0),
                 view_btn,
-                Space::with_width(2),
+                Space::new(2, 0),
                 unstage_btn,
             ]
             .align_y(Alignment::Center)
@@ -246,7 +246,7 @@ fn commit_view(state: &GitKraft) -> Element<'_, Message> {
 
     let header_label = text("Commit").size(13).color(c.text_primary);
 
-    let header_row = row![header_icon, Space::with_width(4), header_label,]
+    let header_row = row![header_icon, Space::new(4, 0), header_label,]
         .align_y(Alignment::Center)
         .padding([6, 8]);
 
@@ -263,7 +263,7 @@ fn commit_view(state: &GitKraft) -> Element<'_, Message> {
         if can_commit { c.green } else { c.muted }
     );
 
-    let commit_btn_content = row![commit_icon, Space::with_width(6), text("Commit").size(13),]
+    let commit_btn_content = row![commit_icon, Space::new(6, 0), text("Commit").size(13),]
         .align_y(Alignment::Center);
 
     let commit_msg = can_commit.then_some(Message::CreateCommit);
@@ -290,9 +290,9 @@ fn commit_view(state: &GitKraft) -> Element<'_, Message> {
         container(
             column![
                 input,
-                Space::with_height(6),
+                Space::new(0, 6),
                 commit_btn,
-                Space::with_height(4),
+                Space::new(0, 4),
                 staged_hint,
             ]
             .spacing(2)

@@ -90,7 +90,7 @@ impl GitKraft {
 
             row![sidebar_content, divider].height(Length::Fill).into()
         } else {
-            Space::with_width(0).into()
+            Space::new(0, 0).into()
         };
 
         // ── Commit log ────────────────────────────────────────────────────
@@ -167,8 +167,8 @@ impl GitKraft {
             let menu_panel = context_menu_panel(self, &c);
 
             let positioned = column![
-                Space::with_height(menu_y),
-                row![Space::with_width(menu_x), menu_panel,],
+                Space::new(0, menu_y),
+                row![Space::new(menu_x, 0), menu_panel,],
             ]
             .width(Length::Fill)
             .height(Length::Fill);
@@ -199,11 +199,11 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
     let branch_info: Element<'_, Message> = if let Some(ref branch) = tab.current_branch {
         let icon = icon!(icons::GIT_BRANCH, 12, c.accent);
         let label = text(branch.as_str()).size(12).color(c.text_primary);
-        row![icon, Space::with_width(4), label]
+        row![icon, Space::new(4, 0), label]
             .align_y(Alignment::Center)
             .into()
     } else {
-        Space::with_width(0).into()
+        Space::new(0, 0).into()
     };
 
     let repo_state_info: Element<'_, Message> = if let Some(ref info) = tab.repo_info {
@@ -211,10 +211,10 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
         if state_str != "Clean" {
             text(state_str).size(12).color(c.yellow).into()
         } else {
-            Space::with_width(0).into()
+            Space::new(0, 0).into()
         }
     } else {
-        Space::with_width(0).into()
+        Space::new(0, 0).into()
     };
 
     let changes_summary = {
@@ -235,18 +235,18 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
             .color(c.muted)
             .into()
     } else {
-        Space::with_width(0).into()
+        Space::new(0, 0).into()
     };
 
     let bar = row![
         status_label,
-        Space::with_width(Length::Fill),
+        Space::new(Length::Fill, 0),
         changes_summary,
-        Space::with_width(16),
+        Space::new(16, 0),
         zoom_label,
-        Space::with_width(16),
+        Space::new(16, 0),
         repo_state_info,
-        Space::with_width(16),
+        Space::new(16, 0),
         branch_info,
     ]
     .align_y(Alignment::Center)
@@ -271,9 +271,9 @@ fn error_banner<'a>(message: &str, c: &ThemeColors) -> Element<'a, Message> {
 
     let banner_row = row![
         icon,
-        Space::with_width(8),
+        Space::new(8, 0),
         msg,
-        Space::with_width(Length::Fill),
+        Space::new(Length::Fill, 0),
         dismiss,
     ]
     .align_y(Alignment::Center)
@@ -304,7 +304,7 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
     let menu_item = move |label: &str, msg: Message| {
         button(
             row![
-                Space::with_width(4),
+                Space::new(4, 0),
                 text(label.to_string()).size(13).color(text_primary),
             ]
             .align_y(Alignment::Center),
@@ -501,7 +501,7 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
             .into()
         }
 
-        None => Space::with_width(0).into(),
+        None => Space::new(0, 0).into(),
     };
 
     container(content)

@@ -41,10 +41,10 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .color(c.yellow)
                 .into()
         } else {
-            Space::with_width(0).into()
+            Space::new(0, 0).into()
         }
     } else {
-        Space::with_width(0).into()
+        Space::new(0, 0).into()
     };
 
     // ── Fetch button ──────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let fetch_msg = (!tab.remotes.is_empty()).then_some(Message::Fetch);
     let fetch_btn = crate::view_utils::on_press_maybe(
         button(
-            row![fetch_icon, Space::with_width(4), text("Fetch").size(12)]
+            row![fetch_icon, Space::new(4, 0), text("Fetch").size(12)]
                 .align_y(Alignment::Center),
         )
         .padding([4, 10])
@@ -93,36 +93,36 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let loading_indicator: Element<'_, Message> = if tab.is_loading {
         text("⟳ Loading…").size(12).color(c.yellow).into()
     } else {
-        Space::with_width(0).into()
+        Space::new(0, 0).into()
     };
 
     // ── Assemble ──────────────────────────────────────────────────────────
     let toolbar = row![
         sidebar_btn,
-        Space::with_width(8),
+        Space::new(8, 0),
         repo_icon,
-        Space::with_width(6),
+        Space::new(6, 0),
         repo_name,
-        Space::with_width(10),
+        Space::new(10, 0),
         separator(),
-        Space::with_width(10),
+        Space::new(10, 0),
         branch_icon,
-        Space::with_width(6),
+        Space::new(6, 0),
         branch_label,
         state_badge,
-        Space::with_width(10),
+        Space::new(10, 0),
         separator(),
-        Space::with_width(10),
+        Space::new(10, 0),
         loading_indicator,
-        Space::with_width(Length::Fill),
+        Space::new(Length::Fill, 0),
         theme_selector(state.current_theme_index),
-        Space::with_width(8),
+        Space::new(8, 0),
         fetch_btn,
-        Space::with_width(4),
+        Space::new(4, 0),
         refresh_btn,
-        Space::with_width(4),
+        Space::new(4, 0),
         open_btn,
-        Space::with_width(4),
+        Space::new(4, 0),
         close_btn,
     ]
     .align_y(Alignment::Center)
