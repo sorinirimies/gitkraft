@@ -358,6 +358,19 @@ push-all:
         echo "✅ Pushed to GitHub, Gitea, and Gitea Starscream!"
     fi
 
+# Force-push the current branch to all remotes
+push-all-force:
+    #!/usr/bin/env sh
+    failed=""
+    git push --force origin main             || failed="$failed origin"
+    git push --force gitea main              || failed="$failed gitea"
+    git push --force gitea_starscream main   || failed="$failed gitea_starscream"
+    if [ -n "$failed" ]; then
+        echo "⚠️  Failed to force-push to:$failed"
+    else
+        echo "✅ Force-pushed to GitHub, Gitea, and Gitea Starscream!"
+    fi
+
 # Pull the current branch from GitHub (origin)
 pull:
     git pull origin main
