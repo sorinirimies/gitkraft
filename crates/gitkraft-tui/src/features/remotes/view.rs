@@ -16,7 +16,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
 
-    if app.remotes.is_empty() {
+    if app.tab().remotes.is_empty() {
         let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(
             "  No remotes",
             Style::default().fg(theme.text_muted),
@@ -27,6 +27,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     }
 
     let items: Vec<ListItem> = app
+        .tab()
         .remotes
         .iter()
         .map(|remote| {

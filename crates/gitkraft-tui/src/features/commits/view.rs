@@ -166,7 +166,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
 
-    if app.commits.is_empty() {
+    if app.tab().commits.is_empty() {
         let items: Vec<ListItem> = vec![ListItem::new(Line::from(vec![Span::styled(
             "  No commits yet",
             Style::default().fg(theme.text_muted),
@@ -178,6 +178,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     }
 
     let items: Vec<ListItem> = app
+        .tab()
         .commits
         .iter()
         .enumerate()
@@ -187,7 +188,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
             let relative = commit.relative_time();
 
             // Build graph prefix spans for this row
-            let mut spans = if let Some(row) = app.graph_rows.get(idx) {
+            let mut spans = if let Some(row) = app.tab().graph_rows.get(idx) {
                 build_graph_spans(row, &theme.graph_colors)
             } else {
                 vec![Span::raw("  ")]
@@ -225,5 +226,5 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         )
         .highlight_symbol("▶ ");
 
-    frame.render_stateful_widget(list, area, &mut app.commit_list_state);
+    frame.render_stateful_widget(list, area, &mut app.tab_mut().commit_list_state);
 }

@@ -20,33 +20,75 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         .border_style(Style::default().fg(theme.border_inactive))
         .style(Style::default().bg(theme.border_inactive));
 
-    let repo_name = app
+    let tab = app.tab();
+
+    let repo_name = tab
         .repo_path
         .as_ref()
         .and_then(|p| p.file_name())
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown".to_string());
 
-    let branch_name = app
+    let branch_name = tab
         .repo_info
         .as_ref()
         .and_then(|info| info.head_branch.clone())
         .unwrap_or_else(|| "detached".to_string());
 
-    let state = app
+    let state = tab
         .repo_info
         .as_ref()
         .map(|info| format!("{}", info.state))
         .unwrap_or_else(|| "?".to_string());
 
-    let spans = vec![
-        Span::styled(
+    let mut spans: Vec<Span> = Vec::new();
+
+    // Show tab indicators if there are multiple tabs
+    if app.tabs.len() > 1 {
+        for (i, t) in app.tabs.iter().enumerate() {
+            let name = t.display_name();
+            let style = if i == app.active_tab_index {
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme.text_muted)
+            };
+            spans.push(Span::styled(format!(" {} ", name), style));
+            if i < app.tabs.len() - 1 {
+                spans.push(Span::styled("|", Style::default().fg(theme.text_muted)));
+            }
+        }
+        // Tab switching hint
+        spans.push(Span::styled(
+            " [/]",
+            Style::default()
+                .fg(theme.warning)
+                .add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(
+            " switch tab ",
+            Style::default().fg(theme.text_primary),
+        ));
+        spans.push(Span::styled(
+            "│ ",
+            Style::default().fg(theme.text_secondary),
+        ));
+    }
+
+    // When tabs are shown, the active tab name already displays the repo.
+    // Only show the standalone repo name when there's a single tab.
+    if app.tabs.len() <= 1 {
+        spans.push(Span::styled(
             format!(" {} ", repo_name),
             Style::default()
                 .fg(theme.text_primary)
                 .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("│", Style::default().fg(theme.text_secondary)),
+        ));
+        spans.push(Span::styled("│", Style::default().fg(theme.text_secondary)));
+    }
+
+    spans.extend([
         Span::styled(
             format!("  {} ", branch_name),
             Style::default()
@@ -112,7 +154,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(" quit", Style::default().fg(theme.text_primary)),
-    ];
+    ]);
 
     let line = Line::from(spans);
     let paragraph = Paragraph::new(line).block(block);

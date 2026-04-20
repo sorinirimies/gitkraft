@@ -14,15 +14,17 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             match std::env::current_dir() {
                 Ok(cwd) => match gitkraft_core::features::repo::init_repo(&cwd) {
                     Ok(_repo) => {
-                        app.status_message = Some(format!("Initialized repo at {}", cwd.display()));
+                        app.tab_mut().status_message =
+                            Some(format!("Initialized repo at {}", cwd.display()));
                         app.open_repo(cwd);
                     }
                     Err(e) => {
-                        app.error_message = Some(format!("Failed to init repo: {e}"));
+                        app.tab_mut().error_message = Some(format!("Failed to init repo: {e}"));
                     }
                 },
                 Err(e) => {
-                    app.error_message = Some(format!("Cannot determine current directory: {e}"));
+                    app.tab_mut().error_message =
+                        Some(format!("Cannot determine current directory: {e}"));
                 }
             }
         }
@@ -38,6 +40,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Esc => {
             app.should_quit = true;
+        }
+        // Tab management
+        KeyCode::Char('N') => {
+            app.new_tab();
         }
         _ => {}
     }

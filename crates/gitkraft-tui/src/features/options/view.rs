@@ -75,6 +75,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
 
         let theme_name = app.current_theme_name();
         let last_repo = app
+            .tab()
             .repo_path
             .as_ref()
             .and_then(|p| p.file_name())

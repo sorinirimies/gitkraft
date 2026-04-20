@@ -7,8 +7,8 @@ use crate::features;
 pub fn handle_key(app: &mut App, key: KeyEvent) {
     // Clear error/status on any keypress so stale messages don't linger
     // (but keep them visible for at least one frame — they were set last tick).
-    if app.error_message.is_some() {
-        app.error_message = None;
+    if app.tab().error_message.is_some() {
+        app.tab_mut().error_message = None;
     }
 
     // Input mode takes priority on ANY screen
@@ -87,7 +87,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 return;
             }
 
-            // ── Global keys (available in Normal mode on the Main screen) ──
+            // -- Global keys (available in Normal mode on the Main screen) --
             match key.code {
                 KeyCode::Char('q') => app.should_quit = true,
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -107,6 +107,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 }
                 KeyCode::Char('o') => {
                     let start = app
+                        .tab()
                         .repo_path
                         .clone()
                         .and_then(|p| p.parent().map(|pp| pp.to_path_buf()))
@@ -115,7 +116,17 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                     app.open_browser(start);
                 }
                 KeyCode::Char('W') => {
-                    app.close_repo();
+                    app.close_tab();
+                }
+                // Tab management
+                KeyCode::Char('N') => {
+                    app.new_tab();
+                }
+                KeyCode::Char(']') => {
+                    app.next_tab();
+                }
+                KeyCode::Char('[') => {
+                    app.prev_tab();
                 }
                 // Arrow left/right: switch panes
                 KeyCode::Left => cycle_pane_backward(app),
@@ -124,21 +135,23 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 // Arrow up/down: navigate within the active pane
                 KeyCode::Up => match app.active_pane {
                     ActivePane::Branches => {
-                        if !app.branches.is_empty() {
-                            let len = app.branches.len();
-                            let i = app.branch_list_state.selected().unwrap_or(0);
+                        let tab = app.tab_mut();
+                        if !tab.branches.is_empty() {
+                            let len = tab.branches.len();
+                            let i = tab.branch_list_state.selected().unwrap_or(0);
                             let new = if i == 0 { len - 1 } else { i - 1 };
-                            app.branch_list_state.select(Some(new));
+                            tab.branch_list_state.select(Some(new));
                         }
                     }
                     ActivePane::CommitLog => {
                         features::commits::events::navigate_up(app);
                     }
                     ActivePane::DiffView => {
-                        if app.commit_files.len() > 1 {
+                        if app.tab().commit_files.len() > 1 {
                             app.prev_diff_file();
                         } else {
-                            app.diff_scroll = app.diff_scroll.saturating_sub(1);
+                            let tab = app.tab_mut();
+                            tab.diff_scroll = tab.diff_scroll.saturating_sub(1);
                         }
                     }
                     ActivePane::Staging => {
@@ -147,21 +160,23 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 },
                 KeyCode::Down => match app.active_pane {
                     ActivePane::Branches => {
-                        if !app.branches.is_empty() {
-                            let len = app.branches.len();
-                            let i = app.branch_list_state.selected().unwrap_or(0);
+                        let tab = app.tab_mut();
+                        if !tab.branches.is_empty() {
+                            let len = tab.branches.len();
+                            let i = tab.branch_list_state.selected().unwrap_or(0);
                             let new = (i + 1) % len;
-                            app.branch_list_state.select(Some(new));
+                            tab.branch_list_state.select(Some(new));
                         }
                     }
                     ActivePane::CommitLog => {
                         features::commits::events::navigate_down(app);
                     }
                     ActivePane::DiffView => {
-                        if app.commit_files.len() > 1 {
+                        if app.tab().commit_files.len() > 1 {
                             app.next_diff_file();
                         } else {
-                            app.diff_scroll = app.diff_scroll.saturating_add(1);
+                            let tab = app.tab_mut();
+                            tab.diff_scroll = tab.diff_scroll.saturating_add(1);
                         }
                     }
                     ActivePane::Staging => {
@@ -208,7 +223,7 @@ fn handle_input_key(app: &mut App, key: KeyEvent) {
             app.input_buffer.clear();
             app.input_mode = InputMode::Normal;
             app.input_purpose = InputPurpose::None;
-            app.status_message = Some("Input cancelled".into());
+            app.tab_mut().status_message = Some("Input cancelled".into());
         }
         _ => {}
     }
@@ -234,11 +249,11 @@ fn submit_input(app: &mut App) {
         }
         InputPurpose::SearchQuery => {
             // Search is not fully wired yet; clear buffer for now
-            app.status_message = Some(format!("Search: {}", app.input_buffer));
+            app.tab_mut().status_message = Some(format!("Search: {}", app.input_buffer));
             app.input_buffer.clear();
         }
         InputPurpose::StashMessage => {
-            app.stash_message_buffer = app.input_buffer.clone();
+            app.tab_mut().stash_message_buffer = app.input_buffer.clone();
             app.input_buffer.clear();
             app.stash_save();
         }
@@ -248,9 +263,9 @@ fn submit_input(app: &mut App) {
     }
 }
 
-/// Cycle the active pane forward: Branches → CommitLog → DiffView → Staging → Branches
+/// Cycle the active pane forward: Branches -> CommitLog -> DiffView -> Staging -> Branches
 fn cycle_pane_forward(app: &mut App) {
-    app.confirm_discard = false;
+    app.tab_mut().confirm_discard = false;
     app.active_pane = match app.active_pane {
         ActivePane::Branches => ActivePane::CommitLog,
         ActivePane::CommitLog => ActivePane::DiffView,
@@ -259,9 +274,9 @@ fn cycle_pane_forward(app: &mut App) {
     };
 }
 
-/// Cycle the active pane backward: Branches → Staging → DiffView → CommitLog → Branches
+/// Cycle the active pane backward: Branches -> Staging -> DiffView -> CommitLog -> Branches
 fn cycle_pane_backward(app: &mut App) {
-    app.confirm_discard = false;
+    app.tab_mut().confirm_discard = false;
     app.active_pane = match app.active_pane {
         ActivePane::Branches => ActivePane::Staging,
         ActivePane::CommitLog => ActivePane::Branches,

@@ -24,7 +24,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     };
 
     // Split into file list + diff content when there are multiple files
-    if app.commit_files.len() > 1 {
+    if app.tab().commit_files.len() > 1 {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(30), Constraint::Min(20)])
@@ -45,18 +45,20 @@ fn render_file_list(
     border_color: ratatui::style::Color,
 ) {
     let theme = app.theme();
+    let tab = app.tab();
+    let commit_diff_file_index = tab.commit_diff_file_index;
 
     let block = Block::default()
-        .title(format!(" Files ({}) ", app.commit_files.len()))
+        .title(format!(" Files ({}) ", tab.commit_files.len()))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
 
-    let items: Vec<ListItem> = app
+    let items: Vec<ListItem> = tab
         .commit_files
         .iter()
         .enumerate()
         .map(|(i, diff)| {
-            let is_selected = i == app.commit_diff_file_index;
+            let is_selected = i == commit_diff_file_index;
             let file_name = diff.file_name();
             let status_char = format!("{}", diff.status);
 
@@ -88,7 +90,7 @@ fn render_file_list(
         .collect();
 
     let mut list_state = ratatui::widgets::ListState::default();
-    list_state.select(Some(app.commit_diff_file_index));
+    list_state.select(Some(commit_diff_file_index));
 
     let list = List::new(items)
         .block(block)
@@ -110,8 +112,9 @@ fn render_diff_content(
     border_color: ratatui::style::Color,
 ) {
     let theme = app.theme();
+    let tab = app.tab_mut();
 
-    let title = match &app.selected_diff {
+    let title = match &tab.selected_diff {
         Some(diff) => {
             let name = diff.display_path();
             if name.is_empty() {
@@ -128,7 +131,7 @@ fn render_diff_content(
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
 
-    match &app.selected_diff {
+    match &tab.selected_diff {
         None => {
             let placeholder = Paragraph::new(Line::from(vec![Span::styled(
                 "Select a commit or file to view diff",
@@ -172,17 +175,17 @@ fn render_diff_content(
             let content_height = lines.len() as u16;
             let visible_height = area.height.saturating_sub(2); // subtract border rows
             if content_height > visible_height {
-                if app.diff_scroll > content_height.saturating_sub(visible_height) {
-                    app.diff_scroll = content_height.saturating_sub(visible_height);
+                if tab.diff_scroll > content_height.saturating_sub(visible_height) {
+                    tab.diff_scroll = content_height.saturating_sub(visible_height);
                 }
             } else {
-                app.diff_scroll = 0;
+                tab.diff_scroll = 0;
             }
 
             let paragraph = Paragraph::new(lines)
                 .block(block)
                 .wrap(Wrap { trim: false })
-                .scroll((app.diff_scroll, 0));
+                .scroll((tab.diff_scroll, 0));
 
             frame.render_widget(paragraph, area);
         }

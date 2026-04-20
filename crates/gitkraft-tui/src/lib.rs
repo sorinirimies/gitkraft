@@ -76,7 +76,32 @@ where
     let mut app = App::new();
 
     if let Some(path) = repo_path {
+        // CLI argument takes priority — open in the first tab
         app.open_repo(path);
+    } else {
+        // Try to restore the saved session (multiple tabs)
+        if let Ok(settings) = gitkraft_core::features::persistence::load_settings() {
+            let paths: Vec<PathBuf> = settings
+                .open_tabs
+                .into_iter()
+                .filter(|p| p.exists())
+                .collect();
+            let active = settings.active_tab_index;
+            if !paths.is_empty() {
+                app.tabs.clear();
+                for _ in &paths {
+                    app.tabs.push(crate::app::RepoTab::new());
+                }
+                // Open each repo in its corresponding tab
+                for (i, path) in paths.into_iter().enumerate() {
+                    app.active_tab_index = i;
+                    app.open_repo(path);
+                }
+                // Restore the originally active tab
+                app.active_tab_index = active.min(app.tabs.len().saturating_sub(1));
+                app.screen = crate::app::AppScreen::Main;
+            }
+        }
     }
 
     loop {

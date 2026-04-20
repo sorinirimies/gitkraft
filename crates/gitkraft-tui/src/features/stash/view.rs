@@ -11,14 +11,14 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let theme = app.theme();
     let border_color = theme.border_inactive;
 
-    let title = format!(" Stashes ({}) ", app.stashes.len());
+    let title = format!(" Stashes ({}) ", app.tab().stashes.len());
 
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
 
-    if app.stashes.is_empty() {
+    if app.tab().stashes.is_empty() {
         let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(
             "  No stashes",
             Style::default().fg(theme.text_muted),
@@ -29,6 +29,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     }
 
     let items: Vec<ListItem> = app
+        .tab()
         .stashes
         .iter()
         .map(|entry| {
@@ -60,5 +61,5 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         )
         .highlight_symbol("▶ ");
 
-    frame.render_stateful_widget(list, area, &mut app.stash_list_state);
+    frame.render_stateful_widget(list, area, &mut app.tab_mut().stash_list_state);
 }

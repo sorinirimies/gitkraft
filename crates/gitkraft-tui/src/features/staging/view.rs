@@ -34,7 +34,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
 /// Render the unstaged changes list.
 fn render_unstaged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool) {
     let theme = app.theme();
-    let is_focused = pane_active && app.staging_focus == StagingFocus::Unstaged;
+    let is_focused = pane_active && app.tab().staging_focus == StagingFocus::Unstaged;
 
     let border_color = if is_focused {
         theme.border_active
@@ -44,13 +44,13 @@ fn render_unstaged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bo
         theme.border_inactive
     };
 
-    let title = format!(" Unstaged ({}) ", app.unstaged_changes.len());
+    let title = format!(" Unstaged ({}) ", app.tab().unstaged_changes.len());
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
 
-    if app.unstaged_changes.is_empty() {
+    if app.tab().unstaged_changes.is_empty() {
         let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(
             "  No unstaged changes",
             Style::default().fg(theme.text_muted),
@@ -61,10 +61,11 @@ fn render_unstaged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bo
     }
 
     let items: Vec<ListItem> = app
+        .tab()
         .unstaged_changes
         .iter()
         .map(|diff| {
-            let file_name = diff.display_path();
+            let file_name = diff.display_path().to_owned();
             let (status_char, status_color) = status_display(&diff.status, &theme);
 
             let line = Line::from(vec![
@@ -90,13 +91,14 @@ fn render_unstaged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bo
         )
         .highlight_symbol("▶ ");
 
-    frame.render_stateful_widget(list, area, &mut app.unstaged_list_state);
+    let tab = app.tab_mut();
+    frame.render_stateful_widget(list, area, &mut tab.unstaged_list_state);
 }
 
 /// Render the staged changes list.
 fn render_staged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool) {
     let theme = app.theme();
-    let is_focused = pane_active && app.staging_focus == StagingFocus::Staged;
+    let is_focused = pane_active && app.tab().staging_focus == StagingFocus::Staged;
 
     let border_color = if is_focused {
         theme.border_active
@@ -106,13 +108,13 @@ fn render_staged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool
         theme.border_inactive
     };
 
-    let title = format!(" Staged ({}) ", app.staged_changes.len());
+    let title = format!(" Staged ({}) ", app.tab().staged_changes.len());
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
 
-    if app.staged_changes.is_empty() {
+    if app.tab().staged_changes.is_empty() {
         let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(
             "  No staged changes",
             Style::default().fg(theme.text_muted),
@@ -123,10 +125,11 @@ fn render_staged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool
     }
 
     let items: Vec<ListItem> = app
+        .tab()
         .staged_changes
         .iter()
         .map(|diff| {
-            let file_name = diff.display_path();
+            let file_name = diff.display_path().to_owned();
             let (status_char, status_color) = status_display(&diff.status, &theme);
 
             let line = Line::from(vec![
@@ -152,7 +155,8 @@ fn render_staged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool
         )
         .highlight_symbol("▶ ");
 
-    frame.render_stateful_widget(list, area, &mut app.staged_list_state);
+    let tab = app.tab_mut();
+    frame.render_stateful_widget(list, area, &mut tab.staged_list_state);
 }
 
 /// Render either the commit message input (if in input mode) or key hints.
@@ -233,7 +237,7 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
             ])
             .split(inner_area);
 
-        // ── Staging section ───────────────────────────────────────────
+        // -- Staging section --
         {
             let block = Block::default()
                 .title(Span::styled(" Staging ", section_title))
@@ -259,7 +263,7 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
             frame.render_widget(paragraph, sections[0]);
         }
 
-        // ── Git section ───────────────────────────────────────────────
+        // -- Git section --
         {
             let block = Block::default()
                 .title(Span::styled(" Git ", section_title))
@@ -285,7 +289,7 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
             frame.render_widget(paragraph, sections[1]);
         }
 
-        // ── Remaining area: navigation hint + discard warning ─────────
+        // -- Remaining area: navigation hint + discard warning --
         {
             let mut lines = vec![Line::from(vec![
                 Span::styled(" Tab", key_style),
@@ -296,7 +300,7 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
                 Span::styled(" options", value_style),
             ])];
 
-            if app.confirm_discard {
+            if app.tab().confirm_discard {
                 lines.push(Line::from(Span::styled(
                     " ⚠ Press d again to confirm discard",
                     Style::default()

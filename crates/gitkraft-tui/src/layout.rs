@@ -23,7 +23,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 /// Render the full Main screen layout with header, content columns, staging
 /// area, and status bar.
 fn render_main(app: &mut App, frame: &mut Frame) {
-    // ── Outer vertical split ──────────────────────────────────────────────
+    // -- Outer vertical split --
     //  [0] Header bar          — 3 rows
     //  [1] Main content area   — flexible
     //  [2] Staging area        — 12 rows
@@ -41,7 +41,7 @@ fn render_main(app: &mut App, frame: &mut Frame) {
     // Header
     widgets::header::render(app, frame, outer[0]);
 
-    // ── Main content: three columns ───────────────────────────────────────
+    // -- Main content: three columns --
     //  [0] Sidebar (branches + stashes + remotes) — dynamic width
     //  [1] Commit log                             — 40 %
     //  [2] Diff view                              — remainder
@@ -49,6 +49,7 @@ fn render_main(app: &mut App, frame: &mut Frame) {
     // Compute sidebar width from the longest branch name + padding for
     // the indicator icon, highlight symbol, and borders (~6 chars overhead).
     let longest_branch = app
+        .tab()
         .branches
         .iter()
         .map(|b| b.name.chars().count())

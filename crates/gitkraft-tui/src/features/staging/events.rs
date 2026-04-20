@@ -15,7 +15,8 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
 
         // Toggle focus between unstaged and staged sub-lists
         KeyCode::Tab => {
-            app.staging_focus = match app.staging_focus {
+            let tab = app.tab_mut();
+            tab.staging_focus = match tab.staging_focus {
                 StagingFocus::Unstaged => StagingFocus::Staged,
                 StagingFocus::Staged => StagingFocus::Unstaged,
             };
@@ -43,50 +44,50 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
 
         // Discard changes (with confirmation)
         KeyCode::Char('d') => {
-            if app.confirm_discard {
+            if app.tab().confirm_discard {
                 app.discard_selected();
             } else {
-                app.confirm_discard = true;
-                app.status_message =
+                app.tab_mut().confirm_discard = true;
+                app.tab_mut().status_message =
                     Some("Press 'd' again to confirm discard, or any other key to cancel".into());
             }
         }
 
         // Commit â enter input mode for commit message
         KeyCode::Char('c') => {
-            app.confirm_discard = false;
+            app.tab_mut().confirm_discard = false;
             app.input_buffer.clear();
             app.input_mode = InputMode::Input;
             app.input_purpose = InputPurpose::CommitMessage;
-            app.status_message = Some("Enter commit message:".into());
+            app.tab_mut().status_message = Some("Enter commit message:".into());
         }
 
         // View diff of selected file
         KeyCode::Enter => {
-            app.confirm_discard = false;
+            app.tab_mut().confirm_discard = false;
             app.load_staging_diff();
         }
 
         // Stash save
         KeyCode::Char('z') => {
-            app.confirm_discard = false;
-            app.stash_message_buffer.clear();
+            app.tab_mut().confirm_discard = false;
+            app.tab_mut().stash_message_buffer.clear();
             app.input_mode = InputMode::Input;
             app.input_purpose = InputPurpose::StashMessage;
-            app.status_message = Some("Enter stash message (or leave empty):".into());
+            app.tab_mut().status_message = Some("Enter stash message (or leave empty):".into());
         }
 
         // Stash pop
         KeyCode::Char('Z') => {
-            app.confirm_discard = false;
+            app.tab_mut().confirm_discard = false;
             app.stash_pop_selected();
         }
 
         // Any other key cancels the discard confirmation
         _ => {
-            if app.confirm_discard {
-                app.confirm_discard = false;
-                app.status_message = Some("Discard cancelled".into());
+            if app.tab().confirm_discard {
+                app.tab_mut().confirm_discard = false;
+                app.tab_mut().status_message = Some("Discard cancelled".into());
             }
         }
     }
@@ -94,15 +95,16 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
 
 /// Move selection down in the currently focused sub-list.
 pub fn navigate_down(app: &mut App) {
-    app.confirm_discard = false;
-    match app.staging_focus {
+    app.tab_mut().confirm_discard = false;
+    let tab = app.tab_mut();
+    match tab.staging_focus {
         StagingFocus::Unstaged => {
-            if app.unstaged_changes.is_empty() {
+            if tab.unstaged_changes.is_empty() {
                 return;
             }
-            let i = match app.unstaged_list_state.selected() {
+            let i = match tab.unstaged_list_state.selected() {
                 Some(i) => {
-                    if i >= app.unstaged_changes.len() - 1 {
+                    if i >= tab.unstaged_changes.len() - 1 {
                         0
                     } else {
                         i + 1
@@ -110,15 +112,15 @@ pub fn navigate_down(app: &mut App) {
                 }
                 None => 0,
             };
-            app.unstaged_list_state.select(Some(i));
+            tab.unstaged_list_state.select(Some(i));
         }
         StagingFocus::Staged => {
-            if app.staged_changes.is_empty() {
+            if tab.staged_changes.is_empty() {
                 return;
             }
-            let i = match app.staged_list_state.selected() {
+            let i = match tab.staged_list_state.selected() {
                 Some(i) => {
-                    if i >= app.staged_changes.len() - 1 {
+                    if i >= tab.staged_changes.len() - 1 {
                         0
                     } else {
                         i + 1
@@ -126,46 +128,47 @@ pub fn navigate_down(app: &mut App) {
                 }
                 None => 0,
             };
-            app.staged_list_state.select(Some(i));
+            tab.staged_list_state.select(Some(i));
         }
     }
 }
 
 /// Move selection up in the currently focused sub-list.
 pub fn navigate_up(app: &mut App) {
-    app.confirm_discard = false;
-    match app.staging_focus {
+    app.tab_mut().confirm_discard = false;
+    let tab = app.tab_mut();
+    match tab.staging_focus {
         StagingFocus::Unstaged => {
-            if app.unstaged_changes.is_empty() {
+            if tab.unstaged_changes.is_empty() {
                 return;
             }
-            let i = match app.unstaged_list_state.selected() {
+            let i = match tab.unstaged_list_state.selected() {
                 Some(i) => {
                     if i == 0 {
-                        app.unstaged_changes.len() - 1
+                        tab.unstaged_changes.len() - 1
                     } else {
                         i - 1
                     }
                 }
                 None => 0,
             };
-            app.unstaged_list_state.select(Some(i));
+            tab.unstaged_list_state.select(Some(i));
         }
         StagingFocus::Staged => {
-            if app.staged_changes.is_empty() {
+            if tab.staged_changes.is_empty() {
                 return;
             }
-            let i = match app.staged_list_state.selected() {
+            let i = match tab.staged_list_state.selected() {
                 Some(i) => {
                     if i == 0 {
-                        app.staged_changes.len() - 1
+                        tab.staged_changes.len() - 1
                     } else {
                         i - 1
                     }
                 }
                 None => 0,
             };
-            app.staged_list_state.select(Some(i));
+            tab.staged_list_state.select(Some(i));
         }
     }
 }

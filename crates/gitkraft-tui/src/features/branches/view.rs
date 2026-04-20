@@ -23,7 +23,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
 
-    if app.branches.is_empty() {
+    if app.tab().branches.is_empty() {
         let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(
             "  No branches",
             Style::default().fg(theme.text_muted),
@@ -34,6 +34,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     }
 
     let items: Vec<ListItem> = app
+        .tab()
         .branches
         .iter()
         .map(|branch| {
@@ -59,7 +60,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
             let line = Line::from(vec![
                 Span::styled(prefix, style),
                 Span::styled(icon, style),
-                Span::styled(&branch.name, style),
+                Span::styled(branch.name.clone(), style),
             ]);
 
             ListItem::new(line)
@@ -75,5 +76,5 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         )
         .highlight_symbol("▶ ");
 
-    frame.render_stateful_widget(list, area, &mut app.branch_list_state);
+    frame.render_stateful_widget(list, area, &mut app.tab_mut().branch_list_state);
 }

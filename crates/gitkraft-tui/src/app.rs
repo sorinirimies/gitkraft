@@ -23,8 +23,12 @@ pub struct RepoPayload {
 /// Results produced by background tasks and sent back to the main loop.
 #[derive(Debug)]
 pub enum BackgroundResult {
-    /// A repo open / refresh completed.
-    RepoLoaded(Result<RepoPayload, String>),
+    /// A repo open / refresh completed. The `PathBuf` identifies which tab
+    /// initiated the load so the result is applied to the correct tab.
+    RepoLoaded {
+        path: PathBuf,
+        result: Result<RepoPayload, String>,
+    },
     /// A fetch completed.
     FetchDone(Result<(), String>),
     /// A commit-diff load completed.
@@ -94,23 +98,10 @@ pub enum StagingFocus {
     Staged,
 }
 
-// ── App State ─────────────────────────────────────────────────────────────────
+// ── Per-repo tab state ────────────────────────────────────────────────────────────
 
-pub struct App {
-    pub should_quit: bool,
-    pub screen: AppScreen,
-    pub active_pane: ActivePane,
-    pub input_mode: InputMode,
-    pub input_purpose: InputPurpose,
-    pub tick_count: u64,
-
-    /// True while a background task is in flight.
-    pub is_loading: bool,
-    /// Receiver for results from background tasks.
-    pub bg_rx: mpsc::Receiver<BackgroundResult>,
-    /// Sender cloned into each spawned task.
-    bg_tx: mpsc::Sender<BackgroundResult>,
-
+/// All state that belongs to a single repository tab.
+pub struct RepoTab {
     pub repo_path: Option<PathBuf>,
     pub repo_info: Option<RepoInfo>,
 
@@ -130,7 +121,7 @@ pub struct App {
     pub diff_scroll: u16,
     /// All file diffs for the currently viewed commit (for per-file navigation).
     pub commit_diffs: Vec<DiffInfo>,
-    /// Index of the currently selected file in `commit_diffs`.
+    /// Index of the currently selected file in commit_diffs.
     pub commit_diff_file_index: usize,
     /// Lightweight file list for the selected commit.
     pub commit_files: Vec<gitkraft_core::DiffFileEntry>,
@@ -141,64 +132,24 @@ pub struct App {
     pub stash_list_state: ListState,
     pub remotes: Vec<RemoteInfo>,
 
-    pub input_buffer: String,
     /// Optional stash message (set via input mode before saving).
     pub stash_message_buffer: String,
 
     pub status_message: Option<String>,
     pub error_message: Option<String>,
 
-    /// When `true`, the next `d` press actually discards; otherwise the first
-    /// `d` sets this flag and shows a confirmation prompt.
+    /// True while a background task is in flight for this tab.
+    pub is_loading: bool,
+
+    /// When true, the next d press actually discards; otherwise the first
+    /// d sets this flag and shows a confirmation prompt.
     pub confirm_discard: bool,
-
-    /// Whether the theme selection panel is visible.
-    pub show_theme_panel: bool,
-    /// Whether the options panel is visible.
-    pub show_options_panel: bool,
-    /// Currently selected theme index (0-26).
-    pub current_theme_index: usize,
-    /// ListState for the theme list widget.
-    pub theme_list_state: ListState,
-
-    /// Recently opened repositories loaded from persistence.
-    pub recent_repos: Vec<gitkraft_core::RepoHistoryEntry>,
-
-    /// Current directory being browsed in the directory picker.
-    pub browser_dir: PathBuf,
-    /// Entries in the current browser directory.
-    pub browser_entries: Vec<std::path::PathBuf>,
-    /// List state for the directory browser.
-    pub browser_list_state: ListState,
-    /// Screen to return to when the directory browser is dismissed.
-    pub browser_return_screen: AppScreen,
 }
 
-impl App {
-    // ── Constructor ───────────────────────────────────────────────────────
-
+impl RepoTab {
     #[must_use]
     pub fn new() -> Self {
-        let settings = gitkraft_core::features::persistence::load_settings().unwrap_or_default();
-
-        let theme_index = theme_name_to_index(settings.theme_name.as_deref().unwrap_or(""));
-
-        let recent_repos = settings.recent_repos;
-
-        let (bg_tx, bg_rx) = mpsc::channel();
-
         Self {
-            should_quit: false,
-            screen: AppScreen::Welcome,
-            active_pane: ActivePane::Branches,
-            input_mode: InputMode::Normal,
-            input_purpose: InputPurpose::None,
-            tick_count: 0,
-
-            is_loading: false,
-            bg_rx,
-            bg_tx,
-
             repo_path: None,
             repo_info: None,
 
@@ -225,13 +176,105 @@ impl App {
             stash_list_state: ListState::default(),
             remotes: Vec::new(),
 
-            input_buffer: String::new(),
             stash_message_buffer: String::new(),
 
             status_message: None,
             error_message: None,
 
+            is_loading: false,
+
             confirm_discard: false,
+        }
+    }
+
+    /// Return a human-readable display name for this tab.
+    /// Uses the last path component of repo_path, or "New Tab" if none.
+    pub fn display_name(&self) -> String {
+        match &self.repo_path {
+            Some(p) => p
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "New Tab".into()),
+            None => "New Tab".into(),
+        }
+    }
+}
+
+impl Default for RepoTab {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ── App State ───────────────────────────────────────────────────────────────────
+
+pub struct App {
+    pub should_quit: bool,
+    pub screen: AppScreen,
+    pub active_pane: ActivePane,
+    pub input_mode: InputMode,
+    pub input_purpose: InputPurpose,
+    pub tick_count: u64,
+
+    /// Receiver for results from background tasks.
+    pub bg_rx: mpsc::Receiver<BackgroundResult>,
+    /// Sender cloned into each spawned task.
+    pub(crate) bg_tx: mpsc::Sender<BackgroundResult>,
+
+    pub input_buffer: String,
+
+    /// Whether the theme selection panel is visible.
+    pub show_theme_panel: bool,
+    /// Whether the options panel is visible.
+    pub show_options_panel: bool,
+    /// Currently selected theme index (0-26).
+    pub current_theme_index: usize,
+    /// ListState for the theme list widget.
+    pub theme_list_state: ListState,
+
+    /// Recently opened repositories loaded from persistence.
+    pub recent_repos: Vec<gitkraft_core::RepoHistoryEntry>,
+
+    /// Current directory being browsed in the directory picker.
+    pub browser_dir: PathBuf,
+    /// Entries in the current browser directory.
+    pub browser_entries: Vec<std::path::PathBuf>,
+    /// List state for the directory browser.
+    pub browser_list_state: ListState,
+    /// Screen to return to when the directory browser is dismissed.
+    pub browser_return_screen: AppScreen,
+
+    /// Open repository tabs.
+    pub tabs: Vec<RepoTab>,
+    /// Index of the currently active tab.
+    pub active_tab_index: usize,
+}
+
+impl App {
+    // ── Constructor ──────────────────────────────────────────────────────────
+
+    #[must_use]
+    pub fn new() -> Self {
+        let settings = gitkraft_core::features::persistence::load_settings().unwrap_or_default();
+
+        let theme_index = theme_name_to_index(settings.theme_name.as_deref().unwrap_or(""));
+
+        let recent_repos = settings.recent_repos;
+
+        let (bg_tx, bg_rx) = mpsc::channel();
+
+        Self {
+            should_quit: false,
+            screen: AppScreen::Welcome,
+            active_pane: ActivePane::Branches,
+            input_mode: InputMode::Normal,
+            input_purpose: InputPurpose::None,
+            tick_count: 0,
+
+            bg_rx,
+            bg_tx,
+
+            input_buffer: String::new(),
 
             show_theme_panel: false,
             show_options_panel: false,
@@ -248,6 +291,69 @@ impl App {
             browser_entries: Vec::new(),
             browser_list_state: ListState::default(),
             browser_return_screen: AppScreen::Welcome,
+
+            tabs: vec![RepoTab::new()],
+            active_tab_index: 0,
+        }
+    }
+
+    // ── Tab accessors ────────────────────────────────────────────────────────
+
+    /// Return a shared reference to the currently active tab.
+    #[inline]
+    pub fn tab(&self) -> &RepoTab {
+        &self.tabs[self.active_tab_index]
+    }
+
+    /// Return an exclusive reference to the currently active tab.
+    #[inline]
+    pub fn tab_mut(&mut self) -> &mut RepoTab {
+        &mut self.tabs[self.active_tab_index]
+    }
+
+    // ── Tab management ──────────────────────────────────────────────────────
+
+    /// Open a new empty tab and make it active.
+    pub fn new_tab(&mut self) {
+        self.tabs.push(RepoTab::new());
+        self.active_tab_index = self.tabs.len() - 1;
+        self.screen = AppScreen::Welcome;
+        // Reload recent repos so they're fresh on the welcome screen
+        if let Ok(settings) = gitkraft_core::features::persistence::load_settings() {
+            self.recent_repos = settings.recent_repos;
+        }
+        self.save_session();
+    }
+
+    /// Close the current tab. If it is the last tab, replace it with an empty one.
+    pub fn close_tab(&mut self) {
+        if self.tabs.len() <= 1 {
+            self.tabs[0] = RepoTab::new();
+            self.active_tab_index = 0;
+        } else {
+            self.tabs.remove(self.active_tab_index);
+            if self.active_tab_index >= self.tabs.len() {
+                self.active_tab_index = self.tabs.len() - 1;
+            }
+        }
+        self.save_session();
+    }
+
+    /// Switch to the next tab (wrapping around).
+    pub fn next_tab(&mut self) {
+        if !self.tabs.is_empty() {
+            self.active_tab_index = (self.active_tab_index + 1) % self.tabs.len();
+        }
+    }
+
+    /// Switch to the previous tab (wrapping around).
+    pub fn prev_tab(&mut self) {
+        if !self.tabs.is_empty() {
+            if self.active_tab_index == 0 {
+                self.active_tab_index = self.tabs.len() - 1;
+            } else {
+                self.active_tab_index -= 1;
+            }
         }
     }
 }
@@ -265,7 +371,7 @@ impl App {
         let count = 27; // number of themes
         self.current_theme_index = (self.current_theme_index + 1) % count;
         self.theme_list_state.select(Some(self.current_theme_index));
-        self.status_message = Some(format!("Theme: {}", self.current_theme_name()));
+        self.tab_mut().status_message = Some(format!("Theme: {}", self.current_theme_name()));
     }
 
     pub fn cycle_theme_prev(&mut self) {
@@ -276,7 +382,7 @@ impl App {
             self.current_theme_index -= 1;
         }
         self.theme_list_state.select(Some(self.current_theme_index));
-        self.status_message = Some(format!("Theme: {}", self.current_theme_name()));
+        self.tab_mut().status_message = Some(format!("Theme: {}", self.current_theme_name()));
     }
 
     pub fn current_theme_name(&self) -> &'static str {
@@ -296,32 +402,44 @@ impl App {
         let _ = gitkraft_core::features::persistence::save_theme(self.current_theme_name());
     }
 
+    /// Persist the paths of all open tabs for session restore.
+    pub fn save_session(&self) {
+        let paths: Vec<std::path::PathBuf> = self
+            .tabs
+            .iter()
+            .filter_map(|t| t.repo_path.clone())
+            .collect();
+        let active = self.active_tab_index;
+        let _ = gitkraft_core::features::persistence::save_session(&paths, active);
+    }
+
     // ── High-level operations ────────────────────────────────────────────
 
     pub fn open_repo(&mut self, path: PathBuf) {
-        self.error_message = None;
-        self.status_message = Some("Opening repository…".into());
-        self.is_loading = true;
-        self.repo_path = Some(path.clone());
+        self.tab_mut().error_message = None;
+        self.tab_mut().status_message = Some("Opening repository…".into());
+        self.tab_mut().is_loading = true;
+        self.tab_mut().repo_path = Some(path.clone());
         self.screen = AppScreen::Main;
 
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let result = load_repo_blocking(&path);
-            let _ = tx.send(BackgroundResult::RepoLoaded(result));
+            let _ = tx.send(BackgroundResult::RepoLoaded { path, result });
         });
+        self.save_session();
     }
 
     pub fn refresh(&mut self) {
-        self.error_message = None;
-        self.is_loading = true;
-        self.status_message = Some("Refreshing…".into());
+        self.tab_mut().error_message = None;
+        self.tab_mut().is_loading = true;
+        self.tab_mut().status_message = Some("Refreshing…".into());
 
-        let path = match self.repo_path.clone() {
+        let path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => {
-                self.error_message = Some("No repository open".into());
-                self.is_loading = false;
+                self.tab_mut().error_message = Some("No repository open".into());
+                self.tab_mut().is_loading = false;
                 return;
             }
         };
@@ -329,7 +447,7 @@ impl App {
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let result = load_repo_blocking(&path);
-            let _ = tx.send(BackgroundResult::RepoLoaded(result));
+            let _ = tx.send(BackgroundResult::RepoLoaded { path, result });
         });
     }
 
@@ -338,16 +456,24 @@ impl App {
     pub fn poll_background(&mut self) {
         while let Ok(result) = self.bg_rx.try_recv() {
             match result {
-                BackgroundResult::RepoLoaded(res) => {
-                    self.is_loading = false;
+                BackgroundResult::RepoLoaded {
+                    path: loaded_path,
+                    result: res,
+                } => {
+                    // Find the tab that initiated this load by matching repo_path.
+                    let tab_idx = self
+                        .tabs
+                        .iter()
+                        .position(|t| t.repo_path.as_ref() == Some(&loaded_path))
+                        .unwrap_or(self.active_tab_index);
+
+                    self.tabs[tab_idx].is_loading = false;
                     match res {
                         Ok(payload) => {
-                            let canonical = payload
-                                .info
-                                .workdir
-                                .clone()
-                                .unwrap_or_else(|| self.repo_path.clone().unwrap_or_default());
-                            self.repo_path = Some(canonical.clone());
+                            let canonical = payload.info.workdir.clone().unwrap_or_else(|| {
+                                self.tabs[tab_idx].repo_path.clone().unwrap_or_default()
+                            });
+                            self.tabs[tab_idx].repo_path = Some(canonical.clone());
 
                             // Persist
                             let _ = gitkraft_core::features::persistence::record_repo_opened(
@@ -359,121 +485,125 @@ impl App {
                                 self.recent_repos = settings.recent_repos;
                             }
 
-                            self.repo_info = Some(payload.info);
-                            self.branches = payload.branches;
-                            clamp_list_state(&mut self.branch_list_state, self.branches.len());
-                            self.graph_rows = payload.graph_rows;
-                            self.commits = payload.commits;
-                            clamp_list_state(&mut self.commit_list_state, self.commits.len());
-                            self.unstaged_changes = payload.unstaged;
+                            let tab = &mut self.tabs[tab_idx];
+                            tab.repo_info = Some(payload.info);
+                            tab.branches = payload.branches;
+                            clamp_list_state(&mut tab.branch_list_state, tab.branches.len());
+                            tab.graph_rows = payload.graph_rows;
+                            tab.commits = payload.commits;
+                            clamp_list_state(&mut tab.commit_list_state, tab.commits.len());
+                            tab.unstaged_changes = payload.unstaged;
                             clamp_list_state(
-                                &mut self.unstaged_list_state,
-                                self.unstaged_changes.len(),
+                                &mut tab.unstaged_list_state,
+                                tab.unstaged_changes.len(),
                             );
-                            self.staged_changes = payload.staged;
-                            clamp_list_state(
-                                &mut self.staged_list_state,
-                                self.staged_changes.len(),
-                            );
-                            self.stashes = payload.stashes;
-                            clamp_list_state(&mut self.stash_list_state, self.stashes.len());
-                            self.remotes = payload.remotes;
+                            tab.staged_changes = payload.staged;
+                            clamp_list_state(&mut tab.staged_list_state, tab.staged_changes.len());
+                            tab.stashes = payload.stashes;
+                            clamp_list_state(&mut tab.stash_list_state, tab.stashes.len());
+                            tab.remotes = payload.remotes;
+                            tab.status_message = Some("Repository loaded".into());
                             self.screen = AppScreen::Main;
-                            self.status_message = Some("Repository loaded".into());
+                            self.save_session();
                         }
                         Err(e) => {
-                            self.error_message = Some(e);
-                            self.status_message = None;
+                            self.tabs[tab_idx].error_message = Some(e);
+                            self.tabs[tab_idx].status_message = None;
                         }
                     }
                 }
                 BackgroundResult::FetchDone(res) => {
-                    self.is_loading = false;
+                    self.tab_mut().is_loading = false;
                     match res {
                         Ok(()) => {
-                            self.status_message = Some("Fetched from origin".into());
+                            self.tab_mut().status_message = Some("Fetched from origin".into());
                             self.refresh();
                         }
-                        Err(e) => self.error_message = Some(format!("fetch: {e}")),
+                        Err(e) => self.tab_mut().error_message = Some(format!("fetch: {e}")),
                     }
                 }
                 BackgroundResult::CommitDiffLoaded(res) => {
-                    self.is_loading = false;
+                    self.tab_mut().is_loading = false;
                     match res {
                         Ok(diffs) => {
                             if diffs.is_empty() {
-                                self.selected_diff = None;
-                                self.commit_diffs.clear();
-                                self.commit_diff_file_index = 0;
-                                self.status_message = Some("No changes in this commit".into());
+                                let tab = self.tab_mut();
+                                tab.selected_diff = None;
+                                tab.commit_diffs.clear();
+                                tab.commit_diff_file_index = 0;
+                                tab.status_message = Some("No changes in this commit".into());
                             } else {
-                                self.commit_diffs = diffs.clone();
-                                self.commit_diff_file_index = 0;
-                                self.selected_diff = Some(diffs[0].clone());
-                                self.diff_scroll = 0;
+                                let tab = self.tab_mut();
+                                tab.commit_diffs = diffs.clone();
+                                tab.commit_diff_file_index = 0;
+                                tab.selected_diff = Some(diffs[0].clone());
+                                tab.diff_scroll = 0;
                                 if diffs.len() > 1 {
-                                    self.status_message = Some(format!(
+                                    tab.status_message = Some(format!(
                                         "Showing file 1/{} — use h/l to switch files",
                                         diffs.len()
                                     ));
                                 }
                             }
                         }
-                        Err(e) => self.error_message = Some(format!("commit diff: {e}")),
+                        Err(e) => self.tab_mut().error_message = Some(format!("commit diff: {e}")),
                     }
                 }
                 BackgroundResult::CommitFileListLoaded(res) => {
-                    self.is_loading = false;
+                    self.tab_mut().is_loading = false;
                     match res {
                         Ok(files) => {
                             let count = files.len();
-                            self.commit_files = files;
-                            self.commit_diffs.clear();
-                            self.commit_diff_file_index = 0;
-                            self.selected_diff = None;
-                            self.diff_scroll = 0;
+                            let tab = self.tab_mut();
+                            tab.commit_files = files;
+                            tab.commit_diffs.clear();
+                            tab.commit_diff_file_index = 0;
+                            tab.selected_diff = None;
+                            tab.diff_scroll = 0;
 
                             if count == 0 {
-                                self.status_message = Some("No changes in this commit".into());
+                                tab.status_message = Some("No changes in this commit".into());
                             } else {
-                                self.status_message = Some(format!("{count} file(s) changed"));
+                                tab.status_message = Some(format!("{count} file(s) changed"));
                                 // Auto-load the first file's diff
-                                let first_path = self.commit_files[0].display_path().to_string();
+                                let first_path = tab.commit_files[0].display_path().to_string();
                                 self.load_single_file_diff(first_path);
                             }
                         }
-                        Err(e) => self.error_message = Some(format!("file list: {e}")),
+                        Err(e) => self.tab_mut().error_message = Some(format!("file list: {e}")),
                     }
                 }
                 BackgroundResult::SingleFileDiffLoaded(res) => {
-                    self.is_loading = false;
+                    self.tab_mut().is_loading = false;
                     match res {
                         Ok(diff) => {
+                            let tab = self.tab_mut();
                             // Store in commit_diffs for the file list sidebar.
-                            // If this is the first file, also set selected_diff.
-                            if self.commit_diffs.len() <= self.commit_diff_file_index {
-                                self.commit_diffs.push(diff.clone());
+                            if tab.commit_diffs.len() <= tab.commit_diff_file_index {
+                                tab.commit_diffs.push(diff.clone());
                             } else {
-                                self.commit_diffs[self.commit_diff_file_index] = diff.clone();
+                                tab.commit_diffs[tab.commit_diff_file_index] = diff.clone();
                             }
-                            self.selected_diff = Some(diff);
-                            self.diff_scroll = 0;
-                            if self.commit_files.len() > 1 {
-                                self.status_message = Some(format!(
+                            tab.selected_diff = Some(diff);
+                            tab.diff_scroll = 0;
+                            if tab.commit_files.len() > 1 {
+                                tab.status_message = Some(format!(
                                     "File {}/{} — use h/l to switch files",
-                                    self.commit_diff_file_index + 1,
-                                    self.commit_files.len()
+                                    tab.commit_diff_file_index + 1,
+                                    tab.commit_files.len()
                                 ));
                             }
                         }
-                        Err(e) => self.error_message = Some(format!("file diff: {e}")),
+                        Err(e) => self.tab_mut().error_message = Some(format!("file diff: {e}")),
                     }
                 }
                 BackgroundResult::StagingRefreshed(res) => {
-                    self.is_loading = false;
+                    self.tab_mut().is_loading = false;
                     match res {
                         Ok(payload) => self.apply_staging_payload(payload),
-                        Err(e) => self.error_message = Some(format!("staging refresh: {e}")),
+                        Err(e) => {
+                            self.tab_mut().error_message = Some(format!("staging refresh: {e}"))
+                        }
                     }
                 }
                 BackgroundResult::OperationDone {
@@ -482,11 +612,11 @@ impl App {
                     needs_refresh,
                     needs_staging_refresh,
                 } => {
-                    self.is_loading = false;
+                    self.tab_mut().is_loading = false;
                     if let Some(msg) = err_message {
-                        self.error_message = Some(msg);
+                        self.tab_mut().error_message = Some(msg);
                     } else if let Some(msg) = ok_message {
-                        self.status_message = Some(msg);
+                        self.tab_mut().status_message = Some(msg);
                     }
                     if needs_refresh {
                         self.refresh();
@@ -500,10 +630,10 @@ impl App {
 
     /// Reload only the staging area (unstaged + staged diffs).
     pub fn refresh_staging(&mut self) {
-        let repo_path = match self.repo_path.clone() {
+        let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => {
-                self.error_message = Some("No repository open".into());
+                self.tab_mut().error_message = Some("No repository open".into());
                 return;
             }
         };
@@ -522,27 +652,28 @@ impl App {
     }
 
     fn apply_staging_payload(&mut self, payload: StagingPayload) {
-        self.unstaged_changes = payload.unstaged;
-        if self.unstaged_changes.is_empty() {
-            self.unstaged_list_state.select(None);
-        } else if self.unstaged_list_state.selected().is_none() {
-            self.unstaged_list_state.select(Some(0));
-        } else if let Some(i) = self.unstaged_list_state.selected() {
-            if i >= self.unstaged_changes.len() {
-                self.unstaged_list_state
-                    .select(Some(self.unstaged_changes.len() - 1));
+        let tab = self.tab_mut();
+        tab.unstaged_changes = payload.unstaged;
+        if tab.unstaged_changes.is_empty() {
+            tab.unstaged_list_state.select(None);
+        } else if tab.unstaged_list_state.selected().is_none() {
+            tab.unstaged_list_state.select(Some(0));
+        } else if let Some(i) = tab.unstaged_list_state.selected() {
+            if i >= tab.unstaged_changes.len() {
+                tab.unstaged_list_state
+                    .select(Some(tab.unstaged_changes.len() - 1));
             }
         }
 
-        self.staged_changes = payload.staged;
-        if self.staged_changes.is_empty() {
-            self.staged_list_state.select(None);
-        } else if self.staged_list_state.selected().is_none() {
-            self.staged_list_state.select(Some(0));
-        } else if let Some(i) = self.staged_list_state.selected() {
-            if i >= self.staged_changes.len() {
-                self.staged_list_state
-                    .select(Some(self.staged_changes.len() - 1));
+        tab.staged_changes = payload.staged;
+        if tab.staged_changes.is_empty() {
+            tab.staged_list_state.select(None);
+        } else if tab.staged_list_state.selected().is_none() {
+            tab.staged_list_state.select(Some(0));
+        } else if let Some(i) = tab.staged_list_state.selected() {
+            if i >= tab.staged_changes.len() {
+                tab.staged_list_state
+                    .select(Some(tab.staged_changes.len() - 1));
             }
         }
     }
@@ -550,19 +681,19 @@ impl App {
     // ── Staging operations ───────────────────────────────────────────────
 
     pub fn stage_selected(&mut self) {
-        let idx = match self.unstaged_list_state.selected() {
+        let idx = match self.tab().unstaged_list_state.selected() {
             Some(i) => i,
             None => {
-                self.status_message = Some("No unstaged file selected".into());
+                self.tab_mut().status_message = Some("No unstaged file selected".into());
                 return;
             }
         };
         let file_path = self.unstaged_file_path(idx);
-        let repo_path = match self.repo_path.clone() {
+        let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => return,
         };
-        self.is_loading = true;
+        self.tab_mut().is_loading = true;
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let res = (|| {
@@ -580,19 +711,19 @@ impl App {
     }
 
     pub fn unstage_selected(&mut self) {
-        let idx = match self.staged_list_state.selected() {
+        let idx = match self.tab().staged_list_state.selected() {
             Some(i) => i,
             None => {
-                self.status_message = Some("No staged file selected".into());
+                self.tab_mut().status_message = Some("No staged file selected".into());
                 return;
             }
         };
         let file_path = self.staged_file_path(idx);
-        let repo_path = match self.repo_path.clone() {
+        let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => return,
         };
-        self.is_loading = true;
+        self.tab_mut().is_loading = true;
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let res = (|| {
@@ -610,11 +741,11 @@ impl App {
     }
 
     pub fn stage_all(&mut self) {
-        let repo_path = match self.repo_path.clone() {
+        let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => return,
         };
-        self.is_loading = true;
+        self.tab_mut().is_loading = true;
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let res = (|| {
@@ -631,11 +762,11 @@ impl App {
     }
 
     pub fn unstage_all(&mut self) {
-        let repo_path = match self.repo_path.clone() {
+        let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => return,
         };
-        self.is_loading = true;
+        self.tab_mut().is_loading = true;
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let res = (|| {
@@ -652,20 +783,20 @@ impl App {
     }
 
     pub fn discard_selected(&mut self) {
-        let idx = match self.unstaged_list_state.selected() {
+        let idx = match self.tab().unstaged_list_state.selected() {
             Some(i) => i,
             None => {
-                self.status_message = Some("No unstaged file selected".into());
+                self.tab_mut().status_message = Some("No unstaged file selected".into());
                 return;
             }
         };
         let file_path = self.unstaged_file_path(idx);
-        let repo_path = match self.repo_path.clone() {
+        let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => return,
         };
-        self.confirm_discard = false;
-        self.is_loading = true;
+        self.tab_mut().confirm_discard = false;
+        self.tab_mut().is_loading = true;
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let res = (|| {
@@ -690,15 +821,15 @@ impl App {
     pub fn create_commit(&mut self) {
         let msg = self.input_buffer.trim().to_string();
         if msg.is_empty() {
-            self.error_message = Some("Commit message cannot be empty".into());
+            self.tab_mut().error_message = Some("Commit message cannot be empty".into());
             return;
         }
-        let repo_path = match self.repo_path.clone() {
+        let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => return,
         };
         self.input_buffer.clear();
-        self.is_loading = true;
+        self.tab_mut().is_loading = true;
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let res = (|| {
@@ -719,23 +850,23 @@ impl App {
     // ── Branches ─────────────────────────────────────────────────────────
 
     pub fn checkout_selected_branch(&mut self) {
-        let idx = match self.branch_list_state.selected() {
+        let idx = match self.tab().branch_list_state.selected() {
             Some(i) => i,
             None => return,
         };
-        if idx >= self.branches.len() {
+        if idx >= self.tab().branches.len() {
             return;
         }
-        let name = self.branches[idx].name.clone();
-        if self.branches[idx].is_head {
-            self.status_message = Some(format!("Already on '{name}'"));
+        let name = self.tab().branches[idx].name.clone();
+        if self.tab().branches[idx].is_head {
+            self.tab_mut().status_message = Some(format!("Already on '{name}'"));
             return;
         }
-        let repo_path = match self.repo_path.clone() {
+        let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => return,
         };
-        self.is_loading = true;
+        self.tab_mut().is_loading = true;
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let res = (|| {
@@ -756,15 +887,15 @@ impl App {
     pub fn create_branch(&mut self) {
         let name = self.input_buffer.trim().to_string();
         if name.is_empty() {
-            self.error_message = Some("Branch name cannot be empty".into());
+            self.tab_mut().error_message = Some("Branch name cannot be empty".into());
             return;
         }
-        let repo_path = match self.repo_path.clone() {
+        let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => return,
         };
         self.input_buffer.clear();
-        self.is_loading = true;
+        self.tab_mut().is_loading = true;
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let res = (|| {
@@ -783,24 +914,23 @@ impl App {
     }
 
     pub fn delete_selected_branch(&mut self) {
-        let idx = match self.branch_list_state.selected() {
+        let idx = match self.tab().branch_list_state.selected() {
             Some(i) => i,
             None => return,
         };
-        if idx >= self.branches.len() {
+        if idx >= self.tab().branches.len() {
             return;
         }
-        let branch = &self.branches[idx];
-        if branch.is_head {
-            self.error_message = Some("Cannot delete the current branch".into());
+        if self.tab().branches[idx].is_head {
+            self.tab_mut().error_message = Some("Cannot delete the current branch".into());
             return;
         }
-        let name = branch.name.clone();
-        let repo_path = match self.repo_path.clone() {
+        let name = self.tab().branches[idx].name.clone();
+        let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => return,
         };
-        self.is_loading = true;
+        self.tab_mut().is_loading = true;
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let res = (|| {
@@ -821,17 +951,17 @@ impl App {
     // ── Stash ────────────────────────────────────────────────────────────
 
     pub fn stash_save(&mut self) {
-        let repo_path = match self.repo_path.clone() {
+        let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => return,
         };
-        let msg = if self.stash_message_buffer.trim().is_empty() {
+        let msg = if self.tab().stash_message_buffer.trim().is_empty() {
             None
         } else {
-            Some(self.stash_message_buffer.trim().to_string())
+            Some(self.tab().stash_message_buffer.trim().to_string())
         };
-        self.stash_message_buffer.clear();
-        self.is_loading = true;
+        self.tab_mut().stash_message_buffer.clear();
+        self.tab_mut().is_loading = true;
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let res = (|| {
@@ -850,16 +980,16 @@ impl App {
     }
 
     pub fn stash_pop_selected(&mut self) {
-        let idx = self.stash_list_state.selected().unwrap_or(0);
-        if idx >= self.stashes.len() {
-            self.error_message = Some("No stash selected".into());
+        let idx = self.tab().stash_list_state.selected().unwrap_or(0);
+        if idx >= self.tab().stashes.len() {
+            self.tab_mut().error_message = Some("No stash selected".into());
             return;
         }
-        let repo_path = match self.repo_path.clone() {
+        let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => return,
         };
-        self.is_loading = true;
+        self.tab_mut().is_loading = true;
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let res = (|| {
@@ -879,16 +1009,16 @@ impl App {
     }
 
     pub fn stash_drop_selected(&mut self) {
-        let idx = self.stash_list_state.selected().unwrap_or(0);
-        if idx >= self.stashes.len() {
-            self.error_message = Some("No stash to drop".into());
+        let idx = self.tab().stash_list_state.selected().unwrap_or(0);
+        if idx >= self.tab().stashes.len() {
+            self.tab_mut().error_message = Some("No stash to drop".into());
             return;
         }
-        let repo_path = match self.repo_path.clone() {
+        let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => return,
         };
-        self.is_loading = true;
+        self.tab_mut().is_loading = true;
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let res = (|| {
@@ -912,21 +1042,21 @@ impl App {
 
     /// Load the file list for the currently selected commit (phase 1 of two-phase loading).
     pub fn load_commit_diff(&mut self) {
-        let idx = match self.commit_list_state.selected() {
+        let idx = match self.tab().commit_list_state.selected() {
             Some(i) => i,
             None => return,
         };
-        if idx >= self.commits.len() {
+        if idx >= self.tab().commits.len() {
             return;
         }
-        let oid = self.commits[idx].oid.clone();
-        let repo_path = match self.repo_path.clone() {
+        let oid = self.tab().commits[idx].oid.clone();
+        let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => return,
         };
-        self.is_loading = true;
-        self.status_message = Some("Loading files…".into());
-        self.selected_commit_oid = Some(oid.clone());
+        self.tab_mut().is_loading = true;
+        self.tab_mut().status_message = Some("Loading files…".into());
+        self.tab_mut().selected_commit_oid = Some(oid.clone());
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let res = (|| {
@@ -940,15 +1070,15 @@ impl App {
 
     /// Load the diff for a single file in the selected commit (phase 2).
     pub fn load_single_file_diff(&mut self, file_path: String) {
-        let repo_path = match self.repo_path.clone() {
+        let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => return,
         };
-        let oid = match self.selected_commit_oid.clone() {
+        let oid = match self.tab().selected_commit_oid.clone() {
             Some(o) => o,
             None => return,
         };
-        self.is_loading = true;
+        self.tab_mut().is_loading = true;
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let res = (|| {
@@ -962,72 +1092,50 @@ impl App {
 
     /// Switch to the next file in the commit diff list.
     pub fn next_diff_file(&mut self) {
-        if self.commit_files.is_empty() {
+        if self.tab().commit_files.is_empty() {
             return;
         }
-        self.commit_diff_file_index = (self.commit_diff_file_index + 1) % self.commit_files.len();
-        let file_path = self.commit_files[self.commit_diff_file_index]
+        let new_index = (self.tab().commit_diff_file_index + 1) % self.tab().commit_files.len();
+        self.tab_mut().commit_diff_file_index = new_index;
+        let file_path = self.tab().commit_files[self.tab().commit_diff_file_index]
             .display_path()
             .to_string();
-        self.diff_scroll = 0;
-        self.status_message = Some(format!(
+        self.tab_mut().diff_scroll = 0;
+        self.tab_mut().status_message = Some(format!(
             "File {}/{}",
-            self.commit_diff_file_index + 1,
-            self.commit_files.len()
+            self.tab().commit_diff_file_index + 1,
+            self.tab().commit_files.len()
         ));
         self.load_single_file_diff(file_path);
     }
 
     /// Switch to the previous file in the commit diff list.
     pub fn prev_diff_file(&mut self) {
-        if self.commit_files.is_empty() {
+        if self.tab().commit_files.is_empty() {
             return;
         }
-        if self.commit_diff_file_index == 0 {
-            self.commit_diff_file_index = self.commit_files.len() - 1;
+        let new_index = if self.tab().commit_diff_file_index == 0 {
+            self.tab().commit_files.len() - 1
         } else {
-            self.commit_diff_file_index -= 1;
-        }
-        let file_path = self.commit_files[self.commit_diff_file_index]
+            self.tab().commit_diff_file_index - 1
+        };
+        self.tab_mut().commit_diff_file_index = new_index;
+        let file_path = self.tab().commit_files[self.tab().commit_diff_file_index]
             .display_path()
             .to_string();
-        self.diff_scroll = 0;
-        self.status_message = Some(format!(
+        self.tab_mut().diff_scroll = 0;
+        self.tab_mut().status_message = Some(format!(
             "File {}/{}",
-            self.commit_diff_file_index + 1,
-            self.commit_files.len()
+            self.tab().commit_diff_file_index + 1,
+            self.tab().commit_files.len()
         ));
         self.load_single_file_diff(file_path);
     }
 
     /// Close the current repository and return to the welcome screen.
     pub fn close_repo(&mut self) {
-        self.repo_path = None;
-        self.repo_info = None;
-        self.branches.clear();
-        self.branch_list_state = ListState::default();
-        self.commits.clear();
-        self.graph_rows.clear();
-        self.commit_list_state = ListState::default();
-        self.unstaged_changes.clear();
-        self.staged_changes.clear();
-        self.unstaged_list_state = ListState::default();
-        self.staged_list_state = ListState::default();
-        self.staging_focus = StagingFocus::Unstaged;
-        self.selected_diff = None;
-        self.commit_diffs.clear();
-        self.commit_diff_file_index = 0;
-        self.commit_files.clear();
-        self.selected_commit_oid = None;
-        self.diff_scroll = 0;
-        self.stashes.clear();
-        self.stash_list_state = ListState::default();
-        self.remotes.clear();
+        self.tabs[self.active_tab_index] = RepoTab::new();
         self.input_buffer.clear();
-        self.stash_message_buffer.clear();
-        self.status_message = None;
-        self.error_message = None;
-        self.confirm_discard = false;
         self.show_theme_panel = false;
         self.show_options_panel = false;
         self.screen = AppScreen::Welcome;
@@ -1035,6 +1143,7 @@ impl App {
         if let Ok(settings) = gitkraft_core::features::persistence::load_settings() {
             self.recent_repos = settings.recent_repos;
         }
+        self.save_session();
     }
 
     /// Populate `browser_entries` with the contents of `browser_dir`.
@@ -1081,20 +1190,24 @@ impl App {
     }
     /// Load the diff for a selected staging file into the diff pane.
     pub fn load_staging_diff(&mut self) {
-        match self.staging_focus {
+        match self.tab().staging_focus {
             StagingFocus::Unstaged => {
-                if let Some(idx) = self.unstaged_list_state.selected() {
-                    if idx < self.unstaged_changes.len() {
-                        self.selected_diff = Some(self.unstaged_changes[idx].clone());
-                        self.diff_scroll = 0;
+                if let Some(idx) = self.tab().unstaged_list_state.selected() {
+                    if idx < self.tab().unstaged_changes.len() {
+                        let diff = self.tab().unstaged_changes[idx].clone();
+                        let tab = self.tab_mut();
+                        tab.selected_diff = Some(diff);
+                        tab.diff_scroll = 0;
                     }
                 }
             }
             StagingFocus::Staged => {
-                if let Some(idx) = self.staged_list_state.selected() {
-                    if idx < self.staged_changes.len() {
-                        self.selected_diff = Some(self.staged_changes[idx].clone());
-                        self.diff_scroll = 0;
+                if let Some(idx) = self.tab().staged_list_state.selected() {
+                    if idx < self.tab().staged_changes.len() {
+                        let diff = self.tab().staged_changes[idx].clone();
+                        let tab = self.tab_mut();
+                        tab.selected_diff = Some(diff);
+                        tab.diff_scroll = 0;
                     }
                 }
             }
@@ -1104,12 +1217,12 @@ impl App {
     // ── Remote ───────────────────────────────────────────────────────────
 
     pub fn fetch_remote(&mut self) {
-        let repo_path = match self.repo_path.clone() {
+        let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => return,
         };
-        self.is_loading = true;
-        self.status_message = Some("Fetching…".into());
+        self.tab_mut().is_loading = true;
+        self.tab_mut().status_message = Some("Fetching…".into());
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let res = (|| {
@@ -1124,17 +1237,17 @@ impl App {
     // ── Path helpers ─────────────────────────────────────────────────────
 
     fn unstaged_file_path(&self, idx: usize) -> String {
-        if idx >= self.unstaged_changes.len() {
+        if idx >= self.tab().unstaged_changes.len() {
             return String::new();
         }
-        self.unstaged_changes[idx].display_path().to_owned()
+        self.tab().unstaged_changes[idx].display_path().to_owned()
     }
 
     fn staged_file_path(&self, idx: usize) -> String {
-        if idx >= self.staged_changes.len() {
+        if idx >= self.tab().staged_changes.len() {
             return String::new();
         }
-        self.staged_changes[idx].display_path().to_owned()
+        self.tab().staged_changes[idx].display_path().to_owned()
     }
 }
 
@@ -1204,9 +1317,11 @@ mod tests {
         assert!(!app.should_quit);
         assert_eq!(app.screen, AppScreen::Welcome);
         assert_eq!(app.input_mode, InputMode::Normal);
-        assert!(app.commits.is_empty());
-        assert!(app.branches.is_empty());
-        assert!(app.repo_path.is_none());
+        assert!(app.tab().commits.is_empty());
+        assert!(app.tab().branches.is_empty());
+        assert!(app.tab().repo_path.is_none());
+        assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.active_tab_index, 0);
     }
 
     #[test]
@@ -1235,7 +1350,7 @@ mod tests {
         let mut app = App::new();
         app.current_theme_index = 0;
         let theme = app.theme();
-        // Default theme's active border comes from the core accent (88, 166, 255)
+        // Default theme active border comes from the core accent (88, 166, 255)
         assert_eq!(
             format!("{:?}", theme.border_active),
             format!("{:?}", ratatui::style::Color::Rgb(88, 166, 255))
@@ -1253,5 +1368,72 @@ mod tests {
     fn theme_name_to_index_unknown_returns_zero() {
         assert_eq!(theme_name_to_index("NonExistentTheme"), 0);
         assert_eq!(theme_name_to_index(""), 0);
+    }
+
+    #[test]
+    fn tab_management_new_tab() {
+        let mut app = App::new();
+        assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.active_tab_index, 0);
+
+        app.new_tab();
+        assert_eq!(app.tabs.len(), 2);
+        assert_eq!(app.active_tab_index, 1);
+
+        app.new_tab();
+        assert_eq!(app.tabs.len(), 3);
+        assert_eq!(app.active_tab_index, 2);
+    }
+
+    #[test]
+    fn tab_management_close_tab() {
+        let mut app = App::new();
+        app.new_tab();
+        app.new_tab();
+        assert_eq!(app.tabs.len(), 3);
+        assert_eq!(app.active_tab_index, 2);
+
+        app.close_tab();
+        assert_eq!(app.tabs.len(), 2);
+        assert_eq!(app.active_tab_index, 1);
+
+        app.close_tab();
+        assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.active_tab_index, 0);
+
+        // Close the only tab -- should reset rather than remove
+        app.close_tab();
+        assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.active_tab_index, 0);
+    }
+
+    #[test]
+    fn tab_management_next_prev() {
+        let mut app = App::new();
+        app.new_tab();
+        app.new_tab();
+        // active_tab_index == 2
+
+        app.next_tab();
+        assert_eq!(app.active_tab_index, 0); // wrapped
+
+        app.next_tab();
+        assert_eq!(app.active_tab_index, 1);
+
+        app.prev_tab();
+        assert_eq!(app.active_tab_index, 0);
+
+        app.prev_tab();
+        assert_eq!(app.active_tab_index, 2); // wrapped
+    }
+
+    #[test]
+    fn repo_tab_display_name() {
+        let tab = RepoTab::new();
+        assert_eq!(tab.display_name(), "New Tab");
+
+        let mut tab2 = RepoTab::new();
+        tab2.repo_path = Some(PathBuf::from("/home/user/projects/my-repo"));
+        assert_eq!(tab2.display_name(), "my-repo");
     }
 }

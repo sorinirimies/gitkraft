@@ -59,14 +59,14 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     }
 
     // Show error or status message (error takes precedence)
-    if let Some(ref err) = app.error_message {
+    if let Some(ref err) = app.tab().error_message {
         spans.push(Span::styled(
             err,
             Style::default()
                 .fg(theme.error)
                 .add_modifier(Modifier::BOLD),
         ));
-    } else if let Some(ref msg) = app.status_message {
+    } else if let Some(ref msg) = app.tab().status_message {
         spans.push(Span::styled(msg, Style::default().fg(theme.success)));
     }
 

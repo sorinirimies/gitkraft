@@ -6,10 +6,11 @@ use crate::app::{App, InputMode, InputPurpose};
 pub fn handle_key(app: &mut App, key: KeyEvent) {
     match key.code {
         // Navigation
-        KeyCode::Char('j') if !app.branches.is_empty() => {
-            let i = match app.branch_list_state.selected() {
+        KeyCode::Char('j') if !app.tab().branches.is_empty() => {
+            let tab = app.tab_mut();
+            let i = match tab.branch_list_state.selected() {
                 Some(i) => {
-                    if i >= app.branches.len() - 1 {
+                    if i >= tab.branches.len() - 1 {
                         0
                     } else {
                         i + 1
@@ -17,20 +18,21 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 }
                 None => 0,
             };
-            app.branch_list_state.select(Some(i));
+            tab.branch_list_state.select(Some(i));
         }
-        KeyCode::Char('k') if !app.branches.is_empty() => {
-            let i = match app.branch_list_state.selected() {
+        KeyCode::Char('k') if !app.tab().branches.is_empty() => {
+            let tab = app.tab_mut();
+            let i = match tab.branch_list_state.selected() {
                 Some(i) => {
                     if i == 0 {
-                        app.branches.len() - 1
+                        tab.branches.len() - 1
                     } else {
                         i - 1
                     }
                 }
                 None => 0,
             };
-            app.branch_list_state.select(Some(i));
+            tab.branch_list_state.select(Some(i));
         }
 
         // Checkout selected branch
@@ -43,7 +45,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             app.input_buffer.clear();
             app.input_mode = InputMode::Input;
             app.input_purpose = InputPurpose::BranchName;
-            app.status_message = Some("Enter new branch name:".into());
+            app.tab_mut().status_message = Some("Enter new branch name:".into());
         }
 
         // Delete selected branch
@@ -53,7 +55,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
 
         // Deselect
         KeyCode::Esc => {
-            app.branch_list_state.select(None);
+            app.tab_mut().branch_list_state.select(None);
         }
 
         _ => {}
