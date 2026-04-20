@@ -2,18 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.6.1 - 2026-04-17
+## 0.6.2 - 2026-04-20
 ### ➕ Added
 - Add loading spinner to login button
+- Add push-all-force recipe to force-push main to all remotes
 ### 📦 Other Changes
+- Replace dtolnay/rust-toolchain with manual rustup install in CI
+- Make all multi-remote tasks continue on failure
+- Bump version to 0.6.0 and update changelog
+- Remove blank lines before dependencies in Cargo.lock
 - Simplify deps-update workflow to push updates directly to main
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.0...v0.6.1
-## 0.6.0 - 2026-04-17
-### 📦 Other Changes
-- Move release notes generation to scripts/ci and update workflow
+- Bump version to 0.6.1 and update changelog
+- Move repo state to per-tab struct and update all usages
+- Hide context menu when copying text
+- Replace GitHub release action with Gitea API script
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.7...v0.6.2
+## 0.5.7 - 2026-04-19
 ### 🔧 Chores
-- chore: bump version to 0.6.0
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.4...v0.6.0
+- chore: bump version to 0.5.7
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.6...v0.5.7
 ## 0.5.6 - 2026-04-19
 ### 🔧 Chores
 - chore: bump version to 0.5.6
@@ -57,17 +64,6 @@ All notable changes to this project will be documented in this file.
 - chore: bump version to 0.5.4
 - chore: bump version to 0.5.5
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.9...v0.5.5
-## 0.5.4 - 2026-04-17
-### ♻️ Refactor
-- Refactor GUI view helpers and TUI commit diff loading
-### 📦 Other Changes
-- Fail bump if version is unchanged
-### 🔧 Chores
-- chore: bump version to 0.5.4
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.3...v0.5.4
-## 0.5.3 - 2026-04-17
-### ➕ Added
-- Add step to install Rust stable in release workflow
 ## 0.3.9 - 2026-04-14
 ### 📦 Other Changes
 - Make branches sidebar width responsive
