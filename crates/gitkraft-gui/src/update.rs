@@ -536,7 +536,10 @@ impl GitKraft {
             }
 
             // ── Shared ───────────────────────────────────────────────────────────────
-            Message::CopyText(text) => iced::clipboard::write(text.clone()),
+            Message::CopyText(text) => {
+                self.active_tab_mut().context_menu = None;
+                iced::clipboard::write(text.clone())
+            }
 
             // ── Persistence / misc ────────────────────────────────────────
             Message::ThemeChanged(index) => {
