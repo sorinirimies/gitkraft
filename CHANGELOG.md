@@ -2,9 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.1 - 2026-04-17
+### ➕ Added
+- Add loading spinner to login button
+### 📦 Other Changes
+- Simplify deps-update workflow to push updates directly to main
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.0...v0.6.1
 ## 0.6.0 - 2026-04-17
 ### 📦 Other Changes
 - Move release notes generation to scripts/ci and update workflow
+### 🔧 Chores
+- chore: bump version to 0.6.0
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.4...v0.6.0
 ## 0.5.6 - 2026-04-19
 ### 🔧 Chores
