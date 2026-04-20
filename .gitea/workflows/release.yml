@@ -231,17 +231,50 @@ jobs:
         run: ls -lh artifacts/
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.validate.outputs.tag }}
-          body_path: RELEASE_NOTES.md
-          files: |
-            artifacts/*
-            LICENSE
-            README.md
-            CHANGELOG.md
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ needs.validate.outputs.tag }}"
+          GITEA_URL="${{ github.server_url }}"
+          REPO="${{ github.repository }}"
+          TOKEN="${{ secrets.GITHUB_TOKEN }}"
+
+          echo "🎉 Creating new Gitea release for tag ${TAG}..."
+
+          # Create the release via Gitea API
+          RELEASE_BODY=$(cat RELEASE_NOTES.md | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')
+          RESPONSE=$(curl -s -X POST \
+            "${GITEA_URL}/api/v1/repos/${REPO}/releases" \
+            -H "Authorization: token ${TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"tag_name\": \"${TAG}\",
+              \"name\": \"${TAG}\",
+              \"body\": ${RELEASE_BODY},
+              \"draft\": false,
+              \"prerelease\": false
+            }")
+
+          RELEASE_ID=$(echo "$RESPONSE" | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])' 2>/dev/null)
+          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "None" ]; then
+            echo "❌ Failed to create release:"
+            echo "$RESPONSE"
+            exit 1
+          fi
+          echo "✅ Release created (id: ${RELEASE_ID})"
+
+          # Upload assets
+          for file in artifacts/* LICENSE README.md CHANGELOG.md; do
+            [ -f "$file" ] || continue
+            FILENAME=$(basename "$file")
+            echo "📦 Uploading ${FILENAME}..."
+            curl -s -X POST \
+              "${GITEA_URL}/api/v1/repos/${REPO}/releases/${RELEASE_ID}/assets?name=${FILENAME}" \
+              -H "Authorization: token ${TOKEN}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@${file}" > /dev/null
+            echo "✅ Uploaded ${FILENAME}"
+          done
+
+          echo "🎉 Release ${TAG} published at ${GITEA_URL}/${REPO}/releases/tag/${TAG}"
 
   # ── 4. Publish to crates.io ──────────────────────────────────────────────────
   # Order matters: core must be published first because gui and tui depend on it.
