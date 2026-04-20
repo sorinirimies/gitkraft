@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file.
 - Move repo state to per-tab struct and update all usages
 - Hide context menu when copying text
 - Replace GitHub release action with Gitea API script
+### 🔧 Chores
+- chore: bump version to 0.6.2
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.7...v0.6.2
 ## 0.5.7 - 2026-04-19
 ### 🔧 Chores
