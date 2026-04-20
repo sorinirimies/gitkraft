@@ -7,7 +7,8 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version      = "0.5.7"
+version      = "0.6.0"
+
 edition      = "2021"
 authors      = ["Sorin Irimies <sorinirimies@gmail.com>"]
 license      = "MIT"
@@ -46,7 +47,7 @@ tui-file-explorer    = "0.9.8"
 tui-checkbox         = "0.4.3"
 
 # Internal crates
-gitkraft-core = { path = "crates/gitkraft-core", version = "0.5.7" }
+gitkraft-core = { path = "crates/gitkraft-core", version = "0.6.0" }
 
 [profile.dev]
 opt-level = 0
