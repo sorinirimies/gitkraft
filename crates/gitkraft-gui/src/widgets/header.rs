@@ -103,7 +103,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     };
 
     // ── Assemble ──────────────────────────────────────────────────────────
-    let toolbar = row![
+    let left_items = row![
         sidebar_btn,
         Space::new().width(8),
         repo_icon,
@@ -120,9 +120,10 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         separator(),
         Space::new().width(10),
         loading_indicator,
-        Space::new().width(Length::Fill),
-        theme_selector(state.current_theme_index),
-        Space::new().width(8),
+    ]
+    .align_y(Alignment::Center);
+
+    let right_items = row![
         fetch_btn,
         Space::new().width(4),
         refresh_btn,
@@ -130,6 +131,14 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         open_btn,
         Space::new().width(4),
         close_btn,
+        Space::new().width(8),
+        theme_selector(state.current_theme_index),
+    ]
+    .align_y(Alignment::Center);
+
+    let toolbar = row![
+        container(left_items).width(Length::Fill).clip(true),
+        right_items,
     ]
     .align_y(Alignment::Center)
     .padding([6, 12])
