@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - Update Iced to 0.14 and refactor for new widget APIs
 ### 🔧 Chores
 - chore: bump version to 0.6.4
+- chore: bump version to 0.6.5
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.3...v0.6.5
 ## 0.6.3 - 2026-04-20
 ### 🔧 Chores
