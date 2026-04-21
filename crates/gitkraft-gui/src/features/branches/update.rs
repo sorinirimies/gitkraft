@@ -11,12 +11,15 @@ use super::commands;
 /// async work.
 pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
     match message {
-        Message::CheckoutBranch(name) => with_repo!(
-            state,
-            loading,
-            format!("Checking out '{name}'…"),
-            |repo_path| commands::checkout_branch(repo_path, name)
-        ),
+        Message::CheckoutBranch(name) => {
+            state.active_tab_mut().context_menu = None;
+            with_repo!(
+                state,
+                loading,
+                format!("Checking out '{name}'…"),
+                |repo_path| commands::checkout_branch(repo_path, name)
+            )
+        }
 
         Message::BranchCheckedOut(result) => {
             state.on_ok_refresh(result, "Branch checked out.", "Checkout failed")
@@ -70,12 +73,15 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             state.on_ok_refresh(result, "Branch created.", "Branch creation failed")
         }
 
-        Message::DeleteBranch(name) => with_repo!(
-            state,
-            loading,
-            format!("Deleting branch '{name}'…"),
-            |repo_path| commands::delete_branch(repo_path, name)
-        ),
+        Message::DeleteBranch(name) => {
+            state.active_tab_mut().context_menu = None;
+            with_repo!(
+                state,
+                loading,
+                format!("Deleting branch '{name}'…"),
+                |repo_path| commands::delete_branch(repo_path, name)
+            )
+        }
 
         Message::BranchDeleted(result) => {
             state.on_ok_refresh(result, "Branch deleted.", "Branch deletion failed")
