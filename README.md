@@ -21,6 +21,19 @@ GitKraft ships two front-ends from a single Rust workspace:
 
 Both share **`gitkraft-core`** — a framework-free library built on [`git2`](https://crates.io/crates/git2). Zero Git operations live in the UI layer.
 
+## Preview
+
+### Desktop GUI
+
+![GUI Build](crates/gitkraft-gui/examples/vhs/generated/gui-build.gif)
+![GUI Workspace](crates/gitkraft-gui/examples/vhs/generated/gui-workspace.gif)
+
+### Terminal UI
+
+![TUI Demo](crates/gitkraft-tui/examples/vhs/generated/tui-demo.gif)
+![TUI Welcome](crates/gitkraft-tui/examples/vhs/generated/tui-welcome.gif)
+![TUI Build](crates/gitkraft-tui/examples/vhs/generated/tui-build.gif)
+
 ## Features
 
 - **Branch management** — create, checkout, delete, rename (local & remote)
