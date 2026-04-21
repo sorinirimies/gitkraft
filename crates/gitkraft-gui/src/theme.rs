@@ -303,24 +303,28 @@ pub fn ghost_button(theme: &iced::Theme, status: button::Status) -> button::Styl
             text_color: c.text_primary,
             border: iced::Border::default(),
             shadow: iced::Shadow::default(),
+            snap: false,
         },
         button::Status::Hovered => button::Style {
             background: Some(Background::Color(c.surface_highlight)),
             text_color: c.text_primary,
             border: iced::Border::default(),
             shadow: iced::Shadow::default(),
+            snap: false,
         },
         button::Status::Pressed => button::Style {
             background: Some(Background::Color(c.border)),
             text_color: c.text_primary,
             border: iced::Border::default(),
             shadow: iced::Shadow::default(),
+            snap: false,
         },
         button::Status::Disabled => button::Style {
             background: None,
             text_color: c.muted,
             border: iced::Border::default(),
             shadow: iced::Shadow::default(),
+            snap: false,
         },
     }
 }
@@ -339,24 +343,28 @@ pub fn active_tab_button(theme: &iced::Theme, status: button::Status) -> button:
             text_color: c.text_primary,
             border: active_border,
             shadow: iced::Shadow::default(),
+            snap: false,
         },
         button::Status::Hovered => button::Style {
             background: Some(Background::Color(c.surface_highlight)),
             text_color: c.text_primary,
             border: active_border,
             shadow: iced::Shadow::default(),
+            snap: false,
         },
         button::Status::Pressed => button::Style {
             background: Some(Background::Color(c.border)),
             text_color: c.text_primary,
             border: active_border,
             shadow: iced::Shadow::default(),
+            snap: false,
         },
         button::Status::Disabled => button::Style {
             background: Some(Background::Color(c.surface)),
             text_color: c.muted,
             border: active_border,
             shadow: iced::Shadow::default(),
+            snap: false,
         },
     }
 }
@@ -370,6 +378,7 @@ pub fn context_menu_item(theme: &iced::Theme, status: button::Status) -> button:
             text_color: c.text_primary,
             border: iced::Border::default(),
             shadow: iced::Shadow::default(),
+            snap: false,
         },
         button::Status::Hovered => button::Style {
             background: Some(Background::Color(iced::Color {
@@ -385,6 +394,7 @@ pub fn context_menu_item(theme: &iced::Theme, status: button::Status) -> button:
                 radius: 4.0.into(),
             },
             shadow: iced::Shadow::default(),
+            snap: false,
         },
         button::Status::Pressed => button::Style {
             background: Some(Background::Color(iced::Color {
@@ -400,12 +410,14 @@ pub fn context_menu_item(theme: &iced::Theme, status: button::Status) -> button:
                 radius: 4.0.into(),
             },
             shadow: iced::Shadow::default(),
+            snap: false,
         },
         button::Status::Disabled => button::Style {
             background: None,
             text_color: c.muted,
             border: iced::Border::default(),
             shadow: iced::Shadow::default(),
+            snap: false,
         },
     }
 }
@@ -427,7 +439,7 @@ pub fn overlay_scrollbar(theme: &iced::Theme, status: scrollable::Status) -> scr
         background: None,
         border: iced::Border::default(),
         scroller: scrollable::Scroller {
-            color: Color::TRANSPARENT,
+            background: Background::Color(Color::TRANSPARENT),
             border: iced::Border::default(),
         },
     };
@@ -436,12 +448,12 @@ pub fn overlay_scrollbar(theme: &iced::Theme, status: scrollable::Status) -> scr
         background: None,
         border: iced::Border::default(),
         scroller: scrollable::Scroller {
-            color: Color {
+            background: Background::Color(Color {
                 r: c.muted.r,
                 g: c.muted.g,
                 b: c.muted.b,
                 a: alpha,
-            },
+            }),
             border: iced::Border {
                 radius: 3.0.into(),
                 ..Default::default()
@@ -450,7 +462,7 @@ pub fn overlay_scrollbar(theme: &iced::Theme, status: scrollable::Status) -> scr
     };
 
     let v_rail = match status {
-        scrollable::Status::Active => hidden,
+        scrollable::Status::Active { .. } => hidden,
         scrollable::Status::Hovered { .. } => thumb(0.45),
         scrollable::Status::Dragged { .. } => thumb(0.70),
     };
@@ -460,6 +472,12 @@ pub fn overlay_scrollbar(theme: &iced::Theme, status: scrollable::Status) -> scr
         vertical_rail: v_rail,
         horizontal_rail: hidden,
         gap: None,
+        auto_scroll: scrollable::AutoScroll {
+            background: Background::Color(Color::TRANSPARENT),
+            border: iced::Border::default(),
+            shadow: iced::Shadow::default(),
+            icon: Color::TRANSPARENT,
+        },
     }
 }
 
@@ -477,24 +495,28 @@ pub fn toolbar_button(theme: &iced::Theme, status: button::Status) -> button::St
             text_color: c.text_primary,
             border,
             shadow: iced::Shadow::default(),
+            snap: false,
         },
         button::Status::Hovered => button::Style {
             background: Some(Background::Color(c.surface_highlight)),
             text_color: c.text_primary,
             border,
             shadow: iced::Shadow::default(),
+            snap: false,
         },
         button::Status::Pressed => button::Style {
             background: Some(Background::Color(c.border)),
             text_color: c.text_primary,
             border,
             shadow: iced::Shadow::default(),
+            snap: false,
         },
         button::Status::Disabled => button::Style {
             background: Some(Background::Color(c.surface)),
             text_color: c.muted,
             border,
             shadow: iced::Shadow::default(),
+            snap: false,
         },
     }
 }
@@ -508,6 +530,7 @@ pub fn icon_button(theme: &iced::Theme, status: button::Status) -> button::Style
             text_color: c.text_secondary,
             border: iced::Border::default(),
             shadow: iced::Shadow::default(),
+            snap: false,
         },
         button::Status::Hovered => button::Style {
             background: Some(Background::Color(c.surface_highlight)),
@@ -517,6 +540,7 @@ pub fn icon_button(theme: &iced::Theme, status: button::Status) -> button::Style
                 ..Default::default()
             },
             shadow: iced::Shadow::default(),
+            snap: false,
         },
         button::Status::Pressed => button::Style {
             background: Some(Background::Color(c.border)),
@@ -526,12 +550,14 @@ pub fn icon_button(theme: &iced::Theme, status: button::Status) -> button::Style
                 ..Default::default()
             },
             shadow: iced::Shadow::default(),
+            snap: false,
         },
         button::Status::Disabled => button::Style {
             background: None,
             text_color: c.muted,
             border: iced::Border::default(),
             shadow: iced::Shadow::default(),
+            snap: false,
         },
     }
 }

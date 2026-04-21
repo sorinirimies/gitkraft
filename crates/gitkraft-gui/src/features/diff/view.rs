@@ -109,9 +109,9 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
 
     let header_row = row![
         header_icon,
-        Space::new(4, 0),
+        Space::new().width(4),
         header_text,
-        Space::new(4, 0),
+        Space::new().width(4),
         file_count,
     ]
     .align_y(Alignment::Center)
@@ -150,7 +150,7 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
         let dir_hint: Element<'a, Message> = {
             let short_dir = diff.short_parent_dir();
             if short_dir.is_empty() {
-                Space::new(0, 0).into()
+                Space::new().into()
             } else {
                 text(format!("{short_dir}/"))
                     .size(10)
@@ -162,7 +162,7 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
 
         let row_content = row![
             status_badge,
-            Space::new(4, 0),
+            Space::new().width(4),
             column![row![dir_hint, name_label].align_y(Alignment::Center),],
         ]
         .align_y(Alignment::Center)
@@ -244,7 +244,7 @@ fn diff_content<'a>(
         .font(Font::MONOSPACE);
 
     let file_header = container(
-        row![status_badge, Space::new(8, 0), file_label].align_y(iced::Alignment::Center),
+        row![status_badge, Space::new().width(8), file_label].align_y(iced::Alignment::Center),
     )
     .padding([8, 12])
     .width(Length::Fill)
@@ -269,7 +269,7 @@ fn diff_content<'a>(
         let bottom_space = (total_lines - last) as f32 * DIFF_LINE_HEIGHT;
 
         if top_space > 0.0 {
-            lines_col = lines_col.push(Space::new(0, top_space));
+            lines_col = lines_col.push(Space::new().height(top_space));
         }
 
         // Iterate through hunks to find lines in range [first..last)
@@ -290,7 +290,7 @@ fn diff_content<'a>(
         }
 
         if bottom_space > 0.0 {
-            lines_col = lines_col.push(Space::new(0, bottom_space));
+            lines_col = lines_col.push(Space::new().height(bottom_space));
         }
     }
 
@@ -318,7 +318,7 @@ fn diff_line_widget<'a>(
         .size(13)
         .font(Font::MONOSPACE)
         .color(color);
-    let c = container(row![prefix_w, Space::new(4, 0), content])
+    let c = container(row![prefix_w, Space::new().width(4), content])
         .padding([1, 12])
         .width(Length::Fill);
     match style {

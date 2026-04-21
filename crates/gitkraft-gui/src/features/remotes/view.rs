@@ -31,9 +31,9 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     let header_row = row![
         header_icon,
-        Space::new(6, 0),
+        Space::new().width(6),
         header_text,
-        Space::new(Length::Fill, 0),
+        Space::new().width(Length::Fill),
         fetch_btn,
     ]
     .align_y(Alignment::Center)

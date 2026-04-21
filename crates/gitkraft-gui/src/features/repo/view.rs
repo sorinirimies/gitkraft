@@ -4,7 +4,7 @@
 //! button, a horizontal rule, an "Init Repository" button, and (if available)
 //! a list of recently opened repositories.
 
-use iced::widget::{button, column, container, horizontal_rule, row, scrollable, text, Space};
+use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Element, Length};
 
 use crate::icons;
@@ -30,8 +30,8 @@ pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
         .size(18)
         .color(c.text_secondary);
 
-        let loading_col =
-            column![spinner_icon, Space::new(0, 12), loading_label].align_x(Alignment::Center);
+        let loading_col = column![spinner_icon, Space::new().height(12), loading_label]
+            .align_x(Alignment::Center);
 
         return container(loading_col)
             .width(Length::Fill)
@@ -75,13 +75,13 @@ pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
     let mut card_col = column![
         title,
         subtitle,
-        Space::new(0, 24),
+        Space::new().height(24),
         open_btn,
-        Space::new(0, 8),
-        horizontal_rule(1),
-        Space::new(0, 8),
+        Space::new().height(8),
+        iced::widget::rule::horizontal(1),
+        Space::new().height(8),
         init_btn,
-        Space::new(0, 16),
+        Space::new().height(16),
         hint,
     ]
     .spacing(4)
@@ -91,20 +91,24 @@ pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
     // ── Recent repositories ───────────────────────────────────────────────
     if !state.recent_repos.is_empty() {
         card_col = card_col
-            .push(Space::new(0, 20))
-            .push(horizontal_rule(1))
-            .push(Space::new(0, 12));
+            .push(Space::new().height(20))
+            .push(iced::widget::rule::horizontal(1))
+            .push(Space::new().height(12));
 
         let recent_header_icon = icon!(icons::CLOCK_HISTORY, 14, c.accent);
 
         let recent_header_label = text("Recent Repositories").size(14).color(c.text_primary);
 
         card_col = card_col.push(
-            row![recent_header_icon, Space::new(6, 0), recent_header_label]
-                .align_y(Alignment::Center),
+            row![
+                recent_header_icon,
+                Space::new().width(6),
+                recent_header_label
+            ]
+            .align_y(Alignment::Center),
         );
 
-        card_col = card_col.push(Space::new(0, 8));
+        card_col = card_col.push(Space::new().height(8));
 
         let mut recent_list = column![].spacing(2).width(Length::Fill);
 
@@ -127,7 +131,7 @@ pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
 
             let entry_content = row![
                 folder_icon,
-                Space::new(8, 0),
+                Space::new().width(8),
                 column![name_label, path_label].spacing(1),
             ]
             .align_y(Alignment::Center)

@@ -141,9 +141,9 @@ fn handle_repo_loaded(state: &mut GitKraft, result: Result<RepoPayload, String>)
             let active = state.active_tab;
             Task::batch([
                 commands::record_repo_and_save_session_async(path, open_tabs, active),
-                iced::widget::scrollable::scroll_to(
+                iced::widget::operation::scroll_to(
                     crate::features::commits::view::commit_log_scroll_id(active),
-                    iced::widget::scrollable::AbsoluteOffset { x: 0.0, y: 0.0 },
+                    iced::widget::operation::AbsoluteOffset { x: 0.0, y: 0.0 },
                 ),
             ])
         }
@@ -226,7 +226,7 @@ fn compute_commit_display(commits: &[gitkraft_core::CommitInfo]) -> Vec<(String,
             let summary = c.summary.clone();
             let time = gitkraft_core::utils::relative_time(c.time);
             // Truncate author to fit in the fixed-width author column (~90 px).
-            let author = gitkraft_core::truncate_str(&c.author_name, 14);
+            let author = gitkraft_core::truncate_str(&c.author_name, 20);
             (summary, time, author)
         })
         .collect()

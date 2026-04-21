@@ -13,7 +13,7 @@
 //! the mouse is comfortable.  A subtle background highlight appears on hover
 //! to signal that the divider is interactive.
 
-use iced::widget::{container, mouse_area, vertical_rule};
+use iced::widget::{container, mouse_area, rule};
 use iced::{Background, Color, Element, Length};
 
 use crate::message::Message;
@@ -32,13 +32,13 @@ const H_HIT_HEIGHT: f32 = 8.0;
 /// `vertical_rule` is centered inside so the visual line stays crisp while the
 /// clickable area is comfortable.  On hover the background subtly highlights.
 pub fn vertical_divider<'a>(target: DragTarget, _c: &ThemeColors) -> Element<'a, Message> {
-    let rule = vertical_rule(1).style(move |theme: &iced::Theme| {
+    let rule = rule::vertical(1).style(move |theme: &iced::Theme| {
         let tc = crate::theme::ThemeColors::from_theme(theme);
         iced::widget::rule::Style {
             color: tc.border,
-            width: 1,
             radius: 0.0.into(),
             fill_mode: iced::widget::rule::FillMode::Full,
+            snap: true,
         }
     });
 
@@ -73,13 +73,13 @@ pub fn vertical_divider<'a>(target: DragTarget, _c: &ThemeColors) -> Element<'a,
 /// `horizontal_rule` is centered inside.  On hover the background subtly
 /// highlights.
 pub fn horizontal_divider<'a>(target: DragTargetH, _c: &ThemeColors) -> Element<'a, Message> {
-    let rule = iced::widget::horizontal_rule(1).style(move |theme: &iced::Theme| {
+    let rule = rule::horizontal(1).style(move |theme: &iced::Theme| {
         let tc = crate::theme::ThemeColors::from_theme(theme);
         iced::widget::rule::Style {
             color: tc.border,
-            width: 1,
             radius: 0.0.into(),
             fill_mode: iced::widget::rule::FillMode::Full,
+            snap: true,
         }
     });
 

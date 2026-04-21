@@ -35,8 +35,8 @@ const VISIBLE_ROWS: usize = 50;
 
 /// Per-tab stable scroll id — Iced maintains a separate scroll position for
 /// each open tab so no programmatic `scroll_to` is needed on tab switches.
-pub fn commit_log_scroll_id(tab_index: usize) -> scrollable::Id {
-    scrollable::Id::new(format!("commit_log_{tab_index}"))
+pub fn commit_log_scroll_id(tab_index: usize) -> iced::widget::Id {
+    iced::widget::Id::from(format!("commit_log_{tab_index}"))
 }
 
 // ── graph_cell ────────────────────────────────────────────────────────────────
@@ -185,6 +185,7 @@ fn commit_row_element<'a>(
     idx: usize,
     c: &ThemeColors,
     available_summary_px: f32,
+    author_width: f32,
 ) -> Element<'a, Message> {
     let commit = &tab.commits[idx];
     let is_selected = tab.selected_commit == Some(idx);
@@ -227,7 +228,7 @@ fn commit_row_element<'a>(
             .color(c.text_secondary)
             .wrapping(iced::widget::text::Wrapping::None),
     )
-    .width(90)
+    .width(author_width)
     .clip(true);
 
     let time_label = container(
@@ -242,11 +243,11 @@ fn commit_row_element<'a>(
     let row_content = row![
         graph_elem,
         oid_label,
-        Space::new(6, 0),
+        Space::new().width(6),
         summary_label,
-        Space::new(8, 0),
+        Space::new().width(8),
         author_label,
-        Space::new(8, 0),
+        Space::new().width(8),
         time_label,
     ]
     .align_y(Alignment::Center)
@@ -292,9 +293,9 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     let header_row = row![
         header_icon,
-        Space::new(6, 0),
+        Space::new().width(6),
         header_text,
-        Space::new(6, 0),
+        Space::new().width(6),
         commit_count,
     ]
     .align_y(Alignment::Center)
@@ -335,20 +336,29 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let mut list_col = column![].width(Length::Fill);
 
     if top_space > 0.0 {
-        list_col = list_col.push(Space::new(0, top_space));
+        list_col = list_col.push(Space::new().height(top_space));
     }
 
+    // Author column scales with commit log width: ~15% of log width, clamped to [90, 180].
+    let author_width = (state.commit_log_width * 0.15).clamp(90.0, 180.0);
+
     // Available px for the summary column:
-    // commit_log_width minus graph (~30) + oid (~56) + spaces + author (90)
-    // + time (72) + row padding (16) ≈ 280 px fixed overhead.
-    let available_summary_px = (state.commit_log_width - 280.0).max(40.0);
+    // commit_log_width minus graph (~30) + oid (~56) + spaces + author + time (72) + padding (16).
+    let fixed_overhead = 30.0 + 56.0 + 22.0 + author_width + 72.0 + 16.0;
+    let available_summary_px = (state.commit_log_width - fixed_overhead).max(40.0);
 
     for idx in first..last {
-        list_col = list_col.push(commit_row_element(tab, idx, &c, available_summary_px));
+        list_col = list_col.push(commit_row_element(
+            tab,
+            idx,
+            &c,
+            available_summary_px,
+            author_width,
+        ));
     }
 
     if bottom_space > 0.0 {
-        list_col = list_col.push(Space::new(0, bottom_space));
+        list_col = list_col.push(Space::new().height(bottom_space));
     }
 
     // Loading spinner shown while a background fetch is in progress.

@@ -62,7 +62,7 @@ pub fn thin_scrollbar() -> iced::widget::scrollable::Direction {
 
 /// Thin horizontal separator line for context menus.
 pub fn context_menu_separator<'a, M: 'a>() -> iced::Element<'a, M> {
-    iced::widget::container(iced::widget::Space::new(0, 1))
+    iced::widget::container(iced::widget::Space::new().height(1))
         .padding(iced::Padding {
             top: 4.0,
             right: 0.0,
@@ -91,7 +91,7 @@ pub fn context_menu_header<'a, M: 'a>(label: String, muted: iced::Color) -> iced
 /// A centered placeholder with an icon and a label, used for empty/loading states.
 pub fn centered_placeholder<'a>(
     icon_char: char,
-    icon_size: u16,
+    icon_size: u32,
     label_text: &str,
     muted: iced::Color,
 ) -> iced::Element<'a, crate::message::Message> {
@@ -102,7 +102,7 @@ pub fn centered_placeholder<'a>(
     let label = text(label_text.to_string()).size(14).color(muted);
 
     container(
-        column![icon_widget, Space::new(0, 8), label]
+        column![icon_widget, Space::new().height(8), label]
             .spacing(4)
             .align_x(Alignment::Center),
     )
@@ -153,9 +153,9 @@ pub fn collapsible_header<'a>(
     button(
         row![
             chevron,
-            Space::new(4, 0),
+            Space::new().width(4),
             text(label).size(11).color(muted),
-            Space::new(4, 0),
+            Space::new().width(4),
             text(format!("({count})")).size(10).color(muted),
         ]
         .align_y(Alignment::Center),
@@ -180,7 +180,12 @@ pub fn toolbar_btn<'a>(
     use iced::Alignment;
 
     button(
-        row![icon_widget.into(), Space::new(4, 0), text(label).size(12)].align_y(Alignment::Center),
+        row![
+            icon_widget.into(),
+            Space::new().width(4),
+            text(label).size(12)
+        ]
+        .align_y(Alignment::Center),
     )
     .padding([4, 10])
     .style(crate::theme::toolbar_button)

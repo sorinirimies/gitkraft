@@ -96,12 +96,14 @@ macro_rules! with_repo {
 macro_rules! icon {
     ($char:expr, $size:expr, $color:expr) => {
         text($char)
-            .font(iced_fonts::BOOTSTRAP_FONT)
+            .font(iced::Font::with_name("bootstrap-icons"))
             .size($size)
             .color($color)
     };
     ($char:expr, $size:expr) => {
-        text($char).font(iced_fonts::BOOTSTRAP_FONT).size($size)
+        text($char)
+            .font(iced::Font::with_name("bootstrap-icons"))
+            .size($size)
     };
 }
 

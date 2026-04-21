@@ -41,10 +41,10 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .color(c.yellow)
                 .into()
         } else {
-            Space::new(0, 0).into()
+            Space::new().into()
         }
     } else {
-        Space::new(0, 0).into()
+        Space::new().into()
     };
 
     // ── Fetch button ──────────────────────────────────────────────────────
@@ -53,7 +53,8 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let fetch_msg = (!tab.remotes.is_empty()).then_some(Message::Fetch);
     let fetch_btn = crate::view_utils::on_press_maybe(
         button(
-            row![fetch_icon, Space::new(4, 0), text("Fetch").size(12)].align_y(Alignment::Center),
+            row![fetch_icon, Space::new().width(4), text("Fetch").size(12)]
+                .align_y(Alignment::Center),
         )
         .padding([4, 10])
         .style(theme::toolbar_button),
@@ -90,38 +91,44 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     // ── Loading indicator ─────────────────────────────────────────────────
     let loading_indicator: Element<'_, Message> = if tab.is_loading {
-        text("⟳ Loading…").size(12).color(c.yellow).into()
+        row![
+            icon!(icons::ARROW_REPEAT, 12, c.yellow),
+            iced::widget::Space::new().width(4),
+            text("Loading…").size(12).color(c.yellow)
+        ]
+        .align_y(iced::Alignment::Center)
+        .into()
     } else {
-        Space::new(0, 0).into()
+        Space::new().into()
     };
 
     // ── Assemble ──────────────────────────────────────────────────────────
     let toolbar = row![
         sidebar_btn,
-        Space::new(8, 0),
+        Space::new().width(8),
         repo_icon,
-        Space::new(6, 0),
+        Space::new().width(6),
         repo_name,
-        Space::new(10, 0),
+        Space::new().width(10),
         separator(),
-        Space::new(10, 0),
+        Space::new().width(10),
         branch_icon,
-        Space::new(6, 0),
+        Space::new().width(6),
         branch_label,
         state_badge,
-        Space::new(10, 0),
+        Space::new().width(10),
         separator(),
-        Space::new(10, 0),
+        Space::new().width(10),
         loading_indicator,
-        Space::new(Length::Fill, 0),
+        Space::new().width(Length::Fill),
         theme_selector(state.current_theme_index),
-        Space::new(8, 0),
+        Space::new().width(8),
         fetch_btn,
-        Space::new(4, 0),
+        Space::new().width(4),
         refresh_btn,
-        Space::new(4, 0),
+        Space::new().width(4),
         open_btn,
-        Space::new(4, 0),
+        Space::new().width(4),
         close_btn,
     ]
     .align_y(Alignment::Center)

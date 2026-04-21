@@ -485,6 +485,7 @@ impl GitKraft {
             text: rgb_to_iced(core.text_primary),
             primary: rgb_to_iced(core.accent),
             success: rgb_to_iced(core.success),
+            warning: rgb_to_iced(core.warning),
             danger: rgb_to_iced(core.error),
         };
 

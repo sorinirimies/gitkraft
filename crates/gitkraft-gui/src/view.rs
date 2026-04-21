@@ -74,9 +74,9 @@ impl GitKraft {
             let sidebar_content = container(
                 column![
                     branches,
-                    iced::widget::horizontal_rule(1),
+                    iced::widget::rule::horizontal(1),
                     stash,
-                    iced::widget::horizontal_rule(1),
+                    iced::widget::rule::horizontal(1),
                     remotes
                 ]
                 .width(Length::Fill)
@@ -90,7 +90,7 @@ impl GitKraft {
 
             row![sidebar_content, divider].height(Length::Fill).into()
         } else {
-            Space::new(0, 0).into()
+            Space::new().into()
         };
 
         // ── Commit log ────────────────────────────────────────────────────
@@ -158,7 +158,8 @@ impl GitKraft {
         if self.active_tab().context_menu.is_some() {
             // Transparent full-screen backdrop — clicking it dismisses the menu.
             let backdrop = mouse_area(
-                container(Space::new(Length::Fill, Length::Fill)).style(theme::backdrop_style),
+                container(Space::new().width(Length::Fill).height(Length::Fill))
+                    .style(theme::backdrop_style),
             )
             .on_press(Message::CloseContextMenu)
             .on_right_press(Message::CloseContextMenu);
@@ -167,8 +168,8 @@ impl GitKraft {
             let menu_panel = context_menu_panel(self, &c);
 
             let positioned = column![
-                Space::new(0, menu_y),
-                row![Space::new(menu_x, 0), menu_panel,],
+                Space::new().height(menu_y),
+                row![Space::new().width(menu_x), menu_panel,],
             ]
             .width(Length::Fill)
             .height(Length::Fill);
@@ -199,11 +200,11 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
     let branch_info: Element<'_, Message> = if let Some(ref branch) = tab.current_branch {
         let icon = icon!(icons::GIT_BRANCH, 12, c.accent);
         let label = text(branch.as_str()).size(12).color(c.text_primary);
-        row![icon, Space::new(4, 0), label]
+        row![icon, Space::new().width(4), label]
             .align_y(Alignment::Center)
             .into()
     } else {
-        Space::new(0, 0).into()
+        Space::new().into()
     };
 
     let repo_state_info: Element<'_, Message> = if let Some(ref info) = tab.repo_info {
@@ -211,10 +212,10 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
         if state_str != "Clean" {
             text(state_str).size(12).color(c.yellow).into()
         } else {
-            Space::new(0, 0).into()
+            Space::new().into()
         }
     } else {
-        Space::new(0, 0).into()
+        Space::new().into()
     };
 
     let changes_summary = {
@@ -235,18 +236,18 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
             .color(c.muted)
             .into()
     } else {
-        Space::new(0, 0).into()
+        Space::new().into()
     };
 
     let bar = row![
         status_label,
-        Space::new(Length::Fill, 0),
+        Space::new().width(Length::Fill),
         changes_summary,
-        Space::new(16, 0),
+        Space::new().width(16),
         zoom_label,
-        Space::new(16, 0),
+        Space::new().width(16),
         repo_state_info,
-        Space::new(16, 0),
+        Space::new().width(16),
         branch_info,
     ]
     .align_y(Alignment::Center)
@@ -271,9 +272,9 @@ fn error_banner<'a>(message: &str, c: &ThemeColors) -> Element<'a, Message> {
 
     let banner_row = row![
         icon,
-        Space::new(8, 0),
+        Space::new().width(8),
         msg,
-        Space::new(Length::Fill, 0),
+        Space::new().width(Length::Fill),
         dismiss,
     ]
     .align_y(Alignment::Center)
@@ -304,7 +305,7 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
     let menu_item = move |label: &str, msg: Message| {
         button(
             row![
-                Space::new(4, 0),
+                Space::new().width(4),
                 text(label.to_string()).size(13).color(text_primary),
             ]
             .align_y(Alignment::Center),
@@ -501,7 +502,7 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
             .into()
         }
 
-        None => Space::new(0, 0).into(),
+        None => Space::new().into(),
     };
 
     container(content)

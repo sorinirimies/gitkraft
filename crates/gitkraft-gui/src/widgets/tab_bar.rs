@@ -50,11 +50,17 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .on_press(Message::CloseTab(idx))
                 .into()
         } else {
-            Space::new(0, 0).into()
+            Space::new().into()
         };
 
-        let tab_content = row![icon, Space::new(6, 0), label, Space::new(4, 0), close_btn]
-            .align_y(Alignment::Center);
+        let tab_content = row![
+            icon,
+            Space::new().width(6),
+            label,
+            Space::new().width(4),
+            close_btn
+        ]
+        .align_y(Alignment::Center);
 
         let tab_btn = button(tab_content)
             .padding([6, 12])

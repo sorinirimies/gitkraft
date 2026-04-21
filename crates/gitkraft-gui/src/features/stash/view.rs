@@ -34,11 +34,11 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     let header_row = row![
         header_icon,
-        Space::new(6, 0),
+        Space::new().width(6),
         header_label,
-        Space::new(4, 0),
+        Space::new().width(4),
         count_label,
-        Space::new(Length::Fill, 0),
+        Space::new().width(Length::Fill),
         save_btn,
     ]
     .align_y(Alignment::Center)
@@ -89,11 +89,11 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
             let entry_row = row![
                 index_label,
-                Space::new(6, 0),
+                Space::new().width(6),
                 msg_label,
-                Space::new(Length::Fill, 0),
+                Space::new().width(Length::Fill),
                 pop_btn,
-                Space::new(2, 0),
+                Space::new().width(2),
                 drop_btn,
             ]
             .align_y(Alignment::Center)
