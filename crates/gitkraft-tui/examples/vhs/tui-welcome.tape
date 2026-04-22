@@ -11,11 +11,12 @@ Set Width 1400
 Set Height 900
 Set FontSize 14
 Set PlaybackSpeed 1.5
-
-# ── Launch without a repo (welcome screen) ───────────────────────────────────
-Type "cargo run -p gitkraft-tui"
+# ── Launch without a repo (hidden from recording) ───────────────────────────
+Hide
+Type "cargo run -q -p gitkraft-tui"
 Enter
 Sleep 4s
+Show
 
 # ── Admire the welcome screen ────────────────────────────────────────────────
 Sleep 2s

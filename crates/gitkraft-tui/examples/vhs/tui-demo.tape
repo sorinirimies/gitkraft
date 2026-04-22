@@ -11,11 +11,13 @@ Set Width 1400
 Set Height 900
 Set FontSize 14
 Set PlaybackSpeed 1.5
-
-# ── Launch on the current repo ────────────────────────────────────────────────
-Type "cargo run -p gitkraft-tui -- ."
+# ── Launch on the current repo (hidden from recording) ───────────────────────
+Hide
+Type "cargo run -q -p gitkraft-tui -- ."
 Enter
 Sleep 4s
+Show
+
 
 # ── Navigate branches ────────────────────────────────────────────────────────
 # We start in the Branches pane
