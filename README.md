@@ -23,16 +23,10 @@ Both share **`gitkraft-core`** — a framework-free library built on [`git2`](ht
 
 ## Preview
 
-### Desktop GUI
-
-![GUI Build](crates/gitkraft-gui/examples/vhs/generated/gui-build.gif)
-![GUI Workspace](crates/gitkraft-gui/examples/vhs/generated/gui-workspace.gif)
-
 ### Terminal UI
 
 ![TUI Demo](crates/gitkraft-tui/examples/vhs/generated/tui-demo.gif)
 ![TUI Welcome](crates/gitkraft-tui/examples/vhs/generated/tui-welcome.gif)
-![TUI Build](crates/gitkraft-tui/examples/vhs/generated/tui-build.gif)
 
 ## Features
 
