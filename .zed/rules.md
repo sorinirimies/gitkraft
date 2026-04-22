@@ -1,0 +1,105 @@
+# GitKraft — Agent Rules
+
+## Project Overview
+
+GitKraft is a Git IDE written entirely in Rust, shipping two front-ends (desktop GUI + terminal UI) from a single Cargo workspace. All Git logic lives in the shared `gitkraft-core` crate — zero Git operations belong in the UI layer.
+
+```
+gitkraft-gui ──┐
+               ├──▶ gitkraft-core ──▶ git2, redb, chrono, serde
+gitkraft-tui ──┘
+```
+
+## Workspace Layout
+
+| Crate | Path | Purpose |
+|---|---|---|
+| `gitkraft-core` | `crates/gitkraft-core/` | Framework-free library: Git ops, persistence, themes |
+| `gitkraft` (GUI) | `crates/gitkraft-gui/` | Desktop GUI built on Iced (Elm Architecture) |
+| `gitkraft-tui` | `crates/gitkraft-tui/` | Terminal UI built on Ratatui + Crossterm |
+
+## Architecture Rules
+
+### Core Crate (`gitkraft-core`)
+
+- **Feature modules** live under `src/features/<name>/` with a consistent structure:
+  - `types.rs` — Plain data structs (`#[derive(Debug, Clone, Serialize, Deserialize)]`), no git2 dependency.
+  - `ops.rs` — Functions that take `&git2::Repository` + params and return `anyhow::Result<T>`. All git2 calls live here.
+  - `mod.rs` — Re-exports `types` and `ops`.
+- **Error handling**: Use `anyhow::Result` with `.context("descriptive message")` on every fallible call. No custom error enums — `thiserror` is in `Cargo.toml` but `anyhow` is the standard.
+- **No UI code** in core. If you need to add Git functionality, it goes in core first.
+- Functions receive `&Repository` as a parameter — no global state.
+- Convert git2 types to owned domain types immediately (e.g. `CommitInfo::from_git2_commit`).
+
+### GUI Crate (`gitkraft-gui`) — Elm Architecture
+
+The GUI follows **The Elm Architecture** (TEA): State → View → Message → Update.
+
+- **State** (`state.rs`): `GitKraft` (app-wide) + `RepoTab` (per-tab repo workspace).
+- **Message** (`message.rs`): Single flat `enum Message` with ~80 variants grouped by feature.
+- **Update** (`update.rs`): `GitKraft::update(&mut self, msg) -> Task<Message>` delegates to `features::<name>::update::update()`.
+- **View** (`view.rs`): `GitKraft::view(&self) -> Element<Message>` composes feature sub-views.
+
+**Feature module pattern** under `src/features/<name>/`:
+- `update.rs` — `pub fn update(state: &mut GitKraft, msg: Message) -> Task<Message>`
+- `view.rs` — View functions returning `Element<Message>`
+- `commands.rs` — Async `Task<Message>` factories using the `git_task!` macro to run blocking core calls off-thread.
+
+**Key conventions**:
+- Use **payload structs** to bundle async operation results into one message for atomic state updates.
+- Core errors are `.map_err(|e| e.to_string())` into `Result<T, String>` at the boundary.
+- After any Git mutation (push, rebase, merge, etc.), refresh by calling `load_repo_blocking` to rebuild the full `RepoPayload`.
+- Never block the UI thread — all Git operations go through `commands.rs` tasks.
+
+### TUI Crate (`gitkraft-tui`) — Immediate-Mode Loop
+
+The TUI uses a standard ratatui loop running at ~30fps (33ms poll timeout).
+
+**Feature module pattern** under `src/features/<name>/`:
+- `events.rs` — Key event handling.
+- `view.rs` — Rendering with ratatui widgets.
+- `mod.rs` — State types.
+
+**Key conventions**:
+- All Git operations run on **background threads** via `std::sync::mpsc` channels (`bg_tx`/`bg_rx` on `App`).
+- `poll_background()` drains the channel each tick and applies `BackgroundResult` variants to state.
+- Event handling is hierarchical: `InputMode::Input` → Screen-level → `ActivePane`-specific.
+- Per-repo state lives in `RepoTab`; multiple tabs via `Vec<RepoTab>` + `active_tab_index`.
+
+## Coding Standards
+
+- **Rust edition**: 2021, MSRV 1.80+.
+- **Formatting**: `cargo fmt --all` — no custom rustfmt config.
+- **Linting**: `cargo clippy --workspace --all-targets --all-features -- -D warnings`. Warnings are errors in CI.
+- **Dependencies**: Pin versions in `[workspace.dependencies]` in the root `Cargo.toml`. Each crate references them with `{ workspace = true }`.
+- Prefer `just check-all` before committing (runs fmt + clippy + test + nu tests).
+
+## Testing Patterns
+
+- **Unit tests for types**: Inline `#[cfg(test)] mod tests` in `types.rs`. Pure Rust, no repo needed. Use helper factory functions.
+- **Integration tests for ops**: Inline in `ops.rs`. Use `tempfile::TempDir` + `Repository::init()` for throwaway repos. A `setup_repo_with_commit()` helper configures user.name/email, creates a file, stages, and commits.
+- Run with `just test` (full workspace) or `just test-core` (core only).
+
+## Dev Workflow (`justfile`)
+
+| Command | Purpose |
+|---|---|
+| `just build` | Build workspace |
+| `just run` | Run GUI |
+| `just run-tui` | Run TUI |
+| `just test` | Run all tests |
+| `just check-all` | fmt + clippy + test + nu tests |
+| `just fmt` | Format all code |
+| `just clippy` | Lint with `-D warnings` |
+| `just release 0.X.Y` | Bump, tag, push (runs all checks) |
+
+## Common Pitfalls
+
+1. **Don't put Git logic in the UI crates.** If you need a new Git operation, add it to `gitkraft-core/src/features/<name>/ops.rs` first, then call it from the GUI/TUI.
+2. **Don't block the main thread.** GUI uses `Task`; TUI uses `mpsc` background threads.
+3. **Don't add dependencies to individual crate `Cargo.toml` directly.** Add them to `[workspace.dependencies]` first.
+4. **Don't use `thiserror` for new errors.** Stick with `anyhow::Result` + `.context()`.
+5. **Match existing module structure.** Every feature follows the same file layout — don't invent new patterns.
+6. **Keep the `Message` enum flat** in the GUI. Group variants with comments, not nested enums.
+7. **GIF assets** are tracked with Git LFS (`*.gif` in `.gitattributes`). Use `vhs` to regenerate from `.tape` files.
+8. **Theme code** is shared via `gitkraft-core`. Both front-ends use the same 27-theme palette — don't add themes to only one front-end.
