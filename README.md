@@ -27,6 +27,8 @@ Both share **`gitkraft-core`** — a framework-free library built on [`git2`](ht
 
 ![TUI Demo](crates/gitkraft-tui/examples/vhs/generated/tui-demo.gif)
 ![TUI Welcome](crates/gitkraft-tui/examples/vhs/generated/tui-welcome.gif)
+![TUI Themes](crates/gitkraft-tui/examples/vhs/generated/tui-themes.gif)
+![TUI Tabs](crates/gitkraft-tui/examples/vhs/generated/tui-tabs.gif)
 
 ## Features
 
