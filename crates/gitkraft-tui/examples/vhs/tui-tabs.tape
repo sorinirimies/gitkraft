@@ -19,7 +19,7 @@ Enter
 Sleep 4s
 Show
 
-# ── We are now in the main view with one tab ──────────────────────────────────
+# ── We are now in the main view with one tab (gitkraft) ───────────────────────
 Sleep 1s
 
 # ── Browse the commit log briefly ─────────────────────────────────────────────
@@ -38,15 +38,23 @@ Sleep 1s
 Left
 Sleep 500ms
 
-# ── Open a new tab ────────────────────────────────────────────────────────────
-Type "N"
-Sleep 1s
-
-# ── Open directory browser to pick a repo ─────────────────────────────────────
+# ── Open directory browser (starts in ~/Projects — parent of current repo) ───
 Type "o"
 Sleep 1s
 
-# ── Navigate to find a repo ───────────────────────────────────────────────────
+# ── Navigate to droidtui (a sibling repo in ~/Projects) ──────────────────────
+# Browser starts at ~/Projects, entries sorted with dot-dirs first:
+#   .tmux → act_runner → android-app-framework → Arch-Hyprland →
+#   arrow-resilience-kit → bevy → cleansys → droidtui
+# Cursor starts at index 0, so 7 presses of j to reach droidtui.
+Type "j"
+Sleep 300ms
+Type "j"
+Sleep 300ms
+Type "j"
+Sleep 300ms
+Type "j"
+Sleep 300ms
 Type "j"
 Sleep 300ms
 Type "j"
@@ -54,42 +62,52 @@ Sleep 300ms
 Type "j"
 Sleep 300ms
 
-# ── Enter directory ───────────────────────────────────────────────────────────
+# ── Select droidtui (it's a git repo, so it opens directly) ──────────────────
 Enter
-Sleep 800ms
+Sleep 3s
 
-# ── Navigate more ─────────────────────────────────────────────────────────────
-Type "j"
-Sleep 300ms
-Type "j"
-Sleep 300ms
-
-# ── Try to open as repo ───────────────────────────────────────────────────────
-Enter
-Sleep 2s
-
-# ── Cancel and go back if not a repo ──────────────────────────────────────────
-Escape
-Sleep 800ms
-
-# ── Switch between tabs ───────────────────────────────────────────────────────
-Type "]"
+# ── We now have two tabs — explore the second repo ────────────────────────────
 Sleep 1s
 
+# ── Browse branches in the second repo ────────────────────────────────────────
+Type "j"
+Sleep 300ms
+Type "j"
+Sleep 300ms
+Type "j"
+Sleep 300ms
+
+# ── Check commit log ──────────────────────────────────────────────────────────
+Right
+Sleep 500ms
+Type "j"
+Sleep 200ms
+Type "j"
+Sleep 200ms
+Enter
+Sleep 1s
+
+# ── Switch back to first tab (gitkraft) ───────────────────────────────────────
 Type "["
 Sleep 1s
 
+# ── Switch to second tab (droidtui) ──────────────────────────────────────────
 Type "]"
 Sleep 1s
 
+# ── Switch back again ─────────────────────────────────────────────────────────
 Type "["
 Sleep 1s
 
-# ── Close the current tab ─────────────────────────────────────────────────────
+# ── Switch forward once more ──────────────────────────────────────────────────
+Type "]"
+Sleep 1s
+
+# ── Close the second tab ──────────────────────────────────────────────────────
 Type "W"
 Sleep 1s
 
-# ── Final pause — back to single tab ─────────────────────────────────────────
+# ── Final pause — back to single tab (gitkraft) ──────────────────────────────
 Sleep 2s
 
 # ── Quit ──────────────────────────────────────────────────────────────────────
