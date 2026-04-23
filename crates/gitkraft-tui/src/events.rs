@@ -463,4 +463,24 @@ mod tests {
         handle_key(&mut app, key(KeyCode::Char(' ')));
         assert!(app.tab().selected_unstaged.contains(&0));
     }
+
+    #[test]
+    fn p_triggers_pull() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.tabs[0].repo_path = Some(std::path::PathBuf::from("/tmp/fake"));
+        handle_key(&mut app, key(KeyCode::Char('p')));
+        // pull_rebase sets loading
+        assert!(app.tab().is_loading);
+    }
+
+    #[test]
+    fn shift_p_triggers_push() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.tabs[0].repo_path = Some(std::path::PathBuf::from("/tmp/fake"));
+        // No head_branch → should set error
+        handle_key(&mut app, key(KeyCode::Char('P')));
+        assert!(app.tab().error_message.is_some());
+    }
 }

@@ -344,7 +344,7 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
         let is_diffed = state
             .search_diff_oid
             .as_ref()
-            .map_or(false, |oid| *oid == commit.oid);
+            .is_some_and(|oid| *oid == commit.oid);
         let bg_style = if is_diffed {
             theme::selected_row_style as fn(&iced::Theme) -> iced::widget::container::Style
         } else if is_selected {

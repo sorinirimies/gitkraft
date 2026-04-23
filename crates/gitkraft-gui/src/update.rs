@@ -676,8 +676,10 @@ impl GitKraft {
                     self.search_diff_selected.clear();
                     self.search_diff_content.clear();
                     self.search_diff_oid = None;
+                    Task::none()
+                } else {
+                    iced::widget::operation::focus_next()
                 }
-                Task::none()
             }
 
             Message::SearchQueryChanged(query) => {

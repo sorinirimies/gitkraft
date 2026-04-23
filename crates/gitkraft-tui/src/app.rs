@@ -1856,4 +1856,79 @@ mod tests {
         // Should have loaded from settings or defaulted to None
         let _ = app.editor.display_name();
     }
+
+    #[test]
+    fn pull_rebase_sets_loading() {
+        let mut app = App::new();
+        app.tabs[0].repo_path = Some(PathBuf::from("/tmp/fake-repo"));
+        app.pull_rebase();
+        assert!(app.tab().is_loading);
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("Pulling (rebase)…")
+        );
+    }
+
+    #[test]
+    fn push_branch_requires_head_branch() {
+        let mut app = App::new();
+        app.tabs[0].repo_path = Some(PathBuf::from("/tmp/fake-repo"));
+        // No repo_info / head_branch set
+        app.push_branch();
+        assert!(app.tab().error_message.is_some());
+    }
+
+    #[test]
+    fn force_push_requires_head_branch() {
+        let mut app = App::new();
+        app.tabs[0].repo_path = Some(PathBuf::from("/tmp/fake-repo"));
+        app.force_push_branch();
+        assert!(app.tab().error_message.is_some());
+    }
+
+    #[test]
+    fn merge_selected_branch_no_selection() {
+        let mut app = App::new();
+        app.tabs[0].repo_path = Some(PathBuf::from("/tmp/fake-repo"));
+        // No branch selected — should be a no-op (no crash)
+        app.merge_selected_branch();
+        assert!(!app.tab().is_loading);
+    }
+
+    #[test]
+    fn rebase_onto_selected_no_selection() {
+        let mut app = App::new();
+        app.tabs[0].repo_path = Some(PathBuf::from("/tmp/fake-repo"));
+        app.rebase_onto_selected_branch();
+        assert!(!app.tab().is_loading);
+    }
+
+    #[test]
+    fn revert_selected_commit_no_selection() {
+        let mut app = App::new();
+        app.tabs[0].repo_path = Some(PathBuf::from("/tmp/fake-repo"));
+        app.revert_selected_commit();
+        assert!(!app.tab().is_loading);
+    }
+
+    #[test]
+    fn reset_to_selected_commit_no_selection() {
+        let mut app = App::new();
+        app.tabs[0].repo_path = Some(PathBuf::from("/tmp/fake-repo"));
+        app.reset_to_selected_commit("soft");
+        assert!(!app.tab().is_loading);
+    }
+
+    #[test]
+    fn open_repo_creates_new_tab_when_current_has_repo() {
+        let mut app = App::new();
+        app.tabs[0].repo_path = Some(PathBuf::from("/tmp/repo1"));
+        app.screen = AppScreen::Main;
+        // Simulate browser selecting a repo when one is already open
+        let initial_tabs = app.tabs.len();
+        if app.tab().repo_path.is_some() {
+            app.new_tab();
+        }
+        assert_eq!(app.tabs.len(), initial_tabs + 1);
+    }
 }

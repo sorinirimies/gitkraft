@@ -515,6 +515,69 @@ mod tests {
     }
 
     #[test]
+    fn file_list_commit_vs_workdir_detects_modified() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = init_repo_with_commit(tmp.path());
+        let head_oid = repo.head().unwrap().target().unwrap().to_string();
+
+        // Modify the file
+        std::fs::write(tmp.path().join("hello.txt"), "Changed!\n").unwrap();
+
+        let files = file_list_commit_vs_workdir(&repo, &head_oid).unwrap();
+        assert!(!files.is_empty());
+        assert_eq!(files[0].display_path(), "hello.txt");
+        assert_eq!(files[0].status, FileStatus::Modified);
+    }
+
+    #[test]
+    fn file_list_commit_vs_workdir_detects_new_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = init_repo_with_commit(tmp.path());
+        let head_oid = repo.head().unwrap().target().unwrap().to_string();
+
+        // Add a new file and stage it
+        std::fs::write(tmp.path().join("new_file.txt"), "new\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index
+            .add_path(std::path::Path::new("new_file.txt"))
+            .unwrap();
+        index.write().unwrap();
+
+        let files = file_list_commit_vs_workdir(&repo, &head_oid).unwrap();
+        let new = files.iter().find(|f| f.display_path() == "new_file.txt");
+        assert!(new.is_some(), "new_file.txt should appear in the diff list");
+    }
+
+    #[test]
+    fn file_list_commit_vs_workdir_detects_deletion() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = init_repo_with_commit(tmp.path());
+        let head_oid = repo.head().unwrap().target().unwrap().to_string();
+
+        // Delete the committed file
+        std::fs::remove_file(tmp.path().join("hello.txt")).unwrap();
+
+        let files = file_list_commit_vs_workdir(&repo, &head_oid).unwrap();
+        let deleted = files.iter().find(|f| f.display_path() == "hello.txt");
+        assert!(deleted.is_some());
+        assert_eq!(deleted.unwrap().status, FileStatus::Deleted);
+    }
+
+    #[test]
+    fn file_list_commit_vs_workdir_empty_when_unchanged() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = init_repo_with_commit(tmp.path());
+        let head_oid = repo.head().unwrap().target().unwrap().to_string();
+
+        // No changes
+        let files = file_list_commit_vs_workdir(&repo, &head_oid).unwrap();
+        assert!(
+            files.is_empty(),
+            "should be empty when working tree matches commit"
+        );
+    }
+
+    #[test]
     fn single_file_diff_not_found() {
         let tmp = tempfile::tempdir().unwrap();
         let repo = init_repo_with_commit(tmp.path());
