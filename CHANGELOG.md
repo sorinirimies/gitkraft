@@ -2,9 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.7.3 - 2026-04-23
+### 🐛 Bug Fixes
+- fix doc comments
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.7.2...v0.7.3
 ## 0.7.2 - 2026-04-23
 ### ➕ Added
 - Add editor selection support to GUI and TUI
+### 🔧 Chores
+- chore: bump version to 0.7.2
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.7.1...v0.7.2
 ## 0.7.1 - 2026-04-23
 ### ➕ Added
