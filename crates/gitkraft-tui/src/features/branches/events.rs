@@ -53,6 +53,16 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             app.delete_selected_branch();
         }
 
+        // Merge selected branch into HEAD
+        KeyCode::Char('m') => {
+            app.merge_selected_branch();
+        }
+
+        // Rebase HEAD onto selected branch
+        KeyCode::Char('R') => {
+            app.rebase_onto_selected_branch();
+        }
+
         // Deselect
         KeyCode::Esc => {
             app.tab_mut().branch_list_state.select(None);

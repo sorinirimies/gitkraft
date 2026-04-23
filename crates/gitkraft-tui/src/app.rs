@@ -1323,6 +1323,218 @@ impl App {
         });
     }
 
+    pub fn pull_rebase(&mut self) {
+        let repo_path = match self.tab().repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.tab_mut().is_loading = true;
+        self.tab_mut().status_message = Some("Pulling (rebase)…".into());
+        let tx = self.bg_tx.clone();
+        std::thread::spawn(move || {
+            let workdir = std::path::Path::new(&repo_path);
+            let res = gitkraft_core::features::branches::pull_rebase(workdir, "origin");
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res
+                    .as_ref()
+                    .ok()
+                    .map(|_| "Pulled (rebase) from origin".into()),
+                err_message: res.err().map(|e| format!("pull: {e}")),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
+    }
+
+    pub fn push_branch(&mut self) {
+        let repo_path = match self.tab().repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        let branch = match self
+            .tab()
+            .repo_info
+            .as_ref()
+            .and_then(|i| i.head_branch.clone())
+        {
+            Some(b) => b,
+            None => {
+                self.tab_mut().error_message = Some("No branch checked out".into());
+                return;
+            }
+        };
+        self.tab_mut().is_loading = true;
+        self.tab_mut().status_message = Some(format!("Pushing {branch}…"));
+        let tx = self.bg_tx.clone();
+        std::thread::spawn(move || {
+            let workdir = std::path::Path::new(&repo_path);
+            let res = gitkraft_core::features::branches::push_branch(workdir, &branch, "origin");
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res
+                    .as_ref()
+                    .ok()
+                    .map(|_| format!("Pushed {branch} to origin")),
+                err_message: res.err().map(|e| format!("push: {e}")),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
+    }
+
+    pub fn force_push_branch(&mut self) {
+        let repo_path = match self.tab().repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        let branch = match self
+            .tab()
+            .repo_info
+            .as_ref()
+            .and_then(|i| i.head_branch.clone())
+        {
+            Some(b) => b,
+            None => {
+                self.tab_mut().error_message = Some("No branch checked out".into());
+                return;
+            }
+        };
+        self.tab_mut().is_loading = true;
+        self.tab_mut().status_message = Some(format!("Force pushing {branch}…"));
+        let tx = self.bg_tx.clone();
+        std::thread::spawn(move || {
+            let workdir = std::path::Path::new(&repo_path);
+            let res =
+                gitkraft_core::features::branches::force_push_branch(workdir, &branch, "origin");
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res
+                    .as_ref()
+                    .ok()
+                    .map(|_| format!("Force pushed {branch} to origin")),
+                err_message: res.err().map(|e| format!("force push: {e}")),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
+    }
+
+    pub fn merge_selected_branch(&mut self) {
+        let repo_path = match self.tab().repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        let branch_name = match self.tab().branch_list_state.selected() {
+            Some(idx) => match self.tab().branches.get(idx) {
+                Some(b) => b.name.clone(),
+                None => return,
+            },
+            None => return,
+        };
+        self.tab_mut().is_loading = true;
+        self.tab_mut().status_message = Some(format!("Merging {branch_name}…"));
+        let tx = self.bg_tx.clone();
+        std::thread::spawn(move || {
+            let res = (|| {
+                let repo = open_repo_str(&repo_path)?;
+                gitkraft_core::features::branches::merge_branch(&repo, &branch_name)
+                    .map_err(|e| e.to_string())
+            })();
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res.as_ref().ok().map(|_| format!("Merged {branch_name}")),
+                err_message: res.err(),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
+    }
+
+    pub fn rebase_onto_selected_branch(&mut self) {
+        let repo_path = match self.tab().repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        let branch_name = match self.tab().branch_list_state.selected() {
+            Some(idx) => match self.tab().branches.get(idx) {
+                Some(b) => b.name.clone(),
+                None => return,
+            },
+            None => return,
+        };
+        self.tab_mut().is_loading = true;
+        self.tab_mut().status_message = Some(format!("Rebasing onto {branch_name}…"));
+        let tx = self.bg_tx.clone();
+        std::thread::spawn(move || {
+            let workdir = std::path::Path::new(&repo_path);
+            let res = gitkraft_core::features::branches::rebase_onto(workdir, &branch_name);
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res
+                    .as_ref()
+                    .ok()
+                    .map(|_| format!("Rebased onto {branch_name}")),
+                err_message: res.err().map(|e| format!("rebase: {e}")),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
+    }
+
+    pub fn revert_selected_commit(&mut self) {
+        let repo_path = match self.tab().repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        let oid = match self.tab().commit_list_state.selected() {
+            Some(idx) => match self.tab().commits.get(idx) {
+                Some(c) => c.oid.clone(),
+                None => return,
+            },
+            None => return,
+        };
+        self.tab_mut().is_loading = true;
+        self.tab_mut().status_message = Some("Reverting commit…".into());
+        let tx = self.bg_tx.clone();
+        std::thread::spawn(move || {
+            let workdir = std::path::Path::new(&repo_path);
+            let res = gitkraft_core::features::repo::revert_commit(workdir, &oid);
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res.as_ref().ok().map(|_| format!("Reverted {}", &oid[..7])),
+                err_message: res.err().map(|e| format!("revert: {e}")),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
+    }
+
+    pub fn reset_to_selected_commit(&mut self, mode: &str) {
+        let repo_path = match self.tab().repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        let oid = match self.tab().commit_list_state.selected() {
+            Some(idx) => match self.tab().commits.get(idx) {
+                Some(c) => c.oid.clone(),
+                None => return,
+            },
+            None => return,
+        };
+        let mode_owned = mode.to_string();
+        self.tab_mut().is_loading = true;
+        self.tab_mut().status_message = Some(format!("Resetting ({mode})…"));
+        let tx = self.bg_tx.clone();
+        std::thread::spawn(move || {
+            let workdir = std::path::Path::new(&repo_path);
+            let res = gitkraft_core::features::repo::reset_to_commit(workdir, &oid, &mode_owned);
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res
+                    .as_ref()
+                    .ok()
+                    .map(|_| format!("Reset ({mode_owned}) to {}", &oid[..7])),
+                err_message: res.err().map(|e| format!("reset: {e}")),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
+    }
+
     // ── Path helpers ─────────────────────────────────────────────────────
 
     fn unstaged_file_path(&self, idx: usize) -> String {

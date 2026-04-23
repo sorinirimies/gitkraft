@@ -268,6 +268,10 @@ pub fn push_branch(workdir: &std::path::Path, branch: &str, remote: &str) -> Res
     run_git(workdir, &["push", remote, branch])
 }
 
+pub fn force_push_branch(workdir: &std::path::Path, branch: &str, remote: &str) -> Result<()> {
+    run_git(workdir, &["push", "--force-with-lease", remote, branch])
+}
+
 /// Delete a remote branch using `git push <remote> --delete <branch>`.
 ///
 /// `full_name` is the remote-tracking branch name (e.g. `origin/feature-x`).

@@ -20,9 +20,9 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(35), // unstaged
-            Constraint::Percentage(35), // staged
-            Constraint::Min(20),        // commit input / hints
+            Constraint::Ratio(1, 3), // unstaged
+            Constraint::Ratio(1, 3), // staged
+            Constraint::Ratio(1, 3), // commit input / hints
         ])
         .split(area);
 
@@ -258,7 +258,9 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(6), // Staging section
-                Constraint::Length(4), // Git section
+                Constraint::Length(7), // Git section
+                Constraint::Length(5), // Branch Actions section
+                Constraint::Length(5), // Commit Actions section
                 Constraint::Min(2),    // remaining / warnings
             ])
             .split(inner_area);
@@ -321,10 +323,72 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
                     Span::styled(pad_right("Z", 8), key_style),
                     Span::styled("stash pop", desc_style),
                 ]),
+                Line::from(vec![
+                    Span::styled(pad_right("p", 8), key_style),
+                    Span::styled(pad_right("pull", 12), desc_style),
+                    Span::styled(pad_right("P", 8), key_style),
+                    Span::styled("push", desc_style),
+                ]),
+                Line::from(vec![
+                    Span::styled(pad_right("F", 8), key_style),
+                    Span::styled(pad_right("force push", 12), desc_style),
+                    Span::styled(pad_right("f", 8), key_style),
+                    Span::styled("fetch", desc_style),
+                ]),
             ];
 
             let paragraph = Paragraph::new(lines).block(block);
             frame.render_widget(paragraph, sections[1]);
+        }
+
+        // -- Branch Actions section --
+        {
+            let block = Block::default()
+                .title(Span::styled(" Branch Actions ", section_title))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.border_inactive));
+
+            let lines = vec![
+                Line::from(vec![
+                    Span::styled(pad_right("m", 8), key_style),
+                    Span::styled(pad_right("merge", 12), desc_style),
+                    Span::styled(pad_right("R", 8), key_style),
+                    Span::styled("rebase onto", desc_style),
+                ]),
+                Line::from(vec![
+                    Span::styled(pad_right("D", 8), key_style),
+                    Span::styled(pad_right("delete", 12), desc_style),
+                    Span::styled(pad_right("b", 8), key_style),
+                    Span::styled("new branch", desc_style),
+                ]),
+            ];
+
+            let paragraph = Paragraph::new(lines).block(block);
+            frame.render_widget(paragraph, sections[2]);
+        }
+
+        // -- Commit Actions section --
+        {
+            let block = Block::default()
+                .title(Span::styled(" Commit Actions ", section_title))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.border_inactive));
+
+            let lines = vec![
+                Line::from(vec![
+                    Span::styled(pad_right("e", 8), key_style),
+                    Span::styled(pad_right("revert", 12), desc_style),
+                    Span::styled(pad_right("x", 8), key_style),
+                    Span::styled("reset soft", desc_style),
+                ]),
+                Line::from(vec![
+                    Span::styled(pad_right("X", 8), key_style),
+                    Span::styled(pad_right("reset hard", 12), desc_style),
+                ]),
+            ];
+
+            let paragraph = Paragraph::new(lines).block(block);
+            frame.render_widget(paragraph, sections[3]);
         }
 
         // -- Remaining area: navigation hint + discard warning --
@@ -348,7 +412,7 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
             }
 
             let paragraph = Paragraph::new(lines);
-            frame.render_widget(paragraph, sections[2]);
+            frame.render_widget(paragraph, sections[4]);
         }
     }
 }

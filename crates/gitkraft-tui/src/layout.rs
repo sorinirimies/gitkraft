@@ -1,4 +1,4 @@
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::Frame;
 
 use crate::app::{App, AppScreen};
@@ -32,8 +32,8 @@ fn render_main(app: &mut App, frame: &mut Frame) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
-            Constraint::Min(10),
-            Constraint::Length(12),
+            Constraint::Percentage(60),
+            Constraint::Percentage(40),
             Constraint::Length(1),
         ])
         .split(frame.area());
@@ -89,19 +89,39 @@ fn render_main(app: &mut App, frame: &mut Frame) {
     // Commit log
     features::commits::view::render(app, frame, main_cols[1]);
 
-    // Diff view OR theme panel OR options panel
+    // Compute a full-height overlay rect spanning main_cols[2] down through
+    // the staging area (outer[2]) for theme/options panels.
+    let overlay_rect = Rect {
+        x: main_cols[2].x,
+        y: main_cols[2].y,
+        width: main_cols[2].width,
+        height: main_cols[2].height + outer[2].height,
+    };
+
+    // Diff view OR theme panel OR options panel (full-height overlay)
     if app.show_theme_panel {
-        features::theme::view::render(app, frame, main_cols[2]);
+        features::theme::view::render(app, frame, overlay_rect);
     } else if app.show_options_panel {
-        features::options::view::render(app, frame, main_cols[2]);
+        features::options::view::render(app, frame, overlay_rect);
     } else if app.show_editor_panel {
         features::editor::view::render(app, frame, main_cols[2]);
     } else {
         features::diff::view::render(app, frame, main_cols[2]);
     }
 
-    // Staging area
-    features::staging::view::render(app, frame, outer[2]);
+    // Staging area (only when no overlay is active)
+    if !app.show_theme_panel && !app.show_options_panel {
+        features::staging::view::render(app, frame, outer[2]);
+    } else {
+        // Render staging only for the left 2/3 (unstaged + staged columns)
+        let staging_partial = Rect {
+            x: outer[2].x,
+            y: outer[2].y,
+            width: main_cols[2].x.saturating_sub(outer[2].x),
+            height: outer[2].height,
+        };
+        features::staging::view::render(app, frame, staging_partial);
+    }
 
     // Status bar
     widgets::status_bar::render(app, frame, outer[3]);

@@ -80,6 +80,14 @@ Or download pre-built binaries from the [Releases page](https://github.com/sorin
 | **o** | Browse & open repo |
 | **N/W** | New tab / close tab |
 | **]/[** | Next / previous tab |
+| **p** | Pull (rebase) from origin |
+| **P** | Push to origin |
+| **F** | Force push (--force-with-lease) |
+| **m** | Merge selected branch into HEAD |
+| **R** | Rebase onto selected branch |
+| **e** | Revert selected commit |
+| **x** | Reset soft to selected commit |
+| **X** | Reset hard to selected commit |
 | **r/f** | Refresh / fetch |
 | **T/O** | Theme / options |
 | **q** | Quit |

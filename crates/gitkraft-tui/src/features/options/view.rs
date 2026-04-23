@@ -50,16 +50,20 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // close hint
-            Constraint::Length(1), // spacer
-            Constraint::Length(6), // Settings section
-            Constraint::Length(1), // spacer
-            Constraint::Length(8), // Navigation section
-            Constraint::Length(1), // spacer
-            Constraint::Length(8), // Staging section
-            Constraint::Length(1), // spacer
-            Constraint::Length(7), // Git section
-            Constraint::Min(0),    // remaining
+            Constraint::Length(1),  // close hint
+            Constraint::Length(1),  // spacer
+            Constraint::Length(6),  // Settings section
+            Constraint::Length(1),  // spacer
+            Constraint::Length(8),  // Navigation section
+            Constraint::Length(1),  // spacer
+            Constraint::Length(8),  // Staging section
+            Constraint::Length(1),  // spacer
+            Constraint::Length(11), // Git section
+            Constraint::Length(1),  // spacer
+            Constraint::Length(7),  // Branch Actions section
+            Constraint::Length(1),  // spacer
+            Constraint::Length(7),  // Commit Actions section
+            Constraint::Min(0),     // remaining
         ])
         .split(inner_area);
 
@@ -225,9 +229,89 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 Span::styled(pad_right("refresh", 18), desc_style),
                 Span::styled("all data", value_style),
             ]),
+            Line::from(vec![
+                Span::styled(pad_right("f", 14), key_style),
+                Span::styled(pad_right("fetch", 18), desc_style),
+                Span::styled("from origin", value_style),
+            ]),
+            Line::from(vec![
+                Span::styled(pad_right("p", 14), key_style),
+                Span::styled(pad_right("pull (rebase)", 18), desc_style),
+                Span::styled("from origin", value_style),
+            ]),
+            Line::from(vec![
+                Span::styled(pad_right("P", 14), key_style),
+                Span::styled(pad_right("push", 18), desc_style),
+                Span::styled("to origin", value_style),
+            ]),
+            Line::from(vec![
+                Span::styled(pad_right("F", 14), key_style),
+                Span::styled(pad_right("force push", 18), desc_style),
+                Span::styled("--force-with-lease", value_style),
+            ]),
         ];
 
         let paragraph = Paragraph::new(lines).block(block);
         frame.render_widget(paragraph, sections[8]);
+    }
+
+    // ── Branch Actions section ────────────────────────────────────────
+    {
+        let block = Block::default()
+            .title(Span::styled(" Branch Actions ", section_title_style))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.border_inactive))
+            .padding(Padding::new(1, 1, 0, 0));
+
+        let lines = vec![
+            Line::from(vec![
+                Span::styled(pad_right("m", 14), key_style),
+                Span::styled(pad_right("merge", 18), desc_style),
+                Span::styled("selected → HEAD", value_style),
+            ]),
+            Line::from(vec![
+                Span::styled(pad_right("R", 14), key_style),
+                Span::styled(pad_right("rebase onto", 18), desc_style),
+                Span::styled("selected branch", value_style),
+            ]),
+            Line::from(vec![
+                Span::styled(pad_right("D", 14), key_style),
+                Span::styled(pad_right("delete branch", 18), desc_style),
+                Span::styled("selected", value_style),
+            ]),
+        ];
+
+        let paragraph = Paragraph::new(lines).block(block);
+        frame.render_widget(paragraph, sections[10]);
+    }
+
+    // ── Commit Actions section ────────────────────────────────────────
+    {
+        let block = Block::default()
+            .title(Span::styled(" Commit Actions ", section_title_style))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.border_inactive))
+            .padding(Padding::new(1, 1, 0, 0));
+
+        let lines = vec![
+            Line::from(vec![
+                Span::styled(pad_right("e", 14), key_style),
+                Span::styled(pad_right("revert", 18), desc_style),
+                Span::styled("selected commit", value_style),
+            ]),
+            Line::from(vec![
+                Span::styled(pad_right("x", 14), key_style),
+                Span::styled(pad_right("reset soft", 18), desc_style),
+                Span::styled("to selected", value_style),
+            ]),
+            Line::from(vec![
+                Span::styled(pad_right("X", 14), key_style),
+                Span::styled(pad_right("reset hard", 18), desc_style),
+                Span::styled("to selected", value_style),
+            ]),
+        ];
+
+        let paragraph = Paragraph::new(lines).block(block);
+        frame.render_widget(paragraph, sections[12]);
     }
 }

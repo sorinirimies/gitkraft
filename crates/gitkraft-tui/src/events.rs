@@ -102,6 +102,8 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 KeyCode::BackTab => cycle_pane_backward(app),
                 KeyCode::Char('r') => app.refresh(),
                 KeyCode::Char('f') => app.fetch_remote(),
+                KeyCode::Char('p') => app.pull_rebase(),
+                KeyCode::Char('P') => app.push_branch(),
                 KeyCode::Char('T') => {
                     app.show_theme_panel = !app.show_theme_panel;
                     app.show_options_panel = false; // close options if open

@@ -40,6 +40,26 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 app.tab_mut().commit_list_state.select(Some(len - 1));
             }
         }
+        // Revert selected commit
+        KeyCode::Char('e') => {
+            app.revert_selected_commit();
+        }
+
+        // Reset soft to selected commit
+        KeyCode::Char('x') => {
+            app.reset_to_selected_commit("soft");
+        }
+
+        // Reset hard to selected commit
+        KeyCode::Char('X') => {
+            app.reset_to_selected_commit("hard");
+        }
+
+        // Force push current branch
+        KeyCode::Char('F') => {
+            app.force_push_branch();
+        }
+
         KeyCode::Esc => {
             if app.tab().search_active {
                 app.tab_mut().search_active = false;
