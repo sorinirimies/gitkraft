@@ -36,7 +36,7 @@ fn all_editors() -> Vec<gitkraft_core::Editor> {
 /// Create an editor selector [`pick_list()`] widget.
 ///
 /// The widget displays the name of the current editor and, when opened, lists
-/// every editor returned by [`all_editors`]. Selecting a new entry emits
+/// every editor returned by `all_editors`. Selecting a new entry emits
 /// [`Message::EditorChanged`] with the chosen [`gitkraft_core::Editor`].
 pub fn editor_selector(current: &gitkraft_core::Editor) -> Element<'static, Message> {
     let choices = all_editors();
