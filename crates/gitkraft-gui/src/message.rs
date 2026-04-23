@@ -340,6 +340,10 @@ pub enum Message {
     SearchFileDiffLoaded(Result<gitkraft_core::DiffInfo, String>),
     /// User clicked "Select All" / "Deselect All" in search diff.
     ToggleSearchDiffSelectAll,
+    /// Diff all selected files against working tree (combined view).
+    DiffSelectedFiles,
+    /// Combined diffs for selected files loaded.
+    SearchMultiDiffLoaded(Result<Vec<gitkraft_core::DiffInfo>, String>),
     /// Go back from file diff view to file list in search.
     SearchDiffBack,
     /// User right-clicked a search result — open commit context menu.

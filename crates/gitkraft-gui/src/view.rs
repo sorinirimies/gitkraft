@@ -313,7 +313,7 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
     use iced::{Alignment, Length};
 
     let has_diff_files = !state.search_diff_files.is_empty();
-    let has_diff_content = state.search_diff_content.is_some();
+    let has_diff_content = !state.search_diff_content.is_empty();
 
     // ── Close button ──────────────────────────────────────────────────────
     let close_btn = button(text("\u{2715}").size(14).color(c.text_secondary))
@@ -423,8 +423,13 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
 
     // ── Right panel: file list + diff (only when a commit is selected) ────
     let panel: Element<'a, Message> = if has_diff_content {
-        // Show diff content for the selected file
-        let diff = state.search_diff_content.as_ref().unwrap();
+        // Show combined diff content for the selected file(s)
+        let file_count = state.search_diff_content.len();
+        let title_label = if file_count == 1 {
+            state.search_diff_content[0].display_path().to_string()
+        } else {
+            format!("{file_count} file(s)")
+        };
 
         let back_btn = button(
             row![
@@ -440,27 +445,54 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
         let diff_header = row![
             back_btn,
             Space::new().width(Length::Fill),
-            text(diff.display_path()).size(13).color(c.accent),
+            text(title_label).size(13).color(c.accent),
             Space::new().width(12),
         ]
         .align_y(Alignment::Center)
         .padding([4, 8]);
 
         let mut diff_lines_col = column![].spacing(0).width(Length::Fill);
-        for hunk in &diff.hunks {
-            for line in &hunk.lines {
-                let (prefix, content, color) = match line {
-                    gitkraft_core::DiffLine::Context(s) => (" ", s.as_str(), c.text_secondary),
-                    gitkraft_core::DiffLine::Addition(s) => ("+", s.as_str(), c.green),
-                    gitkraft_core::DiffLine::Deletion(s) => ("-", s.as_str(), c.red),
-                    gitkraft_core::DiffLine::HunkHeader(s) => ("@@", s.as_str(), c.accent),
-                };
+        for diff in &state.search_diff_content {
+            // File separator header
+            let status_color = match diff.status.color_category() {
+                gitkraft_core::StatusColorCategory::Added => c.green,
+                gitkraft_core::StatusColorCategory::Modified => c.yellow,
+                gitkraft_core::StatusColorCategory::Deleted => c.red,
+                gitkraft_core::StatusColorCategory::Renamed => c.accent,
+            };
+            if file_count > 1 {
                 diff_lines_col = diff_lines_col.push(
-                    text(format!("{prefix} {content}"))
-                        .size(12)
-                        .color(color)
-                        .font(iced::Font::MONOSPACE),
+                    container(
+                        row![
+                            text(format!("{}", diff.status))
+                                .size(12)
+                                .color(status_color)
+                                .font(iced::Font::MONOSPACE),
+                            Space::new().width(8),
+                            text(diff.display_path()).size(13).color(c.text_primary),
+                        ]
+                        .align_y(Alignment::Center),
+                    )
+                    .padding([6, 8])
+                    .width(Length::Fill)
+                    .style(theme::surface_style),
                 );
+            }
+            for hunk in &diff.hunks {
+                for line in &hunk.lines {
+                    let (prefix, content, color) = match line {
+                        gitkraft_core::DiffLine::Context(s) => (" ", s.as_str(), c.text_secondary),
+                        gitkraft_core::DiffLine::Addition(s) => ("+", s.as_str(), c.green),
+                        gitkraft_core::DiffLine::Deletion(s) => ("-", s.as_str(), c.red),
+                        gitkraft_core::DiffLine::HunkHeader(s) => ("@@", s.as_str(), c.accent),
+                    };
+                    diff_lines_col = diff_lines_col.push(
+                        text(format!("{prefix} {content}"))
+                            .size(12)
+                            .color(color)
+                            .font(iced::Font::MONOSPACE),
+                    );
+                }
             }
         }
 
@@ -514,6 +546,20 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
             .style(theme::ghost_button)
             .on_press(Message::ToggleSearchDiffSelectAll);
 
+        let diff_selected_btn: Element<'a, Message> = if selected_count > 0 {
+            button(
+                text(format!("Diff Selected ({selected_count})"))
+                    .size(12)
+                    .color(c.green),
+            )
+            .padding([4, 8])
+            .style(theme::ghost_button)
+            .on_press(Message::DiffSelectedFiles)
+            .into()
+        } else {
+            Space::new().width(0).into()
+        };
+
         let right_header = row![
             text(format!("Files changed vs working tree ({oid_short})"))
                 .size(14)
@@ -523,6 +569,8 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
                 .size(11)
                 .color(c.muted),
             Space::new().width(8),
+            diff_selected_btn,
+            Space::new().width(4),
             select_all_btn,
         ]
         .align_y(Alignment::Center)

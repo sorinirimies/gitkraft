@@ -71,6 +71,30 @@ pub fn search_diff_file(path: PathBuf, oid: String, file_path: String) -> Task<M
     )
 }
 
+/// Diff multiple files from a specific commit against the current working tree.
+pub fn search_diff_multi_files(
+    path: PathBuf,
+    oid: String,
+    file_paths: Vec<String>,
+) -> Task<Message> {
+    git_task!(
+        Message::SearchMultiDiffLoaded,
+        (|| {
+            let repo = open_repo!(&path);
+            let mut diffs = Vec::with_capacity(file_paths.len());
+            for fp in &file_paths {
+                match gitkraft_core::features::diff::diff_file_commit_vs_workdir(&repo, &oid, fp) {
+                    Ok(diff) => diffs.push(diff),
+                    Err(e) => {
+                        return Err(format!("{fp}: {e}"));
+                    }
+                }
+            }
+            Ok(diffs)
+        })()
+    )
+}
+
 /// Diff a file from a specific commit against the current working tree.
 pub fn diff_file_with_working_tree(path: PathBuf, oid: String, file_path: String) -> Task<Message> {
     git_task!(

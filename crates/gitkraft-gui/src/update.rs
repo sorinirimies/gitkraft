@@ -674,7 +674,7 @@ impl GitKraft {
                     self.search_selected = None;
                     self.search_diff_files.clear();
                     self.search_diff_selected.clear();
-                    self.search_diff_content = None;
+                    self.search_diff_content.clear();
                     self.search_diff_oid = None;
                 }
                 Task::none()
@@ -728,7 +728,7 @@ impl GitKraft {
                         self.search_diff_oid = Some(oid.clone());
                         self.search_diff_files.clear();
                         self.search_diff_selected.clear();
-                        self.search_diff_content = None;
+                        self.search_diff_content.clear();
 
                         if let Some(path) = self.active_tab().repo_path.clone() {
                             return crate::features::commits::commands::search_diff_file_list(
@@ -745,7 +745,7 @@ impl GitKraft {
                     Ok(files) => {
                         self.search_diff_files = files.clone();
                         self.search_diff_selected.clear();
-                        self.search_diff_content = None;
+                        self.search_diff_content.clear();
                     }
                     Err(e) => {
                         self.active_tab_mut().error_message =
@@ -793,7 +793,7 @@ impl GitKraft {
             Message::SearchFileDiffLoaded(result) => {
                 match result {
                     Ok(diff) => {
-                        self.search_diff_content = Some(diff.clone());
+                        self.search_diff_content = vec![diff.clone()];
                     }
                     Err(e) => {
                         self.active_tab_mut().error_message =
@@ -803,8 +803,42 @@ impl GitKraft {
                 Task::none()
             }
 
+            Message::DiffSelectedFiles => {
+                if self.search_diff_selected.is_empty() {
+                    return Task::none();
+                }
+                let file_paths: Vec<String> = self
+                    .search_diff_selected
+                    .iter()
+                    .filter_map(|&i| self.search_diff_files.get(i))
+                    .map(|f| f.display_path().to_string())
+                    .collect();
+                if let (Some(oid), Some(repo_path)) = (
+                    self.search_diff_oid.clone(),
+                    self.active_tab().repo_path.clone(),
+                ) {
+                    return crate::features::commits::commands::search_diff_multi_files(
+                        repo_path, oid, file_paths,
+                    );
+                }
+                Task::none()
+            }
+
+            Message::SearchMultiDiffLoaded(result) => {
+                match result {
+                    Ok(diffs) => {
+                        self.search_diff_content = diffs.clone();
+                    }
+                    Err(e) => {
+                        self.active_tab_mut().error_message =
+                            Some(format!("Failed to load diffs: {e}"));
+                    }
+                }
+                Task::none()
+            }
+
             Message::SearchDiffBack => {
-                self.search_diff_content = None;
+                self.search_diff_content.clear();
                 Task::none()
             }
 
