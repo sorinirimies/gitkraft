@@ -2,9 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.7.0 - 2026-04-23
+### ➕ Added
+- Add commit search feature to GUI and TUI
+### 📚 Documentation
+- docs: add VHS-generated preview GIFs tracked with Git LFS
+- docs: remove non-UI GIFs from Preview section
+- docs: hide cargo run from TUI tapes and remove tui-build GIF
+- docs: add TUI theme selector and multi-repo tabs VHS tapes
+- docs: rewrite tui-tabs tape to open a real second repo
+### 📦 Other Changes
+- Remove tui-build.tape example from vhs directory
+### 🔄 Updated
+- Update dependencies in Cargo.lock for rfd and iced_fonts
+### 🔧 Chores
+- chore(deps): nightly dependency upgrade 2026-04-22
+- chore: add .zed/rules.md with project conventions for agents
+- chore(deps): nightly dependency upgrade 2026-04-23
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.6...v0.7.0
+## 0.6.6 - 2026-04-21
+### 🔧 Chores
+- chore: bump version to 0.6.6
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.5...v0.6.6
 ## 0.6.5 - 2026-04-21
 ### ♻️ Refactor
 - Refactor header toolbar into left and right item rows
+### 🔧 Chores
+- chore: bump version to 0.6.5
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.4...v0.6.5
+## 0.6.4 - 2026-04-21
 ### 📦 Other Changes
 - Simplify and update README features and layout sections
 - Close context menu when checking out or deleting branch
@@ -12,8 +38,7 @@ All notable changes to this project will be documented in this file.
 - Update Iced to 0.14 and refactor for new widget APIs
 ### 🔧 Chores
 - chore: bump version to 0.6.4
-- chore: bump version to 0.6.5
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.3...v0.6.5
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.3...v0.6.4
 ## 0.6.3 - 2026-04-20
 ### 🔧 Chores
 - chore: bump version to 0.6.3
@@ -45,43 +70,82 @@ All notable changes to this project will be documented in this file.
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.5...v0.5.6
 ## 0.5.5 - 2026-04-19
 ### ♻️ Refactor
-- Refactor key event handlers to reduce nesting and improve clarity
-- Refactor GUI view helpers and TUI commit diff loading
 - Refactor row! macro usage for consistency and readability
+### ➕ Added
+- Add support for Gitea Starscream remote in justfile
+### 📦 Other Changes
+- Move release notes generation to scripts/ci and update workflow
+- Replace Space::with_width/with_height with Space::new throughout GUI
+### 🔧 Chores
+- chore: bump version to 0.5.5
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.4...v0.5.5
+## 0.5.4 - 2026-04-17
+### ♻️ Refactor
+- Refactor GUI view helpers and TUI commit diff loading
+### 📦 Other Changes
+- Fail bump if version is unchanged
+### 🔧 Chores
+- chore: bump version to 0.5.4
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.3...v0.5.4
+## 0.5.3 - 2026-04-17
+### ➕ Added
+- Add step to install Rust stable in release workflow
+### 🔧 Chores
+- chore: bump version to 0.5.3
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.2...v0.5.3
+## 0.5.2 - 2026-04-17
+### 📦 Other Changes
+- Simplify README to remove toolkit mentions and dependency tables
+- Remove musl and aarch64 targets from release workflow
+### 🔧 Chores
+- chore: bump version to 0.5.2
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.1...v0.5.2
+## 0.5.1 - 2026-04-17
+### ➕ Added
+- Add VHS demo GIF tasks to justfile and improve musl build
+### 🔧 Chores
+- chore: bump version to 0.5.1
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.0...v0.5.1
+## 0.5.0 - 2026-04-17
+### 📦 Other Changes
+- Remove Tokio and futures dependencies from TUI and switch to std::mpsc
+### 🔄 Updated
+- Update release workflow to fix artifact handling and tool installs
+### 🔧 Chores
+- chore: bump version to 0.5.0
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.4.3...v0.5.0
+## 0.4.3 - 2026-04-17
+### ♻️ Refactor
+- Refactor key event handlers to reduce nesting and improve clarity
+### 🔧 Chores
+- chore: bump version to 0.4.3
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.4.2...v0.4.3
+## 0.4.2 - 2026-04-17
+### 📦 Other Changes
+- Sort recent repos using sort_by_key with Reverse
+### 🔄 Updated
+- Update install-tools to install nu if missing
+### 🔧 Chores
+- chore: bump version to 0.4.2
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.4.1...v0.4.2
+## 0.4.1 - 2026-04-17
+### ➕ Added
+- Add remote branch delete/checkout, icons module, and file list diff
+- Add UI zoom support with keyboard shortcuts and status bar indicator
+- Add tests for core types and refactor repo open logic
+### 📦 Other Changes
+- Reformat codebase with rustfmt and improve formatting checks
+### 🔧 Chores
+- chore: bump version to 0.4.1
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.4.0...v0.4.1
+## 0.4.0 - 2026-04-16
 ### ➕ Added
 - Add collapsible branch sections and overlay scrollbars to GUI
 - Add loading spinner to login button
 - Add tag creation actions and truncate-to-fit utility
-- Add remote branch delete/checkout, icons module, and file list diff
-- Add UI zoom support with keyboard shortcuts and status bar indicator
-- Add tests for core types and refactor repo open logic
-- Add VHS demo GIF tasks to justfile and improve musl build
-- Add step to install Rust stable in release workflow
-- Add support for Gitea Starscream remote in justfile
-### 📦 Other Changes
-- Reformat codebase with rustfmt and improve formatting checks
-- Sort recent repos using sort_by_key with Reverse
-- Remove Tokio and futures dependencies from TUI and switch to std::mpsc
-- Simplify README to remove toolkit mentions and dependency tables
-- Remove musl and aarch64 targets from release workflow
-- Fail bump if version is unchanged
-- Move release notes generation to scripts/ci and update workflow
-- Replace Space::with_width/with_height with Space::new throughout GUI
-### 🔄 Updated
-- Update install-tools to install nu if missing
-- Update release workflow to fix artifact handling and tool installs
 ### 🔧 Chores
 - chore: bump version to 0.4.0
-- chore: bump version to 0.4.1
-- chore: bump version to 0.4.2
-- chore: bump version to 0.4.3
-- chore: bump version to 0.5.0
-- chore: bump version to 0.5.1
-- chore: bump version to 0.5.2
-- chore: bump version to 0.5.3
-- chore: bump version to 0.5.4
-- chore: bump version to 0.5.5
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.9...v0.5.5
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.9...v0.4.0
 ## 0.3.9 - 2026-04-14
 ### 📦 Other Changes
 - Make branches sidebar width responsive
