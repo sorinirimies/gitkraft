@@ -652,7 +652,11 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
     )
     .on_press(Message::ToggleSearch);
 
-    let centered = container(panel)
+    // Wrap the panel in a mouse_area that swallows clicks so they don't
+    // bubble up to the backdrop and dismiss the dialog.
+    let panel_intercepted = mouse_area(panel).on_press(Message::Noop);
+
+    let centered = container(panel_intercepted)
         .width(Length::Fill)
         .height(Length::Fill)
         .center_x(Length::Fill)
