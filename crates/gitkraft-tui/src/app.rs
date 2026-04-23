@@ -211,6 +211,11 @@ pub struct RepoTab {
     /// When true, the next d press actually discards; otherwise the first
     /// d sets this flag and shows a confirmation prompt.
     pub confirm_discard: bool,
+
+    /// Selected unstaged file indices for multi-select.
+    pub selected_unstaged: std::collections::HashSet<usize>,
+    /// Selected staged file indices for multi-select.
+    pub selected_staged: std::collections::HashSet<usize>,
 }
 
 impl RepoTab {
@@ -255,6 +260,9 @@ impl RepoTab {
             is_loading: false,
 
             confirm_discard: false,
+
+            selected_unstaged: std::collections::HashSet::new(),
+            selected_staged: std::collections::HashSet::new(),
         }
     }
 
@@ -298,6 +306,12 @@ pub struct App {
     pub show_theme_panel: bool,
     /// Whether the options panel is visible.
     pub show_options_panel: bool,
+    /// Configured editor for opening files.
+    pub editor: gitkraft_core::Editor,
+    /// Whether the editor picker panel is visible.
+    pub show_editor_panel: bool,
+    /// ListState for the editor picker list.
+    pub editor_list_state: ListState,
     /// Currently selected theme index (0-26).
     pub current_theme_index: usize,
     /// ListState for the theme list widget.
@@ -319,6 +333,9 @@ pub struct App {
     pub tabs: Vec<RepoTab>,
     /// Index of the currently active tab.
     pub active_tab_index: usize,
+
+    /// Timestamp of the last auto-refresh.
+    pub last_auto_refresh: std::time::Instant,
 }
 
 impl App {
@@ -349,6 +366,29 @@ impl App {
 
             show_theme_panel: false,
             show_options_panel: false,
+            editor: settings
+                .editor_name
+                .as_deref()
+                .map(|name| {
+                    gitkraft_core::EDITOR_NAMES
+                        .iter()
+                        .position(|n| n.eq_ignore_ascii_case(name))
+                        .map(gitkraft_core::Editor::from_index)
+                        .unwrap_or_else(|| {
+                            if name.eq_ignore_ascii_case("none") {
+                                gitkraft_core::Editor::None
+                            } else {
+                                gitkraft_core::Editor::Custom(name.to_string())
+                            }
+                        })
+                })
+                .unwrap_or(gitkraft_core::Editor::None),
+            show_editor_panel: false,
+            editor_list_state: {
+                let mut s = ListState::default();
+                s.select(Some(0));
+                s
+            },
             current_theme_index: theme_index,
             theme_list_state: {
                 let mut s = ListState::default();
@@ -365,6 +405,8 @@ impl App {
 
             tabs: vec![RepoTab::new()],
             active_tab_index: 0,
+
+            last_auto_refresh: std::time::Instant::now(),
         }
     }
 
@@ -710,6 +752,17 @@ impl App {
     }
 
     /// Reload only the staging area (unstaged + staged diffs).
+    /// Check if enough time has passed and trigger a staging refresh.
+    pub fn maybe_auto_refresh(&mut self) {
+        if self.tab().repo_path.is_some()
+            && !self.tab().is_loading
+            && self.last_auto_refresh.elapsed() >= std::time::Duration::from_secs(3)
+        {
+            self.last_auto_refresh = std::time::Instant::now();
+            self.refresh_staging();
+        }
+    }
+
     pub fn refresh_staging(&mut self) {
         let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
@@ -733,6 +786,8 @@ impl App {
     }
 
     fn apply_staging_payload(&mut self, payload: StagingPayload) {
+        self.tab_mut().selected_unstaged.clear();
+        self.tab_mut().selected_staged.clear();
         let tab = self.tab_mut();
         tab.unstaged_changes = payload.unstaged;
         if tab.unstaged_changes.is_empty() {
@@ -829,6 +884,60 @@ impl App {
                 .map_err(|e| format!("discard: {e}"))?;
             Ok(format!("Discarded changes: {file_path}"))
         });
+    }
+
+    /// Stage multiple files at once.
+    pub fn stage_files(&mut self, paths: Vec<String>) {
+        let count = paths.len();
+        bg_op!(
+            self,
+            format!("Staging {count} file(s)…"),
+            staging,
+            |repo_path| {
+                let repo = open_repo_str(&repo_path)?;
+                for fp in &paths {
+                    gitkraft_core::features::staging::stage_file(&repo, fp)
+                        .map_err(|e| e.to_string())?;
+                }
+                Ok(format!("{count} file(s) staged"))
+            }
+        );
+    }
+
+    /// Unstage multiple files at once.
+    pub fn unstage_files(&mut self, paths: Vec<String>) {
+        let count = paths.len();
+        bg_op!(
+            self,
+            format!("Unstaging {count} file(s)…"),
+            staging,
+            |repo_path| {
+                let repo = open_repo_str(&repo_path)?;
+                for fp in &paths {
+                    gitkraft_core::features::staging::unstage_file(&repo, fp)
+                        .map_err(|e| e.to_string())?;
+                }
+                Ok(format!("{count} file(s) unstaged"))
+            }
+        );
+    }
+
+    /// Discard changes for multiple files at once.
+    pub fn discard_files(&mut self, paths: Vec<String>) {
+        let count = paths.len();
+        bg_op!(
+            self,
+            format!("Discarding {count} file(s)…"),
+            staging,
+            |repo_path| {
+                let repo = open_repo_str(&repo_path)?;
+                for fp in &paths {
+                    gitkraft_core::features::staging::discard_file_changes(&repo, fp)
+                        .map_err(|e| e.to_string())?;
+                }
+                Ok(format!("{count} file(s) discarded"))
+            }
+        );
     }
 
     // ── Commit ───────────────────────────────────────────────────────────
@@ -1134,6 +1243,41 @@ impl App {
         self.screen = AppScreen::DirBrowser;
     }
     /// Load the diff for a selected staging file into the diff pane.
+    /// Open the currently selected staging file in the configured editor.
+    pub fn open_selected_in_editor(&mut self) {
+        if matches!(self.editor, gitkraft_core::Editor::None) {
+            self.tab_mut().status_message =
+                Some("No editor configured — press E to choose one".into());
+            return;
+        }
+        let file_path = match self.tab().staging_focus {
+            StagingFocus::Unstaged => self
+                .tab()
+                .unstaged_list_state
+                .selected()
+                .and_then(|idx| self.tab().unstaged_changes.get(idx))
+                .map(|d| d.display_path().to_string()),
+            StagingFocus::Staged => self
+                .tab()
+                .staged_list_state
+                .selected()
+                .and_then(|idx| self.tab().staged_changes.get(idx))
+                .map(|d| d.display_path().to_string()),
+        };
+        if let (Some(fp), Some(repo_path)) = (file_path, self.tab().repo_path.as_ref()) {
+            let full_path = repo_path.join(&fp);
+            match self.editor.open_file(&full_path) {
+                Ok(()) => {
+                    self.tab_mut().status_message =
+                        Some(format!("Opened {} in {}", fp, self.editor));
+                }
+                Err(e) => {
+                    self.tab_mut().error_message = Some(format!("Failed to open editor: {e}"));
+                }
+            }
+        }
+    }
+
     pub fn load_staging_diff(&mut self) {
         match self.tab().staging_focus {
             StagingFocus::Unstaged => {
@@ -1467,5 +1611,37 @@ mod tests {
         app.open_browser(PathBuf::from("/tmp"));
         assert_eq!(app.screen, AppScreen::DirBrowser);
         assert_eq!(app.browser_return_screen, AppScreen::Main);
+    }
+
+    #[test]
+    fn repo_tab_selected_defaults_empty() {
+        let tab = RepoTab::new();
+        assert!(tab.selected_unstaged.is_empty());
+        assert!(tab.selected_staged.is_empty());
+    }
+
+    #[test]
+    fn repo_tab_selected_toggle() {
+        let mut tab = RepoTab::new();
+        tab.selected_unstaged.insert(0);
+        tab.selected_unstaged.insert(2);
+        assert_eq!(tab.selected_unstaged.len(), 2);
+        assert!(tab.selected_unstaged.contains(&0));
+        tab.selected_unstaged.remove(&0);
+        assert_eq!(tab.selected_unstaged.len(), 1);
+        assert!(!tab.selected_unstaged.contains(&0));
+    }
+
+    #[test]
+    fn auto_refresh_field_exists() {
+        let app = App::new();
+        assert!(app.last_auto_refresh.elapsed() < std::time::Duration::from_secs(1));
+    }
+
+    #[test]
+    fn editor_defaults_from_settings() {
+        let app = App::new();
+        // Should have loaded from settings or defaulted to None
+        let _ = app.editor.display_name();
     }
 }

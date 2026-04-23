@@ -75,6 +75,9 @@ pub fn load_settings() -> Result<AppSettings> {
                 settings.active_tab_index = idx;
             }
         }
+        if let Ok(Some(val)) = table.get("editor_name") {
+            settings.editor_name = Some(val.value().to_string());
+        }
     }
 
     // Read recent repos
@@ -113,6 +116,9 @@ pub fn save_settings(settings: &AppSettings) -> Result<()> {
             let layout_json =
                 serde_json::to_string(layout).context("failed to serialize layout settings")?;
             table.insert("layout", layout_json.as_str())?;
+        }
+        if let Some(ref editor) = settings.editor_name {
+            table.insert("editor_name", editor.as_str())?;
         }
         if !settings.open_tabs.is_empty() {
             let tabs_json = serde_json::to_string(&settings.open_tabs)
@@ -176,6 +182,19 @@ pub fn save_theme(theme_name: &str) -> Result<()> {
 pub fn get_saved_theme() -> Result<Option<String>> {
     let settings = load_settings()?;
     Ok(settings.theme_name)
+}
+
+/// Persist the selected editor name.
+pub fn save_editor(editor_name: &str) -> Result<()> {
+    let mut settings = load_settings()?;
+    settings.editor_name = Some(editor_name.to_string());
+    save_settings(&settings)
+}
+
+/// Retrieve the persisted editor name.
+pub fn get_saved_editor() -> Result<Option<String>> {
+    let settings = load_settings()?;
+    Ok(settings.editor_name)
 }
 
 /// Convenience: save layout preferences.

@@ -97,6 +97,10 @@ pub enum Message {
     CommitFileListLoaded(Result<Vec<DiffFileEntry>, String>),
     /// Async single-file diff load completed.
     SingleFileDiffLoaded(Result<DiffInfo, String>),
+    /// Diff a file from a commit against the working tree.
+    DiffFileWithWorkingTree(String, String), // (oid, file_path)
+    /// Result of diffing a file with the working tree.
+    DiffWithWorkingTreeLoaded(Result<DiffInfo, String>),
     /// The commit log scrollable was scrolled.
     /// Carries `(absolute_y, relative_y)` — absolute for virtual-window
     /// positioning, relative (0.0 = top, 1.0 = bottom) for load-more trigger.
@@ -121,6 +125,18 @@ pub enum Message {
     ConfirmDiscard(String),
     /// User cancelled a pending discard.
     CancelDiscard,
+    /// Toggle selection of an unstaged file (Shift+Click).
+    ToggleSelectUnstaged(String),
+    /// Toggle selection of a staged file (Shift+Click).
+    ToggleSelectStaged(String),
+    /// Stage all currently selected unstaged files.
+    StageSelected,
+    /// Unstage all currently selected staged files.
+    UnstageSelected,
+    /// Discard all currently selected unstaged files.
+    DiscardSelected,
+    /// Discard a staged file (unstage + discard working dir changes).
+    DiscardStagedFile(String),
     /// Async staging operation completed.
     StagingUpdated(Result<StagingPayload, String>),
 
@@ -143,6 +159,20 @@ pub enum Message {
     StashUpdated(Result<Vec<StashEntry>, String>),
     /// User is typing in the stash-message input.
     StashMessageChanged(String),
+    /// User right-clicked a stash entry.
+    OpenStashContextMenu(usize),
+    /// User right-clicked a file in the commit diff file list.
+    OpenCommitFileContextMenu(String, String), // (oid, file_path)
+    /// User right-clicked an unstaged file.
+    OpenUnstagedFileContextMenu(String),
+    /// User right-clicked a staged file.
+    OpenStagedFileContextMenu(String),
+    /// User wants to view the diff of a stash entry.
+    ViewStashDiff(usize),
+    /// Stash diff loaded.
+    StashDiffLoaded(Result<Vec<DiffInfo>, String>),
+    /// Apply a stash (like pop but keeps the stash).
+    StashApply(usize),
 
     // ── Remotes ───────────────────────────────────────────────────────────
     /// Fetch from the first configured remote.
@@ -282,6 +312,11 @@ pub enum Message {
     /// User selected a different theme from the picker (by index into
     /// `gitkraft_core::THEME_NAMES`).
     ThemeChanged(usize),
+
+    /// User selected a different editor from the picker.
+    EditorChanged(gitkraft_core::Editor),
+    /// Background `save_editor` completed (fire-and-forget, errors logged).
+    EditorSaved(Result<(), String>),
     /// User clicked a recent repository entry on the welcome screen.
     OpenRecentRepo(PathBuf),
     // ── Search ────────────────────────────────────────────────────────────
@@ -295,6 +330,18 @@ pub enum Message {
     SelectSearchResult(usize),
     /// User confirmed the selected search result (Enter).
     ConfirmSearchResult,
+    /// User right-clicked a search result — open commit context menu.
+    OpenSearchResultContextMenu(usize),
+
+    /// File system change detected — auto-refresh staging area.
+    FileSystemChanged,
+
+    /// Open a file in the configured editor.
+    OpenInEditor(String),
+    /// Open a file in the system's default program.
+    OpenInDefaultProgram(String),
+    /// Show a file in the system file manager.
+    ShowInFolder(String),
 
     /// No-op (used for disabled buttons, etc.).
     Noop,

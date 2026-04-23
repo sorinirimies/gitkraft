@@ -632,6 +632,21 @@ mod tests {
     }
 
     #[test]
+    fn status_color_all_variants() {
+        let core = gitkraft_core::theme_by_index(0);
+        let colors = ThemeColors::from_core(&core);
+
+        // Just verify they don't panic and return valid colors
+        let _ = status_color(&gitkraft_core::FileStatus::New, &colors);
+        let _ = status_color(&gitkraft_core::FileStatus::Modified, &colors);
+        let _ = status_color(&gitkraft_core::FileStatus::Deleted, &colors);
+        let _ = status_color(&gitkraft_core::FileStatus::Renamed, &colors);
+        let _ = status_color(&gitkraft_core::FileStatus::Copied, &colors);
+        let _ = status_color(&gitkraft_core::FileStatus::Typechange, &colors);
+        let _ = status_color(&gitkraft_core::FileStatus::Untracked, &colors);
+    }
+
+    #[test]
     fn clamp_stays_in_range() {
         assert_eq!(clamp(-0.1), 0.0);
         assert_eq!(clamp(1.5), 1.0);

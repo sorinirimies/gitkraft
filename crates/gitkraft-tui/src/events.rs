@@ -87,6 +87,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 return;
             }
 
+            if app.show_editor_panel {
+                features::editor::events::handle_key(app, key);
+                return;
+            }
+
             // -- Global keys (available in Normal mode on the Main screen) --
             match key.code {
                 KeyCode::Char('q') => app.should_quit = true,
@@ -100,10 +105,17 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 KeyCode::Char('T') => {
                     app.show_theme_panel = !app.show_theme_panel;
                     app.show_options_panel = false; // close options if open
+                    app.show_editor_panel = false;
                 }
                 KeyCode::Char('O') => {
                     app.show_options_panel = !app.show_options_panel;
                     app.show_theme_panel = false; // close theme panel if open
+                    app.show_editor_panel = false;
+                }
+                KeyCode::Char('E') => {
+                    app.show_editor_panel = !app.show_editor_panel;
+                    app.show_theme_panel = false;
+                    app.show_options_panel = false;
                 }
                 KeyCode::Char('o') => {
                     let start = app
@@ -153,7 +165,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                         features::commits::events::navigate_up(app);
                     }
                     ActivePane::DiffView => {
-                        if app.tab().commit_files.len() > 1 {
+                        if !app.tab().commit_files.is_empty() {
                             app.prev_diff_file();
                         } else {
                             let tab = app.tab_mut();
@@ -178,7 +190,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                         features::commits::events::navigate_down(app);
                     }
                     ActivePane::DiffView => {
-                        if app.tab().commit_files.len() > 1 {
+                        if !app.tab().commit_files.is_empty() {
                             app.next_diff_file();
                         } else {
                             let tab = app.tab_mut();
@@ -412,5 +424,33 @@ mod tests {
         assert_eq!(app.active_pane, ActivePane::Branches);
         handle_key(&mut app, key(KeyCode::Left));
         assert_eq!(app.active_pane, ActivePane::Staging);
+    }
+
+    #[test]
+    fn o_on_main_opens_browser() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        handle_key(&mut app, key(KeyCode::Char('o')));
+        assert_eq!(app.screen, AppScreen::DirBrowser);
+    }
+
+    #[test]
+    fn space_in_staging_toggles_selection() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::Staging;
+        app.tab_mut()
+            .unstaged_changes
+            .push(gitkraft_core::DiffInfo {
+                old_file: String::new(),
+                new_file: "test.rs".to_string(),
+                status: gitkraft_core::FileStatus::Modified,
+                hunks: Vec::new(),
+            });
+        app.tab_mut().unstaged_list_state.select(Some(0));
+        app.tab_mut().staging_focus = crate::app::StagingFocus::Unstaged;
+
+        handle_key(&mut app, key(KeyCode::Char(' ')));
+        assert!(app.tab().selected_unstaged.contains(&0));
     }
 }

@@ -129,6 +129,34 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             }
         }
 
+        Message::DiffFileWithWorkingTree(oid, file_path) => {
+            state.active_tab_mut().context_menu = None;
+            if let Some(path) = state.active_tab().repo_path.clone() {
+                state.active_tab_mut().status_message = Some(format!(
+                    "Comparing {} with working tree…",
+                    file_path.rsplit('/').next().unwrap_or(&file_path)
+                ));
+                commands::diff_file_with_working_tree(path, oid, file_path)
+            } else {
+                Task::none()
+            }
+        }
+
+        Message::DiffWithWorkingTreeLoaded(result) => {
+            match result {
+                Ok(diff) => {
+                    let tab = state.active_tab_mut();
+                    tab.selected_diff = Some(diff);
+                    tab.diff_scroll_offset = 0.0;
+                    tab.status_message = Some("Showing diff against working tree".into());
+                }
+                Err(e) => {
+                    state.active_tab_mut().status_message = Some(format!("⚠ {e}"));
+                }
+            }
+            Task::none()
+        }
+
         _ => Task::none(),
     }
 }

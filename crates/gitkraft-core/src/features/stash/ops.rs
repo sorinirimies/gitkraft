@@ -129,4 +129,23 @@ mod tests {
         let content = std::fs::read_to_string(dir.path().join("file.txt")).unwrap();
         assert_eq!(content, "changed\n");
     }
+
+    fn setup_repo_with_stash() -> (TempDir, Repository) {
+        let (dir, mut repo) = setup_repo_with_commit();
+        std::fs::write(dir.path().join("file.txt"), "changed\n").unwrap();
+        stash_save(&mut repo, Some("test stash")).unwrap();
+        (dir, repo)
+    }
+
+    #[test]
+    fn stash_drop_removes_entry() {
+        let (_dir, mut repo) = setup_repo_with_stash();
+        let stashes = list_stashes(&mut repo).unwrap();
+        assert_eq!(stashes.len(), 1);
+
+        stash_drop(&mut repo, 0).unwrap();
+
+        let stashes = list_stashes(&mut repo).unwrap();
+        assert!(stashes.is_empty());
+    }
 }

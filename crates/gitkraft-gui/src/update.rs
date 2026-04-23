@@ -82,7 +82,9 @@ impl GitKraft {
             // ── Commits ───────────────────────────────────────────────────
             Message::SelectCommit(_)
             | Message::CommitFileListLoaded(_)
-            | Message::SingleFileDiffLoaded(_) => {
+            | Message::SingleFileDiffLoaded(_)
+            | Message::DiffFileWithWorkingTree(_, _)
+            | Message::DiffWithWorkingTreeLoaded(_) => {
                 // Both the commits and diff features care about SelectCommit.
                 // We delegate to the commits handler which also loads the diff.
                 crate::features::commits::update::update(self, message)
@@ -134,16 +136,25 @@ impl GitKraft {
             | Message::DiscardFile(_)
             | Message::ConfirmDiscard(_)
             | Message::CancelDiscard
-            | Message::StagingUpdated(_) => crate::features::staging::update::update(self, message),
+            | Message::StagingUpdated(_)
+            | Message::ToggleSelectUnstaged(_)
+            | Message::ToggleSelectStaged(_)
+            | Message::StageSelected
+            | Message::UnstageSelected
+            | Message::DiscardSelected
+            | Message::DiscardStagedFile(_) => {
+                crate::features::staging::update::update(self, message)
+            }
 
             // ── Stash ─────────────────────────────────────────────────────
             Message::StashSave
             | Message::StashPop(_)
             | Message::StashDrop(_)
             | Message::StashUpdated(_)
-            | Message::StashMessageChanged(_) => {
-                crate::features::stash::update::update(self, message)
-            }
+            | Message::StashMessageChanged(_)
+            | Message::StashApply(_)
+            | Message::ViewStashDiff(_)
+            | Message::StashDiffLoaded(_) => crate::features::stash::update::update(self, message),
 
             // ── Remotes ───────────────────────────────────────────────────
             Message::Fetch | Message::FetchCompleted(_) => {
@@ -278,10 +289,59 @@ impl GitKraft {
                 Task::none()
             }
 
+            Message::OpenCommitFileContextMenu(oid, file_path) => {
+                let pos = (self.cursor_pos.x, self.cursor_pos.y);
+                let tab = self.active_tab_mut();
+                tab.context_menu_pos = pos;
+                tab.context_menu = Some(crate::state::ContextMenu::CommitFile {
+                    oid: oid.clone(),
+                    file_path: file_path.clone(),
+                });
+                Task::none()
+            }
+
+            Message::OpenStashContextMenu(index) => {
+                let index = *index;
+                let pos = (self.cursor_pos.x, self.cursor_pos.y);
+                let tab = self.active_tab_mut();
+                tab.context_menu_pos = pos;
+                tab.context_menu = Some(crate::state::ContextMenu::Stash { index });
+                Task::none()
+            }
+
+            Message::OpenUnstagedFileContextMenu(path) => {
+                let pos = (self.cursor_pos.x, self.cursor_pos.y);
+                let tab = self.active_tab_mut();
+                tab.context_menu_pos = pos;
+                tab.context_menu =
+                    Some(crate::state::ContextMenu::UnstagedFile { path: path.clone() });
+                Task::none()
+            }
+
+            Message::OpenStagedFileContextMenu(path) => {
+                let pos = (self.cursor_pos.x, self.cursor_pos.y);
+                let tab = self.active_tab_mut();
+                tab.context_menu_pos = pos;
+                tab.context_menu =
+                    Some(crate::state::ContextMenu::StagedFile { path: path.clone() });
+                Task::none()
+            }
+
             Message::OpenCommitContextMenu(idx) => {
                 let oid = self.active_tab().commits.get(*idx).map(|c| c.oid.clone());
                 let pos = (self.cursor_pos.x, self.cursor_pos.y);
                 if let Some(oid) = oid {
+                    let tab = self.active_tab_mut();
+                    tab.context_menu_pos = pos;
+                    tab.context_menu = Some(crate::state::ContextMenu::Commit { index: *idx, oid });
+                }
+                Task::none()
+            }
+
+            Message::OpenSearchResultContextMenu(idx) => {
+                if let Some(commit) = self.search_results.get(*idx) {
+                    let oid = commit.oid.clone();
+                    let pos = (self.cursor_pos.x, self.cursor_pos.y);
                     let tab = self.active_tab_mut();
                     tab.context_menu_pos = pos;
                     tab.context_menu = Some(crate::state::ContextMenu::Commit { index: *idx, oid });
@@ -557,6 +617,20 @@ impl GitKraft {
                 Task::none()
             }
 
+            Message::EditorChanged(editor) => {
+                self.editor = editor.clone();
+                self.active_tab_mut().status_message =
+                    Some(format!("Editor set to {}", self.editor));
+                // Persist the editor choice
+                let name = self.editor.display_name().to_string();
+                crate::features::repo::commands::save_editor_async(name)
+            }
+
+            Message::EditorSaved(_result) => {
+                // Fire-and-forget — errors are silently ignored.
+                Task::none()
+            }
+
             Message::LayoutSaved(_result) => {
                 // Fire-and-forget — errors are silently ignored.
                 Task::none()
@@ -656,7 +730,6 @@ impl GitKraft {
                             tab.show_commit_detail = true;
                         }
                         // Close search and load the diff
-                        self.search_visible = false;
                         self.search_query.clear();
                         self.search_results.clear();
                         self.search_selected = None;
@@ -669,6 +742,64 @@ impl GitKraft {
                                 path, oid,
                             );
                         }
+                    }
+                }
+                Task::none()
+            }
+
+            Message::FileSystemChanged => {
+                if self.has_repo() && !self.active_tab().is_loading {
+                    if let Some(path) = self.active_tab().repo_path.clone() {
+                        return crate::features::repo::commands::refresh_staging_only(path);
+                    }
+                }
+                Task::none()
+            }
+
+            Message::OpenInEditor(path) => {
+                self.active_tab_mut().context_menu = None;
+                if matches!(self.editor, gitkraft_core::Editor::None) {
+                    self.active_tab_mut().status_message = Some(
+                        "No editor configured — select one from the editor dropdown in the toolbar"
+                            .into(),
+                    );
+                    return Task::none();
+                }
+                if let Some(repo_path) = self.active_tab().repo_path.as_ref() {
+                    let full_path = repo_path.join(path);
+                    match self.editor.open_file(&full_path) {
+                        Ok(()) => {
+                            self.active_tab_mut().status_message =
+                                Some(format!("Opened in {}", self.editor));
+                        }
+                        Err(e) => {
+                            self.active_tab_mut().error_message =
+                                Some(format!("Failed to open editor: {e}"));
+                        }
+                    }
+                }
+                Task::none()
+            }
+
+            Message::OpenInDefaultProgram(path) => {
+                self.active_tab_mut().context_menu = None;
+                if let Some(repo_path) = self.active_tab().repo_path.as_ref() {
+                    let full_path = repo_path.join(path);
+                    if let Err(e) = gitkraft_core::open_file_default(&full_path) {
+                        self.active_tab_mut().error_message =
+                            Some(format!("Failed to open file: {e}"));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::ShowInFolder(path) => {
+                self.active_tab_mut().context_menu = None;
+                if let Some(repo_path) = self.active_tab().repo_path.as_ref() {
+                    let full_path = repo_path.join(path);
+                    if let Err(e) = gitkraft_core::show_in_folder(&full_path) {
+                        self.active_tab_mut().error_message =
+                            Some(format!("Failed to show in folder: {e}"));
                     }
                 }
                 Task::none()

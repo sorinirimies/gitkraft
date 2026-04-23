@@ -60,22 +60,35 @@ fn render_unstaged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bo
         return;
     }
 
+    let selected = app.tab().selected_unstaged.clone();
     let items: Vec<ListItem> = app
         .tab()
         .unstaged_changes
         .iter()
-        .map(|diff| {
+        .enumerate()
+        .map(|(idx, diff)| {
             let file_name = diff.display_path().to_owned();
             let (status_char, status_color) = status_display(&diff.status, &theme);
+            let is_selected = selected.contains(&idx);
+
+            let marker = if is_selected { "● " } else { "  " };
+            let name_style = if is_selected {
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme.text_primary)
+            };
 
             let line = Line::from(vec![
+                Span::styled(marker, Style::default().fg(theme.accent)),
                 Span::styled(
-                    format!(" {} ", status_char),
+                    format!("{} ", status_char),
                     Style::default()
                         .fg(status_color)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(file_name, Style::default().fg(theme.text_primary)),
+                Span::styled(file_name, name_style),
             ]);
 
             ListItem::new(line)
@@ -124,22 +137,35 @@ fn render_staged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool
         return;
     }
 
+    let selected = app.tab().selected_staged.clone();
     let items: Vec<ListItem> = app
         .tab()
         .staged_changes
         .iter()
-        .map(|diff| {
+        .enumerate()
+        .map(|(idx, diff)| {
             let file_name = diff.display_path().to_owned();
             let (status_char, status_color) = status_display(&diff.status, &theme);
+            let is_selected = selected.contains(&idx);
+
+            let marker = if is_selected { "● " } else { "  " };
+            let name_style = if is_selected {
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme.text_primary)
+            };
 
             let line = Line::from(vec![
+                Span::styled(marker, Style::default().fg(theme.accent)),
                 Span::styled(
-                    format!(" {} ", status_char),
+                    format!("{} ", status_char),
                     Style::default()
                         .fg(status_color)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(file_name, Style::default().fg(theme.text_primary)),
+                Span::styled(file_name, name_style),
             ]);
 
             ListItem::new(line)
@@ -231,7 +257,7 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
         let sections = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(4), // Staging section
+                Constraint::Length(6), // Staging section
                 Constraint::Length(4), // Git section
                 Constraint::Min(2),    // remaining / warnings
             ])
@@ -256,6 +282,18 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
                     Span::styled(pad_right("stage all", 12), desc_style),
                     Span::styled(pad_right("U", 8), key_style),
                     Span::styled("unstage all", desc_style),
+                ]),
+                Line::from(vec![
+                    Span::styled(pad_right("Space", 8), key_style),
+                    Span::styled(pad_right("select", 12), desc_style),
+                    Span::styled(pad_right("e", 8), key_style),
+                    Span::styled("edit", desc_style),
+                ]),
+                Line::from(vec![
+                    Span::styled(pad_right("E", 8), key_style),
+                    Span::styled(pad_right("editor", 12), desc_style),
+                    Span::styled(pad_right("", 8), key_style),
+                    Span::styled("", desc_style),
                 ]),
             ];
 

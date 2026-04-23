@@ -58,6 +58,21 @@ pub fn init_repo(path: PathBuf) -> Task<Message> {
     )
 }
 
+/// Refresh only the staging area (unstaged + staged diffs) — lightweight.
+pub fn refresh_staging_only(path: PathBuf) -> Task<Message> {
+    git_task!(
+        Message::StagingUpdated,
+        (|| {
+            let repo = open_repo!(&path);
+            let unstaged = gitkraft_core::features::diff::get_working_dir_diff(&repo)
+                .map_err(|e| e.to_string())?;
+            let staged =
+                gitkraft_core::features::diff::get_staged_diff(&repo).map_err(|e| e.to_string())?;
+            Ok(crate::message::StagingPayload { unstaged, staged })
+        })()
+    )
+}
+
 /// Refresh all data for an already-open repository.
 pub fn refresh_repo(path: PathBuf) -> Task<Message> {
     git_task!(Message::RepoRefreshed, load_repo_blocking(&path))
@@ -371,6 +386,14 @@ pub fn load_more_commits(path: PathBuf, skip: usize, count: usize) -> Task<Messa
                 graph_rows,
             })
         })()
+    )
+}
+
+/// Persist the selected editor name (fire-and-forget).
+pub fn save_editor_async(editor_name: String) -> Task<Message> {
+    git_task!(
+        Message::EditorSaved,
+        gitkraft_core::features::persistence::save_editor(&editor_name).map_err(|e| e.to_string())
     )
 }
 

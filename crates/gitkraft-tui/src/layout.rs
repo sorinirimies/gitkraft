@@ -94,6 +94,8 @@ fn render_main(app: &mut App, frame: &mut Frame) {
         features::theme::view::render(app, frame, main_cols[2]);
     } else if app.show_options_panel {
         features::options::view::render(app, frame, main_cols[2]);
+    } else if app.show_editor_panel {
+        features::editor::view::render(app, frame, main_cols[2]);
     } else {
         features::diff::view::render(app, frame, main_cols[2]);
     }

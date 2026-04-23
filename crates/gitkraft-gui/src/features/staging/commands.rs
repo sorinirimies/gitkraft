@@ -78,6 +78,92 @@ pub fn discard_file(path: PathBuf, file_path: String) -> Task<Message> {
 
 /// Re-read both the working-directory diff and the staged diff so the caller
 /// can update the UI in one shot.
+/// Stage multiple files at once.
+pub fn stage_files(path: PathBuf, file_paths: Vec<String>) -> Task<Message> {
+    git_task!(
+        Message::StagingUpdated,
+        (|| {
+            let repo = open_repo!(&path);
+            for fp in &file_paths {
+                gitkraft_core::features::staging::stage_file(&repo, fp)
+                    .map_err(|e| e.to_string())?;
+            }
+            refresh_staging_state(&path)
+        })()
+    )
+}
+
+/// Unstage multiple files at once.
+pub fn unstage_files(path: PathBuf, file_paths: Vec<String>) -> Task<Message> {
+    git_task!(
+        Message::StagingUpdated,
+        (|| {
+            let repo = open_repo!(&path);
+            for fp in &file_paths {
+                gitkraft_core::features::staging::unstage_file(&repo, fp)
+                    .map_err(|e| e.to_string())?;
+            }
+            refresh_staging_state(&path)
+        })()
+    )
+}
+
+/// Discard changes for multiple files at once.
+pub fn discard_files(path: PathBuf, file_paths: Vec<String>) -> Task<Message> {
+    git_task!(
+        Message::StagingUpdated,
+        (|| {
+            let repo = open_repo!(&path);
+            for fp in &file_paths {
+                gitkraft_core::features::staging::discard_file_changes(&repo, fp)
+                    .map_err(|e| e.to_string())?;
+            }
+            refresh_staging_state(&path)
+        })()
+    )
+}
+
+/// Discard changes for both unstaged and staged files.
+/// Staged files are first unstaged, then discarded.
+pub fn discard_all_selected(
+    path: PathBuf,
+    unstaged_paths: Vec<String>,
+    staged_paths: Vec<String>,
+) -> Task<Message> {
+    git_task!(
+        Message::StagingUpdated,
+        (|| {
+            let repo = open_repo!(&path);
+            for fp in &unstaged_paths {
+                gitkraft_core::features::staging::discard_file_changes(&repo, fp)
+                    .map_err(|e| e.to_string())?;
+            }
+            for fp in &staged_paths {
+                gitkraft_core::features::staging::unstage_file(&repo, fp)
+                    .map_err(|e| e.to_string())?;
+                gitkraft_core::features::staging::discard_file_changes(&repo, fp)
+                    .map_err(|e| e.to_string())?;
+            }
+            refresh_staging_state(&path)
+        })()
+    )
+}
+
+/// Discard a staged file by first unstaging, then discarding working dir changes.
+pub fn discard_staged_file(path: PathBuf, file_path: String) -> Task<Message> {
+    git_task!(
+        Message::StagingUpdated,
+        (|| {
+            let repo = open_repo!(&path);
+            gitkraft_core::features::staging::unstage_file(&repo, &file_path)
+                .map_err(|e| e.to_string())?;
+            gitkraft_core::features::staging::discard_file_changes(&repo, &file_path)
+                .map_err(|e| e.to_string())?;
+            refresh_staging_state(&path)
+        })()
+    )
+}
+
 fn refresh_staging_state(path: &std::path::Path) -> Result<StagingPayload, String> {
     let repo = open_repo!(path);
     let unstaged =

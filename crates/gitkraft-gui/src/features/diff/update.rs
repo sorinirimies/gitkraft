@@ -31,6 +31,7 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         }
 
         Message::SelectDiff(diff_info) => {
+            state.active_tab_mut().context_menu = None;
             let tab = state.active_tab_mut();
             tab.selected_diff = Some(diff_info);
             tab.diff_scroll_offset = 0.0;

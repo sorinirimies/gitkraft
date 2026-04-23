@@ -36,6 +36,9 @@ pub struct AppSettings {
     /// Persisted pane layout dimensions.
     #[serde(default)]
     pub layout: Option<LayoutSettings>,
+    /// Persisted editor name.
+    #[serde(default)]
+    pub editor_name: Option<String>,
     /// Paths of all tabs open when the app was last closed, in tab order.
     #[serde(default)]
     pub open_tabs: Vec<PathBuf>,
@@ -56,6 +59,7 @@ impl Default for AppSettings {
             theme_name: None,
             max_recent: default_max_recent(),
             layout: None,
+            editor_name: None,
             open_tabs: Vec::new(),
             active_tab_index: 0,
         }

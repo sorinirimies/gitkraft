@@ -7,8 +7,8 @@ fn main() -> iced::Result {
     iced::application(boot, GitKraft::update, GitKraft::view)
         .title("GitKraft — Git IDE")
         .theme(|state: &GitKraft| state.iced_theme())
-        .subscription(|_state| {
-            iced::event::listen_with(|event, status, _window| {
+        .subscription(|state: &GitKraft| {
+            let keyboard = iced::event::listen_with(|event, status, _window| {
                 if let iced::event::Status::Ignored = status {
                     if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                         key,
@@ -20,7 +20,9 @@ fn main() -> iced::Result {
                     }
                 }
                 None
-            })
+            });
+            let auto_refresh = auto_refresh_subscription(state.has_repo());
+            iced::Subscription::batch([keyboard, auto_refresh])
         })
         .scale_factor(|state: &GitKraft| state.ui_scale)
         .settings(Settings {
@@ -64,6 +66,31 @@ fn boot() -> (GitKraft, iced::Task<gitkraft_gui::Message>) {
     };
 
     (state, iced::Task::batch([maximize_task, restore_task]))
+}
+
+/// Periodic auto-refresh subscription — emits `FileSystemChanged` every ~2 seconds.
+///
+/// Uses `Subscription::run` with `futures::stream::unfold` and a blocking
+/// `std::thread::sleep` so it works with any async backend (thread-pool, tokio,
+/// smol, etc.).  The handler in `update.rs` short-circuits when no repo is open
+/// or when the tab is already loading, so a no-repo guard here just avoids
+/// spawning the stream at all.
+fn auto_refresh_subscription(has_repo: bool) -> iced::Subscription<gitkraft_gui::Message> {
+    if !has_repo {
+        return iced::Subscription::none();
+    }
+
+    iced::Subscription::run(auto_refresh_stream)
+}
+
+/// Build a never-ending stream that yields `FileSystemChanged` every 2 seconds.
+fn auto_refresh_stream() -> impl futures::Stream<Item = gitkraft_gui::Message> {
+    futures::stream::unfold((), |()| async {
+        // Blocking sleep is acceptable here — iced's thread-pool backend
+        // drives each subscription on its own worker thread.
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        Some((gitkraft_gui::Message::FileSystemChanged, ()))
+    })
 }
 
 /// Map keyboard shortcuts to messages.

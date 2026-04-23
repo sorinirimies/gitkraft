@@ -1,7 +1,9 @@
 //! Stash list view — shows stash entries in the sidebar with save, pop, and
 //! drop actions for each entry.
 
-use iced::widget::{button, column, container, row, scrollable, text, text_input, Space};
+use iced::widget::{
+    button, column, container, mouse_area, row, scrollable, text, text_input, Space,
+};
 use iced::{Alignment, Element, Length};
 
 use crate::icons;
@@ -99,10 +101,13 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .align_y(Alignment::Center)
             .padding([3, 8]);
 
-            container(entry_row)
+            let entry_container = container(entry_row)
                 .width(Length::Fill)
                 .height(Length::Fixed(26.0))
-                .clip(true)
+                .clip(true);
+
+            mouse_area(entry_container)
+                .on_right_press(Message::OpenStashContextMenu(entry.index))
                 .into()
         })
         .collect();

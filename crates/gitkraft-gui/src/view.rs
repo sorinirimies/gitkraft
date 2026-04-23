@@ -368,6 +368,7 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
         let result_row: Element<'a, Message> =
             mouse_area(container(result_btn).width(Length::Fill).style(bg_style))
                 .on_press(Message::SelectSearchResult(i))
+                .on_right_press(Message::OpenSearchResultContextMenu(i))
                 .into();
 
         results_col = results_col.push(result_row);
@@ -632,6 +633,175 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                 ),
                 menu_item("Copy commit SHA", Message::CopyText(oid.clone())),
                 menu_item("Copy commit message", Message::CopyText(msg_text)),
+            ]
+            .into()
+        }
+
+        Some(crate::state::ContextMenu::Stash { index }) => {
+            let index = *index;
+            let header =
+                view_utils::context_menu_header::<Message>(format!("stash@{{{index}}}"), c.muted);
+
+            column![
+                header,
+                menu_item("View diff", Message::ViewStashDiff(index)),
+                menu_item("Apply (keep stash)", Message::StashApply(index)),
+                menu_item("Pop (apply + remove)", Message::StashPop(index)),
+                view_utils::context_menu_separator::<Message>(),
+                menu_item("Drop (delete)", Message::StashDrop(index)),
+            ]
+            .into()
+        }
+
+        Some(crate::state::ContextMenu::UnstagedFile { path }) => {
+            let selected_count = state.active_tab().selected_unstaged.len();
+            let is_multi = selected_count > 1;
+
+            let header_text = if is_multi {
+                format!("{} files selected", selected_count)
+            } else {
+                format!("Unstaged: {}", path.rsplit('/').next().unwrap_or(path))
+            };
+            let header = view_utils::context_menu_header::<Message>(header_text, c.muted);
+
+            let mut col = column![header];
+
+            if is_multi {
+                // Batch operations for multi-select
+                col = col.push(menu_item(
+                    &format!("Stage {} file(s)", selected_count),
+                    Message::StageSelected,
+                ));
+                col = col.push(view_utils::context_menu_separator::<Message>());
+                col = col.push(menu_item(
+                    &format!("Discard {} file(s)", selected_count),
+                    Message::DiscardSelected,
+                ));
+            } else {
+                // Single file operations
+                let diff = state
+                    .active_tab()
+                    .unstaged_changes
+                    .iter()
+                    .find(|d| d.display_path() == path.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| gitkraft_core::DiffInfo {
+                        old_file: String::new(),
+                        new_file: path.clone(),
+                        status: gitkraft_core::FileStatus::Modified,
+                        hunks: Vec::new(),
+                    });
+
+                col = col.push(menu_item("View diff", Message::SelectDiff(diff)));
+                col = col.push(menu_item("Stage file", Message::StageFile(path.clone())));
+                col = col.push(view_utils::context_menu_separator::<Message>());
+                col = col.push(menu_item(
+                    "Discard changes",
+                    Message::DiscardFile(path.clone()),
+                ));
+            }
+
+            col = col.push(view_utils::context_menu_separator::<Message>());
+            col = col.push(menu_item("Copy file path", Message::CopyText(path.clone())));
+            col = col.push(menu_item(
+                "Open in editor",
+                Message::OpenInEditor(path.clone()),
+            ));
+            col = col.push(menu_item(
+                "Open in default program",
+                Message::OpenInDefaultProgram(path.clone()),
+            ));
+            col = col.push(menu_item(
+                "Show in folder",
+                Message::ShowInFolder(path.clone()),
+            ));
+
+            col.into()
+        }
+
+        Some(crate::state::ContextMenu::StagedFile { path }) => {
+            let selected_count = state.active_tab().selected_staged.len();
+            let is_multi = selected_count > 1;
+
+            let header_text = if is_multi {
+                format!("{} files selected", selected_count)
+            } else {
+                format!("Staged: {}", path.rsplit('/').next().unwrap_or(path))
+            };
+            let header = view_utils::context_menu_header::<Message>(header_text, c.muted);
+
+            let mut col = column![header];
+
+            if is_multi {
+                col = col.push(menu_item(
+                    &format!("Unstage {} file(s)", selected_count),
+                    Message::UnstageSelected,
+                ));
+                col = col.push(view_utils::context_menu_separator::<Message>());
+                col = col.push(menu_item(
+                    &format!("Discard {} file(s)", selected_count),
+                    Message::DiscardSelected,
+                ));
+            } else {
+                let diff = state
+                    .active_tab()
+                    .staged_changes
+                    .iter()
+                    .find(|d| d.display_path() == path.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| gitkraft_core::DiffInfo {
+                        old_file: String::new(),
+                        new_file: path.clone(),
+                        status: gitkraft_core::FileStatus::Modified,
+                        hunks: Vec::new(),
+                    });
+
+                col = col.push(menu_item("View diff", Message::SelectDiff(diff)));
+                col = col.push(menu_item(
+                    "Unstage file",
+                    Message::UnstageFile(path.clone()),
+                ));
+                col = col.push(view_utils::context_menu_separator::<Message>());
+                col = col.push(menu_item(
+                    "Discard changes",
+                    Message::DiscardStagedFile(path.clone()),
+                ));
+            }
+
+            col = col.push(view_utils::context_menu_separator::<Message>());
+            col = col.push(menu_item("Copy file path", Message::CopyText(path.clone())));
+            col = col.push(menu_item(
+                "Open in editor",
+                Message::OpenInEditor(path.clone()),
+            ));
+            col = col.push(menu_item(
+                "Open in default program",
+                Message::OpenInDefaultProgram(path.clone()),
+            ));
+            col = col.push(menu_item(
+                "Show in folder",
+                Message::ShowInFolder(path.clone()),
+            ));
+
+            col.into()
+        }
+
+        Some(crate::state::ContextMenu::CommitFile { oid, file_path }) => {
+            let file_name = file_path.rsplit('/').next().unwrap_or(file_path);
+            let header =
+                view_utils::context_menu_header::<Message>(format!("File: {}", file_name), c.muted);
+
+            column![
+                header,
+                menu_item(
+                    "Diff with working tree",
+                    Message::DiffFileWithWorkingTree(oid.clone(), file_path.clone()),
+                ),
+                view_utils::context_menu_separator::<Message>(),
+                menu_item("Copy file path", Message::CopyText(file_path.clone()),),
+                menu_item("Copy commit SHA", Message::CopyText(oid.clone()),),
+                menu_item("Open in editor", Message::OpenInEditor(file_path.clone()),),
+                menu_item("Show in folder", Message::ShowInFolder(file_path.clone()),),
             ]
             .into()
         }

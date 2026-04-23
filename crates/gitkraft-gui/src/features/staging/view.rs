@@ -2,7 +2,9 @@
 //! message input side-by-side as three columns at the bottom of the main
 //! layout.
 
-use iced::widget::{button, column, container, row, scrollable, text, text_input, Space};
+use iced::widget::{
+    button, column, container, mouse_area, row, scrollable, text, text_input, Space,
+};
 use iced::{Alignment, Element, Font, Length};
 
 use crate::icons;
@@ -74,7 +76,17 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
                 .font(Font::MONOSPACE)
                 .color(status_color);
 
-            let file_label = text(file_path_display).size(12).color(c.text_primary);
+            let is_selected = tab.selected_unstaged.contains(file_path_display);
+
+            let name_color = if is_selected {
+                c.accent
+            } else {
+                c.text_primary
+            };
+            let file_label = text(file_path_display)
+                .size(12)
+                .color(name_color)
+                .wrapping(iced::widget::text::Wrapping::None);
 
             let view_btn = button(icon!(icons::CLOUD_UPLOAD, 11, c.accent))
                 .padding([2, 4])
@@ -86,18 +98,10 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
                 .style(theme::icon_button)
                 .on_press(Message::StageFile(file_path_display.to_string()));
 
-            let is_pending_discard = tab.pending_discard.as_deref() == Some(file_path_display);
-            let discard_btn = if is_pending_discard {
-                button(text("Confirm?").size(10).color(c.red))
-                    .padding([2, 6])
-                    .style(theme::toolbar_button)
-                    .on_press(Message::ConfirmDiscard(file_path_display.to_string()))
-            } else {
-                button(icon!(icons::TRASH, 11, c.red))
-                    .padding([2, 4])
-                    .style(theme::icon_button)
-                    .on_press(Message::DiscardFile(file_path_display.to_string()))
-            };
+            let discard_btn = button(icon!(icons::TRASH, 11, c.red))
+                .padding([2, 4])
+                .style(theme::icon_button)
+                .on_press(Message::DiscardFile(file_path_display.to_string()));
 
             let file_row = row![
                 status_badge,
@@ -113,7 +117,18 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
             .align_y(Alignment::Center)
             .padding([2, 8]);
 
-            container(file_row).width(Length::Fill).into()
+            let row_style = if is_selected {
+                theme::selected_row_style as fn(&iced::Theme) -> iced::widget::container::Style
+            } else {
+                theme::surface_style as fn(&iced::Theme) -> iced::widget::container::Style
+            };
+
+            mouse_area(container(file_row).width(Length::Fill).style(row_style))
+                .on_press(Message::ToggleSelectUnstaged(file_path_display.to_string()))
+                .on_right_press(Message::OpenUnstagedFileContextMenu(
+                    file_path_display.to_string(),
+                ))
+                .into()
         })
         .collect();
 
@@ -186,7 +201,17 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
                 .font(Font::MONOSPACE)
                 .color(status_color);
 
-            let file_label = text(file_path_display).size(12).color(c.text_primary);
+            let is_selected = tab.selected_staged.contains(file_path_display);
+
+            let name_color = if is_selected {
+                c.accent
+            } else {
+                c.text_primary
+            };
+            let file_label = text(file_path_display)
+                .size(12)
+                .color(name_color)
+                .wrapping(iced::widget::text::Wrapping::None);
 
             let view_btn = button(icon!(icons::CLOUD_UPLOAD, 11, c.accent))
                 .padding([2, 4])
@@ -210,7 +235,18 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
             .align_y(Alignment::Center)
             .padding([2, 8]);
 
-            container(file_row).width(Length::Fill).into()
+            let row_style = if is_selected {
+                theme::selected_row_style as fn(&iced::Theme) -> iced::widget::container::Style
+            } else {
+                theme::surface_style as fn(&iced::Theme) -> iced::widget::container::Style
+            };
+
+            mouse_area(container(file_row).width(Length::Fill).style(row_style))
+                .on_press(Message::ToggleSelectStaged(file_path_display.to_string()))
+                .on_right_press(Message::OpenStagedFileContextMenu(
+                    file_path_display.to_string(),
+                ))
+                .into()
         })
         .collect();
 

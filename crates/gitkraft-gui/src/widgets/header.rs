@@ -5,6 +5,7 @@
 use iced::widget::{button, container, row, text, Space};
 use iced::{Alignment, Element, Length};
 
+use crate::features::editor::editor_selector;
 use crate::features::theme::view::theme_selector;
 use crate::icons;
 use crate::message::Message;
@@ -133,6 +134,8 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         close_btn,
         Space::new().width(8),
         theme_selector(state.current_theme_index),
+        Space::new().width(4),
+        editor_selector(&state.editor),
     ]
     .align_y(Alignment::Center);
 

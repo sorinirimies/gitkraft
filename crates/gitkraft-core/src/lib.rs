@@ -18,6 +18,7 @@ pub use features::commits::CommitInfo;
 pub use features::diff::{
     DiffFileEntry, DiffHunk, DiffInfo, DiffLine, FileStatus, StatusColorCategory,
 };
+pub use features::editor::{open_file_default, show_in_folder, Editor, EDITOR_NAMES};
 pub use features::graph::{GraphEdge, GraphRow};
 pub use features::persistence::{AppSettings, LayoutSettings, RepoHistoryEntry};
 pub use features::remotes::RemoteInfo;

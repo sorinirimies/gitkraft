@@ -52,6 +52,43 @@ pub fn stash_drop(path: PathBuf, index: usize) -> Task<Message> {
     )
 }
 
+/// Load the diff for a stash entry.
+pub fn load_stash_diff(path: PathBuf, index: usize) -> Task<Message> {
+    git_task!(
+        Message::StashDiffLoaded,
+        (|| {
+            let mut repo = open_repo!(&path);
+            // Get the stash commit OID
+            let mut stash_oid = None;
+            repo.stash_foreach(|i, _msg, oid| {
+                if i == index {
+                    stash_oid = Some(oid.to_string());
+                    false // stop iterating
+                } else {
+                    true
+                }
+            })
+            .map_err(|e| e.to_string())?;
+
+            let oid = stash_oid.ok_or_else(|| format!("stash@{{{index}}} not found"))?;
+            let repo = open_repo!(&path); // reopen as immutable
+            gitkraft_core::features::diff::get_commit_diff(&repo, &oid).map_err(|e| e.to_string())
+        })()
+    )
+}
+
+/// Apply a stash entry (like pop but keeps it in the stash list).
+pub fn stash_apply(path: PathBuf, index: usize) -> Task<Message> {
+    git_task!(
+        Message::StashUpdated,
+        (|| {
+            let mut repo = open_repo!(&path);
+            repo.stash_apply(index, None).map_err(|e| e.to_string())?;
+            refresh_stash_list(&path)
+        })()
+    )
+}
+
 // ── Helper ────────────────────────────────────────────────────────────────────
 
 /// Re-read the stash list so the caller can update the UI in one shot.

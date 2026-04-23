@@ -111,6 +111,7 @@ where
         // stage, commit, etc.) before drawing so the UI reflects the
         // latest state.
         app.poll_background();
+        app.maybe_auto_refresh();
 
         terminal.draw(|frame| layout::render(&mut app, frame))?;
 

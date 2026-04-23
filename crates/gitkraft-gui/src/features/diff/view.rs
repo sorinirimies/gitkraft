@@ -10,7 +10,7 @@
 //! widget tree small even for multi-thousand-line diffs.
 
 use gitkraft_core::{DiffInfo, DiffLine};
-use iced::widget::{button, column, container, row, scrollable, text, Space};
+use iced::widget::{button, column, container, mouse_area, row, scrollable, text, Space};
 use iced::{Alignment, Element, Font, Length};
 
 use crate::icons;
@@ -35,7 +35,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     match &tab.selected_diff {
         Some(diff) => {
-            if tab.commit_files.len() > 1 {
+            if !tab.commit_files.is_empty() {
                 // Multiple files in this commit — show file list + divider + diff side by side.
                 let file_list = commit_file_list(state, &c, state.diff_file_list_width);
                 let divider = crate::widgets::divider::vertical_divider(
@@ -118,6 +118,7 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
     .padding([6, 8]);
 
     let mut file_list_col = column![].spacing(1).width(Length::Fill);
+    let oid_for_menu = tab.selected_commit_oid.clone().unwrap_or_default();
 
     for (idx, diff) in tab.commit_files.iter().enumerate() {
         // Extract just the filename for a compact display
@@ -181,11 +182,17 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
             .style(theme::ghost_button)
             .on_press(Message::SelectDiffByIndex(idx));
 
-        let file_row = container(file_btn)
-            .width(Length::Fill)
-            .height(Length::Fixed(26.0))
-            .clip(true)
-            .style(style_fn);
+        let file_row = mouse_area(
+            container(file_btn)
+                .width(Length::Fill)
+                .height(Length::Fixed(26.0))
+                .clip(true)
+                .style(style_fn),
+        )
+        .on_right_press(Message::OpenCommitFileContextMenu(
+            oid_for_menu.clone(),
+            diff.display_path().to_string(),
+        ));
 
         file_list_col = file_list_col.push(file_row);
     }

@@ -24,7 +24,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     };
 
     // Split into file list + diff content when there are multiple files
-    if app.tab().commit_files.len() > 1 {
+    if !app.tab().commit_files.is_empty() {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(30), Constraint::Min(20)])

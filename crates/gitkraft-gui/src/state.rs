@@ -42,6 +42,14 @@ pub enum ContextMenu {
     RemoteBranch { name: String },
     /// A commit in the log.
     Commit { index: usize, oid: String },
+    /// A stash entry.
+    Stash { index: usize },
+    /// An unstaged file in the staging area.
+    UnstagedFile { path: String },
+    /// A staged file in the staging area.
+    StagedFile { path: String },
+    /// A file in a commit diff.
+    CommitFile { oid: String, file_path: String },
 }
 
 // ── Per-repository tab state ──────────────────────────────────────────────────
@@ -107,6 +115,11 @@ pub struct RepoTab {
     pub remote_branches_expanded: bool,
     /// Text in the "stash message" input.
     pub stash_message: String,
+
+    /// Set of selected unstaged file paths (for multi-select with Shift+Click).
+    pub selected_unstaged: std::collections::HashSet<String>,
+    /// Set of selected staged file paths (for multi-select with Shift+Click).
+    pub selected_staged: std::collections::HashSet<String>,
 
     /// File path pending discard confirmation (None = no pending discard).
     pub pending_discard: Option<String>,
@@ -183,6 +196,8 @@ impl RepoTab {
             local_branches_expanded: true,
             remote_branches_expanded: true,
             stash_message: String::new(),
+            selected_unstaged: std::collections::HashSet::new(),
+            selected_staged: std::collections::HashSet::new(),
             pending_discard: None,
             status_message: None,
             error_message: None,
@@ -248,6 +263,8 @@ impl RepoTab {
         self.diff_scroll_offset = 0.0;
         self.has_more_commits = true;
         self.is_loading_more_commits = false;
+        self.selected_unstaged.clear();
+        self.selected_staged.clear();
     }
 }
 
@@ -317,6 +334,9 @@ pub struct GitKraft {
     pub search_results: Vec<gitkraft_core::CommitInfo>,
     /// Index of the selected search result.
     pub search_selected: Option<usize>,
+
+    /// Configured editor for "Open in editor" actions.
+    pub editor: gitkraft_core::Editor,
 }
 
 impl Default for GitKraft {
@@ -389,6 +409,25 @@ impl GitKraft {
             search_query: String::new(),
             search_results: Vec::new(),
             search_selected: None,
+
+            editor: settings
+                .editor_name
+                .as_deref()
+                .map(|name| {
+                    // Try to map persisted name back to Editor variant
+                    gitkraft_core::EDITOR_NAMES
+                        .iter()
+                        .position(|n| n.eq_ignore_ascii_case(name))
+                        .map(gitkraft_core::Editor::from_index)
+                        .unwrap_or_else(|| {
+                            if name.eq_ignore_ascii_case("none") {
+                                gitkraft_core::Editor::None
+                            } else {
+                                gitkraft_core::Editor::Custom(name.to_string())
+                            }
+                        })
+                })
+                .unwrap_or_else(detect_system_editor),
         }
     }
 
@@ -574,6 +613,28 @@ fn rgb_to_iced(rgb: gitkraft_core::Rgb) -> Color {
     Color::from_rgb8(rgb.r, rgb.g, rgb.b)
 }
 
+/// Try to detect the system's preferred editor from environment variables.
+fn detect_system_editor() -> gitkraft_core::Editor {
+    for var in ["VISUAL", "EDITOR"] {
+        if let Ok(val) = std::env::var(var) {
+            let bin = val.split('/').next_back().unwrap_or(&val).trim();
+            return match bin {
+                "nvim" | "neovim" => gitkraft_core::Editor::Neovim,
+                "vim" => gitkraft_core::Editor::Vim,
+                "hx" | "helix" => gitkraft_core::Editor::Helix,
+                "nano" => gitkraft_core::Editor::Nano,
+                "micro" => gitkraft_core::Editor::Micro,
+                "emacs" => gitkraft_core::Editor::Emacs,
+                "code" => gitkraft_core::Editor::VSCode,
+                "zed" => gitkraft_core::Editor::Zed,
+                "subl" => gitkraft_core::Editor::Sublime,
+                _ => gitkraft_core::Editor::Custom(val),
+            };
+        }
+    }
+    gitkraft_core::Editor::None
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -702,5 +763,75 @@ mod tests {
         assert!(state.search_query.is_empty());
         assert!(state.search_results.is_empty());
         assert!(state.search_selected.is_none());
+    }
+
+    #[test]
+    fn context_menu_variants_exist() {
+        // Verify all context menu variants can be constructed
+        use crate::state::ContextMenu;
+
+        let _branch = ContextMenu::Branch {
+            name: "main".to_string(),
+            is_current: true,
+            local_index: 0,
+        };
+        let _remote = ContextMenu::RemoteBranch {
+            name: "origin/main".to_string(),
+        };
+        let _commit = ContextMenu::Commit {
+            index: 0,
+            oid: "abc1234".to_string(),
+        };
+        let _stash = ContextMenu::Stash { index: 0 };
+        let _unstaged = ContextMenu::UnstagedFile {
+            path: "src/main.rs".to_string(),
+        };
+        let _staged = ContextMenu::StagedFile {
+            path: "src/lib.rs".to_string(),
+        };
+    }
+
+    #[test]
+    fn repo_tab_context_menu_defaults_to_none() {
+        let tab = crate::state::RepoTab::new_empty();
+        assert!(tab.context_menu.is_none());
+    }
+
+    #[test]
+    fn context_menu_variants_constructable() {
+        use crate::state::ContextMenu;
+        let _ = ContextMenu::Stash { index: 0 };
+        let _ = ContextMenu::UnstagedFile {
+            path: "a.rs".into(),
+        };
+        let _ = ContextMenu::StagedFile {
+            path: "b.rs".into(),
+        };
+    }
+
+    #[test]
+    fn selected_unstaged_defaults_empty() {
+        let tab = crate::state::RepoTab::new_empty();
+        assert!(tab.selected_unstaged.is_empty());
+        assert!(tab.selected_staged.is_empty());
+    }
+
+    #[test]
+    fn selected_unstaged_toggle() {
+        let mut tab = crate::state::RepoTab::new_empty();
+        tab.selected_unstaged.insert("a.rs".to_string());
+        tab.selected_unstaged.insert("b.rs".to_string());
+        assert_eq!(tab.selected_unstaged.len(), 2);
+        assert!(tab.selected_unstaged.contains("a.rs"));
+        tab.selected_unstaged.remove("a.rs");
+        assert_eq!(tab.selected_unstaged.len(), 1);
+        assert!(!tab.selected_unstaged.contains("a.rs"));
+    }
+
+    #[test]
+    fn detect_system_editor_returns_valid() {
+        // Just verify it doesn't panic
+        let editor = super::detect_system_editor();
+        let _ = editor.display_name();
     }
 }

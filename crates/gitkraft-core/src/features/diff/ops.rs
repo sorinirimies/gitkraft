@@ -148,6 +148,8 @@ pub fn get_single_file_diff(repo: &Repository, oid_str: &str, file_path: &str) -
 /// Return the diff of a file between a specific commit and the current working directory.
 ///
 /// This lets the user compare an old revision of a file with their current changes.
+/// If the file no longer exists in the working tree, shows the entire file as
+/// deleted (all lines removed). If the file is identical, returns an empty diff.
 pub fn diff_file_commit_vs_workdir(
     repo: &Repository,
     oid_str: &str,
@@ -163,16 +165,87 @@ pub fn diff_file_commit_vs_workdir(
     let mut opts = DiffOptions::new();
     opts.pathspec(file_path);
 
-    // Diff: commit tree → working directory (skipping the index)
+    // Diff: commit tree → working directory (including the index)
     let diff = repo
         .diff_tree_to_workdir_with_index(Some(&commit_tree), Some(&mut opts))
         .context("failed to diff commit tree against working directory")?;
 
     let infos = parse_diff(&diff)?;
-    infos
-        .into_iter()
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("file '{}' not found in diff", file_path))
+
+    if let Some(info) = infos.into_iter().next() {
+        return Ok(info);
+    }
+
+    // Empty diff — check WHY it's empty.
+    let in_commit = commit_tree
+        .get_path(std::path::Path::new(file_path))
+        .is_ok();
+
+    // Check if file exists in the working tree
+    let workdir = repo.workdir().context("bare repository")?;
+    let in_workdir = workdir.join(file_path).exists();
+
+    match (in_commit, in_workdir) {
+        (true, true) => {
+            // File exists in both — no changes (identical)
+            Ok(DiffInfo {
+                old_file: file_path.to_string(),
+                new_file: file_path.to_string(),
+                status: FileStatus::Modified,
+                hunks: vec![DiffHunk {
+                    header: "@@ No changes — file is identical @@".to_string(),
+                    lines: vec![DiffLine::HunkHeader(
+                        "@@ No changes — file is identical to working tree @@".to_string(),
+                    )],
+                }],
+            })
+        }
+        (true, false) => {
+            // File exists in commit but not in working tree — show as all-deleted
+            let blob_entry = commit_tree.get_path(std::path::Path::new(file_path))?;
+            let mut hunks = Vec::new();
+            if let Ok(blob) = repo.find_blob(blob_entry.id()) {
+                let content = String::from_utf8_lossy(blob.content());
+                let lines: Vec<DiffLine> = std::iter::once(DiffLine::HunkHeader(format!(
+                    "@@ File deleted since commit {} @@",
+                    &oid_str[..7.min(oid_str.len())]
+                )))
+                .chain(content.lines().map(|l| DiffLine::Deletion(l.to_string())))
+                .collect();
+
+                hunks.push(DiffHunk {
+                    header: lines
+                        .first()
+                        .map(|l| match l {
+                            DiffLine::HunkHeader(h) => h.clone(),
+                            _ => String::new(),
+                        })
+                        .unwrap_or_default(),
+                    lines,
+                });
+            }
+
+            Ok(DiffInfo {
+                old_file: file_path.to_string(),
+                new_file: String::new(),
+                status: FileStatus::Deleted,
+                hunks,
+            })
+        }
+        (false, true) => {
+            // File exists in working tree but not in commit — new file since commit
+            Err(anyhow::anyhow!(
+                "file '{}' did not exist at commit {} — it was added later",
+                file_path,
+                &oid_str[..7.min(oid_str.len())]
+            ))
+        }
+        (false, false) => Err(anyhow::anyhow!(
+            "file '{}' not found in commit {} or working tree — it may have been renamed",
+            file_path,
+            &oid_str[..7.min(oid_str.len())]
+        )),
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

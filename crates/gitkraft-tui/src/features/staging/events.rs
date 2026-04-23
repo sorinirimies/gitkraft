@@ -13,6 +13,38 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             navigate_up(app);
         }
 
+        // Toggle selection on current file
+        KeyCode::Char(' ') => {
+            let tab = app.tab_mut();
+            match tab.staging_focus {
+                StagingFocus::Unstaged => {
+                    if let Some(idx) = tab.unstaged_list_state.selected() {
+                        if tab.selected_unstaged.contains(&idx) {
+                            tab.selected_unstaged.remove(&idx);
+                        } else {
+                            tab.selected_unstaged.insert(idx);
+                        }
+                        // Auto-advance to next item
+                        if idx + 1 < tab.unstaged_changes.len() {
+                            tab.unstaged_list_state.select(Some(idx + 1));
+                        }
+                    }
+                }
+                StagingFocus::Staged => {
+                    if let Some(idx) = tab.staged_list_state.selected() {
+                        if tab.selected_staged.contains(&idx) {
+                            tab.selected_staged.remove(&idx);
+                        } else {
+                            tab.selected_staged.insert(idx);
+                        }
+                        if idx + 1 < tab.staged_changes.len() {
+                            tab.staged_list_state.select(Some(idx + 1));
+                        }
+                    }
+                }
+            }
+        }
+
         // Toggle focus between unstaged and staged sub-lists
         KeyCode::Tab => {
             let tab = app.tab_mut();
@@ -22,14 +54,37 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             };
         }
 
-        // Stage selected file
+        // Stage selected file(s)
         KeyCode::Char('s') => {
-            app.stage_selected();
+            let selected = app.tab().selected_unstaged.clone();
+            if !selected.is_empty() {
+                // Stage all selected files
+                let paths: Vec<String> = selected
+                    .iter()
+                    .filter_map(|&idx| app.tab().unstaged_changes.get(idx))
+                    .map(|d| d.display_path().to_string())
+                    .collect();
+                app.tab_mut().selected_unstaged.clear();
+                app.stage_files(paths);
+            } else {
+                app.stage_selected();
+            }
         }
 
-        // Unstage selected file
+        // Unstage selected file(s)
         KeyCode::Char('u') => {
-            app.unstage_selected();
+            let selected = app.tab().selected_staged.clone();
+            if !selected.is_empty() {
+                let paths: Vec<String> = selected
+                    .iter()
+                    .filter_map(|&idx| app.tab().staged_changes.get(idx))
+                    .map(|d| d.display_path().to_string())
+                    .collect();
+                app.tab_mut().selected_staged.clear();
+                app.unstage_files(paths);
+            } else {
+                app.unstage_selected();
+            }
         }
 
         // Stage all
@@ -42,9 +97,19 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             app.unstage_all();
         }
 
-        // Discard changes (with confirmation)
+        // Discard changes (with confirmation, or batch for multi-select)
         KeyCode::Char('d') => {
-            if app.tab().confirm_discard {
+            let selected = app.tab().selected_unstaged.clone();
+            if !selected.is_empty() {
+                // Discard all selected files directly (no confirmation for batch)
+                let paths: Vec<String> = selected
+                    .iter()
+                    .filter_map(|&idx| app.tab().unstaged_changes.get(idx))
+                    .map(|d| d.display_path().to_string())
+                    .collect();
+                app.tab_mut().selected_unstaged.clear();
+                app.discard_files(paths);
+            } else if app.tab().confirm_discard {
                 app.discard_selected();
             } else {
                 app.tab_mut().confirm_discard = true;
@@ -53,7 +118,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             }
         }
 
-        // Commit â enter input mode for commit message
+        // Commit – enter input mode for commit message
         KeyCode::Char('c') => {
             app.tab_mut().confirm_discard = false;
             app.input_buffer.clear();
@@ -66,6 +131,16 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Enter => {
             app.tab_mut().confirm_discard = false;
             app.load_staging_diff();
+            // Switch to diff pane so the user can see the loaded diff
+            if app.tab().selected_diff.is_some() {
+                app.active_pane = crate::app::ActivePane::DiffView;
+            }
+        }
+
+        // Open selected file in the configured editor
+        KeyCode::Char('e') => {
+            app.tab_mut().confirm_discard = false;
+            app.open_selected_in_editor();
         }
 
         // Stash save
