@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.7.2 - 2026-04-23
+### ➕ Added
+- Add editor selection support to GUI and TUI
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.7.1...v0.7.2
 ## 0.7.1 - 2026-04-23
 ### ➕ Added
 - Add commit search feature to GUI and TUI
@@ -20,6 +24,7 @@ All notable changes to this project will be documented in this file.
 - chore: add .zed/rules.md with project conventions for agents
 - chore(deps): nightly dependency upgrade 2026-04-23
 - chore: bump version to 0.7.0
+- chore: bump version to 0.7.1
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.6...v0.7.1
 ## 0.6.6 - 2026-04-21
 ### 🔧 Chores
