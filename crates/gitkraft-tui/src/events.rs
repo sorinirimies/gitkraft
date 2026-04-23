@@ -44,6 +44,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                                 // Check if it is a git repo
                                 if path.join(".git").exists() {
                                     app.screen = app.browser_return_screen.clone();
+                                    // If current tab already has a repo, open in a new tab
+                                    if app.tab().repo_path.is_some() {
+                                        app.new_tab();
+                                    }
                                     app.open_repo(path);
                                 } else {
                                     // Navigate into directory
@@ -69,6 +73,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                     if let Some(idx) = app.browser_list_state.selected() {
                         if let Some(path) = app.browser_entries.get(idx).cloned() {
                             app.screen = app.browser_return_screen.clone();
+                            // If current tab already has a repo, open in a new tab
+                            if app.tab().repo_path.is_some() {
+                                app.new_tab();
+                            }
                             app.open_repo(path);
                         }
                     }
