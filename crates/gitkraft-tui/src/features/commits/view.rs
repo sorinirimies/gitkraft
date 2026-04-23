@@ -161,12 +161,30 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         theme.border_inactive
     };
 
+    let title = if app.tab().search_active {
+        format!(
+            " Commit Log — Search: \"{}\" ({}) ",
+            app.tab().search_query,
+            app.tab().search_results.len()
+        )
+    } else {
+        format!(" Commit Log ({}) ", app.tab().commits.len())
+    };
+
     let block = Block::default()
-        .title(" Commit Log ")
+        .title(title)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
 
-    if app.tab().commits.is_empty() {
+    // Use search results if search is active, otherwise show the full commit list
+    let commits_to_show: &Vec<gitkraft_core::CommitInfo> =
+        if app.tab().search_active && !app.tab().search_results.is_empty() {
+            &app.tab().search_results
+        } else {
+            &app.tab().commits
+        };
+
+    if commits_to_show.is_empty() {
         let items: Vec<ListItem> = vec![ListItem::new(Line::from(vec![Span::styled(
             "  No commits yet",
             Style::default().fg(theme.text_muted),
@@ -177,9 +195,9 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         return;
     }
 
-    let items: Vec<ListItem> = app
-        .tab()
-        .commits
+    let show_graph = !app.tab().search_active || app.tab().search_results.is_empty();
+
+    let items: Vec<ListItem> = commits_to_show
         .iter()
         .enumerate()
         .map(|(idx, commit)| {
@@ -187,9 +205,13 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
 
             let relative = commit.relative_time();
 
-            // Build graph prefix spans for this row
-            let mut spans = if let Some(row) = app.tab().graph_rows.get(idx) {
-                build_graph_spans(row, &theme.graph_colors)
+            // Build graph prefix spans for this row (skip graph for search results)
+            let mut spans = if show_graph {
+                if let Some(row) = app.tab().graph_rows.get(idx) {
+                    build_graph_spans(row, &theme.graph_colors)
+                } else {
+                    vec![Span::raw("  ")]
+                }
             } else {
                 vec![Span::raw("  ")]
             };

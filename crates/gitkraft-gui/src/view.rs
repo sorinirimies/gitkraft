@@ -154,6 +154,14 @@ impl GitKraft {
             .on_release(Message::PaneDragEnd)
             .into();
 
+        // ── Search overlay ────────────────────────────────────────────────
+        let ma: Element<'_, Message> = if self.search_visible {
+            let search_panel = search_overlay(self, &c);
+            iced::widget::stack![ma, search_panel].into()
+        } else {
+            ma
+        };
+
         // ── Context menu overlay ──────────────────────────────────────────
         if self.active_tab().context_menu.is_some() {
             // Transparent full-screen backdrop — clicking it dismisses the menu.
@@ -294,6 +302,132 @@ fn context_menu_position(state: &GitKraft) -> (f32, f32) {
     // Nudge right/down by 2 px so the pointer tip sits just inside the panel.
     let (x, y) = state.active_tab().context_menu_pos;
     ((x + 2.0).max(2.0), (y + 2.0).max(2.0))
+}
+
+/// Render the search overlay — a centered panel with an input and results list.
+fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Message> {
+    use iced::widget::{
+        button, column, container, mouse_area, row, scrollable, text, text_input, Space,
+    };
+    use iced::{Alignment, Length};
+
+    let input = text_input("Search commits…", &state.search_query)
+        .on_input(Message::SearchQueryChanged)
+        .on_submit(Message::ConfirmSearchResult)
+        .padding(10)
+        .size(16);
+
+    let mut results_col = column![].spacing(2).width(Length::Fill);
+
+    if state.search_results.is_empty() && state.search_query.len() >= 2 {
+        results_col = results_col.push(
+            container(text("No results found").size(13).color(c.muted))
+                .padding([12, 8])
+                .width(Length::Fill)
+                .center_x(Length::Fill),
+        );
+    }
+
+    for (i, commit) in state.search_results.iter().take(50).enumerate() {
+        let is_selected = state.search_selected == Some(i);
+        let bg_style = if is_selected {
+            theme::selected_row_style as fn(&iced::Theme) -> iced::widget::container::Style
+        } else {
+            theme::surface_style as fn(&iced::Theme) -> iced::widget::container::Style
+        };
+
+        let oid_label = text(&commit.short_oid)
+            .size(12)
+            .color(c.accent)
+            .font(iced::Font::MONOSPACE);
+
+        let summary_label = text(&commit.summary).size(13).color(c.text_primary);
+
+        let author_label = text(&commit.author_name).size(11).color(c.text_secondary);
+
+        let time_label = text(commit.relative_time()).size(11).color(c.muted);
+
+        let row_content = row![
+            oid_label,
+            Space::new().width(8),
+            summary_label,
+            Space::new().width(Length::Fill),
+            author_label,
+            Space::new().width(8),
+            time_label,
+        ]
+        .align_y(Alignment::Center)
+        .padding([6, 10]);
+
+        let result_btn = button(row_content)
+            .padding(0)
+            .width(Length::Fill)
+            .style(theme::ghost_button)
+            .on_press(Message::ConfirmSearchResult);
+
+        let result_row: Element<'a, Message> =
+            mouse_area(container(result_btn).width(Length::Fill).style(bg_style))
+                .on_press(Message::SelectSearchResult(i))
+                .into();
+
+        results_col = results_col.push(result_row);
+    }
+
+    let result_count = if !state.search_results.is_empty() {
+        text(format!("{} result(s)", state.search_results.len()))
+            .size(11)
+            .color(c.muted)
+    } else {
+        text("").size(1)
+    };
+
+    let close_btn = button(text("\u{2715}").size(14).color(c.text_secondary))
+        .padding([4, 8])
+        .style(theme::ghost_button)
+        .on_press(Message::ToggleSearch);
+
+    let header = row![
+        icon!(icons::CLOCK_HISTORY, 16, c.accent),
+        Space::new().width(8),
+        text("Search Commits").size(16).color(c.text_primary),
+        Space::new().width(Length::Fill),
+        result_count,
+        Space::new().width(8),
+        close_btn,
+    ]
+    .align_y(Alignment::Center)
+    .padding([8, 12]);
+
+    let scrollable_results = scrollable(results_col)
+        .height(Length::Fill)
+        .direction(crate::view_utils::thin_scrollbar())
+        .style(crate::theme::overlay_scrollbar);
+
+    let panel = container(
+        column![header, input, scrollable_results,]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .spacing(4),
+    )
+    .width(700)
+    .height(500)
+    .style(theme::context_menu_style)
+    .padding(8);
+
+    // Center the panel on screen with a backdrop
+    let backdrop = mouse_area(
+        container(Space::new().width(Length::Fill).height(Length::Fill))
+            .style(theme::backdrop_style),
+    )
+    .on_press(Message::ToggleSearch);
+
+    let centered = container(panel)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill);
+
+    iced::widget::stack![backdrop, centered].into()
 }
 
 /// Build the context menu panel widget for the currently active menu.

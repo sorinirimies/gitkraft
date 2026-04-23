@@ -83,6 +83,8 @@ fn handle_key_press(
             Key::Character(ref c) if c.as_str() == "-" => Some(gitkraft_gui::Message::ZoomOut),
             // Ctrl/Cmd + 0 — reset zoom
             Key::Character(ref c) if c.as_str() == "0" => Some(gitkraft_gui::Message::ZoomReset),
+            // Ctrl/Cmd + F — toggle search
+            Key::Character(ref c) if c.as_str() == "f" => Some(gitkraft_gui::Message::ToggleSearch),
             _ => None,
         }
     } else {

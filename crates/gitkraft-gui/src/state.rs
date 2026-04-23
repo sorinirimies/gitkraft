@@ -307,6 +307,16 @@ pub struct GitKraft {
     // ── Persistence ───────────────────────────────────────────────────────
     /// Recently opened repositories (loaded from settings on startup).
     pub recent_repos: Vec<gitkraft_core::RepoHistoryEntry>,
+
+    // ── Search ────────────────────────────────────────────────────────────
+    /// Whether the search overlay is visible.
+    pub search_visible: bool,
+    /// Current search query text.
+    pub search_query: String,
+    /// Search results (commit infos matching the query).
+    pub search_results: Vec<gitkraft_core::CommitInfo>,
+    /// Index of the selected search result.
+    pub search_selected: Option<usize>,
 }
 
 impl Default for GitKraft {
@@ -374,6 +384,11 @@ impl GitKraft {
             current_theme_index,
 
             recent_repos,
+
+            search_visible: false,
+            search_query: String::new(),
+            search_results: Vec::new(),
+            search_selected: None,
         }
     }
 
@@ -678,5 +693,14 @@ mod tests {
         tab.repo_path = Some(std::path::PathBuf::from("/some/path/cool-repo"));
         assert!(tab.has_repo());
         assert_eq!(tab.display_name(), "cool-repo");
+    }
+
+    #[test]
+    fn search_defaults() {
+        let state = GitKraft::new();
+        assert!(!state.search_visible);
+        assert!(state.search_query.is_empty());
+        assert!(state.search_results.is_empty());
+        assert!(state.search_selected.is_none());
     }
 }

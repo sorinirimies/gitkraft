@@ -284,6 +284,18 @@ pub enum Message {
     ThemeChanged(usize),
     /// User clicked a recent repository entry on the welcome screen.
     OpenRecentRepo(PathBuf),
+    // ── Search ────────────────────────────────────────────────────────────
+    /// Toggle the search overlay.
+    ToggleSearch,
+    /// User typed in the search input.
+    SearchQueryChanged(String),
+    /// Search results arrived from the background.
+    SearchResultsLoaded(Result<Vec<gitkraft_core::CommitInfo>, String>),
+    /// User selected a search result (by index).
+    SelectSearchResult(usize),
+    /// User confirmed the selected search result (Enter).
+    ConfirmSearchResult,
+
     /// No-op (used for disabled buttons, etc.).
     Noop,
 }

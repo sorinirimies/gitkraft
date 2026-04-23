@@ -35,6 +35,18 @@ pub fn load_single_file_diff(path: PathBuf, oid: String, file_path: String) -> T
 }
 
 /// Create a new commit with the currently staged changes.
+/// Search commits by query string (searches message, author, SHA).
+pub fn search_commits(path: PathBuf, query: String) -> Task<Message> {
+    git_task!(
+        Message::SearchResultsLoaded,
+        (|| {
+            let repo = open_repo!(&path);
+            gitkraft_core::features::log::search_commits(&repo, &query, 100)
+                .map_err(|e| e.to_string())
+        })()
+    )
+}
+
 pub fn create_commit(path: PathBuf, message: String) -> Task<Message> {
     git_task!(
         Message::CommitCreated,

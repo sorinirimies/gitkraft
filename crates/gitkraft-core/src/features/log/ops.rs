@@ -213,4 +213,19 @@ mod tests {
         let results = search_commits(&repo, "BOB", 100).unwrap();
         assert_eq!(results.len(), 1);
     }
+
+    #[test]
+    fn search_commits_empty_query_returns_all() {
+        let (_dir, repo) = setup_repo_with_commits();
+        let results = search_commits(&repo, "", 100).unwrap();
+        // Empty string matches everything
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn search_commits_no_match() {
+        let (_dir, repo) = setup_repo_with_commits();
+        let results = search_commits(&repo, "zzzznonexistent", 100).unwrap();
+        assert!(results.is_empty());
+    }
 }

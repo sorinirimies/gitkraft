@@ -145,6 +145,36 @@ pub fn get_single_file_diff(repo: &Repository, oid_str: &str, file_path: &str) -
         .ok_or_else(|| anyhow::anyhow!("file '{}' not found in commit diff", file_path))
 }
 
+/// Return the diff of a file between a specific commit and the current working directory.
+///
+/// This lets the user compare an old revision of a file with their current changes.
+pub fn diff_file_commit_vs_workdir(
+    repo: &Repository,
+    oid_str: &str,
+    file_path: &str,
+) -> Result<DiffInfo> {
+    let oid =
+        git2::Oid::from_str(oid_str).with_context(|| format!("invalid OID string: {oid_str}"))?;
+    let commit = repo
+        .find_commit(oid)
+        .with_context(|| format!("commit {oid_str} not found"))?;
+    let commit_tree = commit.tree().context("commit has no tree")?;
+
+    let mut opts = DiffOptions::new();
+    opts.pathspec(file_path);
+
+    // Diff: commit tree → working directory (skipping the index)
+    let diff = repo
+        .diff_tree_to_workdir_with_index(Some(&commit_tree), Some(&mut opts))
+        .context("failed to diff commit tree against working directory")?;
+
+    let infos = parse_diff(&diff)?;
+    infos
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("file '{}' not found in diff", file_path))
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Walk every delta / hunk / line in a `git2::Diff` and produce our domain
@@ -360,6 +390,20 @@ mod tests {
         let diff = get_single_file_diff(&repo, &head_oid, "hello.txt").unwrap();
         assert_eq!(diff.new_file, "hello.txt");
         assert_eq!(diff.status, FileStatus::New);
+        assert!(!diff.hunks.is_empty());
+    }
+
+    #[test]
+    fn diff_file_commit_vs_workdir_shows_changes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = init_repo_with_commit(tmp.path());
+        let head_oid = repo.head().unwrap().target().unwrap().to_string();
+
+        // Modify the file in the working directory
+        std::fs::write(tmp.path().join("hello.txt"), "Modified content!\n").unwrap();
+
+        let diff = diff_file_commit_vs_workdir(&repo, &head_oid, "hello.txt").unwrap();
+        assert_eq!(diff.new_file, "hello.txt");
         assert!(!diff.hunks.is_empty());
     }
 

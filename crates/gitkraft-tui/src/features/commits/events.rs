@@ -12,33 +12,66 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             navigate_up(app);
         }
         KeyCode::Enter => {
-            app.load_commit_diff();
+            // Load the diff for the selected commit
+            if let Some(idx) = app.tab().commit_list_state.selected() {
+                let commits = if app.tab().search_active && !app.tab().search_results.is_empty() {
+                    &app.tab().search_results
+                } else {
+                    &app.tab().commits
+                };
+                if idx < commits.len() {
+                    let oid = commits[idx].oid.clone();
+                    app.tab_mut().selected_commit_oid = Some(oid);
+                    app.load_commit_diff_by_oid();
+                }
+            }
         }
-        KeyCode::Char('g') if !app.tab().commits.is_empty() => {
-            // Jump to first commit
-            app.tab_mut().commit_list_state.select(Some(0));
+        KeyCode::Char('g') => {
+            let len = active_commits_len(app);
+            if len > 0 {
+                // Jump to first commit
+                app.tab_mut().commit_list_state.select(Some(0));
+            }
         }
-        KeyCode::Char('G') if !app.tab().commits.is_empty() => {
-            // Jump to last commit
-            let last = app.tab().commits.len() - 1;
-            app.tab_mut().commit_list_state.select(Some(last));
+        KeyCode::Char('G') => {
+            let len = active_commits_len(app);
+            if len > 0 {
+                // Jump to last commit
+                app.tab_mut().commit_list_state.select(Some(len - 1));
+            }
         }
         KeyCode::Esc => {
-            app.tab_mut().commit_list_state.select(None);
+            if app.tab().search_active {
+                app.tab_mut().search_active = false;
+                app.tab_mut().search_results.clear();
+                app.tab_mut().search_query.clear();
+                app.tab_mut().status_message = Some("Search cleared".into());
+            } else {
+                app.tab_mut().commit_list_state.select(None);
+            }
         }
         _ => {}
     }
 }
 
+/// Return the length of the currently visible commit list (search results or all commits).
+fn active_commits_len(app: &App) -> usize {
+    if app.tab().search_active && !app.tab().search_results.is_empty() {
+        app.tab().search_results.len()
+    } else {
+        app.tab().commits.len()
+    }
+}
+
 /// Move commit selection down by one.
 pub fn navigate_down(app: &mut App) {
-    if app.tab().commits.is_empty() {
+    let len = active_commits_len(app);
+    if len == 0 {
         return;
     }
-    let tab = app.tab_mut();
-    let i = match tab.commit_list_state.selected() {
+    let i = match app.tab().commit_list_state.selected() {
         Some(i) => {
-            if i >= tab.commits.len() - 1 {
+            if i >= len - 1 {
                 i
             } else {
                 i + 1
@@ -46,16 +79,16 @@ pub fn navigate_down(app: &mut App) {
         }
         None => 0,
     };
-    tab.commit_list_state.select(Some(i));
+    app.tab_mut().commit_list_state.select(Some(i));
 }
 
 /// Move commit selection up by one.
 pub fn navigate_up(app: &mut App) {
-    if app.tab().commits.is_empty() {
+    let len = active_commits_len(app);
+    if len == 0 {
         return;
     }
-    let tab = app.tab_mut();
-    let i = match tab.commit_list_state.selected() {
+    let i = match app.tab().commit_list_state.selected() {
         Some(i) => {
             if i == 0 {
                 0
@@ -65,5 +98,5 @@ pub fn navigate_up(app: &mut App) {
         }
         None => 0,
     };
-    tab.commit_list_state.select(Some(i));
+    app.tab_mut().commit_list_state.select(Some(i));
 }

@@ -128,6 +128,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 KeyCode::Char('[') => {
                     app.prev_tab();
                 }
+                KeyCode::Char('/') => {
+                    app.input_mode = InputMode::Input;
+                    app.input_purpose = InputPurpose::SearchQuery;
+                    app.input_buffer.clear();
+                    app.tab_mut().status_message = Some("Search commits:".into());
+                }
                 // Arrow left/right: switch panes
                 KeyCode::Left => cycle_pane_backward(app),
                 KeyCode::Right => cycle_pane_forward(app),
@@ -248,9 +254,10 @@ fn submit_input(app: &mut App) {
             app.open_repo(path);
         }
         InputPurpose::SearchQuery => {
-            // Search is not fully wired yet; clear buffer for now
-            app.tab_mut().status_message = Some(format!("Search: {}", app.input_buffer));
+            let query = app.input_buffer.clone();
             app.input_buffer.clear();
+            app.tab_mut().search_active = true;
+            app.search_commits(query);
         }
         InputPurpose::StashMessage => {
             app.tab_mut().stash_message_buffer = app.input_buffer.clone();
@@ -338,5 +345,72 @@ mod tests {
         handle_key(&mut app, key(KeyCode::Esc));
         assert_eq!(app.input_mode, InputMode::Normal);
         assert!(app.input_buffer.is_empty());
+    }
+
+    #[test]
+    fn slash_enters_search_mode() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        handle_key(&mut app, key(KeyCode::Char('/')));
+        assert_eq!(app.input_mode, InputMode::Input);
+        assert_eq!(app.input_purpose, InputPurpose::SearchQuery);
+    }
+
+    #[test]
+    fn bracket_right_switches_tab() {
+        let mut app = App::new();
+        app.new_tab();
+        app.active_tab_index = 0; // go back to first
+        app.screen = AppScreen::Main;
+        handle_key(&mut app, key(KeyCode::Char(']')));
+        assert_eq!(app.active_tab_index, 1);
+    }
+
+    #[test]
+    fn bracket_left_switches_tab() {
+        let mut app = App::new();
+        app.new_tab();
+        // active = 1
+        app.screen = AppScreen::Main;
+        handle_key(&mut app, key(KeyCode::Char('[')));
+        assert_eq!(app.active_tab_index, 0);
+    }
+
+    #[test]
+    fn shift_n_creates_new_tab() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        handle_key(&mut app, key(KeyCode::Char('N')));
+        assert_eq!(app.tabs.len(), 2);
+        assert_eq!(app.screen, AppScreen::Welcome);
+    }
+
+    #[test]
+    fn shift_w_closes_tab() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.new_tab();
+        assert_eq!(app.tabs.len(), 2);
+        app.screen = AppScreen::Main; // new_tab sets Welcome
+        handle_key(&mut app, key(KeyCode::Char('W')));
+        assert_eq!(app.tabs.len(), 1);
+    }
+
+    #[test]
+    fn arrow_right_switches_pane() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        assert_eq!(app.active_pane, ActivePane::Branches);
+        handle_key(&mut app, key(KeyCode::Right));
+        assert_eq!(app.active_pane, ActivePane::CommitLog);
+    }
+
+    #[test]
+    fn arrow_left_switches_pane() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        assert_eq!(app.active_pane, ActivePane::Branches);
+        handle_key(&mut app, key(KeyCode::Left));
+        assert_eq!(app.active_pane, ActivePane::Staging);
     }
 }

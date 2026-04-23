@@ -110,6 +110,35 @@ pub fn reset_to_commit(workdir: &std::path::Path, oid_str: &str, mode: &str) -> 
     Ok(())
 }
 
+/// Retrieve the content of a file at a specific commit.
+///
+/// Returns the file content as a UTF-8 string. Returns an error if the file
+/// doesn't exist at that commit or isn't valid UTF-8.
+pub fn get_file_at_commit(
+    repo: &Repository,
+    oid_str: &str,
+    file_path: &str,
+) -> anyhow::Result<String> {
+    let oid = git2::Oid::from_str(oid_str).with_context(|| format!("invalid OID: {oid_str}"))?;
+    let commit = repo
+        .find_commit(oid)
+        .with_context(|| format!("commit {oid_str} not found"))?;
+    let tree = commit.tree().context("commit has no tree")?;
+
+    let entry = tree
+        .get_path(std::path::Path::new(file_path))
+        .with_context(|| format!("file '{file_path}' not found at commit {oid_str}"))?;
+
+    let blob = repo
+        .find_blob(entry.id())
+        .with_context(|| format!("could not read blob for '{file_path}'"))?;
+
+    let content = std::str::from_utf8(blob.content())
+        .with_context(|| format!("file '{file_path}' is not valid UTF-8"))?;
+
+    Ok(content.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,5 +188,38 @@ mod tests {
         let info = get_repo_info(&repo).unwrap();
         // git init creates branch "master" by default (unless configured otherwise).
         assert!(info.head_branch.is_some());
+    }
+
+    fn setup_repo_with_commit() -> (TempDir, Repository) {
+        let tmp = TempDir::new().unwrap();
+        let repo = init_repo(tmp.path()).unwrap();
+        let sig = git2::Signature::now("Test", "test@test.com").unwrap();
+        std::fs::write(tmp.path().join("file.txt"), "hello\n").unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            index.add_path(std::path::Path::new("file.txt")).unwrap();
+            index.write().unwrap();
+            let tree_oid = index.write_tree().unwrap();
+            let tree = repo.find_tree(tree_oid).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+                .unwrap();
+        }
+        (tmp, repo)
+    }
+
+    #[test]
+    fn get_file_at_commit_returns_content() {
+        let (_dir, repo) = setup_repo_with_commit();
+        let head_oid = repo.head().unwrap().target().unwrap().to_string();
+        let content = get_file_at_commit(&repo, &head_oid, "file.txt").unwrap();
+        assert_eq!(content, "hello\n");
+    }
+
+    #[test]
+    fn get_file_at_commit_not_found() {
+        let (_dir, repo) = setup_repo_with_commit();
+        let head_oid = repo.head().unwrap().target().unwrap().to_string();
+        let result = get_file_at_commit(&repo, &head_oid, "nonexistent.txt");
+        assert!(result.is_err());
     }
 }

@@ -5,6 +5,64 @@ use std::sync::mpsc;
 
 use gitkraft_core::*;
 
+// ── Background task macros ────────────────────────────────────────────────────
+
+/// Spawn a background task that requires a repo path.
+///
+/// Extracts `repo_path` from the active tab, sets `is_loading = true` and
+/// a status message, clones `bg_tx`, then spawns a thread that runs `$body`
+/// and sends the result wrapped in `$variant`.
+///
+/// `$body` may use `?` – it is executed inside an immediately-invoked closure.
+macro_rules! bg_task {
+    ($self:expr, $status:expr, $variant:path, |$rp:ident| $body:expr) => {{
+        let $rp = match $self.tab().repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        $self.tab_mut().is_loading = true;
+        $self.tab_mut().status_message = Some($status.into());
+        let tx = $self.bg_tx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send($variant((|| $body)()));
+        });
+    }};
+}
+
+/// Spawn a background task that produces an `OperationDone` result.
+///
+/// `$body` must return `Result<String, String>` where `Ok(msg)` is the success
+/// message and `Err(msg)` is the error message. `?` may be used inside the body.
+///
+/// Use `staging` to trigger only a staging refresh on success, or `refresh`
+/// to trigger a full repo refresh.
+macro_rules! bg_op {
+    ($self:expr, $status:expr, staging, |$rp:ident| $body:expr) => {
+        bg_op!(@inner $self, $status, false, true, |$rp| $body)
+    };
+    ($self:expr, $status:expr, refresh, |$rp:ident| $body:expr) => {
+        bg_op!(@inner $self, $status, true, false, |$rp| $body)
+    };
+    (@inner $self:expr, $status:expr, $nr:expr, $nsr:expr, |$rp:ident| $body:expr) => {{
+        let $rp = match $self.tab().repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        $self.tab_mut().is_loading = true;
+        $self.tab_mut().status_message = Some($status.into());
+        let tx = $self.bg_tx.clone();
+        std::thread::spawn(move || {
+            let res: Result<String, String> = (|| $body)();
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res.as_ref().ok().cloned(),
+                err_message: res.err(),
+                needs_refresh: $nr,
+                needs_staging_refresh: $nsr,
+            });
+        });
+    }};
+}
+
 // ── Background task results ───────────────────────────────────────────────────
 
 /// Payload produced by a background `refresh` / `open_repo` task.
@@ -49,6 +107,8 @@ pub enum BackgroundResult {
     CommitFileListLoaded(Result<Vec<gitkraft_core::DiffFileEntry>, String>),
     /// A single file's diff was loaded.
     SingleFileDiffLoaded(Result<gitkraft_core::DiffInfo, String>),
+    /// Commit search results loaded.
+    SearchResults(Result<Vec<gitkraft_core::CommitInfo>, String>),
 }
 
 /// Payload returned by an async staging refresh.
@@ -132,6 +192,13 @@ pub struct RepoTab {
     pub stash_list_state: ListState,
     pub remotes: Vec<RemoteInfo>,
 
+    /// Search query for commit filtering.
+    pub search_query: String,
+    /// Whether search mode is active.
+    pub search_active: bool,
+    /// Search results (commits matching the query).
+    pub search_results: Vec<CommitInfo>,
+
     /// Optional stash message (set via input mode before saving).
     pub stash_message_buffer: String,
 
@@ -177,6 +244,10 @@ impl RepoTab {
             remotes: Vec::new(),
 
             stash_message_buffer: String::new(),
+
+            search_query: String::new(),
+            search_active: false,
+            search_results: Vec::new(),
 
             status_message: None,
             error_message: None,
@@ -624,6 +695,16 @@ impl App {
                         self.refresh_staging();
                     }
                 }
+                BackgroundResult::SearchResults(res) => match res {
+                    Ok(results) => {
+                        self.tab_mut().search_results = results;
+                        let count = self.tab().search_results.len();
+                        self.tab_mut().status_message = Some(format!("{count} result(s) found"));
+                    }
+                    Err(e) => {
+                        self.tab_mut().error_message = Some(format!("Search failed: {e}"));
+                    }
+                },
             }
         }
     }
@@ -689,24 +770,11 @@ impl App {
             }
         };
         let file_path = self.unstaged_file_path(idx);
-        let repo_path = match self.tab().repo_path.clone() {
-            Some(p) => p,
-            None => return,
-        };
-        self.tab_mut().is_loading = true;
-        let tx = self.bg_tx.clone();
-        std::thread::spawn(move || {
-            let res = (|| {
-                let repo = open_repo_str(&repo_path)?;
-                gitkraft_core::features::staging::stage_file(&repo, &file_path)
-                    .map_err(|e| e.to_string())
-            })();
-            let _ = tx.send(BackgroundResult::OperationDone {
-                ok_message: res.as_ref().ok().map(|_| format!("Staged: {file_path}")),
-                err_message: res.err().map(|e| format!("stage: {e}")),
-                needs_refresh: false,
-                needs_staging_refresh: true,
-            });
+        bg_op!(self, "Staging…", staging, |repo_path| {
+            let repo = open_repo_str(&repo_path)?;
+            gitkraft_core::features::staging::stage_file(&repo, &file_path)
+                .map_err(|e| format!("stage: {e}"))?;
+            Ok(format!("Staged: {file_path}"))
         });
     }
 
@@ -719,66 +787,29 @@ impl App {
             }
         };
         let file_path = self.staged_file_path(idx);
-        let repo_path = match self.tab().repo_path.clone() {
-            Some(p) => p,
-            None => return,
-        };
-        self.tab_mut().is_loading = true;
-        let tx = self.bg_tx.clone();
-        std::thread::spawn(move || {
-            let res = (|| {
-                let repo = open_repo_str(&repo_path)?;
-                gitkraft_core::features::staging::unstage_file(&repo, &file_path)
-                    .map_err(|e| e.to_string())
-            })();
-            let _ = tx.send(BackgroundResult::OperationDone {
-                ok_message: res.as_ref().ok().map(|_| format!("Unstaged: {file_path}")),
-                err_message: res.err().map(|e| format!("unstage: {e}")),
-                needs_refresh: false,
-                needs_staging_refresh: true,
-            });
+        bg_op!(self, "Unstaging…", staging, |repo_path| {
+            let repo = open_repo_str(&repo_path)?;
+            gitkraft_core::features::staging::unstage_file(&repo, &file_path)
+                .map_err(|e| format!("unstage: {e}"))?;
+            Ok(format!("Unstaged: {file_path}"))
         });
     }
 
     pub fn stage_all(&mut self) {
-        let repo_path = match self.tab().repo_path.clone() {
-            Some(p) => p,
-            None => return,
-        };
-        self.tab_mut().is_loading = true;
-        let tx = self.bg_tx.clone();
-        std::thread::spawn(move || {
-            let res = (|| {
-                let repo = open_repo_str(&repo_path)?;
-                gitkraft_core::features::staging::stage_all(&repo).map_err(|e| e.to_string())
-            })();
-            let _ = tx.send(BackgroundResult::OperationDone {
-                ok_message: res.as_ref().ok().map(|_| "Staged all files".into()),
-                err_message: res.err().map(|e| format!("stage all: {e}")),
-                needs_refresh: false,
-                needs_staging_refresh: true,
-            });
+        bg_op!(self, "Staging all…", staging, |repo_path| {
+            let repo = open_repo_str(&repo_path)?;
+            gitkraft_core::features::staging::stage_all(&repo)
+                .map_err(|e| format!("stage all: {e}"))?;
+            Ok("Staged all files".into())
         });
     }
 
     pub fn unstage_all(&mut self) {
-        let repo_path = match self.tab().repo_path.clone() {
-            Some(p) => p,
-            None => return,
-        };
-        self.tab_mut().is_loading = true;
-        let tx = self.bg_tx.clone();
-        std::thread::spawn(move || {
-            let res = (|| {
-                let repo = open_repo_str(&repo_path)?;
-                gitkraft_core::features::staging::unstage_all(&repo).map_err(|e| e.to_string())
-            })();
-            let _ = tx.send(BackgroundResult::OperationDone {
-                ok_message: res.as_ref().ok().map(|_| "Unstaged all files".into()),
-                err_message: res.err().map(|e| format!("unstage all: {e}")),
-                needs_refresh: false,
-                needs_staging_refresh: true,
-            });
+        bg_op!(self, "Unstaging all…", staging, |repo_path| {
+            let repo = open_repo_str(&repo_path)?;
+            gitkraft_core::features::staging::unstage_all(&repo)
+                .map_err(|e| format!("unstage all: {e}"))?;
+            Ok("Unstaged all files".into())
         });
     }
 
@@ -791,28 +822,12 @@ impl App {
             }
         };
         let file_path = self.unstaged_file_path(idx);
-        let repo_path = match self.tab().repo_path.clone() {
-            Some(p) => p,
-            None => return,
-        };
         self.tab_mut().confirm_discard = false;
-        self.tab_mut().is_loading = true;
-        let tx = self.bg_tx.clone();
-        std::thread::spawn(move || {
-            let res = (|| {
-                let repo = open_repo_str(&repo_path)?;
-                gitkraft_core::features::staging::discard_file_changes(&repo, &file_path)
-                    .map_err(|e| e.to_string())
-            })();
-            let _ = tx.send(BackgroundResult::OperationDone {
-                ok_message: res
-                    .as_ref()
-                    .ok()
-                    .map(|_| format!("Discarded changes: {file_path}")),
-                err_message: res.err().map(|e| format!("discard: {e}")),
-                needs_refresh: false,
-                needs_staging_refresh: true,
-            });
+        bg_op!(self, "Discarding…", staging, |repo_path| {
+            let repo = open_repo_str(&repo_path)?;
+            gitkraft_core::features::staging::discard_file_changes(&repo, &file_path)
+                .map_err(|e| format!("discard: {e}"))?;
+            Ok(format!("Discarded changes: {file_path}"))
         });
     }
 
@@ -824,26 +839,12 @@ impl App {
             self.tab_mut().error_message = Some("Commit message cannot be empty".into());
             return;
         }
-        let repo_path = match self.tab().repo_path.clone() {
-            Some(p) => p,
-            None => return,
-        };
         self.input_buffer.clear();
-        self.tab_mut().is_loading = true;
-        let tx = self.bg_tx.clone();
-        std::thread::spawn(move || {
-            let res = (|| {
-                let repo = open_repo_str(&repo_path)?;
-                let info = gitkraft_core::features::commits::create_commit(&repo, &msg)
-                    .map_err(|e| e.to_string())?;
-                Ok::<_, String>(format!("Committed: {} {}", info.short_oid, info.summary))
-            })();
-            let _ = tx.send(BackgroundResult::OperationDone {
-                ok_message: res.as_ref().ok().cloned(),
-                err_message: res.err().map(|e| format!("commit: {e}")),
-                needs_refresh: true,
-                needs_staging_refresh: false,
-            });
+        bg_op!(self, "Committing…", refresh, |repo_path| {
+            let repo = open_repo_str(&repo_path)?;
+            let info = gitkraft_core::features::commits::create_commit(&repo, &msg)
+                .map_err(|e| format!("commit: {e}"))?;
+            Ok(format!("Committed: {} {}", info.short_oid, info.summary))
         });
     }
 
@@ -862,25 +863,11 @@ impl App {
             self.tab_mut().status_message = Some(format!("Already on '{name}'"));
             return;
         }
-        let repo_path = match self.tab().repo_path.clone() {
-            Some(p) => p,
-            None => return,
-        };
-        self.tab_mut().is_loading = true;
-        let tx = self.bg_tx.clone();
-        std::thread::spawn(move || {
-            let res = (|| {
-                let repo = open_repo_str(&repo_path)?;
-                gitkraft_core::features::branches::checkout_branch(&repo, &name)
-                    .map_err(|e| e.to_string())?;
-                Ok::<_, String>(format!("Checked out: {name}"))
-            })();
-            let _ = tx.send(BackgroundResult::OperationDone {
-                ok_message: res.as_ref().ok().cloned(),
-                err_message: res.err().map(|e| format!("checkout: {e}")),
-                needs_refresh: true,
-                needs_staging_refresh: false,
-            });
+        bg_op!(self, "Checking out…", refresh, |repo_path| {
+            let repo = open_repo_str(&repo_path)?;
+            gitkraft_core::features::branches::checkout_branch(&repo, &name)
+                .map_err(|e| format!("checkout: {e}"))?;
+            Ok(format!("Checked out: {name}"))
         });
     }
 
@@ -890,26 +877,12 @@ impl App {
             self.tab_mut().error_message = Some("Branch name cannot be empty".into());
             return;
         }
-        let repo_path = match self.tab().repo_path.clone() {
-            Some(p) => p,
-            None => return,
-        };
         self.input_buffer.clear();
-        self.tab_mut().is_loading = true;
-        let tx = self.bg_tx.clone();
-        std::thread::spawn(move || {
-            let res = (|| {
-                let repo = open_repo_str(&repo_path)?;
-                gitkraft_core::features::branches::create_branch(&repo, &name)
-                    .map_err(|e| e.to_string())?;
-                Ok::<_, String>(format!("Created branch: {name}"))
-            })();
-            let _ = tx.send(BackgroundResult::OperationDone {
-                ok_message: res.as_ref().ok().cloned(),
-                err_message: res.err().map(|e| format!("create branch: {e}")),
-                needs_refresh: true,
-                needs_staging_refresh: false,
-            });
+        bg_op!(self, "Creating branch…", refresh, |repo_path| {
+            let repo = open_repo_str(&repo_path)?;
+            gitkraft_core::features::branches::create_branch(&repo, &name)
+                .map_err(|e| format!("create branch: {e}"))?;
+            Ok(format!("Created branch: {name}"))
         });
     }
 
@@ -926,56 +899,28 @@ impl App {
             return;
         }
         let name = self.tab().branches[idx].name.clone();
-        let repo_path = match self.tab().repo_path.clone() {
-            Some(p) => p,
-            None => return,
-        };
-        self.tab_mut().is_loading = true;
-        let tx = self.bg_tx.clone();
-        std::thread::spawn(move || {
-            let res = (|| {
-                let repo = open_repo_str(&repo_path)?;
-                gitkraft_core::features::branches::delete_branch(&repo, &name)
-                    .map_err(|e| e.to_string())?;
-                Ok::<_, String>(format!("Deleted branch: {name}"))
-            })();
-            let _ = tx.send(BackgroundResult::OperationDone {
-                ok_message: res.as_ref().ok().cloned(),
-                err_message: res.err().map(|e| format!("delete branch: {e}")),
-                needs_refresh: true,
-                needs_staging_refresh: false,
-            });
+        bg_op!(self, "Deleting branch…", refresh, |repo_path| {
+            let repo = open_repo_str(&repo_path)?;
+            gitkraft_core::features::branches::delete_branch(&repo, &name)
+                .map_err(|e| format!("delete branch: {e}"))?;
+            Ok(format!("Deleted branch: {name}"))
         });
     }
 
     // ── Stash ────────────────────────────────────────────────────────────
 
     pub fn stash_save(&mut self) {
-        let repo_path = match self.tab().repo_path.clone() {
-            Some(p) => p,
-            None => return,
-        };
         let msg = if self.tab().stash_message_buffer.trim().is_empty() {
             None
         } else {
             Some(self.tab().stash_message_buffer.trim().to_string())
         };
         self.tab_mut().stash_message_buffer.clear();
-        self.tab_mut().is_loading = true;
-        let tx = self.bg_tx.clone();
-        std::thread::spawn(move || {
-            let res = (|| {
-                let mut repo = open_repo_str(&repo_path)?;
-                let entry = gitkraft_core::features::stash::stash_save(&mut repo, msg.as_deref())
-                    .map_err(|e| e.to_string())?;
-                Ok::<_, String>(format!("Stashed: {}", entry.message))
-            })();
-            let _ = tx.send(BackgroundResult::OperationDone {
-                ok_message: res.as_ref().ok().cloned(),
-                err_message: res.err().map(|e| format!("stash save: {e}")),
-                needs_refresh: true,
-                needs_staging_refresh: false,
-            });
+        bg_op!(self, "Stashing…", refresh, |repo_path| {
+            let mut repo = open_repo_str(&repo_path)?;
+            let entry = gitkraft_core::features::stash::stash_save(&mut repo, msg.as_deref())
+                .map_err(|e| format!("stash save: {e}"))?;
+            Ok(format!("Stashed: {}", entry.message))
         });
     }
 
@@ -985,26 +930,11 @@ impl App {
             self.tab_mut().error_message = Some("No stash selected".into());
             return;
         }
-        let repo_path = match self.tab().repo_path.clone() {
-            Some(p) => p,
-            None => return,
-        };
-        self.tab_mut().is_loading = true;
-        let tx = self.bg_tx.clone();
-        std::thread::spawn(move || {
-            let res = (|| {
-                let mut repo = open_repo_str(&repo_path)?;
-                gitkraft_core::features::stash::stash_pop(&mut repo, idx).map_err(|e| e.to_string())
-            })();
-            let _ = tx.send(BackgroundResult::OperationDone {
-                ok_message: res
-                    .as_ref()
-                    .ok()
-                    .map(|_| format!("Stash @{{{idx}}} popped")),
-                err_message: res.err().map(|e| format!("stash pop: {e}")),
-                needs_refresh: true,
-                needs_staging_refresh: false,
-            });
+        bg_op!(self, "Popping stash…", refresh, |repo_path| {
+            let mut repo = open_repo_str(&repo_path)?;
+            gitkraft_core::features::stash::stash_pop(&mut repo, idx)
+                .map_err(|e| format!("stash pop: {e}"))?;
+            Ok(format!("Stash @{{{idx}}} popped"))
         });
     }
 
@@ -1014,27 +944,11 @@ impl App {
             self.tab_mut().error_message = Some("No stash to drop".into());
             return;
         }
-        let repo_path = match self.tab().repo_path.clone() {
-            Some(p) => p,
-            None => return,
-        };
-        self.tab_mut().is_loading = true;
-        let tx = self.bg_tx.clone();
-        std::thread::spawn(move || {
-            let res = (|| {
-                let mut repo = open_repo_str(&repo_path)?;
-                gitkraft_core::features::stash::stash_drop(&mut repo, idx)
-                    .map_err(|e| e.to_string())
-            })();
-            let _ = tx.send(BackgroundResult::OperationDone {
-                ok_message: res
-                    .as_ref()
-                    .ok()
-                    .map(|_| format!("Stash @{{{idx}}} dropped")),
-                err_message: res.err().map(|e| format!("stash drop: {e}")),
-                needs_refresh: true,
-                needs_staging_refresh: false,
-            });
+        bg_op!(self, "Dropping stash…", refresh, |repo_path| {
+            let mut repo = open_repo_str(&repo_path)?;
+            gitkraft_core::features::stash::stash_drop(&mut repo, idx)
+                .map_err(|e| format!("stash drop: {e}"))?;
+            Ok(format!("Stash @{{{idx}}} dropped"))
         });
     }
 
@@ -1050,44 +964,35 @@ impl App {
             return;
         }
         let oid = self.tab().commits[idx].oid.clone();
-        let repo_path = match self.tab().repo_path.clone() {
-            Some(p) => p,
-            None => return,
-        };
-        self.tab_mut().is_loading = true;
-        self.tab_mut().status_message = Some("Loading files…".into());
         self.tab_mut().selected_commit_oid = Some(oid.clone());
-        let tx = self.bg_tx.clone();
-        std::thread::spawn(move || {
-            let res = (|| {
+        bg_task!(
+            self,
+            "Loading files…",
+            BackgroundResult::CommitFileListLoaded,
+            |repo_path| {
                 let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::diff::get_commit_file_list(&repo, &oid)
                     .map_err(|e| e.to_string())
-            })();
-            let _ = tx.send(BackgroundResult::CommitFileListLoaded(res));
-        });
+            }
+        );
     }
 
     /// Load the diff for a single file in the selected commit (phase 2).
     pub fn load_single_file_diff(&mut self, file_path: String) {
-        let repo_path = match self.tab().repo_path.clone() {
-            Some(p) => p,
-            None => return,
-        };
         let oid = match self.tab().selected_commit_oid.clone() {
             Some(o) => o,
             None => return,
         };
-        self.tab_mut().is_loading = true;
-        let tx = self.bg_tx.clone();
-        std::thread::spawn(move || {
-            let res = (|| {
+        bg_task!(
+            self,
+            "Loading diff…",
+            BackgroundResult::SingleFileDiffLoaded,
+            |repo_path| {
                 let repo = open_repo_str(&repo_path)?;
                 gitkraft_core::features::diff::get_single_file_diff(&repo, &oid, &file_path)
                     .map_err(|e| e.to_string())
-            })();
-            let _ = tx.send(BackgroundResult::SingleFileDiffLoaded(res));
-        });
+            }
+        );
     }
 
     /// Switch to the next file in the commit diff list.
@@ -1133,6 +1038,46 @@ impl App {
     }
 
     /// Close the current repository and return to the welcome screen.
+    /// Search commits by query string.
+    pub fn search_commits(&mut self, query: String) {
+        let repo_path = match self.tab().repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.tab_mut().search_query = query.clone();
+        if query.trim().len() < 2 {
+            self.tab_mut().search_results.clear();
+            return;
+        }
+        let tx = self.bg_tx.clone();
+        std::thread::spawn(move || {
+            let res = (|| {
+                let repo = open_repo_str(&repo_path)?;
+                gitkraft_core::features::log::search_commits(&repo, &query, 100)
+                    .map_err(|e| e.to_string())
+            })();
+            let _ = tx.send(BackgroundResult::SearchResults(res));
+        });
+    }
+
+    /// Load the diff for a commit by its OID (used by search results).
+    pub fn load_commit_diff_by_oid(&mut self) {
+        let oid = match self.tab().selected_commit_oid.clone() {
+            Some(o) => o,
+            None => return,
+        };
+        bg_task!(
+            self,
+            "Loading files…",
+            BackgroundResult::CommitFileListLoaded,
+            |repo_path| {
+                let repo = open_repo_str(&repo_path)?;
+                gitkraft_core::features::diff::get_commit_file_list(&repo, &oid)
+                    .map_err(|e| e.to_string())
+            }
+        );
+    }
+
     pub fn close_repo(&mut self) {
         self.tabs[self.active_tab_index] = RepoTab::new();
         self.input_buffer.clear();
@@ -1435,5 +1380,92 @@ mod tests {
         let mut tab2 = RepoTab::new();
         tab2.repo_path = Some(PathBuf::from("/home/user/projects/my-repo"));
         assert_eq!(tab2.display_name(), "my-repo");
+    }
+
+    #[test]
+    fn repo_tab_search_defaults() {
+        let tab = RepoTab::new();
+        assert!(!tab.search_active);
+        assert!(tab.search_query.is_empty());
+        assert!(tab.search_results.is_empty());
+    }
+
+    #[test]
+    fn repo_tab_new_has_empty_state() {
+        let tab = RepoTab::new();
+        assert!(tab.repo_path.is_none());
+        assert!(tab.commits.is_empty());
+        assert!(tab.branches.is_empty());
+        assert!(tab.unstaged_changes.is_empty());
+        assert!(tab.staged_changes.is_empty());
+        assert!(tab.stashes.is_empty());
+        assert!(tab.remotes.is_empty());
+        assert!(tab.commit_files.is_empty());
+        assert!(tab.selected_commit_oid.is_none());
+        assert!(!tab.is_loading);
+        assert!(!tab.confirm_discard);
+        assert_eq!(tab.diff_scroll, 0);
+        assert_eq!(tab.commit_diff_file_index, 0);
+    }
+
+    #[test]
+    fn new_tab_switches_to_welcome() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.new_tab();
+        assert_eq!(app.screen, AppScreen::Welcome);
+        assert_eq!(app.active_tab_index, 1);
+    }
+
+    #[test]
+    fn close_tab_last_tab_resets() {
+        let mut app = App::new();
+        // Set some state on the only tab
+        app.tab_mut().search_active = true;
+        app.tab_mut().search_query = "test".into();
+
+        app.close_tab();
+
+        // Should reset the tab, not remove it
+        assert_eq!(app.tabs.len(), 1);
+        assert!(!app.tab().search_active);
+        assert!(app.tab().search_query.is_empty());
+    }
+
+    #[test]
+    fn close_tab_middle_adjusts_index() {
+        let mut app = App::new();
+        app.new_tab();
+        app.new_tab();
+        // 3 tabs, active = 2
+
+        app.active_tab_index = 1; // select middle tab
+        app.close_tab();
+
+        assert_eq!(app.tabs.len(), 2);
+        assert_eq!(app.active_tab_index, 1); // stays at 1 (now the last)
+    }
+
+    #[test]
+    fn next_tab_single_tab_no_change() {
+        let mut app = App::new();
+        app.next_tab();
+        assert_eq!(app.active_tab_index, 0);
+    }
+
+    #[test]
+    fn prev_tab_single_tab_no_change() {
+        let mut app = App::new();
+        app.prev_tab();
+        assert_eq!(app.active_tab_index, 0);
+    }
+
+    #[test]
+    fn open_browser_sets_dir_browser_screen() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.open_browser(PathBuf::from("/tmp"));
+        assert_eq!(app.screen, AppScreen::DirBrowser);
+        assert_eq!(app.browser_return_screen, AppScreen::Main);
     }
 }

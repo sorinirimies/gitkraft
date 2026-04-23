@@ -591,6 +591,89 @@ impl GitKraft {
                 Task::none()
             }
 
+            // ── Search ────────────────────────────────────────────────────
+            Message::ToggleSearch => {
+                self.search_visible = !self.search_visible;
+                if !self.search_visible {
+                    self.search_query.clear();
+                    self.search_results.clear();
+                    self.search_selected = None;
+                }
+                Task::none()
+            }
+
+            Message::SearchQueryChanged(query) => {
+                let query = query.clone();
+                self.search_query = query.clone();
+                if query.trim().len() >= 2 {
+                    if let Some(path) = self.active_tab().repo_path.clone() {
+                        return crate::features::commits::commands::search_commits(path, query);
+                    }
+                } else {
+                    self.search_results.clear();
+                    self.search_selected = None;
+                }
+                Task::none()
+            }
+
+            Message::SearchResultsLoaded(result) => {
+                match result {
+                    Ok(results) => {
+                        self.search_results = results.clone();
+                        self.search_selected = if self.search_results.is_empty() {
+                            None
+                        } else {
+                            Some(0)
+                        };
+                    }
+                    Err(e) => {
+                        self.search_results.clear();
+                        self.active_tab_mut().error_message = Some(format!("Search failed: {e}"));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::SelectSearchResult(index) => {
+                let index = *index;
+                if index < self.search_results.len() {
+                    self.search_selected = Some(index);
+                }
+                Task::none()
+            }
+
+            Message::ConfirmSearchResult => {
+                if let Some(idx) = self.search_selected {
+                    if let Some(commit) = self.search_results.get(idx).cloned() {
+                        let oid = commit.oid.clone();
+                        let short_oid = commit.short_oid.clone();
+                        // Find this commit's index in the loaded commit list and select it
+                        let commit_idx =
+                            self.active_tab().commits.iter().position(|c| c.oid == oid);
+                        if let Some(ci) = commit_idx {
+                            let tab = self.active_tab_mut();
+                            tab.selected_commit = Some(ci);
+                            tab.show_commit_detail = true;
+                        }
+                        // Close search and load the diff
+                        self.search_visible = false;
+                        self.search_query.clear();
+                        self.search_results.clear();
+                        self.search_selected = None;
+
+                        if let Some(path) = self.active_tab().repo_path.clone() {
+                            let tab = self.active_tab_mut();
+                            tab.status_message = Some(format!("Loading diff for {short_oid}…"));
+                            tab.selected_commit_oid = Some(oid.clone());
+                            return crate::features::commits::commands::load_commit_file_list(
+                                path, oid,
+                            );
+                        }
+                    }
+                }
+                Task::none()
+            }
+
             Message::Noop => Task::none(),
         }
     }
