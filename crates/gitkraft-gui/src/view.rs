@@ -305,12 +305,23 @@ fn context_menu_position(state: &GitKraft) -> (f32, f32) {
 }
 
 /// Render the search overlay — a centered panel with an input and results list.
+/// When a commit is selected, the panel expands to show changed files and diffs.
 fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Message> {
     use iced::widget::{
-        button, column, container, mouse_area, row, scrollable, text, text_input, Space,
+        button, checkbox, column, container, mouse_area, row, scrollable, text, text_input, Space,
     };
     use iced::{Alignment, Length};
 
+    let has_diff_files = !state.search_diff_files.is_empty();
+    let has_diff_content = state.search_diff_content.is_some();
+
+    // ── Close button ──────────────────────────────────────────────────────
+    let close_btn = button(text("\u{2715}").size(14).color(c.text_secondary))
+        .padding([4, 8])
+        .style(theme::ghost_button)
+        .on_press(Message::ToggleSearch);
+
+    // ── Left panel: search input + commit results ─────────────────────────
     let input = text_input("Search commits…", &state.search_query)
         .on_input(Message::SearchQueryChanged)
         .on_submit(Message::ConfirmSearchResult)
@@ -330,7 +341,13 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
 
     for (i, commit) in state.search_results.iter().take(50).enumerate() {
         let is_selected = state.search_selected == Some(i);
-        let bg_style = if is_selected {
+        let is_diffed = state
+            .search_diff_oid
+            .as_ref()
+            .map_or(false, |oid| *oid == commit.oid);
+        let bg_style = if is_diffed {
+            theme::selected_row_style as fn(&iced::Theme) -> iced::widget::container::Style
+        } else if is_selected {
             theme::selected_row_style as fn(&iced::Theme) -> iced::widget::container::Style
         } else {
             theme::surface_style as fn(&iced::Theme) -> iced::widget::container::Style
@@ -382,12 +399,7 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
         text("").size(1)
     };
 
-    let close_btn = button(text("\u{2715}").size(14).color(c.text_secondary))
-        .padding([4, 8])
-        .style(theme::ghost_button)
-        .on_press(Message::ToggleSearch);
-
-    let header = row![
+    let left_header = row![
         icon!(icons::CLOCK_HISTORY, 16, c.accent),
         Space::new().width(8),
         text("Search Commits").size(16).color(c.text_primary),
@@ -404,16 +416,186 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
         .direction(crate::view_utils::thin_scrollbar())
         .style(crate::theme::overlay_scrollbar);
 
-    let panel = container(
-        column![header, input, scrollable_results,]
+    let left_panel = column![left_header, input, scrollable_results]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .spacing(4);
+
+    // ── Right panel: file list + diff (only when a commit is selected) ────
+    let panel: Element<'a, Message> = if has_diff_content {
+        // Show diff content for the selected file
+        let diff = state.search_diff_content.as_ref().unwrap();
+
+        let back_btn = button(
+            row![
+                text("← ").size(14).color(c.accent),
+                text("Back to file list").size(13).color(c.text_primary),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .padding([6, 12])
+        .style(theme::ghost_button)
+        .on_press(Message::SearchDiffBack);
+
+        let diff_header = row![
+            back_btn,
+            Space::new().width(Length::Fill),
+            text(diff.display_path()).size(13).color(c.accent),
+            Space::new().width(12),
+        ]
+        .align_y(Alignment::Center)
+        .padding([4, 8]);
+
+        let mut diff_lines_col = column![].spacing(0).width(Length::Fill);
+        for hunk in &diff.hunks {
+            for line in &hunk.lines {
+                let (prefix, content, color) = match line {
+                    gitkraft_core::DiffLine::Context(s) => (" ", s.as_str(), c.text_secondary),
+                    gitkraft_core::DiffLine::Addition(s) => ("+", s.as_str(), c.green),
+                    gitkraft_core::DiffLine::Deletion(s) => ("-", s.as_str(), c.red),
+                    gitkraft_core::DiffLine::HunkHeader(s) => ("@@", s.as_str(), c.accent),
+                };
+                diff_lines_col = diff_lines_col.push(
+                    text(format!("{prefix} {content}"))
+                        .size(12)
+                        .color(color)
+                        .font(iced::Font::MONOSPACE),
+                );
+            }
+        }
+
+        let scrollable_diff = scrollable(
+            container(diff_lines_col)
+                .padding([4, 8])
+                .width(Length::Fill),
+        )
+        .height(Length::Fill)
+        .direction(crate::view_utils::thin_scrollbar())
+        .style(crate::theme::overlay_scrollbar);
+
+        let right_panel = column![diff_header, scrollable_diff]
             .width(Length::Fill)
             .height(Length::Fill)
-            .spacing(4),
-    )
-    .width(700)
-    .height(500)
-    .style(theme::context_menu_style)
-    .padding(8);
+            .spacing(4);
+
+        let content = row![
+            container(left_panel).width(Length::FillPortion(2)),
+            container(right_panel).width(Length::FillPortion(3)),
+        ]
+        .spacing(4)
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+        container(content)
+            .width(1100)
+            .height(600)
+            .style(theme::context_menu_style)
+            .padding(8)
+            .into()
+    } else if has_diff_files {
+        // Show file list for the selected commit
+        let oid_short = state
+            .search_diff_oid
+            .as_ref()
+            .map(|o| &o[..7.min(o.len())])
+            .unwrap_or("???");
+
+        let file_count = state.search_diff_files.len();
+        let selected_count = state.search_diff_selected.len();
+
+        let select_all_label = if selected_count == file_count {
+            "Deselect All"
+        } else {
+            "Select All"
+        };
+
+        let select_all_btn = button(text(select_all_label).size(12).color(c.accent))
+            .padding([4, 8])
+            .style(theme::ghost_button)
+            .on_press(Message::ToggleSearchDiffSelectAll);
+
+        let right_header = row![
+            text(format!("Files changed vs working tree ({oid_short})"))
+                .size(14)
+                .color(c.text_primary),
+            Space::new().width(Length::Fill),
+            text(format!("{file_count} file(s)"))
+                .size(11)
+                .color(c.muted),
+            Space::new().width(8),
+            select_all_btn,
+        ]
+        .align_y(Alignment::Center)
+        .padding([8, 12]);
+
+        let mut files_col = column![].spacing(2).width(Length::Fill);
+
+        for (i, file) in state.search_diff_files.iter().enumerate() {
+            let is_checked = state.search_diff_selected.contains(&i);
+            let status_str = format!("{}", file.status);
+            let status_color = match file.status.color_category() {
+                gitkraft_core::StatusColorCategory::Added => c.green,
+                gitkraft_core::StatusColorCategory::Modified => c.yellow,
+                gitkraft_core::StatusColorCategory::Deleted => c.red,
+                gitkraft_core::StatusColorCategory::Renamed => c.accent,
+            };
+
+            let file_row = button(
+                row![
+                    checkbox(is_checked).on_toggle(move |_| Message::ToggleSearchDiffFile(i)),
+                    Space::new().width(4),
+                    text(status_str)
+                        .size(12)
+                        .color(status_color)
+                        .font(iced::Font::MONOSPACE),
+                    Space::new().width(8),
+                    text(file.display_path()).size(13).color(c.text_primary),
+                    Space::new().width(Length::Fill),
+                ]
+                .align_y(Alignment::Center)
+                .padding([4, 8]),
+            )
+            .padding(0)
+            .width(Length::Fill)
+            .style(theme::ghost_button)
+            .on_press(Message::ViewSearchDiffFile(i));
+
+            files_col = files_col.push(file_row);
+        }
+
+        let scrollable_files = scrollable(files_col)
+            .height(Length::Fill)
+            .direction(crate::view_utils::thin_scrollbar())
+            .style(crate::theme::overlay_scrollbar);
+
+        let right_panel = column![right_header, scrollable_files]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .spacing(4);
+
+        let content = row![
+            container(left_panel).width(Length::FillPortion(2)),
+            container(right_panel).width(Length::FillPortion(3)),
+        ]
+        .spacing(4)
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+        container(content)
+            .width(1100)
+            .height(600)
+            .style(theme::context_menu_style)
+            .padding(8)
+            .into()
+    } else {
+        // No commit selected yet — just show the search panel
+        container(left_panel)
+            .width(700)
+            .height(500)
+            .style(theme::context_menu_style)
+            .padding(8)
+            .into()
+    };
 
     // Center the panel on screen with a backdrop
     let backdrop = mouse_area(

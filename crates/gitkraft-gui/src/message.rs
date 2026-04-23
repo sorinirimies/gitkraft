@@ -330,6 +330,18 @@ pub enum Message {
     SelectSearchResult(usize),
     /// User confirmed the selected search result (Enter).
     ConfirmSearchResult,
+    /// File list for commit-vs-workdir diff loaded.
+    SearchDiffFilesLoaded(Result<Vec<gitkraft_core::DiffFileEntry>, String>),
+    /// User toggled selection of a file in the search diff file list.
+    ToggleSearchDiffFile(usize),
+    /// User requested to view diff of selected search file against working tree.
+    ViewSearchDiffFile(usize),
+    /// The diff content for a search file loaded.
+    SearchFileDiffLoaded(Result<gitkraft_core::DiffInfo, String>),
+    /// User clicked "Select All" / "Deselect All" in search diff.
+    ToggleSearchDiffSelectAll,
+    /// Go back from file diff view to file list in search.
+    SearchDiffBack,
     /// User right-clicked a search result — open commit context menu.
     OpenSearchResultContextMenu(usize),
 

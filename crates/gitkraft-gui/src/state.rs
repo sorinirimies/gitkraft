@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use gitkraft_core::*;
@@ -335,6 +336,15 @@ pub struct GitKraft {
     /// Index of the selected search result.
     pub search_selected: Option<usize>,
 
+    /// Files changed between the selected search commit and working tree.
+    pub search_diff_files: Vec<gitkraft_core::DiffFileEntry>,
+    /// Selected file indices in the search diff file list.
+    pub search_diff_selected: HashSet<usize>,
+    /// The diff content for the currently viewed search diff file.
+    pub search_diff_content: Option<gitkraft_core::DiffInfo>,
+    /// OID of the commit being diffed against working tree in search.
+    pub search_diff_oid: Option<String>,
+
     /// Configured editor for "Open in editor" actions.
     pub editor: gitkraft_core::Editor,
 }
@@ -409,6 +419,10 @@ impl GitKraft {
             search_query: String::new(),
             search_results: Vec::new(),
             search_selected: None,
+            search_diff_files: Vec::new(),
+            search_diff_selected: HashSet::new(),
+            search_diff_content: None,
+            search_diff_oid: None,
 
             editor: settings
                 .editor_name

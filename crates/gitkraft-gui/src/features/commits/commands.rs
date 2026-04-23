@@ -47,6 +47,30 @@ pub fn search_commits(path: PathBuf, query: String) -> Task<Message> {
     )
 }
 
+/// Load the file list of changes between a commit and the current working tree.
+pub fn search_diff_file_list(path: PathBuf, oid: String) -> Task<Message> {
+    git_task!(
+        Message::SearchDiffFilesLoaded,
+        (|| {
+            let repo = open_repo!(&path);
+            gitkraft_core::features::diff::file_list_commit_vs_workdir(&repo, &oid)
+                .map_err(|e| e.to_string())
+        })()
+    )
+}
+
+/// Diff a single file from a specific commit against the current working tree (for search overlay).
+pub fn search_diff_file(path: PathBuf, oid: String, file_path: String) -> Task<Message> {
+    git_task!(
+        Message::SearchFileDiffLoaded,
+        (|| {
+            let repo = open_repo!(&path);
+            gitkraft_core::features::diff::diff_file_commit_vs_workdir(&repo, &oid, &file_path)
+                .map_err(|e| e.to_string())
+        })()
+    )
+}
+
 /// Diff a file from a specific commit against the current working tree.
 pub fn diff_file_with_working_tree(path: PathBuf, oid: String, file_path: String) -> Task<Message> {
     git_task!(

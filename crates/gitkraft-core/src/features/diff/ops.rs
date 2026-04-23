@@ -248,6 +248,40 @@ pub fn diff_file_commit_vs_workdir(
     }
 }
 
+/// Get the list of files that differ between a commit and the current working directory.
+pub fn file_list_commit_vs_workdir(
+    repo: &Repository,
+    oid_str: &str,
+) -> Result<Vec<super::types::DiffFileEntry>> {
+    let oid =
+        git2::Oid::from_str(oid_str).with_context(|| format!("invalid OID string: {oid_str}"))?;
+    let commit = repo
+        .find_commit(oid)
+        .with_context(|| format!("commit {oid_str} not found"))?;
+    let commit_tree = commit.tree().context("commit has no tree")?;
+
+    let diff = repo
+        .diff_tree_to_workdir_with_index(Some(&commit_tree), None)
+        .context("failed to diff commit tree against working directory")?;
+
+    Ok(diff
+        .deltas()
+        .map(|delta| super::types::DiffFileEntry {
+            old_file: delta
+                .old_file()
+                .path()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            new_file: delta
+                .new_file()
+                .path()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            status: FileStatus::from_delta(delta.status()),
+        })
+        .collect())
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Walk every delta / hunk / line in a `git2::Diff` and produce our domain

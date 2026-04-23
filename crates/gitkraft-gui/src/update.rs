@@ -672,6 +672,10 @@ impl GitKraft {
                     self.search_query.clear();
                     self.search_results.clear();
                     self.search_selected = None;
+                    self.search_diff_files.clear();
+                    self.search_diff_selected.clear();
+                    self.search_diff_content = None;
+                    self.search_diff_oid = None;
                 }
                 Task::none()
             }
@@ -720,30 +724,87 @@ impl GitKraft {
                 if let Some(idx) = self.search_selected {
                     if let Some(commit) = self.search_results.get(idx).cloned() {
                         let oid = commit.oid.clone();
-                        let short_oid = commit.short_oid.clone();
-                        // Find this commit's index in the loaded commit list and select it
-                        let commit_idx =
-                            self.active_tab().commits.iter().position(|c| c.oid == oid);
-                        if let Some(ci) = commit_idx {
-                            let tab = self.active_tab_mut();
-                            tab.selected_commit = Some(ci);
-                            tab.show_commit_detail = true;
-                        }
-                        // Close search and load the diff
-                        self.search_query.clear();
-                        self.search_results.clear();
-                        self.search_selected = None;
+                        // Keep search open — load the file list for commit vs working tree
+                        self.search_diff_oid = Some(oid.clone());
+                        self.search_diff_files.clear();
+                        self.search_diff_selected.clear();
+                        self.search_diff_content = None;
 
                         if let Some(path) = self.active_tab().repo_path.clone() {
-                            let tab = self.active_tab_mut();
-                            tab.status_message = Some(format!("Loading diff for {short_oid}…"));
-                            tab.selected_commit_oid = Some(oid.clone());
-                            return crate::features::commits::commands::load_commit_file_list(
+                            return crate::features::commits::commands::search_diff_file_list(
                                 path, oid,
                             );
                         }
                     }
                 }
+                Task::none()
+            }
+
+            Message::SearchDiffFilesLoaded(result) => {
+                match result {
+                    Ok(files) => {
+                        self.search_diff_files = files.clone();
+                        self.search_diff_selected.clear();
+                        self.search_diff_content = None;
+                    }
+                    Err(e) => {
+                        self.active_tab_mut().error_message =
+                            Some(format!("Failed to load diff files: {e}"));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::ToggleSearchDiffFile(index) => {
+                let index = *index;
+                if self.search_diff_selected.contains(&index) {
+                    self.search_diff_selected.remove(&index);
+                } else {
+                    self.search_diff_selected.insert(index);
+                }
+                Task::none()
+            }
+
+            Message::ToggleSearchDiffSelectAll => {
+                if self.search_diff_selected.len() == self.search_diff_files.len() {
+                    self.search_diff_selected.clear();
+                } else {
+                    self.search_diff_selected = (0..self.search_diff_files.len()).collect();
+                }
+                Task::none()
+            }
+
+            Message::ViewSearchDiffFile(index) => {
+                let index = *index;
+                if let Some(file) = self.search_diff_files.get(index) {
+                    let file_path = file.display_path().to_string();
+                    if let (Some(oid), Some(repo_path)) = (
+                        self.search_diff_oid.clone(),
+                        self.active_tab().repo_path.clone(),
+                    ) {
+                        return crate::features::commits::commands::search_diff_file(
+                            repo_path, oid, file_path,
+                        );
+                    }
+                }
+                Task::none()
+            }
+
+            Message::SearchFileDiffLoaded(result) => {
+                match result {
+                    Ok(diff) => {
+                        self.search_diff_content = Some(diff.clone());
+                    }
+                    Err(e) => {
+                        self.active_tab_mut().error_message =
+                            Some(format!("Failed to load file diff: {e}"));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::SearchDiffBack => {
+                self.search_diff_content = None;
                 Task::none()
             }
 

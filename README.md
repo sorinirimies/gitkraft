@@ -19,7 +19,6 @@ GitKraft ships two front-ends from a single Rust workspace:
 | `gitkraft` | Desktop GUI — mouse, drag-to-resize panes, commit graph |
 | `gitkraft-tui` | Terminal UI — keyboard-driven, great for SSH & headless machines |
 
-Both share **`gitkraft-core`** — a framework-free library built on [`git2`](https://crates.io/crates/git2). Zero Git operations live in the UI layer.
 
 ## Preview
 
