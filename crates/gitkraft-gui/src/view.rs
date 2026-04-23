@@ -442,11 +442,17 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
         .style(theme::ghost_button)
         .on_press(Message::SearchDiffBack);
 
+        let close_btn2 = button(text("\u{2715}").size(14).color(c.text_secondary))
+            .padding([4, 8])
+            .style(theme::ghost_button)
+            .on_press(Message::ToggleSearch);
+
         let diff_header = row![
             back_btn,
             Space::new().width(Length::Fill),
             text(title_label).size(13).color(c.accent),
-            Space::new().width(12),
+            Space::new().width(8),
+            close_btn2,
         ]
         .align_y(Alignment::Center)
         .padding([4, 8]);
@@ -560,6 +566,11 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
             Space::new().width(0).into()
         };
 
+        let close_btn3 = button(text("\u{2715}").size(14).color(c.text_secondary))
+            .padding([4, 8])
+            .style(theme::ghost_button)
+            .on_press(Message::ToggleSearch);
+
         let right_header = row![
             text(format!("Files changed vs working tree ({oid_short})"))
                 .size(14)
@@ -572,6 +583,8 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
             diff_selected_btn,
             Space::new().width(4),
             select_all_btn,
+            Space::new().width(4),
+            close_btn3,
         ]
         .align_y(Alignment::Center)
         .padding([8, 12]);
