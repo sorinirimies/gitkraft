@@ -3,6 +3,23 @@
 use anyhow::{Context, Result};
 use git2::Repository;
 
+/// Apply the changes introduced by `oid_str` onto the current HEAD using git cherry-pick.
+pub fn cherry_pick_commit(workdir: &std::path::Path, oid_str: &str) -> anyhow::Result<()> {
+    let output = std::process::Command::new("git")
+        .args(["cherry-pick", oid_str])
+        .current_dir(workdir)
+        .output()
+        .context("failed to run git cherry-pick")?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "cherry-pick failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
+}
+
 use super::types::CommitInfo;
 
 /// Walk the history from HEAD and return up to `max_count` commits.
@@ -88,6 +105,12 @@ pub fn get_commit_details(repo: &Repository, oid_str: &str) -> Result<CommitInfo
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cherry_pick_on_nonexistent_repo_returns_error() {
+        let result = super::cherry_pick_commit(std::path::Path::new("/nonexistent"), "abc1234");
+        assert!(result.is_err());
+    }
+
     use super::*;
     use tempfile::TempDir;
 

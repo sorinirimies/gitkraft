@@ -284,6 +284,23 @@ pub enum Message {
     /// User cancelled tag creation.
     CancelCreateTag,
 
+    /// Cherry-pick a commit by OID onto the current branch.
+    CherryPickCommit(String),
+
+    /// Begin an inline "create branch at this commit" form.
+    BeginCreateBranchAtCommit(String),
+
+    /// User confirmed branch creation at a specific commit.
+    ConfirmCreateBranchAtCommit,
+
+    /// User cancelled branch creation at a specific commit.
+    CancelCreateBranchAtCommit,
+
+    /// Execute a commit action that requires no further user input.
+    /// Actions that need input (branch name, tag name) continue to use the
+    /// existing `BeginCreate*` messages.
+    ExecuteCommitAction(String, gitkraft_core::CommitAction),
+
     // ── Commit actions ────────────────────────────────────────────────────────────
     /// Checkout a specific commit in detached HEAD mode.
     CheckoutCommitDetached(String),
@@ -371,6 +388,14 @@ pub enum Message {
     CheckoutFileAtCommit(String, String), // (oid, file_path)
     /// Restore multiple files from a specific commit to the working directory.
     CheckoutMultiFilesAtCommit(String, Vec<String>), // (oid, file_paths)
+
+    /// Cherry-pick a list of commits (by OID) onto the current branch.
+    CherryPickCommits(Vec<String>),
+    /// Revert a list of commits (by OID) in order.
+    RevertCommits(Vec<String>),
+
+    /// Combined range diff across multiple selected commits was loaded.
+    CommitRangeDiffLoaded(Result<Vec<gitkraft_core::DiffInfo>, String>),
 
     /// No-op (used for disabled buttons, etc.).
     Noop,

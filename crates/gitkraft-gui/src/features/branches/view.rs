@@ -153,6 +153,49 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         Space::new().into()
     };
 
+    // ── Create branch at commit form ──────────────────────────────────────
+    let create_branch_at_form: Element<'_, Message> =
+        if let Some(ref oid) = tab.create_branch_at_oid {
+            let short_oid = gitkraft_core::utils::short_oid_str(oid);
+            let hint = text(format!("Creating branch at {short_oid}"))
+                .size(11)
+                .color(c.muted);
+
+            let name_input = iced::widget::text_input("branch-name", &tab.new_branch_name)
+                .on_input(Message::NewBranchNameChanged)
+                .on_submit(Message::ConfirmCreateBranchAtCommit)
+                .padding(6)
+                .size(13);
+
+            let confirm_msg = (!tab.new_branch_name.trim().is_empty())
+                .then_some(Message::ConfirmCreateBranchAtCommit);
+            let confirm_btn = view_utils::on_press_maybe(
+                button(text("Create").size(13))
+                    .padding([4, 10])
+                    .style(theme::toolbar_button),
+                confirm_msg,
+            );
+
+            let cancel_btn = button(text("Cancel").size(13))
+                .padding([4, 10])
+                .style(theme::toolbar_button)
+                .on_press(Message::CancelCreateBranchAtCommit);
+
+            container(
+                column![
+                    hint,
+                    name_input,
+                    row![confirm_btn, Space::new().width(4), cancel_btn],
+                ]
+                .spacing(4)
+                .width(Length::Fill),
+            )
+            .padding([4, 10])
+            .into()
+        } else {
+            Space::new().into()
+        };
+
     // ── Branch list ───────────────────────────────────────────────────────
     let local_branches: Vec<Element<'_, Message>> = tab
         .branches
@@ -313,6 +356,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         create_form,
         rename_form,
         tag_form,
+        create_branch_at_form,
         scrollable(list_col)
             .height(Length::Fill)
             .direction(view_utils::thin_scrollbar())

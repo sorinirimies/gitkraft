@@ -87,7 +87,8 @@ impl GitKraft {
             | Message::DiffWithWorkingTreeLoaded(_)
             | Message::DiffMultiWithWorkingTree(_, _)
             | Message::CheckoutFileAtCommit(_, _)
-            | Message::CheckoutMultiFilesAtCommit(_, _) => {
+            | Message::CheckoutMultiFilesAtCommit(_, _)
+            | Message::CommitRangeDiffLoaded(_) => {
                 // Both the commits and diff features care about SelectCommit.
                 // We delegate to the commits handler which also loads the diff.
                 crate::features::commits::update::update(self, message)
@@ -553,7 +554,68 @@ impl GitKraft {
                 Task::none()
             }
 
-            // ── Commit context menu actions ───────────────────────────────────────────
+            Message::CherryPickCommit(oid) => {
+                let oid = oid.clone();
+                let short = gitkraft_core::utils::short_oid_str(&oid).to_string();
+                self.active_tab_mut().context_menu = None;
+                with_repo!(self, loading, format!("Cherry-picking {short}…"), |path| {
+                    crate::features::repo::commands::cherry_pick_async(path, oid)
+                })
+            }
+
+            Message::BeginCreateBranchAtCommit(oid) => {
+                let tab = self.active_tab_mut();
+                tab.context_menu = None;
+                tab.create_branch_at_oid = Some(oid.clone());
+                tab.new_branch_name.clear();
+                Task::none()
+            }
+
+            Message::ConfirmCreateBranchAtCommit => {
+                let (oid, name, path) = {
+                    let tab = self.active_tab();
+                    (
+                        tab.create_branch_at_oid.clone(),
+                        tab.new_branch_name.trim().to_string(),
+                        tab.repo_path.clone(),
+                    )
+                };
+                if let (Some(oid), false) = (&oid, name.is_empty()) {
+                    if let Some(path) = path {
+                        let oid = oid.clone();
+                        {
+                            let tab = self.active_tab_mut();
+                            tab.create_branch_at_oid = None;
+                            tab.new_branch_name.clear();
+                            tab.is_loading = true;
+                            tab.status_message = Some(format!("Creating branch '{name}'…"));
+                        }
+                        return crate::features::repo::commands::create_branch_at_commit_async(
+                            path, name, oid,
+                        );
+                    }
+                }
+                Task::none()
+            }
+
+            Message::CancelCreateBranchAtCommit => {
+                let tab = self.active_tab_mut();
+                tab.create_branch_at_oid = None;
+                tab.new_branch_name.clear();
+                Task::none()
+            }
+
+            // ── Commit context menu actions ───────────────────────────────────────
+            Message::ExecuteCommitAction(oid, action) => {
+                let oid = oid.clone();
+                let action = action.clone();
+                let label = action.label();
+                self.active_tab_mut().context_menu = None;
+                with_repo!(self, loading, format!("{label}…"), |path| {
+                    crate::features::repo::commands::execute_commit_action_async(path, oid, action)
+                })
+            }
+
             Message::CheckoutCommitDetached(oid) => {
                 let oid = oid.clone();
                 let short = gitkraft_core::utils::short_oid_str(&oid).to_string();
@@ -913,6 +975,28 @@ impl GitKraft {
             }
 
             Message::Noop => Task::none(),
+
+            Message::CherryPickCommits(oids) => {
+                let oids = oids.clone();
+                self.active_tab_mut().context_menu = None;
+                with_repo!(
+                    self,
+                    loading,
+                    format!("Cherry-picking {} commit(s)…", oids.len()),
+                    |path| crate::features::repo::commands::cherry_pick_commits_async(path, oids)
+                )
+            }
+
+            Message::RevertCommits(oids) => {
+                let oids = oids.clone();
+                self.active_tab_mut().context_menu = None;
+                with_repo!(
+                    self,
+                    loading,
+                    format!("Reverting {} commit(s)…", oids.len()),
+                    |path| crate::features::repo::commands::revert_commits_async(path, oids)
+                )
+            }
         }
     }
 }

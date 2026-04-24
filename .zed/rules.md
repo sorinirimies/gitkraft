@@ -12,6 +12,26 @@
 - **Never respond "done" or summarise a completed feature without mentioning which tests were added.**
 
 
+## ⚠️ MANDATORY: Check Formatting After Every Change
+
+**After every implementation, refactor, or fix — before considering the task complete — you MUST run:**
+
+```
+cargo fmt --all
+```
+
+Then verify there are no remaining issues with:
+
+```
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+```
+
+Rules:
+- **Never leave unformatted code.** If `cargo fmt --all` changes any file, the task is not done until those changes are committed or at least applied.
+- **Clippy warnings are errors.** The CI treats `-D warnings` as hard failures. Fix every warning before finishing — do not suppress with `#[allow(...)]` unless there is a documented reason.
+- **Run order**: `cargo fmt --all` → `cargo clippy` → `cargo test --lib` — in that order. A clean result on all three is the definition of "done".
+- **Never respond "done" without confirming `cargo fmt --all` produced no diff and `cargo clippy` produced no warnings.**
+
 ## Project Overview
 
 GitKraft is a Git IDE written entirely in Rust, shipping two front-ends (desktop GUI + terminal UI) from a single Cargo workspace. All Git logic lives in the shared `gitkraft-core` crate — zero Git operations belong in the UI layer.
@@ -111,11 +131,13 @@ The TUI uses a standard ratatui loop running at ~30fps (33ms poll timeout).
 ## Common Pitfalls
 
 1. **Don't skip tests.** Every feature implementation must be accompanied by tests. See the mandatory rule at the top of this file.
-2. **Don't put Git logic in the UI crates.** If you need a new Git operation, add it to `gitkraft-core/src/features/<name>/ops.rs` first, then call it from the GUI/TUI.
-3. **Don't block the main thread.** GUI uses `Task`; TUI uses `mpsc` background threads.
-4. **Don't add dependencies to individual crate `Cargo.toml` directly.** Add them to `[workspace.dependencies]` first.
-5. **Don't use `thiserror` for new errors.** Stick with `anyhow::Result` + `.context()`.
-6. **Match existing module structure.** Every feature follows the same file layout — don't invent new patterns.
-7. **Keep the `Message` enum flat** in the GUI. Group variants with comments, not nested enums.
-8. **GIF assets** are tracked with Git LFS (`*.gif` in `.gitattributes`). Use `vhs` to regenerate from `.tape` files.
-9. **Theme code** is shared via `gitkraft-core`. Both front-ends use the same 27-theme palette — don't add themes to only one front-end.
+2. **Don't skip formatting.** Run `cargo fmt --all` and `cargo clippy --workspace --all-targets --all-features -- -D warnings` after every change. See the mandatory rule at the top of this file.
+3. **Don't put Git logic in the UI crates.** If you need a new Git operation, add it to `gitkraft-core/src/features/<name>/ops.rs` first, then call it from the GUI/TUI.
+4. **Don't block the main thread.** GUI uses `Task`; TUI uses `mpsc` background threads.
+5. **Don't add dependencies to individual crate `Cargo.toml` directly.** Add them to `[workspace.dependencies]` first.
+6. **Don't use `thiserror` for new errors.** Stick with `anyhow::Result` + `.context()`.
+7. **Match existing module structure.** Every feature follows the same file layout — don't invent new patterns.
+8. **Keep the `Message` enum flat** in the GUI. Group variants with comments, not nested enums.
+9. **GIF assets** are tracked with Git LFS (`*.gif` in `.gitattributes`). Use `vhs` to regenerate from `.tape` files.
+10. **Theme code** is shared via `gitkraft-core`. Both front-ends use the same 27-theme palette — don't add themes to only one front-end.
+11. **Don't leave dead code.** If a refactor makes existing functions or variants unreachable, remove them rather than annotating with `#[allow(dead_code)]`.

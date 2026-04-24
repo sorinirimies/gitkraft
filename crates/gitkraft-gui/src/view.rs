@@ -845,43 +845,106 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
 
         Some(crate::state::ContextMenu::Commit { index, oid }) => {
             let tab = state.active_tab();
-            let short = gitkraft_core::utils::short_oid_str(oid);
-            let msg_text = tab
-                .commits
-                .get(*index)
-                .map(|c| c.message.clone())
-                .unwrap_or_default();
+            let multi_count = tab.selected_commits.len();
 
-            let header =
-                view_utils::context_menu_header::<Message>(format!("Commit: {short}"), c.muted);
+            if multi_count > 1 {
+                // ── Multi-commit ─────────────────────────────────────────────────
+                let header = view_utils::context_menu_header::<Message>(
+                    format!("{} commits selected", multi_count),
+                    c.accent,
+                );
 
-            column![
-                header,
-                menu_item(
-                    "Checkout (detached HEAD)",
-                    Message::CheckoutCommitDetached(oid.clone()),
-                ),
-                menu_item(
-                    "Rebase current branch onto this",
-                    Message::RebaseOntoCommit(oid.clone()),
-                ),
-                menu_item("Revert commit", Message::RevertCommit(oid.clone())),
-                menu_item(
-                    "Reset here — soft (keep staged)",
-                    Message::ResetSoft(oid.clone())
-                ),
-                menu_item(
-                    "Reset here — mixed (keep files)",
-                    Message::ResetMixed(oid.clone())
-                ),
-                menu_item(
-                    "Reset here — hard (discard all)",
-                    Message::ResetHard(oid.clone())
-                ),
-                menu_item("Copy commit SHA", Message::CopyText(oid.clone())),
-                menu_item("Copy commit message", Message::CopyText(msg_text)),
-            ]
-            .into()
+                // Collect OIDs for the selected commits in selection order
+                let oids: Vec<String> = tab
+                    .selected_commits
+                    .iter()
+                    .filter_map(|&i| tab.commits.get(i).map(|c| c.oid.clone()))
+                    .collect();
+
+                let shas_joined = oids
+                    .iter()
+                    .filter_map(|o| tab.commits.iter().find(|c| c.oid == *o))
+                    .map(|c| c.short_oid.clone())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                let messages_joined = oids
+                    .iter()
+                    .filter_map(|o| tab.commits.iter().find(|c| c.oid == *o))
+                    .map(|c| c.message.trim().to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
+
+                let mut col = column![header];
+                col = col.push(menu_item(
+                    &format!("Cherry-pick {} commits", multi_count),
+                    Message::CherryPickCommits(oids.clone()),
+                ));
+                col = col.push(menu_item(
+                    &format!("Revert {} commits", multi_count),
+                    Message::RevertCommits(oids),
+                ));
+                col = col.push(view_utils::context_menu_separator::<Message>());
+                col = col.push(menu_item(
+                    "Copy commit SHAs",
+                    Message::CopyText(shas_joined),
+                ));
+                col = col.push(menu_item(
+                    "Copy commit messages",
+                    Message::CopyText(messages_joined),
+                ));
+                col.into()
+            } else {
+                // ── Single commit ────────────────────────────────────────────
+                let short = gitkraft_core::utils::short_oid_str(oid);
+                let msg_text = tab
+                    .commits
+                    .get(*index)
+                    .map(|c| c.message.clone())
+                    .unwrap_or_default();
+
+                let header =
+                    view_utils::context_menu_header::<Message>(format!("Commit: {short}"), c.muted);
+
+                let mut col = column![header];
+
+                for (group_idx, group) in gitkraft_core::COMMIT_MENU_GROUPS.iter().enumerate() {
+                    if group_idx > 0 {
+                        col = col.push(view_utils::context_menu_separator::<Message>());
+                    }
+                    for &kind in *group {
+                        let msg = match kind.as_simple_action() {
+                            // No input needed — dispatch directly
+                            Some(action) => Message::ExecuteCommitAction(oid.clone(), action),
+                            // Needs input — use the existing Begin* messages
+                            None => match kind {
+                                gitkraft_core::CommitActionKind::CreateBranchHere => {
+                                    Message::BeginCreateBranchAtCommit(oid.clone())
+                                }
+                                gitkraft_core::CommitActionKind::CreateTag => {
+                                    Message::BeginCreateTag(oid.clone(), false)
+                                }
+                                gitkraft_core::CommitActionKind::CreateAnnotatedTag => {
+                                    Message::BeginCreateTag(oid.clone(), true)
+                                }
+                                _ => Message::Noop,
+                            },
+                        };
+                        col = col.push(menu_item(kind.label(), msg));
+                    }
+                }
+
+                // Copy group — metadata, not a git operation
+                col = col.push(view_utils::context_menu_separator::<Message>());
+                col = col
+                    .push(menu_item("Copy commit SHA", Message::CopyText(oid.clone())))
+                    .push(menu_item(
+                        "Copy commit message",
+                        Message::CopyText(msg_text),
+                    ));
+
+                col.into()
+            }
         }
 
         Some(crate::state::ContextMenu::Stash { index }) => {

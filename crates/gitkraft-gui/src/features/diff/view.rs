@@ -33,6 +33,26 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let c = state.colors();
     let tab = state.active_tab();
 
+    // ── Priority 1: commit range diff (multiple commits selected) ─────────
+    if !tab.commit_range_diffs.is_empty() {
+        let multi_panel = multi_diff_content(&tab.commit_range_diffs, &c, tab.diff_scroll_offset);
+        return container(multi_panel)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(theme::surface_style)
+            .into();
+    }
+
+    // ── Priority 2: loading indicator for range diff ───────────────────────
+    if tab.selected_commits.len() > 1 && tab.is_loading_file_diff {
+        return container(loading_diff_view(&c))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(theme::surface_style)
+            .into();
+    }
+
+    // ── Priority 3: multi-file diff (existing code unchanged below) ────────
     // Multi-file mode: show concatenated diffs for all selected files.
     if !tab.multi_file_diffs.is_empty() {
         let file_list = commit_file_list(state, &c, state.diff_file_list_width);

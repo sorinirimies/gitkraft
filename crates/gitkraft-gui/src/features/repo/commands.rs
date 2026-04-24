@@ -286,6 +286,78 @@ pub fn create_annotated_tag_async(
     )
 }
 
+/// Cherry-pick a commit onto the current branch then reload.
+pub fn cherry_pick_async(path: PathBuf, oid: String) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let wd = workdir(&path)?;
+            gitkraft_core::features::repo::cherry_pick_commit(&wd, &oid)
+                .map_err(|e| e.to_string())?;
+            load_repo_blocking(&path)
+        })()
+    )
+}
+
+/// Create a local branch at a specific commit OID then reload.
+pub fn create_branch_at_commit_async(path: PathBuf, name: String, oid: String) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let repo = open_repo!(&path);
+            gitkraft_core::features::branches::create_branch_at_commit(&repo, &name, &oid)
+                .map_err(|e| e.to_string())?;
+            load_repo_blocking(&path)
+        })()
+    )
+}
+
+/// Execute any `CommitAction` against a specific commit then reload.
+pub fn execute_commit_action_async(
+    path: PathBuf,
+    oid: String,
+    action: gitkraft_core::CommitAction,
+) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let wd = workdir(&path)?;
+            action.execute(&wd, &oid).map_err(|e| e.to_string())?;
+            load_repo_blocking(&path)
+        })()
+    )
+}
+
+/// Cherry-pick a list of commits (by OID) onto the current branch then reload.
+pub fn cherry_pick_commits_async(path: PathBuf, oids: Vec<String>) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let wd = workdir(&path)?;
+            for oid in &oids {
+                gitkraft_core::features::repo::cherry_pick_commit(&wd, oid)
+                    .map_err(|e| e.to_string())?;
+            }
+            load_repo_blocking(&path)
+        })()
+    )
+}
+
+/// Revert a list of commits (by OID) in order then reload.
+pub fn revert_commits_async(path: PathBuf, oids: Vec<String>) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let wd = workdir(&path)?;
+            for oid in &oids {
+                gitkraft_core::features::repo::revert_commit(&wd, oid)
+                    .map_err(|e| e.to_string())?;
+            }
+            load_repo_blocking(&path)
+        })()
+    )
+}
+
 // ── Async persistence helpers ─────────────────────────────────────────────────
 
 /// Record that a repo was opened and return the refreshed recent-repos list.

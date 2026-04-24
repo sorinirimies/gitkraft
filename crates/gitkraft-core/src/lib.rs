@@ -15,6 +15,7 @@ pub mod utils;
 // Convenience re-exports
 pub use features::branches::{BranchInfo, BranchType};
 pub use features::commits::CommitInfo;
+pub use features::commits::{CommitAction, CommitActionKind, COMMIT_MENU_GROUPS};
 pub use features::diff::{
     DiffFileEntry, DiffHunk, DiffInfo, DiffLine, FileStatus, StatusColorCategory,
 };

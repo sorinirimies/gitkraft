@@ -109,6 +109,8 @@ pub enum BackgroundResult {
     SingleFileDiffLoaded(Result<(usize, gitkraft_core::DiffInfo), String>),
     /// Commit search results loaded.
     SearchResults(Result<Vec<gitkraft_core::CommitInfo>, String>),
+    /// Combined range diff across multiple selected commits.
+    CommitRangeDiffLoaded(Result<Vec<gitkraft_core::DiffInfo>, String>),
 }
 
 /// Payload returned by an async staging refresh.
@@ -149,6 +151,10 @@ pub enum InputPurpose {
     RepoPath,
     SearchQuery,
     StashMessage,
+    /// First string for a pending commit action (branch name, tag name, etc.).
+    CommitActionInput1,
+    /// Second string for a pending commit action (annotated-tag message).
+    CommitActionInput2,
 }
 
 /// Which sub-list within the staging pane has focus.
@@ -229,6 +235,25 @@ pub struct RepoTab {
     pub selected_unstaged: std::collections::HashSet<usize>,
     /// Selected staged file indices for multi-select.
     pub selected_staged: std::collections::HashSet<usize>,
+
+    /// Anchor commit index for range selection (Shift+Up/Down).
+    pub anchor_commit_index: Option<usize>,
+    /// Ordered ascending list of commit indices in the current range selection.
+    pub selected_commits: Vec<usize>,
+    /// Combined diff for the current commit range selection.
+    pub commit_range_diffs: Vec<DiffInfo>,
+
+    /// Flat ordered list of all action kinds shown in the popup (built from
+    /// `COMMIT_MENU_GROUPS`, separator positions stored separately).
+    pub commit_action_items: Vec<gitkraft_core::CommitActionKind>,
+    /// Which item in `commit_action_items` is highlighted (0-based).
+    pub commit_action_cursor: usize,
+    /// OID of the commit targeted by the open action popup.
+    pub pending_commit_action_oid: Option<String>,
+    /// Action kind waiting for user input before it can execute.
+    pub pending_action_kind: Option<gitkraft_core::CommitActionKind>,
+    /// First input collected for the pending action (e.g. branch/tag name).
+    pub action_input1: String,
 }
 
 impl RepoTab {
@@ -278,6 +303,16 @@ impl RepoTab {
 
             selected_unstaged: std::collections::HashSet::new(),
             selected_staged: std::collections::HashSet::new(),
+
+            anchor_commit_index: None,
+            selected_commits: Vec::new(),
+            commit_range_diffs: Vec::new(),
+
+            commit_action_items: Vec::new(),
+            commit_action_cursor: 0,
+            pending_commit_action_oid: None,
+            pending_action_kind: None,
+            action_input1: String::new(),
         }
     }
 
@@ -788,6 +823,23 @@ impl App {
                         self.tab_mut().error_message = Some(format!("Search failed: {e}"));
                     }
                 },
+                BackgroundResult::CommitRangeDiffLoaded(res) => {
+                    self.tab_mut().is_loading = false;
+                    match res {
+                        Ok(diffs) => {
+                            let count = self.tab().selected_commits.len();
+                            let tab = self.tab_mut();
+                            tab.commit_range_diffs = diffs;
+                            tab.diff_scroll = 0;
+                            tab.status_message = Some(format!(
+                                "Combined diff for {count} commits — use j/k to scroll"
+                            ));
+                        }
+                        Err(e) => {
+                            self.tab_mut().error_message = Some(format!("Range diff: {e}"));
+                        }
+                    }
+                }
             }
         }
     }
@@ -1256,6 +1308,41 @@ impl App {
         );
     }
 
+    /// Load the combined diff for the currently selected commit range.
+    pub fn load_commit_range_diff(&mut self) {
+        let selected = self.tab().selected_commits.clone();
+        if selected.len() < 2 {
+            return;
+        }
+        // selected is ascending; highest index = oldest commit (commits are newest-first)
+        let oldest_idx = *selected.last().unwrap();
+        let newest_idx = selected[0];
+
+        let oldest_oid = match self.tab().commits.get(oldest_idx).map(|c| c.oid.clone()) {
+            Some(o) => o,
+            None => return,
+        };
+        let newest_oid = match self.tab().commits.get(newest_idx).map(|c| c.oid.clone()) {
+            Some(o) => o,
+            None => return,
+        };
+
+        bg_task!(
+            self,
+            "Loading range diff…",
+            BackgroundResult::CommitRangeDiffLoaded,
+            |repo_path| {
+                let repo = open_repo_str(&repo_path)?;
+                gitkraft_core::features::diff::get_commit_range_diff(
+                    &repo,
+                    &oldest_oid,
+                    &newest_oid,
+                )
+                .map_err(|e| e.to_string())
+            }
+        );
+    }
+
     pub fn close_repo(&mut self) {
         self.tabs[self.active_tab_index] = RepoTab::new();
         self.input_buffer.clear();
@@ -1540,6 +1627,57 @@ impl App {
                     .ok()
                     .map(|_| format!("Rebased onto {branch_name}")),
                 err_message: res.err().map(|e| format!("rebase: {e}")),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
+    }
+
+    /// Open the commit-action popup for the currently selected commit.
+    pub fn open_commit_action_popup(&mut self) {
+        let idx = match self.tab().commit_list_state.selected() {
+            Some(i) => i,
+            None => return,
+        };
+        let oid = match self.tab().commits.get(idx).map(|c| c.oid.clone()) {
+            Some(o) => o,
+            None => return,
+        };
+        // Build the flat item list from COMMIT_MENU_GROUPS
+        let items: Vec<gitkraft_core::CommitActionKind> = gitkraft_core::COMMIT_MENU_GROUPS
+            .iter()
+            .flat_map(|g| g.iter().copied())
+            .collect();
+        let tab = self.tab_mut();
+        tab.pending_commit_action_oid = Some(oid);
+        tab.commit_action_items = items;
+        tab.commit_action_cursor = 0;
+    }
+
+    /// Execute a fully-built `CommitAction` on the pending OID in the background.
+    pub fn execute_commit_action(&mut self, action: gitkraft_core::CommitAction) {
+        let oid = match self.tab().pending_commit_action_oid.clone() {
+            Some(o) => o,
+            None => return,
+        };
+        let repo_path = match self.tab().repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        let label = action.label().to_string();
+        let short = oid[..oid.len().min(7)].to_string();
+        self.tab_mut().is_loading = true;
+        self.tab_mut().status_message = Some(format!("{label} {short}…"));
+        self.tab_mut().pending_commit_action_oid = None;
+        self.tab_mut().pending_action_kind = None;
+        self.tab_mut().action_input1.clear();
+        let tx = self.bg_tx.clone();
+        std::thread::spawn(move || {
+            let workdir = repo_path.as_path();
+            let res = action.execute(workdir, &oid);
+            let _ = tx.send(crate::app::BackgroundResult::OperationDone {
+                ok_message: res.as_ref().ok().map(|_| format!("{label} complete")),
+                err_message: res.err().map(|e| e.to_string()),
                 needs_refresh: true,
                 needs_staging_refresh: false,
             });
@@ -2132,5 +2270,133 @@ mod tests {
             app.new_tab();
         }
         assert_eq!(app.tabs.len(), initial_tabs + 1);
+    }
+
+    // ── Commit action popup ───────────────────────────────────────────────
+
+    #[test]
+    fn commit_action_items_defaults_empty() {
+        let tab = RepoTab::new();
+        assert!(tab.commit_action_items.is_empty());
+        assert_eq!(tab.commit_action_cursor, 0);
+        assert!(tab.pending_commit_action_oid.is_none());
+        assert!(tab.pending_action_kind.is_none());
+        assert!(tab.action_input1.is_empty());
+    }
+
+    #[test]
+    fn open_commit_action_popup_no_selection_is_noop() {
+        let mut app = App::new();
+        // No commit selected, no commits loaded
+        app.open_commit_action_popup();
+        assert!(app.tab().pending_commit_action_oid.is_none());
+        assert!(app.tab().commit_action_items.is_empty());
+    }
+
+    #[test]
+    fn open_commit_action_popup_fills_items_from_menu_groups() {
+        let mut app = App::new();
+        // Add a fake commit and select it
+        app.tab_mut().commits = vec![gitkraft_core::CommitInfo {
+            oid: "abc1234567890".to_string(),
+            short_oid: "abc1234".to_string(),
+            summary: "test commit".to_string(),
+            message: "test commit".to_string(),
+            author_name: "author".to_string(),
+            author_email: "a@b.com".to_string(),
+            time: Default::default(),
+            parent_ids: vec![],
+        }];
+        app.tab_mut().commit_list_state.select(Some(0));
+
+        app.open_commit_action_popup();
+
+        // Should have filled items from COMMIT_MENU_GROUPS (10 total)
+        let expected: Vec<gitkraft_core::CommitActionKind> = gitkraft_core::COMMIT_MENU_GROUPS
+            .iter()
+            .flat_map(|g| g.iter().copied())
+            .collect();
+        assert_eq!(app.tab().commit_action_items, expected);
+        assert_eq!(app.tab().commit_action_items.len(), 10);
+    }
+
+    #[test]
+    fn open_commit_action_popup_sets_pending_oid() {
+        let mut app = App::new();
+        app.tab_mut().commits = vec![gitkraft_core::CommitInfo {
+            oid: "deadbeef1234567".to_string(),
+            short_oid: "deadbee".to_string(),
+            summary: "s".to_string(),
+            message: "s".to_string(),
+            author_name: "a".to_string(),
+            author_email: "a@b.com".to_string(),
+            time: Default::default(),
+            parent_ids: vec![],
+        }];
+        app.tab_mut().commit_list_state.select(Some(0));
+
+        app.open_commit_action_popup();
+
+        assert_eq!(
+            app.tab().pending_commit_action_oid.as_deref(),
+            Some("deadbeef1234567")
+        );
+        assert_eq!(app.tab().commit_action_cursor, 0);
+    }
+
+    #[test]
+    fn open_commit_action_popup_resets_cursor() {
+        let mut app = App::new();
+        app.tab_mut().commits = vec![gitkraft_core::CommitInfo {
+            oid: "aaa".to_string(),
+            short_oid: "aaa".to_string(),
+            summary: "s".to_string(),
+            message: "s".to_string(),
+            author_name: "a".to_string(),
+            author_email: "a@b.com".to_string(),
+            time: Default::default(),
+            parent_ids: vec![],
+        }];
+        app.tab_mut().commit_list_state.select(Some(0));
+        // Pre-set cursor to a non-zero value
+        app.tab_mut().commit_action_cursor = 5;
+
+        app.open_commit_action_popup();
+
+        assert_eq!(app.tab().commit_action_cursor, 0);
+    }
+
+    #[test]
+    fn execute_commit_action_no_pending_oid_is_noop() {
+        let mut app = App::new();
+        // No pending OID — should not set is_loading
+        app.execute_commit_action(gitkraft_core::CommitAction::CherryPick);
+        assert!(!app.tab().is_loading);
+    }
+
+    #[test]
+    fn execute_commit_action_no_repo_path_is_noop() {
+        let mut app = App::new();
+        app.tab_mut().pending_commit_action_oid = Some("abc123".to_string());
+        // No repo_path set — should not set is_loading
+        app.execute_commit_action(gitkraft_core::CommitAction::CherryPick);
+        assert!(!app.tab().is_loading);
+    }
+
+    #[test]
+    fn execute_commit_action_sets_loading_and_clears_state() {
+        let mut app = App::new();
+        app.tab_mut().pending_commit_action_oid = Some("abc123".to_string());
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().pending_action_kind = Some(gitkraft_core::CommitActionKind::CherryPick);
+        app.tab_mut().action_input1 = "some-input".to_string();
+
+        app.execute_commit_action(gitkraft_core::CommitAction::CherryPick);
+
+        assert!(app.tab().is_loading);
+        // State should be cleared after dispatch
+        assert!(app.tab().pending_commit_action_oid.is_none());
+        assert!(app.tab().pending_action_kind.is_none());
+        assert!(app.tab().action_input1.is_empty());
     }
 }

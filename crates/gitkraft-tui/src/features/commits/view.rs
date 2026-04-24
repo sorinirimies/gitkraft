@@ -1,7 +1,7 @@
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem};
 use ratatui::Frame;
 
 use crate::app::{ActivePane, App};
@@ -205,16 +205,27 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
 
             let relative = commit.relative_time();
 
-            // Build graph prefix spans for this row (skip graph for search results)
-            let mut spans = if show_graph {
-                if let Some(row) = app.tab().graph_rows.get(idx) {
-                    build_graph_spans(row, &theme.graph_colors)
+            let is_primary_selected = app.tab().commit_list_state.selected() == Some(idx);
+
+            // Selection badge: position in selected_commits range (1-based), or spaces
+            let badge_span =
+                if let Some(pos) = app.tab().selected_commits.iter().position(|&i| i == idx) {
+                    Span::styled(format!("{:>2}", pos + 1), Style::default().fg(theme.accent))
                 } else {
-                    vec![Span::raw("  ")]
+                    Span::raw("  ")
+                };
+
+            // Build graph prefix spans for this row (skip graph for search results)
+            let mut spans = vec![badge_span, Span::raw(" ")];
+            if show_graph {
+                if let Some(row) = app.tab().graph_rows.get(idx) {
+                    spans.extend(build_graph_spans(row, &theme.graph_colors));
+                } else {
+                    spans.push(Span::raw("  "));
                 }
             } else {
-                vec![Span::raw("  ")]
-            };
+                spans.push(Span::raw("  "));
+            }
 
             // Append the commit info spans
             spans.push(Span::styled(
@@ -234,7 +245,13 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                 Style::default().fg(theme.text_muted),
             ));
 
-            ListItem::new(Line::from(spans))
+            let style = if !is_primary_selected && app.tab().selected_commits.contains(&idx) {
+                Style::default().bg(theme.sel_bg)
+            } else {
+                Style::default()
+            };
+
+            ListItem::new(Line::from(spans)).style(style)
         })
         .collect();
 
@@ -249,4 +266,82 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         .highlight_symbol("▶ ");
 
     frame.render_stateful_widget(list, area, &mut app.tab_mut().commit_list_state);
+
+    // Render commit-action popup if open
+    if !app.tab().commit_action_items.is_empty() {
+        render_action_popup(app, frame, area);
+    }
+}
+
+/// Render the commit-action popup centred over `area`.
+fn render_action_popup(app: &mut App, frame: &mut Frame, area: Rect) {
+    let theme = app.theme();
+
+    // Collect flat items and separator positions from COMMIT_MENU_GROUPS
+    let mut items: Vec<ListItem> = Vec::new();
+    let cursor = app.tab().commit_action_cursor;
+    let mut flat_idx: usize = 0;
+
+    for (group_idx, group) in gitkraft_core::COMMIT_MENU_GROUPS.iter().enumerate() {
+        if group_idx > 0 {
+            // Separator line
+            items.push(ListItem::new(Line::from(Span::styled(
+                "─────────────────────────────",
+                Style::default().fg(theme.border_inactive),
+            ))));
+        }
+        for &kind in *group {
+            let is_selected = flat_idx == cursor;
+            let style = if is_selected {
+                Style::default()
+                    .fg(theme.text_primary)
+                    .bg(theme.sel_bg)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme.text_primary)
+            };
+            let prefix = if is_selected { "▶ " } else { "  " };
+            items.push(ListItem::new(Line::from(vec![
+                Span::styled(prefix, style),
+                Span::styled(kind.label(), style),
+            ])));
+            flat_idx += 1;
+        }
+    }
+
+    // Size: width = longest label + 6, height = items + 2 border
+    let popup_width = (gitkraft_core::COMMIT_MENU_GROUPS
+        .iter()
+        .flat_map(|g| g.iter())
+        .map(|k| k.label().len())
+        .max()
+        .unwrap_or(30)
+        + 6) as u16;
+    let popup_height = (items.len() + 2) as u16;
+
+    // Centre within `area`
+    let x = area.x + area.width.saturating_sub(popup_width) / 2;
+    let y = area.y + area.height.saturating_sub(popup_height) / 2;
+    let popup_rect = Rect {
+        x,
+        y,
+        width: popup_width.min(area.width),
+        height: popup_height.min(area.height),
+    };
+
+    let oid_short = app
+        .tab()
+        .pending_commit_action_oid
+        .as_deref()
+        .map(|o| &o[..o.len().min(7)])
+        .unwrap_or("?");
+
+    let block = Block::default()
+        .title(format!(" Actions: {oid_short} "))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.border_active));
+
+    frame.render_widget(Clear, popup_rect);
+    let list = List::new(items).block(block);
+    frame.render_widget(list, popup_rect);
 }

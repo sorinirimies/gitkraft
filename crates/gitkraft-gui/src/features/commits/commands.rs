@@ -177,6 +177,50 @@ pub fn checkout_file_at_commit(path: PathBuf, oid: String, file_path: String) ->
 }
 
 /// Restore multiple files from a commit to the working directory.
+/// Cherry-pick a sequence of commits onto the current branch.
+pub fn cherry_pick_commits(path: PathBuf, oids: Vec<String>) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            for oid in &oids {
+                gitkraft_core::features::commits::cherry_pick_commit(&path, oid)
+                    .map_err(|e| format!("{oid}: {e}"))?;
+            }
+            crate::features::repo::commands::load_repo_blocking(&path)
+        })()
+    )
+}
+
+/// Revert a sequence of commits in order.
+pub fn revert_commits(path: PathBuf, oids: Vec<String>) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            for oid in &oids {
+                gitkraft_core::features::repo::revert_commit(&path, oid)
+                    .map_err(|e| format!("{oid}: {e}"))?;
+            }
+            crate::features::repo::commands::load_repo_blocking(&path)
+        })()
+    )
+}
+
+/// Load the combined diff across a range of commits.
+pub fn load_commit_range_diff(
+    path: PathBuf,
+    oldest_oid: String,
+    newest_oid: String,
+) -> Task<Message> {
+    git_task!(
+        Message::CommitRangeDiffLoaded,
+        (|| {
+            let repo = open_repo!(&path);
+            gitkraft_core::features::diff::get_commit_range_diff(&repo, &oldest_oid, &newest_oid)
+                .map_err(|e| e.to_string())
+        })()
+    )
+}
+
 pub fn checkout_multi_files_at_commit(
     path: PathBuf,
     oid: String,

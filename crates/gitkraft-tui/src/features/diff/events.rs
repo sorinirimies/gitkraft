@@ -16,10 +16,8 @@ fn handle_file_list_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('j') => navigate_file_down(app),
         KeyCode::Char('k') => navigate_file_up(app),
         // Enter diff content sub-pane
-        KeyCode::Enter | KeyCode::Char('l') => {
-            if !app.tab().commit_files.is_empty() {
-                app.tab_mut().diff_sub_pane = DiffSubPane::Content;
-            }
+        KeyCode::Enter | KeyCode::Char('l') if !app.tab().commit_files.is_empty() => {
+            app.tab_mut().diff_sub_pane = DiffSubPane::Content;
         }
         _ => {}
     }

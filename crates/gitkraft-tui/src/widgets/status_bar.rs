@@ -24,6 +24,8 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
             InputPurpose::RepoPath => "INPUT: Path",
             InputPurpose::SearchQuery => "INPUT: Search",
             InputPurpose::StashMessage => "INPUT: Stash Msg",
+            InputPurpose::CommitActionInput1 => "INPUT: Action",
+            InputPurpose::CommitActionInput2 => "INPUT: Action (2)",
             InputPurpose::None => "INPUT",
         },
     };

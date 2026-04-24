@@ -90,6 +90,20 @@ pub fn revert_commit(workdir: &std::path::Path, oid_str: &str) -> Result<()> {
     Ok(())
 }
 
+/// Cherry-pick a commit by OID onto the current branch.
+pub fn cherry_pick_commit(workdir: &std::path::Path, oid_str: &str) -> anyhow::Result<()> {
+    let output = std::process::Command::new("git")
+        .current_dir(workdir)
+        .args(["cherry-pick", oid_str])
+        .output()
+        .context("failed to spawn git")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("{}", stderr.trim());
+    }
+    Ok(())
+}
+
 /// Reset the current branch to a specific commit.
 ///
 /// `mode` must be one of `"soft"`, `"mixed"`, or `"hard"`:

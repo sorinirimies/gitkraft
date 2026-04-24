@@ -12,7 +12,54 @@ use super::commands;
 pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
     match message {
         Message::SelectCommit(index) => {
-            // Read repo_path and commit info before taking a mutable borrow.
+            let shift_held = state.keyboard_modifiers.shift();
+
+            if shift_held {
+                // ── Shift+Click: range selection from anchor to clicked index ──
+                let anchor = state
+                    .active_tab()
+                    .anchor_commit_index
+                    .or(state.active_tab().selected_commit)
+                    .unwrap_or(index);
+
+                let (start, end) = if anchor <= index {
+                    (anchor, index)
+                } else {
+                    (index, anchor)
+                };
+                let range: Vec<usize> = (start..=end).collect();
+
+                // Determine the oldest and newest commits in the selection.
+                // Commits are stored newest-first, so the highest index is the oldest.
+                let oldest_idx = *range.last().unwrap();
+                let newest_idx = range[0];
+                let oldest_oid = state
+                    .active_tab()
+                    .commits
+                    .get(oldest_idx)
+                    .map(|c| c.oid.clone());
+                let newest_oid = state
+                    .active_tab()
+                    .commits
+                    .get(newest_idx)
+                    .map(|c| c.oid.clone());
+                let repo_path = state.active_tab().repo_path.clone();
+
+                let tab = state.active_tab_mut();
+                tab.selected_commits = range;
+                tab.selected_commit = Some(index);
+                tab.commit_range_diffs.clear();
+                tab.is_loading_file_diff = true;
+
+                if let (Some(oldest), Some(newest), Some(path)) =
+                    (oldest_oid, newest_oid, repo_path)
+                {
+                    return commands::load_commit_range_diff(path, oldest, newest);
+                }
+                return Task::none();
+            }
+
+            // ── Regular click: single commit, set anchor ──────────────────────
             let repo_path = state.active_tab().repo_path.clone();
             let commit_info = state
                 .active_tab()
@@ -21,6 +68,8 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                 .map(|c| (c.oid.clone(), c.short_oid.clone()));
 
             let tab = state.active_tab_mut();
+            tab.anchor_commit_index = Some(index);
+            tab.selected_commits.clear();
             tab.selected_commit = Some(index);
             tab.show_commit_detail = true;
             // Clear previous diff state immediately for snappy feedback.
@@ -30,6 +79,7 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             tab.diff_scroll_offset = 0.0;
             tab.selected_commit_file_indices.clear();
             tab.multi_file_diffs.clear();
+            tab.commit_range_diffs.clear();
 
             // Load just the file list (instant — no line parsing).
             if let (Some(path), Some((oid, short_oid))) = (repo_path, commit_info) {
@@ -195,6 +245,48 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             } else {
                 Task::none()
             }
+        }
+
+        Message::CherryPickCommits(oids) => {
+            state.active_tab_mut().context_menu = None;
+            if let Some(path) = state.active_tab().repo_path.clone() {
+                let count = oids.len();
+                state.active_tab_mut().status_message =
+                    Some(format!("Cherry-picking {count} commit(s)…"));
+                commands::cherry_pick_commits(path, oids)
+            } else {
+                Task::none()
+            }
+        }
+
+        Message::RevertCommits(oids) => {
+            state.active_tab_mut().context_menu = None;
+            if let Some(path) = state.active_tab().repo_path.clone() {
+                let count = oids.len();
+                state.active_tab_mut().status_message =
+                    Some(format!("Reverting {count} commit(s)…"));
+                commands::revert_commits(path, oids)
+            } else {
+                Task::none()
+            }
+        }
+
+        Message::CommitRangeDiffLoaded(result) => {
+            let tab = state.active_tab_mut();
+            tab.is_loading_file_diff = false;
+            match result {
+                Ok(diffs) => {
+                    tab.commit_range_diffs = diffs;
+                    tab.diff_scroll_offset = 0.0;
+                    let count = tab.selected_commits.len();
+                    tab.status_message = Some(format!("Showing combined diff for {count} commits"));
+                }
+                Err(e) => {
+                    tab.commit_range_diffs.clear();
+                    tab.error_message = Some(format!("Range diff failed: {e}"));
+                }
+            }
+            Task::none()
         }
 
         _ => Task::none(),

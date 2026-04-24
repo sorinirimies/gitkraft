@@ -189,7 +189,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                         }
                     }
                     ActivePane::CommitLog => {
-                        features::commits::events::navigate_up(app);
+                        if key.modifiers.contains(KeyModifiers::SHIFT) {
+                            features::commits::events::select_commit_up(app);
+                        } else {
+                            features::commits::events::navigate_up(app);
+                        }
                     }
                     ActivePane::DiffView => match app.tab().diff_sub_pane {
                         DiffSubPane::FileList => {
@@ -224,7 +228,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                         }
                     }
                     ActivePane::CommitLog => {
-                        features::commits::events::navigate_down(app);
+                        if key.modifiers.contains(KeyModifiers::SHIFT) {
+                            features::commits::events::select_commit_down(app);
+                        } else {
+                            features::commits::events::navigate_down(app);
+                        }
                     }
                     ActivePane::DiffView => match app.tab().diff_sub_pane {
                         DiffSubPane::FileList => {
@@ -249,6 +257,9 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                     }
                 },
 
+                KeyCode::Char('a') if app.active_pane == ActivePane::CommitLog => {
+                    app.open_commit_action_popup();
+                }
                 _ => {
                     // Delegate to the active pane's feature handler
                     match app.active_pane {
@@ -322,6 +333,43 @@ fn submit_input(app: &mut App) {
             app.tab_mut().stash_message_buffer = app.input_buffer.clone();
             app.input_buffer.clear();
             app.stash_save();
+        }
+        InputPurpose::CommitActionInput1 => {
+            let value = app.input_buffer.trim().to_string();
+            app.input_buffer.clear();
+            if value.is_empty() {
+                app.tab_mut().status_message = Some("Cancelled".into());
+                app.tab_mut().pending_action_kind = None;
+                app.tab_mut().pending_commit_action_oid = None;
+                return;
+            }
+            let kind = match app.tab().pending_action_kind {
+                Some(k) => k,
+                None => return,
+            };
+            if kind.needs_second_input() {
+                // Store first input, ask for second
+                app.tab_mut().action_input1 = value;
+                app.input_mode = crate::app::InputMode::Input;
+                app.input_purpose = InputPurpose::CommitActionInput2;
+                let prompt = kind.second_input_prompt().unwrap_or("Message:");
+                app.tab_mut().status_message = Some(prompt.to_string());
+            } else {
+                // Build and execute the action
+                let action = kind.into_action(value, String::new());
+                app.execute_commit_action(action);
+            }
+        }
+        InputPurpose::CommitActionInput2 => {
+            let value2 = app.input_buffer.trim().to_string();
+            app.input_buffer.clear();
+            let kind = match app.tab().pending_action_kind {
+                Some(k) => k,
+                None => return,
+            };
+            let input1 = app.tab().action_input1.clone();
+            let action = kind.into_action(input1, value2);
+            app.execute_commit_action(action);
         }
         InputPurpose::None => {
             app.input_buffer.clear();

@@ -186,9 +186,26 @@ fn commit_row_element<'a>(
     c: &ThemeColors,
     available_summary_px: f32,
     author_width: f32,
+    selected_range: &[usize],
 ) -> Element<'a, Message> {
     let commit = &tab.commits[idx];
     let is_selected = tab.selected_commit == Some(idx);
+
+    // Badge: position in the selected range (1-based), or blank space
+    let selection_badge: Element<'a, Message> =
+        if let Some(pos) = selected_range.iter().position(|&i| i == idx) {
+            container(
+                text(format!("{}", pos + 1))
+                    .size(10)
+                    .font(iced::Font::MONOSPACE)
+                    .color(c.accent),
+            )
+            .width(16)
+            .center_x(iced::Length::Fixed(16.0))
+            .into()
+        } else {
+            Space::new().width(16).into()
+        };
 
     // Graph column
     let graph_elem: Element<'_, Message> = if let Some(grow) = tab.graph_rows.get(idx) {
@@ -241,6 +258,8 @@ fn commit_row_element<'a>(
     .clip(true);
 
     let row_content = row![
+        selection_badge,
+        Space::new().width(2),
         graph_elem,
         oid_label,
         Space::new().width(6),
@@ -253,8 +272,11 @@ fn commit_row_element<'a>(
     .align_y(Alignment::Center)
     .padding([3, 8]);
 
+    let is_in_range = selected_range.contains(&idx);
     let style_fn = if is_selected {
         theme::selected_row_style as fn(&iced::Theme) -> iced::widget::container::Style
+    } else if is_in_range {
+        theme::highlight_row_style as fn(&iced::Theme) -> iced::widget::container::Style
     } else {
         theme::surface_style as fn(&iced::Theme) -> iced::widget::container::Style
     };
@@ -287,9 +309,16 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     let header_text = text("Commit Log").size(14).color(c.text_primary);
 
-    let commit_count = text(format!("({})", tab.commits.len()))
-        .size(12)
-        .color(c.muted);
+    let multi_count = tab.selected_commits.len();
+    let commit_count: iced::widget::Text<'_, iced::Theme> = if multi_count > 1 {
+        text(format!("({} selected)", multi_count))
+            .size(12)
+            .color(c.accent)
+    } else {
+        text(format!("({})", tab.commits.len()))
+            .size(12)
+            .color(c.muted)
+    };
 
     let header_row = row![
         header_icon,
@@ -347,6 +376,8 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let fixed_overhead = 30.0 + 56.0 + 22.0 + author_width + 72.0 + 16.0;
     let available_summary_px = (state.commit_log_width - fixed_overhead).max(40.0);
 
+    let selected_range = tab.selected_commits.as_slice();
+
     for idx in first..last {
         list_col = list_col.push(commit_row_element(
             tab,
@@ -354,6 +385,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             &c,
             available_summary_px,
             author_width,
+            selected_range,
         ));
     }
 

@@ -67,6 +67,43 @@ pub fn get_commit_diff(repo: &Repository, oid_str: &str) -> Result<Vec<DiffInfo>
     parse_diff(&diff)
 }
 
+/// Return the combined diff across a range of commits.
+///
+/// Shows the net changes from the parent of `oldest_oid` to `newest_oid`
+/// (equivalent to `git diff <oldest>^ <newest>`).  When commits are in a
+/// consecutive range this collapses all intermediate changes into one diff.
+pub fn get_commit_range_diff(
+    repo: &Repository,
+    oldest_oid_str: &str,
+    newest_oid_str: &str,
+) -> Result<Vec<DiffInfo>> {
+    let oldest_oid = git2::Oid::from_str(oldest_oid_str)
+        .with_context(|| format!("invalid OID: {oldest_oid_str}"))?;
+    let oldest_commit = repo
+        .find_commit(oldest_oid)
+        .with_context(|| format!("commit {oldest_oid_str} not found"))?;
+
+    // Start from the parent of the oldest commit (or empty tree for root)
+    let start_tree = if oldest_commit.parent_count() > 0 {
+        let parent = oldest_commit.parent(0).context("failed to read parent")?;
+        Some(parent.tree().context("parent has no tree")?)
+    } else {
+        None
+    };
+
+    let newest_oid = git2::Oid::from_str(newest_oid_str)
+        .with_context(|| format!("invalid OID: {newest_oid_str}"))?;
+    let newest_commit = repo
+        .find_commit(newest_oid)
+        .with_context(|| format!("commit {newest_oid_str} not found"))?;
+    let end_tree = newest_commit.tree().context("newest commit has no tree")?;
+
+    let diff = repo
+        .diff_tree_to_tree(start_tree.as_ref(), Some(&end_tree), None)
+        .context("failed to compute range diff")?;
+    parse_diff(&diff)
+}
+
 /// Restore a specific file from a commit to the working directory.
 ///
 /// Equivalent to `git checkout <oid> -- <file_path>`.
@@ -616,6 +653,23 @@ mod tests {
         checkout_file_at_commit(&repo, &head_oid, "hello.txt").unwrap();
         let content = std::fs::read_to_string(dir.path().join("hello.txt")).unwrap();
         assert_eq!(content, "Hello, world!\n");
+    }
+
+    #[test]
+    fn range_diff_single_commit_matches_commit_diff() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = init_repo_with_commit(dir.path());
+        let oid = repo
+            .head()
+            .unwrap()
+            .peel_to_commit()
+            .unwrap()
+            .id()
+            .to_string();
+        // Range diff with the same commit as both ends should equal a single-commit diff
+        let range = get_commit_range_diff(&repo, &oid, &oid).unwrap();
+        let single = get_commit_diff(&repo, &oid).unwrap();
+        assert_eq!(range.len(), single.len());
     }
 
     #[test]

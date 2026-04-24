@@ -84,6 +84,7 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                 tab.anchor_file_index = Some(index); // fix the anchor for future Shift+Clicks
                 tab.selected_commit_file_indices.clear();
                 tab.multi_file_diffs.clear();
+                tab.commit_range_diffs.clear();
 
                 let file_entry = tab.commit_files.get(index).cloned();
                 if let (Some(entry), Some(path), Some(oid)) = (file_entry, repo_path, oid) {

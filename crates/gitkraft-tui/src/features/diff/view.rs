@@ -15,6 +15,12 @@ use crate::app::{ActivePane, App, DiffSubPane};
 /// split horizontally into a file-list sidebar on the left and the diff
 /// content on the right, matching the GUI's "Files" panel.
 pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
+    // ── Commit range diff takes priority ──────────────────────────────────
+    if !app.tab().commit_range_diffs.is_empty() {
+        render_commit_range_diff(app, frame, area);
+        return;
+    }
+
     let theme = app.theme();
     let is_active = app.active_pane == ActivePane::DiffView;
     let sub_pane = app.tab().diff_sub_pane.clone();
@@ -117,6 +123,67 @@ fn render_file_list(
         .highlight_symbol("▸ ");
 
     frame.render_stateful_widget(list, area, &mut list_state);
+}
+
+/// Render the combined range diff for multiple selected commits.
+fn render_commit_range_diff(app: &mut App, frame: &mut Frame, area: Rect) {
+    let theme = app.theme();
+    let is_active = app.active_pane == ActivePane::DiffView;
+    let border_color = if is_active {
+        theme.border_active
+    } else {
+        theme.border_inactive
+    };
+
+    let count = app.tab().selected_commits.len();
+    let title = format!(" Combined diff ({} commits) ", count);
+
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color));
+
+    let diffs = app.tab().commit_range_diffs.clone();
+    let mut lines: Vec<Line> = Vec::new();
+
+    for diff in &diffs {
+        // File header
+        lines.push(Line::from(Span::styled(
+            format!("══ {} ══", diff.display_path()),
+            Style::default()
+                .fg(theme.diff_hunk)
+                .add_modifier(Modifier::BOLD),
+        )));
+
+        for hunk in &diff.hunks {
+            for line in &hunk.lines {
+                lines.push(styled_diff_line(line, &theme));
+            }
+        }
+        lines.push(Line::default()); // blank separator
+    }
+
+    // Clamp scroll
+    let content_height = lines.len() as u16;
+    let visible_height = area.height.saturating_sub(2);
+    {
+        let tab = app.tab_mut();
+        if content_height > visible_height {
+            if tab.diff_scroll > content_height.saturating_sub(visible_height) {
+                tab.diff_scroll = content_height.saturating_sub(visible_height);
+            }
+        } else {
+            tab.diff_scroll = 0;
+        }
+    }
+
+    let scroll = app.tab().diff_scroll;
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false })
+        .scroll((scroll, 0));
+
+    frame.render_widget(paragraph, area);
 }
 
 /// Convert a single `DiffLine` into a styled ratatui `Line`.
