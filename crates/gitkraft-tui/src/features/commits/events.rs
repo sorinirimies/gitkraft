@@ -2,6 +2,25 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::app::App;
 
+/// Get the OID of the commit at `idx` from the active commit list (search results or all commits).
+fn get_commit_oid_at(app: &App, idx: usize) -> Option<String> {
+    let commits = if app.tab().search_active && !app.tab().search_results.is_empty() {
+        &app.tab().search_results
+    } else {
+        &app.tab().commits
+    };
+    commits.get(idx).map(|c| c.oid.clone())
+}
+
+/// Trigger a background diff load for the commit at `idx`.
+fn load_diff_at(app: &mut App, idx: usize) {
+    let oid = get_commit_oid_at(app, idx);
+    if let Some(oid) = oid {
+        app.tab_mut().selected_commit_oid = Some(oid);
+        app.load_commit_diff_by_oid();
+    }
+}
+
 /// Handle keys when the CommitLog pane is active.
 pub fn handle_key(app: &mut App, key: KeyEvent) {
     match key.code {
@@ -83,7 +102,7 @@ fn active_commits_len(app: &App) -> usize {
     }
 }
 
-/// Move commit selection down by one.
+/// Move commit selection down by one and auto-load the diff for the new selection.
 pub fn navigate_down(app: &mut App) {
     let len = active_commits_len(app);
     if len == 0 {
@@ -100,9 +119,10 @@ pub fn navigate_down(app: &mut App) {
         None => 0,
     };
     app.tab_mut().commit_list_state.select(Some(i));
+    load_diff_at(app, i);
 }
 
-/// Move commit selection up by one.
+/// Move commit selection up by one and auto-load the diff for the new selection.
 pub fn navigate_up(app: &mut App) {
     let len = active_commits_len(app);
     if len == 0 {
@@ -119,4 +139,5 @@ pub fn navigate_up(app: &mut App) {
         None => 0,
     };
     app.tab_mut().commit_list_state.select(Some(i));
+    load_diff_at(app, i);
 }

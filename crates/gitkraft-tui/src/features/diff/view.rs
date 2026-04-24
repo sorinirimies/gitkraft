@@ -6,7 +6,7 @@ use ratatui::Frame;
 
 use gitkraft_core::DiffLine;
 
-use crate::app::{ActivePane, App};
+use crate::app::{ActivePane, App, DiffSubPane};
 
 /// Render the diff pane — shows colored hunks when a diff is selected,
 /// or a placeholder message when nothing is selected.
@@ -17,23 +17,28 @@ use crate::app::{ActivePane, App};
 pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let theme = app.theme();
     let is_active = app.active_pane == ActivePane::DiffView;
-    let border_color = if is_active {
+    let sub_pane = app.tab().diff_sub_pane.clone();
+
+    let file_list_border = if is_active && sub_pane == DiffSubPane::FileList {
+        theme.border_active
+    } else {
+        theme.border_inactive
+    };
+    let content_border = if is_active && sub_pane == DiffSubPane::Content {
         theme.border_active
     } else {
         theme.border_inactive
     };
 
-    // Split into file list + diff content when there are multiple files
     if !app.tab().commit_files.is_empty() {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(30), Constraint::Min(20)])
             .split(area);
-
-        render_file_list(app, frame, chunks[0], border_color);
-        render_diff_content(app, frame, chunks[1], border_color);
+        render_file_list(app, frame, chunks[0], file_list_border);
+        render_diff_content(app, frame, chunks[1], content_border);
     } else {
-        render_diff_content(app, frame, area, border_color);
+        render_diff_content(app, frame, area, content_border);
     }
 }
 
@@ -58,7 +63,8 @@ fn render_file_list(
         .iter()
         .enumerate()
         .map(|(i, diff)| {
-            let is_selected = i == commit_diff_file_index;
+            let is_current = i == commit_diff_file_index;
+            let is_multi = tab.selected_file_indices.contains(&i);
             let file_name = diff.file_name();
             let status_char = format!("{}", diff.status);
 
@@ -69,10 +75,19 @@ fn render_file_list(
                 gitkraft_core::StatusColorCategory::Renamed => theme.accent,
             };
 
-            let name_color = if is_selected {
-                theme.text_primary
+            let name_style = if is_current {
+                Style::default().fg(theme.text_primary)
+            } else if is_multi {
+                Style::default().fg(theme.accent)
             } else {
-                theme.text_secondary
+                Style::default().fg(theme.text_secondary)
+            };
+
+            // Apply a background for multi-selected items that aren't the cursor
+            let item_style = if is_multi && !is_current {
+                Style::default().bg(theme.sel_bg)
+            } else {
+                Style::default()
             };
 
             let line = Line::from(vec![
@@ -82,10 +97,10 @@ fn render_file_list(
                         .fg(status_color)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(file_name.to_string(), Style::default().fg(name_color)),
+                Span::styled(file_name.to_string(), name_style),
             ]);
 
-            ListItem::new(line)
+            ListItem::new(line).style(item_style)
         })
         .collect();
 
@@ -104,7 +119,34 @@ fn render_file_list(
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
-/// Render the diff content for the currently selected file.
+/// Convert a single `DiffLine` into a styled ratatui `Line`.
+fn styled_diff_line(
+    line: &DiffLine,
+    theme: &crate::features::theme::palette::UiTheme,
+) -> Line<'static> {
+    match line {
+        DiffLine::Addition(s) => Line::from(Span::styled(
+            format!("+{}", s),
+            Style::default().fg(theme.diff_add),
+        )),
+        DiffLine::Deletion(s) => Line::from(Span::styled(
+            format!("-{}", s),
+            Style::default().fg(theme.diff_del),
+        )),
+        DiffLine::Context(s) => Line::from(Span::styled(
+            format!(" {}", s),
+            Style::default().fg(theme.diff_context),
+        )),
+        DiffLine::HunkHeader(s) => Line::from(Span::styled(
+            s.clone(),
+            Style::default()
+                .fg(theme.diff_hunk)
+                .add_modifier(Modifier::BOLD),
+        )),
+    }
+}
+
+/// Render the diff content for the currently selected file (or all selected files).
 fn render_diff_content(
     app: &mut App,
     frame: &mut Frame,
@@ -112,6 +154,78 @@ fn render_diff_content(
     border_color: ratatui::style::Color,
 ) {
     let theme = app.theme();
+    let is_multi = app.tab().selected_file_indices.len() > 1;
+
+    if is_multi {
+        // ── Multi-file concatenated view ──────────────────────────────────
+        let mut sorted_indices: Vec<usize> =
+            app.tab().selected_file_indices.iter().copied().collect();
+        sorted_indices.sort();
+
+        let title = format!(" Diff ({} files) ", sorted_indices.len());
+        let block = Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(border_color));
+
+        let mut lines: Vec<Line> = Vec::new();
+        for idx in &sorted_indices {
+            let file_name = app
+                .tab()
+                .commit_files
+                .get(*idx)
+                .map(|f| f.display_path().to_string())
+                .unwrap_or_else(|| format!("file {}", idx));
+
+            // File header separator
+            lines.push(Line::from(Span::styled(
+                format!("══ {} ══", file_name),
+                Style::default()
+                    .fg(theme.diff_hunk)
+                    .add_modifier(Modifier::BOLD),
+            )));
+
+            if let Some(diff) = app.tab().commit_diffs.get(idx).cloned() {
+                for hunk in &diff.hunks {
+                    for line in &hunk.lines {
+                        lines.push(styled_diff_line(line, &theme));
+                    }
+                }
+            } else {
+                lines.push(Line::from(Span::styled(
+                    "  Loading…",
+                    Style::default().fg(theme.text_muted),
+                )));
+            }
+            // Blank separator between files
+            lines.push(Line::default());
+        }
+
+        // Clamp scroll
+        let content_height = lines.len() as u16;
+        let visible_height = area.height.saturating_sub(2);
+        {
+            let tab = app.tab_mut();
+            if content_height > visible_height {
+                if tab.diff_scroll > content_height.saturating_sub(visible_height) {
+                    tab.diff_scroll = content_height.saturating_sub(visible_height);
+                }
+            } else {
+                tab.diff_scroll = 0;
+            }
+        }
+
+        let scroll = app.tab().diff_scroll;
+        let paragraph = Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false })
+            .scroll((scroll, 0));
+
+        frame.render_widget(paragraph, area);
+        return;
+    }
+
+    // ── Single-file view ──────────────────────────────────────────────────
     let tab = app.tab_mut();
 
     let title = match &tab.selected_diff {
@@ -147,27 +261,7 @@ fn render_diff_content(
 
             for hunk in &diff.hunks {
                 for line in &hunk.lines {
-                    let styled_line = match line {
-                        DiffLine::Addition(s) => Line::from(Span::styled(
-                            format!("+{}", s),
-                            Style::default().fg(theme.diff_add),
-                        )),
-                        DiffLine::Deletion(s) => Line::from(Span::styled(
-                            format!("-{}", s),
-                            Style::default().fg(theme.diff_del),
-                        )),
-                        DiffLine::Context(s) => Line::from(Span::styled(
-                            format!(" {}", s),
-                            Style::default().fg(theme.diff_context),
-                        )),
-                        DiffLine::HunkHeader(s) => Line::from(Span::styled(
-                            s.clone(),
-                            Style::default()
-                                .fg(theme.diff_hunk)
-                                .add_modifier(Modifier::BOLD),
-                        )),
-                    };
-                    lines.push(styled_line);
+                    lines.push(styled_diff_line(line, &theme));
                 }
             }
 

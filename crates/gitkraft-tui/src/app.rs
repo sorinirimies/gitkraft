@@ -105,8 +105,8 @@ pub enum BackgroundResult {
     },
     /// A commit file list (lightweight, no diff content) was loaded.
     CommitFileListLoaded(Result<Vec<gitkraft_core::DiffFileEntry>, String>),
-    /// A single file's diff was loaded.
-    SingleFileDiffLoaded(Result<gitkraft_core::DiffInfo, String>),
+    /// A single file's diff was loaded.  The `usize` is the file index in `commit_files`.
+    SingleFileDiffLoaded(Result<(usize, gitkraft_core::DiffInfo), String>),
     /// Commit search results loaded.
     SearchResults(Result<Vec<gitkraft_core::CommitInfo>, String>),
 }
@@ -158,6 +158,15 @@ pub enum StagingFocus {
     Staged,
 }
 
+/// Which half of the split Diff pane currently has keyboard focus.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DiffSubPane {
+    /// The file-list sidebar on the left.
+    FileList,
+    /// The diff-content area on the right.
+    Content,
+}
+
 // ── Per-repo tab state ────────────────────────────────────────────────────────────
 
 /// All state that belongs to a single repository tab.
@@ -179,9 +188,13 @@ pub struct RepoTab {
     pub staging_focus: StagingFocus,
     pub selected_diff: Option<DiffInfo>,
     pub diff_scroll: u16,
-    /// All file diffs for the currently viewed commit (for per-file navigation).
-    pub commit_diffs: Vec<DiffInfo>,
-    /// Index of the currently selected file in commit_diffs.
+    /// Which half of the diff split pane has keyboard focus.
+    pub diff_sub_pane: DiffSubPane,
+    /// File indices currently multi-selected in the diff file list.
+    pub selected_file_indices: std::collections::HashSet<usize>,
+    /// Cache of per-file diffs keyed by file index (sparse — only loaded files are present).
+    pub commit_diffs: std::collections::HashMap<usize, DiffInfo>,
+    /// Index of the currently selected file in commit_files.
     pub commit_diff_file_index: usize,
     /// Lightweight file list for the selected commit.
     pub commit_files: Vec<gitkraft_core::DiffFileEntry>,
@@ -239,7 +252,9 @@ impl RepoTab {
             staging_focus: StagingFocus::Unstaged,
             selected_diff: None,
             diff_scroll: 0,
-            commit_diffs: Vec::new(),
+            diff_sub_pane: DiffSubPane::FileList,
+            selected_file_indices: std::collections::HashSet::new(),
+            commit_diffs: std::collections::HashMap::new(),
             commit_diff_file_index: 0,
             commit_files: Vec::new(),
             selected_commit_oid: None,
@@ -456,6 +471,12 @@ impl App {
     pub fn next_tab(&mut self) {
         if !self.tabs.is_empty() {
             self.active_tab_index = (self.active_tab_index + 1) % self.tabs.len();
+            // Restore the correct screen for the target tab
+            if self.tabs[self.active_tab_index].repo_path.is_some() {
+                self.screen = AppScreen::Main;
+            } else {
+                self.screen = AppScreen::Welcome;
+            }
         }
     }
 
@@ -466,6 +487,12 @@ impl App {
                 self.active_tab_index = self.tabs.len() - 1;
             } else {
                 self.active_tab_index -= 1;
+            }
+            // Restore the correct screen for the target tab
+            if self.tabs[self.active_tab_index].repo_path.is_some() {
+                self.screen = AppScreen::Main;
+            } else {
+                self.screen = AppScreen::Welcome;
             }
         }
     }
@@ -647,7 +674,11 @@ impl App {
                                 tab.status_message = Some("No changes in this commit".into());
                             } else {
                                 let tab = self.tab_mut();
-                                tab.commit_diffs = diffs.clone();
+                                tab.commit_diffs = diffs
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(i, d)| (i, d.clone()))
+                                    .collect();
                                 tab.commit_diff_file_index = 0;
                                 tab.selected_diff = Some(diffs[0].clone());
                                 tab.diff_scroll = 0;
@@ -673,14 +704,17 @@ impl App {
                             tab.commit_diff_file_index = 0;
                             tab.selected_diff = None;
                             tab.diff_scroll = 0;
+                            tab.diff_sub_pane = DiffSubPane::FileList;
+                            tab.selected_file_indices.clear();
 
                             if count == 0 {
                                 tab.status_message = Some("No changes in this commit".into());
                             } else {
                                 tab.status_message = Some(format!("{count} file(s) changed"));
+                                tab.selected_file_indices.insert(0);
                                 // Auto-load the first file's diff
                                 let first_path = tab.commit_files[0].display_path().to_string();
-                                self.load_single_file_diff(first_path);
+                                self.load_single_file_diff(0, first_path);
                             }
                         }
                         Err(e) => self.tab_mut().error_message = Some(format!("file list: {e}")),
@@ -689,22 +723,29 @@ impl App {
                 BackgroundResult::SingleFileDiffLoaded(res) => {
                     self.tab_mut().is_loading = false;
                     match res {
-                        Ok(diff) => {
+                        Ok((file_index, diff)) => {
                             let tab = self.tab_mut();
-                            // Store in commit_diffs for the file list sidebar.
-                            if tab.commit_diffs.len() <= tab.commit_diff_file_index {
-                                tab.commit_diffs.push(diff.clone());
-                            } else {
-                                tab.commit_diffs[tab.commit_diff_file_index] = diff.clone();
+                            tab.commit_diffs.insert(file_index, diff.clone());
+                            // Update selected_diff only when this is the currently focused file
+                            // and we are NOT showing a multi-file concatenated view.
+                            let is_multi = tab.selected_file_indices.len() > 1;
+                            if !is_multi && file_index == tab.commit_diff_file_index {
+                                tab.selected_diff = Some(diff);
+                                tab.diff_scroll = 0;
                             }
-                            tab.selected_diff = Some(diff);
-                            tab.diff_scroll = 0;
                             if tab.commit_files.len() > 1 {
-                                tab.status_message = Some(format!(
-                                    "File {}/{} — use h/l to switch files",
-                                    tab.commit_diff_file_index + 1,
-                                    tab.commit_files.len()
-                                ));
+                                let sel_count = tab.selected_file_indices.len();
+                                if sel_count > 1 {
+                                    tab.status_message = Some(format!(
+                                        "{sel_count} files selected — use Shift+↑/↓ to adjust"
+                                    ));
+                                } else {
+                                    tab.status_message = Some(format!(
+                                        "File {}/{} — use h/l or ↑/↓ to switch",
+                                        file_index + 1,
+                                        tab.commit_files.len()
+                                    ));
+                                }
                             }
                         }
                         Err(e) => self.tab_mut().error_message = Some(format!("file diff: {e}")),
@@ -1087,7 +1128,7 @@ impl App {
     }
 
     /// Load the diff for a single file in the selected commit (phase 2).
-    pub fn load_single_file_diff(&mut self, file_path: String) {
+    pub fn load_single_file_diff(&mut self, file_index: usize, file_path: String) {
         let oid = match self.tab().selected_commit_oid.clone() {
             Some(o) => o,
             None => return,
@@ -1098,10 +1139,26 @@ impl App {
             BackgroundResult::SingleFileDiffLoaded,
             |repo_path| {
                 let repo = open_repo_str(&repo_path)?;
-                gitkraft_core::features::diff::get_single_file_diff(&repo, &oid, &file_path)
-                    .map_err(|e| e.to_string())
+                let diff =
+                    gitkraft_core::features::diff::get_single_file_diff(&repo, &oid, &file_path)
+                        .map_err(|e| e.to_string())?;
+                Ok((file_index, diff))
             }
         );
+    }
+
+    /// Load the diff for a specific file index, skipping if it is already cached.
+    pub fn load_diff_for_file_index(&mut self, file_index: usize) {
+        if file_index >= self.tab().commit_files.len() {
+            return;
+        }
+        if self.tab().commit_diffs.contains_key(&file_index) {
+            return;
+        }
+        let file_path = self.tab().commit_files[file_index]
+            .display_path()
+            .to_string();
+        self.load_single_file_diff(file_index, file_path);
     }
 
     /// Switch to the next file in the commit diff list.
@@ -1111,16 +1168,22 @@ impl App {
         }
         let new_index = (self.tab().commit_diff_file_index + 1) % self.tab().commit_files.len();
         self.tab_mut().commit_diff_file_index = new_index;
-        let file_path = self.tab().commit_files[self.tab().commit_diff_file_index]
-            .display_path()
-            .to_string();
+        self.tab_mut().selected_file_indices.clear();
+        self.tab_mut().selected_file_indices.insert(new_index);
         self.tab_mut().diff_scroll = 0;
         self.tab_mut().status_message = Some(format!(
             "File {}/{}",
-            self.tab().commit_diff_file_index + 1,
+            new_index + 1,
             self.tab().commit_files.len()
         ));
-        self.load_single_file_diff(file_path);
+        if let Some(cached) = self.tab().commit_diffs.get(&new_index).cloned() {
+            self.tab_mut().selected_diff = Some(cached);
+        } else {
+            let file_path = self.tab().commit_files[new_index]
+                .display_path()
+                .to_string();
+            self.load_single_file_diff(new_index, file_path);
+        }
     }
 
     /// Switch to the previous file in the commit diff list.
@@ -1134,16 +1197,22 @@ impl App {
             self.tab().commit_diff_file_index - 1
         };
         self.tab_mut().commit_diff_file_index = new_index;
-        let file_path = self.tab().commit_files[self.tab().commit_diff_file_index]
-            .display_path()
-            .to_string();
+        self.tab_mut().selected_file_indices.clear();
+        self.tab_mut().selected_file_indices.insert(new_index);
         self.tab_mut().diff_scroll = 0;
         self.tab_mut().status_message = Some(format!(
             "File {}/{}",
-            self.tab().commit_diff_file_index + 1,
+            new_index + 1,
             self.tab().commit_files.len()
         ));
-        self.load_single_file_diff(file_path);
+        if let Some(cached) = self.tab().commit_diffs.get(&new_index).cloned() {
+            self.tab_mut().selected_diff = Some(cached);
+        } else {
+            let file_path = self.tab().commit_files[new_index]
+                .display_path()
+                .to_string();
+            self.load_single_file_diff(new_index, file_path);
+        }
     }
 
     /// Close the current repository and return to the welcome screen.
@@ -1867,6 +1936,139 @@ mod tests {
             app.tab().status_message.as_deref(),
             Some("Pulling (rebase)…")
         );
+    }
+
+    #[test]
+    fn repo_tab_diff_sub_pane_defaults_to_file_list() {
+        let tab = RepoTab::new();
+        assert_eq!(tab.diff_sub_pane, DiffSubPane::FileList);
+    }
+
+    #[test]
+    fn repo_tab_selected_file_indices_defaults_empty() {
+        let tab = RepoTab::new();
+        assert!(tab.selected_file_indices.is_empty());
+    }
+
+    #[test]
+    fn repo_tab_commit_diffs_defaults_empty_hashmap() {
+        let tab = RepoTab::new();
+        assert!(tab.commit_diffs.is_empty());
+    }
+
+    #[test]
+    fn next_tab_restores_main_screen_for_tab_with_repo() {
+        let mut app = App::new();
+        // tab 0 gets a repo path
+        app.tabs[0].repo_path = Some(PathBuf::from("/tmp/repo-a"));
+        // create tab 1 (no repo) — new_tab sets screen = Welcome
+        app.new_tab();
+        assert_eq!(app.active_tab_index, 1);
+        // switching forward wraps back to tab 0 which has a repo
+        app.next_tab();
+        assert_eq!(app.active_tab_index, 0);
+        assert_eq!(app.screen, AppScreen::Main);
+    }
+
+    #[test]
+    fn prev_tab_restores_welcome_for_tab_without_repo() {
+        let mut app = App::new();
+        app.tabs[0].repo_path = Some(PathBuf::from("/tmp/repo-a"));
+        app.new_tab(); // tab 1, no repo, screen = Welcome
+                       // go back to tab 0 (has repo) and set screen manually
+        app.active_tab_index = 0;
+        app.screen = AppScreen::Main;
+        // prev wraps to tab 1 which has no repo
+        app.prev_tab();
+        assert_eq!(app.active_tab_index, 1);
+        assert_eq!(app.screen, AppScreen::Welcome);
+    }
+
+    #[test]
+    fn next_diff_file_clears_multi_selection() {
+        let mut app = App::new();
+        app.tab_mut().commit_files = vec![
+            gitkraft_core::DiffFileEntry {
+                old_file: String::new(),
+                new_file: "a.rs".to_string(),
+                status: gitkraft_core::FileStatus::Modified,
+            },
+            gitkraft_core::DiffFileEntry {
+                old_file: String::new(),
+                new_file: "b.rs".to_string(),
+                status: gitkraft_core::FileStatus::Modified,
+            },
+            gitkraft_core::DiffFileEntry {
+                old_file: String::new(),
+                new_file: "c.rs".to_string(),
+                status: gitkraft_core::FileStatus::Modified,
+            },
+        ];
+        app.tab_mut().commit_diff_file_index = 0;
+        // pre-populate a multi-selection
+        app.tab_mut().selected_file_indices.insert(0);
+        app.tab_mut().selected_file_indices.insert(1);
+        app.next_diff_file();
+        // should have exactly one entry: the new current index
+        assert_eq!(app.tab().selected_file_indices.len(), 1);
+        assert_eq!(app.tab().commit_diff_file_index, 1);
+        assert!(app.tab().selected_file_indices.contains(&1));
+    }
+
+    #[test]
+    fn prev_diff_file_clears_multi_selection() {
+        let mut app = App::new();
+        app.tab_mut().commit_files = vec![
+            gitkraft_core::DiffFileEntry {
+                old_file: String::new(),
+                new_file: "a.rs".to_string(),
+                status: gitkraft_core::FileStatus::Modified,
+            },
+            gitkraft_core::DiffFileEntry {
+                old_file: String::new(),
+                new_file: "b.rs".to_string(),
+                status: gitkraft_core::FileStatus::Modified,
+            },
+        ];
+        app.tab_mut().commit_diff_file_index = 1;
+        app.tab_mut().selected_file_indices.insert(0);
+        app.tab_mut().selected_file_indices.insert(1);
+        app.prev_diff_file();
+        assert_eq!(app.tab().selected_file_indices.len(), 1);
+        assert_eq!(app.tab().commit_diff_file_index, 0);
+        assert!(app.tab().selected_file_indices.contains(&0));
+    }
+
+    #[test]
+    fn load_diff_for_file_index_out_of_bounds_is_noop() {
+        let mut app = App::new();
+        // no commit_files — should not panic
+        app.load_diff_for_file_index(0);
+        assert!(app.tab().commit_diffs.is_empty());
+    }
+
+    #[test]
+    fn load_diff_for_file_index_skips_if_already_cached() {
+        let mut app = App::new();
+        app.tab_mut().commit_files = vec![gitkraft_core::DiffFileEntry {
+            old_file: String::new(),
+            new_file: "a.rs".to_string(),
+            status: gitkraft_core::FileStatus::Modified,
+        }];
+        // insert a fake cached diff so the function short-circuits
+        app.tab_mut().commit_diffs.insert(
+            0,
+            DiffInfo {
+                old_file: String::new(),
+                new_file: "a.rs".to_string(),
+                status: gitkraft_core::FileStatus::Modified,
+                hunks: Vec::new(),
+            },
+        );
+        // without repo_path the bg task would be a no-op anyway, but is_loading
+        // should remain false because we skip the load entirely
+        app.load_diff_for_file_index(0);
+        assert!(!app.tab().is_loading);
     }
 
     #[test]

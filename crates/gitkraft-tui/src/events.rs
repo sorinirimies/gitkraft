@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::app::{ActivePane, App, AppScreen, InputMode, InputPurpose};
+use crate::app::{ActivePane, App, AppScreen, DiffSubPane, InputMode, InputPurpose};
 use crate::features;
 
 /// Top-level key dispatch — called once per key event from the event loop.
@@ -156,9 +156,26 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                     app.input_buffer.clear();
                     app.tab_mut().status_message = Some("Search commits:".into());
                 }
-                // Arrow left/right: switch panes
-                KeyCode::Left => cycle_pane_backward(app),
-                KeyCode::Right => cycle_pane_forward(app),
+                // Arrow left/right: switch panes (or navigate diff sub-panes)
+                KeyCode::Left => {
+                    if app.active_pane == ActivePane::DiffView
+                        && app.tab().diff_sub_pane == DiffSubPane::Content
+                    {
+                        app.tab_mut().diff_sub_pane = DiffSubPane::FileList;
+                    } else {
+                        cycle_pane_backward(app);
+                    }
+                }
+                KeyCode::Right => {
+                    if app.active_pane == ActivePane::DiffView
+                        && app.tab().diff_sub_pane == DiffSubPane::FileList
+                        && !app.tab().commit_files.is_empty()
+                    {
+                        app.tab_mut().diff_sub_pane = DiffSubPane::Content;
+                    } else {
+                        cycle_pane_forward(app);
+                    }
+                }
 
                 // Arrow up/down: navigate within the active pane
                 KeyCode::Up => match app.active_pane {
@@ -174,14 +191,24 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                     ActivePane::CommitLog => {
                         features::commits::events::navigate_up(app);
                     }
-                    ActivePane::DiffView => {
-                        if !app.tab().commit_files.is_empty() {
-                            app.prev_diff_file();
-                        } else {
+                    ActivePane::DiffView => match app.tab().diff_sub_pane {
+                        DiffSubPane::FileList => {
+                            if !app.tab().commit_files.is_empty() {
+                                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                                    features::diff::events::select_file_up(app);
+                                } else {
+                                    features::diff::events::navigate_file_up(app);
+                                }
+                            } else {
+                                let tab = app.tab_mut();
+                                tab.diff_scroll = tab.diff_scroll.saturating_sub(1);
+                            }
+                        }
+                        DiffSubPane::Content => {
                             let tab = app.tab_mut();
                             tab.diff_scroll = tab.diff_scroll.saturating_sub(1);
                         }
-                    }
+                    },
                     ActivePane::Staging => {
                         features::staging::events::navigate_up(app);
                     }
@@ -199,14 +226,24 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                     ActivePane::CommitLog => {
                         features::commits::events::navigate_down(app);
                     }
-                    ActivePane::DiffView => {
-                        if !app.tab().commit_files.is_empty() {
-                            app.next_diff_file();
-                        } else {
+                    ActivePane::DiffView => match app.tab().diff_sub_pane {
+                        DiffSubPane::FileList => {
+                            if !app.tab().commit_files.is_empty() {
+                                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                                    features::diff::events::select_file_down(app);
+                                } else {
+                                    features::diff::events::navigate_file_down(app);
+                                }
+                            } else {
+                                let tab = app.tab_mut();
+                                tab.diff_scroll = tab.diff_scroll.saturating_add(1);
+                            }
+                        }
+                        DiffSubPane::Content => {
                             let tab = app.tab_mut();
                             tab.diff_scroll = tab.diff_scroll.saturating_add(1);
                         }
-                    }
+                    },
                     ActivePane::Staging => {
                         features::staging::events::navigate_down(app);
                     }
@@ -295,6 +332,10 @@ fn submit_input(app: &mut App) {
 /// Cycle the active pane forward: Branches -> CommitLog -> DiffView -> Staging -> Branches
 fn cycle_pane_forward(app: &mut App) {
     app.tab_mut().confirm_discard = false;
+    if app.active_pane == ActivePane::DiffView {
+        app.tab_mut().diff_sub_pane = DiffSubPane::FileList;
+        app.tab_mut().selected_file_indices.clear();
+    }
     app.active_pane = match app.active_pane {
         ActivePane::Branches => ActivePane::CommitLog,
         ActivePane::CommitLog => ActivePane::DiffView,
@@ -306,6 +347,10 @@ fn cycle_pane_forward(app: &mut App) {
 /// Cycle the active pane backward: Branches -> Staging -> DiffView -> CommitLog -> Branches
 fn cycle_pane_backward(app: &mut App) {
     app.tab_mut().confirm_discard = false;
+    if app.active_pane == ActivePane::DiffView {
+        app.tab_mut().diff_sub_pane = DiffSubPane::FileList;
+        app.tab_mut().selected_file_indices.clear();
+    }
     app.active_pane = match app.active_pane {
         ActivePane::Branches => ActivePane::Staging,
         ActivePane::CommitLog => ActivePane::Branches,
@@ -482,5 +527,169 @@ mod tests {
         // No head_branch → should set error
         handle_key(&mut app, key(KeyCode::Char('P')));
         assert!(app.tab().error_message.is_some());
+    }
+
+    // ── DiffView sub-pane helpers ─────────────────────────────────────────
+
+    fn key_shift(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::SHIFT)
+    }
+
+    fn populate_commit_files(app: &mut App, count: usize) {
+        app.tab_mut().commit_files = (0..count)
+            .map(|i| gitkraft_core::DiffFileEntry {
+                old_file: String::new(),
+                new_file: format!("file{i}.rs"),
+                status: gitkraft_core::FileStatus::Modified,
+            })
+            .collect();
+    }
+
+    // ── DiffView sub-pane: Right / Left arrow ────────────────────────────
+
+    #[test]
+    fn right_in_diffview_file_list_with_files_enters_content() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::DiffView;
+        populate_commit_files(&mut app, 2);
+        assert_eq!(app.tab().diff_sub_pane, DiffSubPane::FileList);
+        handle_key(&mut app, key(KeyCode::Right));
+        assert_eq!(app.tab().diff_sub_pane, DiffSubPane::Content);
+        assert_eq!(app.active_pane, ActivePane::DiffView);
+    }
+
+    #[test]
+    fn right_in_diffview_file_list_without_files_cycles_pane_forward() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::DiffView;
+        // no commit_files
+        handle_key(&mut app, key(KeyCode::Right));
+        assert_eq!(app.active_pane, ActivePane::Staging);
+        assert_eq!(app.tab().diff_sub_pane, DiffSubPane::FileList);
+    }
+
+    #[test]
+    fn right_in_diffview_content_cycles_pane_forward() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::DiffView;
+        app.tab_mut().diff_sub_pane = DiffSubPane::Content;
+        handle_key(&mut app, key(KeyCode::Right));
+        assert_eq!(app.active_pane, ActivePane::Staging);
+    }
+
+    #[test]
+    fn left_in_diffview_content_returns_to_file_list() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::DiffView;
+        app.tab_mut().diff_sub_pane = DiffSubPane::Content;
+        handle_key(&mut app, key(KeyCode::Left));
+        assert_eq!(app.tab().diff_sub_pane, DiffSubPane::FileList);
+        assert_eq!(app.active_pane, ActivePane::DiffView);
+    }
+
+    #[test]
+    fn left_in_diffview_file_list_cycles_pane_backward() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::DiffView;
+        assert_eq!(app.tab().diff_sub_pane, DiffSubPane::FileList);
+        handle_key(&mut app, key(KeyCode::Left));
+        assert_eq!(app.active_pane, ActivePane::CommitLog);
+    }
+
+    // ── DiffView sub-pane: Tab resets state ──────────────────────────────
+
+    #[test]
+    fn tab_from_diffview_resets_sub_pane_to_file_list() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::DiffView;
+        app.tab_mut().diff_sub_pane = DiffSubPane::Content;
+        handle_key(&mut app, key(KeyCode::Tab));
+        assert_eq!(app.active_pane, ActivePane::Staging);
+        assert_eq!(app.tab().diff_sub_pane, DiffSubPane::FileList);
+    }
+
+    #[test]
+    fn tab_from_diffview_clears_multi_selection() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::DiffView;
+        app.tab_mut().selected_file_indices.insert(0);
+        app.tab_mut().selected_file_indices.insert(1);
+        handle_key(&mut app, key(KeyCode::Tab));
+        assert!(app.tab().selected_file_indices.is_empty());
+    }
+
+    // ── DiffView sub-pane: Shift+Up/Down multi-selection ─────────────────
+
+    #[test]
+    fn shift_down_in_diffview_file_list_extends_selection() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::DiffView;
+        app.tab_mut().diff_sub_pane = DiffSubPane::FileList;
+        populate_commit_files(&mut app, 3);
+        app.tab_mut().commit_diff_file_index = 0;
+        handle_key(&mut app, key_shift(KeyCode::Down));
+        assert!(app.tab().selected_file_indices.contains(&0));
+        assert!(app.tab().selected_file_indices.contains(&1));
+        assert_eq!(app.tab().commit_diff_file_index, 1);
+    }
+
+    #[test]
+    fn shift_up_in_diffview_file_list_extends_selection() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::DiffView;
+        app.tab_mut().diff_sub_pane = DiffSubPane::FileList;
+        populate_commit_files(&mut app, 3);
+        app.tab_mut().commit_diff_file_index = 2;
+        handle_key(&mut app, key_shift(KeyCode::Up));
+        assert!(app.tab().selected_file_indices.contains(&2));
+        assert!(app.tab().selected_file_indices.contains(&1));
+        assert_eq!(app.tab().commit_diff_file_index, 1);
+    }
+
+    #[test]
+    fn unshifted_down_in_diffview_file_list_clears_multi_selection() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::DiffView;
+        app.tab_mut().diff_sub_pane = DiffSubPane::FileList;
+        populate_commit_files(&mut app, 3);
+        app.tab_mut().selected_file_indices.insert(0);
+        app.tab_mut().selected_file_indices.insert(1);
+        handle_key(&mut app, key(KeyCode::Down));
+        // single-select clears multi: only one entry should remain
+        assert_eq!(app.tab().selected_file_indices.len(), 1);
+    }
+
+    // ── DiffView Content sub-pane: Up/Down scrolls ───────────────────────
+
+    #[test]
+    fn down_in_diffview_content_scrolls() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::DiffView;
+        app.tab_mut().diff_sub_pane = DiffSubPane::Content;
+        app.tab_mut().diff_scroll = 2;
+        handle_key(&mut app, key(KeyCode::Down));
+        assert_eq!(app.tab().diff_scroll, 3);
+    }
+
+    #[test]
+    fn up_in_diffview_content_scrolls() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::DiffView;
+        app.tab_mut().diff_sub_pane = DiffSubPane::Content;
+        app.tab_mut().diff_scroll = 5;
+        handle_key(&mut app, key(KeyCode::Up));
+        assert_eq!(app.tab().diff_scroll, 4);
     }
 }
