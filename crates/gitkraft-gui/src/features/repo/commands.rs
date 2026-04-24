@@ -82,7 +82,7 @@ pub fn refresh_repo(path: PathBuf) -> Task<Message> {
 ///
 /// Opens the repository and collects every piece of state the UI needs into a
 /// single [`RepoPayload`].
-fn load_repo_blocking(path: &std::path::Path) -> Result<RepoPayload, String> {
+pub(crate) fn load_repo_blocking(path: &std::path::Path) -> Result<RepoPayload, String> {
     // Open the repository once and reuse the handle for every operation.
     // `list_stashes` needs `&mut`, so we declare the binding as `mut`.
     let mut repo = open_repo!(path);

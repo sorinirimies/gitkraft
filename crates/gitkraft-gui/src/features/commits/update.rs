@@ -28,6 +28,8 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             tab.selected_diff = None;
             tab.selected_file_index = None;
             tab.diff_scroll_offset = 0.0;
+            tab.selected_commit_file_indices.clear();
+            tab.multi_file_diffs.clear();
 
             // Load just the file list (instant — no line parsing).
             if let (Some(path), Some((oid, short_oid))) = (repo_path, commit_info) {
@@ -155,6 +157,44 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                 }
             }
             Task::none()
+        }
+
+        Message::DiffMultiWithWorkingTree(oid, file_paths) => {
+            state.active_tab_mut().context_menu = None;
+            if let Some(path) = state.active_tab().repo_path.clone() {
+                let count = file_paths.len();
+                state.active_tab_mut().is_loading_file_diff = true;
+                state.active_tab_mut().diff_scroll_offset = 0.0;
+                state.active_tab_mut().status_message =
+                    Some(format!("Comparing {count} files with working tree…"));
+                commands::load_multi_file_commit_vs_workdir(path, oid.clone(), file_paths.clone())
+            } else {
+                Task::none()
+            }
+        }
+
+        Message::CheckoutFileAtCommit(oid, file_path) => {
+            state.active_tab_mut().context_menu = None;
+            if let Some(path) = state.active_tab().repo_path.clone() {
+                state.active_tab_mut().status_message = Some(format!(
+                    "Restoring '{}'…",
+                    file_path.rsplit('/').next().unwrap_or(&file_path)
+                ));
+                commands::checkout_file_at_commit(path, oid.clone(), file_path.clone())
+            } else {
+                Task::none()
+            }
+        }
+
+        Message::CheckoutMultiFilesAtCommit(oid, file_paths) => {
+            state.active_tab_mut().context_menu = None;
+            if let Some(path) = state.active_tab().repo_path.clone() {
+                let count = file_paths.len();
+                state.active_tab_mut().status_message = Some(format!("Restoring {count} files…"));
+                commands::checkout_multi_files_at_commit(path, oid.clone(), file_paths.clone())
+            } else {
+                Task::none()
+            }
         }
 
         _ => Task::none(),

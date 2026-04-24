@@ -9,6 +9,11 @@ fn main() -> iced::Result {
         .theme(|state: &GitKraft| state.iced_theme())
         .subscription(|state: &GitKraft| {
             let keyboard = iced::event::listen_with(|event, status, _window| {
+                // ModifiersChanged fires regardless of focus/status — always track it.
+                if let iced::Event::Keyboard(iced::keyboard::Event::ModifiersChanged(mods)) = event
+                {
+                    return Some(gitkraft_gui::Message::ModifiersChanged(mods));
+                }
                 if let iced::event::Status::Ignored = status {
                     if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                         key,

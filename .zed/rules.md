@@ -1,5 +1,17 @@
 # GitKraft — Agent Rules
 
+## ⚠️ MANDATORY: Tests After Every Feature
+
+**After implementing any feature, bug fix, or refactor, you MUST write tests before considering the task complete.**
+
+- For **`gitkraft-core`**: add `#[cfg(test)] mod tests` inline in the changed file (`types.rs` or `ops.rs`).
+- For **`gitkraft-tui`**: add `#[cfg(test)] mod tests` inline in the changed file (`app.rs`, `events.rs`, `features/<name>/events.rs`, etc.).
+- For **`gitkraft-gui`**: add `#[cfg(test)] mod tests` inline in `state.rs` or the relevant feature file (`update.rs`, `view.rs`). Test state transitions and update logic; pure rendering is harder to test so focus on the update layer.
+- **Run `cargo test` (or `cargo test --manifest-path ...`) after adding tests** and confirm they pass before finishing.
+- If you realise tests are missing after the fact, write them immediately — do not move on to the next task without them.
+- **Never respond "done" or summarise a completed feature without mentioning which tests were added.**
+
+
 ## Project Overview
 
 GitKraft is a Git IDE written entirely in Rust, shipping two front-ends (desktop GUI + terminal UI) from a single Cargo workspace. All Git logic lives in the shared `gitkraft-core` crate — zero Git operations belong in the UI layer.
@@ -74,10 +86,13 @@ The TUI uses a standard ratatui loop running at ~30fps (33ms poll timeout).
 - **Dependencies**: Pin versions in `[workspace.dependencies]` in the root `Cargo.toml`. Each crate references them with `{ workspace = true }`.
 - Prefer `just check-all` before committing (runs fmt + clippy + test + nu tests).
 
-## Testing Patterns
+## Testing Patterns (see also the mandatory rule at the top of this file)
 
 - **Unit tests for types**: Inline `#[cfg(test)] mod tests` in `types.rs`. Pure Rust, no repo needed. Use helper factory functions.
 - **Integration tests for ops**: Inline in `ops.rs`. Use `tempfile::TempDir` + `Repository::init()` for throwaway repos. A `setup_repo_with_commit()` helper configures user.name/email, creates a file, stages, and commits.
+- **GUI state/update tests**: Test `update()` handlers directly by constructing a `GitKraft` (or `RepoTab`) with known state, calling the handler, and asserting on the resulting state. No Iced runtime needed.
+- **TUI event tests**: Construct an `App`, set relevant fields, call `handle_key()` or a feature function, and assert on state changes.
+- **Test naming convention**: `<thing_under_test>_<scenario>_<expected_outcome>`, e.g. `select_diff_shift_click_extends_selection`.
 - Run with `just test` (full workspace) or `just test-core` (core only).
 
 ## Dev Workflow (`justfile`)
@@ -95,11 +110,12 @@ The TUI uses a standard ratatui loop running at ~30fps (33ms poll timeout).
 
 ## Common Pitfalls
 
-1. **Don't put Git logic in the UI crates.** If you need a new Git operation, add it to `gitkraft-core/src/features/<name>/ops.rs` first, then call it from the GUI/TUI.
-2. **Don't block the main thread.** GUI uses `Task`; TUI uses `mpsc` background threads.
-3. **Don't add dependencies to individual crate `Cargo.toml` directly.** Add them to `[workspace.dependencies]` first.
-4. **Don't use `thiserror` for new errors.** Stick with `anyhow::Result` + `.context()`.
-5. **Match existing module structure.** Every feature follows the same file layout — don't invent new patterns.
-6. **Keep the `Message` enum flat** in the GUI. Group variants with comments, not nested enums.
-7. **GIF assets** are tracked with Git LFS (`*.gif` in `.gitattributes`). Use `vhs` to regenerate from `.tape` files.
-8. **Theme code** is shared via `gitkraft-core`. Both front-ends use the same 27-theme palette — don't add themes to only one front-end.
+1. **Don't skip tests.** Every feature implementation must be accompanied by tests. See the mandatory rule at the top of this file.
+2. **Don't put Git logic in the UI crates.** If you need a new Git operation, add it to `gitkraft-core/src/features/<name>/ops.rs` first, then call it from the GUI/TUI.
+3. **Don't block the main thread.** GUI uses `Task`; TUI uses `mpsc` background threads.
+4. **Don't add dependencies to individual crate `Cargo.toml` directly.** Add them to `[workspace.dependencies]` first.
+5. **Don't use `thiserror` for new errors.** Stick with `anyhow::Result` + `.context()`.
+6. **Match existing module structure.** Every feature follows the same file layout — don't invent new patterns.
+7. **Keep the `Message` enum flat** in the GUI. Group variants with comments, not nested enums.
+8. **GIF assets** are tracked with Git LFS (`*.gif` in `.gitattributes`). Use `vhs` to regenerate from `.tape` files.
+9. **Theme code** is shared via `gitkraft-core`. Both front-ends use the same 27-theme palette — don't add themes to only one front-end.

@@ -33,6 +33,25 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let c = state.colors();
     let tab = state.active_tab();
 
+    // Multi-file mode: show concatenated diffs for all selected files.
+    if !tab.multi_file_diffs.is_empty() {
+        let file_list = commit_file_list(state, &c, state.diff_file_list_width);
+        let divider = crate::widgets::divider::vertical_divider(
+            crate::state::DragTarget::DiffFileListRight,
+            &c,
+        );
+        let multi_panel = multi_diff_content(&tab.multi_file_diffs, &c, tab.diff_scroll_offset);
+        return container(
+            row![file_list, divider, multi_panel]
+                .width(Length::Fill)
+                .height(Length::Fill),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(theme::surface_style)
+        .into();
+    }
+
     match &tab.selected_diff {
         Some(diff) => {
             if !tab.commit_files.is_empty() {
@@ -103,9 +122,16 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
 
     let header_text = text("Files").size(13).color(c.text_primary);
 
-    let file_count = text(format!("({})", tab.commit_files.len()))
-        .size(11)
-        .color(c.muted);
+    let multi_count = tab.selected_commit_file_indices.len();
+    let file_count = if multi_count > 1 {
+        text(format!("({} selected)", multi_count))
+            .size(11)
+            .color(c.accent)
+    } else {
+        text(format!("({})", tab.commit_files.len()))
+            .size(11)
+            .color(c.muted)
+    };
 
     let header_row = row![
         header_icon,
@@ -124,8 +150,9 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
         // Extract just the filename for a compact display
         let file_name = diff.file_name();
 
-        // Determine if this file is the currently selected one
+        // Determine if this file is the primary selected one or part of a multi-selection
         let is_selected = tab.selected_file_index == Some(idx);
+        let is_multi_selected = tab.selected_commit_file_indices.contains(&idx);
 
         let status_color = theme::status_color(&diff.status, c);
 
@@ -136,7 +163,7 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
             .font(Font::MONOSPACE)
             .color(status_color);
 
-        let name_color = if is_selected {
+        let name_color = if is_selected || is_multi_selected {
             c.text_primary
         } else {
             c.text_secondary
@@ -161,7 +188,28 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
             }
         };
 
+        // Position of this file in the selection order (0-based → display as 1-based)
+        let selection_badge: Element<'a, Message> = if let Some(pos) = tab
+            .selected_commit_file_indices
+            .iter()
+            .position(|&i| i == idx)
+        {
+            container(
+                text(format!("{}", pos + 1))
+                    .size(10)
+                    .font(Font::MONOSPACE)
+                    .color(c.accent),
+            )
+            .width(16)
+            .center_x(Length::Fixed(16.0))
+            .into()
+        } else {
+            Space::new().width(16).into()
+        };
+
         let row_content = row![
+            selection_badge,
+            Space::new().width(2),
             status_badge,
             Space::new().width(4),
             column![row![dir_hint, name_label].align_y(Alignment::Center),],
@@ -170,8 +218,12 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
         .padding([4, 8])
         .width(Length::Fill);
 
+        // Primary selected row gets the strongest highlight; multi-selected-but-not-primary
+        // gets a distinct secondary highlight; unselected rows use the plain surface style.
         let style_fn = if is_selected {
             theme::selected_row_style as fn(&iced::Theme) -> iced::widget::container::Style
+        } else if is_multi_selected {
+            theme::highlight_row_style as fn(&iced::Theme) -> iced::widget::container::Style
         } else {
             theme::surface_style as fn(&iced::Theme) -> iced::widget::container::Style
         };
@@ -213,6 +265,68 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
     .into()
 }
 
+/// Render concatenated diffs for multiple selected files, separated by per-file
+/// headers showing the file path and status.
+fn multi_diff_content<'a>(
+    diffs: &'a [DiffInfo],
+    c: &ThemeColors,
+    _scroll_offset: f32,
+) -> Element<'a, Message> {
+    let mut col = column![].width(Length::Fill);
+
+    for diff in diffs {
+        // Per-file header bar
+        let status_color = theme::status_color(&diff.status, c);
+        let header = container(
+            row![
+                text(format!(" {} ", diff.status))
+                    .size(12)
+                    .color(status_color)
+                    .font(Font::MONOSPACE),
+                Space::new().width(8),
+                text(diff.display_path().to_string())
+                    .size(13)
+                    .color(c.text_primary)
+                    .font(Font::MONOSPACE),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .padding([6, 12])
+        .width(Length::Fill)
+        .style(theme::header_style);
+
+        col = col.push(header);
+
+        if diff.hunks.is_empty() {
+            col = col.push(
+                container(
+                    text("No diff content.")
+                        .size(13)
+                        .color(c.muted)
+                        .font(Font::MONOSPACE),
+                )
+                .padding([4, 12]),
+            );
+        } else {
+            for hunk in &diff.hunks {
+                for line in &hunk.lines {
+                    col = col.push(render_line(line, c));
+                }
+            }
+        }
+
+        // Small gap between files
+        col = col.push(Space::new().height(8));
+    }
+
+    scrollable(col)
+        .height(Length::Fill)
+        .on_scroll(|vp| Message::DiffViewScrolled(vp.absolute_offset().y))
+        .direction(view_utils::thin_scrollbar())
+        .style(crate::theme::overlay_scrollbar)
+        .into()
+}
+
 /// Placeholder shown when no diff is selected.
 fn placeholder_view<'a>(c: &ThemeColors) -> Element<'a, Message> {
     view_utils::centered_placeholder(
@@ -223,7 +337,7 @@ fn placeholder_view<'a>(c: &ThemeColors) -> Element<'a, Message> {
     )
 }
 
-/// Loading indicator shown while a single file’s diff is being fetched.
+/// Loading indicator shown while a single file's diff is being fetched.
 fn loading_diff_view<'a>(c: &ThemeColors) -> Element<'a, Message> {
     view_utils::centered_placeholder(icons::ARROW_REPEAT, 24, "Loading diff…", c.muted)
 }

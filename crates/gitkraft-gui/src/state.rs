@@ -90,6 +90,14 @@ pub struct RepoTab {
     pub selected_file_index: Option<usize>,
     /// True while a single-file diff is being loaded.
     pub is_loading_file_diff: bool,
+    /// Anchor index for range selection — set on a regular click, kept fixed while
+    /// the user extends the selection with Shift+Click.
+    pub anchor_file_index: Option<usize>,
+    /// Ordered list of file indices currently multi-selected in the commit file list (Shift+Click).
+    /// Always stored in ascending index order (lowest index first).
+    pub selected_commit_file_indices: Vec<usize>,
+    /// Diffs for all multi-selected files (populated when 2+ files are selected).
+    pub multi_file_diffs: Vec<gitkraft_core::DiffInfo>,
     /// The diff currently displayed in the diff viewer panel.
     pub selected_diff: Option<DiffInfo>,
     /// Text in the commit-message input.
@@ -187,6 +195,9 @@ impl RepoTab {
             selected_commit_oid: None,
             selected_file_index: None,
             is_loading_file_diff: false,
+            anchor_file_index: None,
+            selected_commit_file_indices: Vec::new(),
+            multi_file_diffs: Vec::new(),
             selected_diff: None,
             commit_message: String::new(),
             stashes: Vec::new(),
@@ -266,6 +277,9 @@ impl RepoTab {
         self.is_loading_more_commits = false;
         self.selected_unstaged.clear();
         self.selected_staged.clear();
+        self.anchor_file_index = None;
+        self.selected_commit_file_indices.clear();
+        self.multi_file_diffs.clear();
     }
 }
 
@@ -347,6 +361,9 @@ pub struct GitKraft {
 
     /// Configured editor for "Open in editor" actions.
     pub editor: gitkraft_core::Editor,
+
+    /// Current keyboard modifier state (updated via subscription).
+    pub keyboard_modifiers: iced::keyboard::Modifiers,
 }
 
 impl Default for GitKraft {
@@ -423,6 +440,8 @@ impl GitKraft {
             search_diff_selected: HashSet::new(),
             search_diff_content: Vec::new(),
             search_diff_oid: None,
+
+            keyboard_modifiers: iced::keyboard::Modifiers::default(),
 
             editor: settings
                 .editor_name
@@ -847,5 +866,334 @@ mod tests {
         // Just verify it doesn't panic
         let editor = super::detect_system_editor();
         let _ = editor.display_name();
+    }
+
+    // ── Multi-file commit diff selection ──────────────────────────────────
+
+    #[test]
+    fn selected_commit_file_indices_defaults_to_empty_vec() {
+        let tab = RepoTab::new_empty();
+        assert!(tab.selected_commit_file_indices.is_empty());
+        // Must be a Vec (ordered), not a HashSet — check it supports indexing
+        let v: &Vec<usize> = &tab.selected_commit_file_indices;
+        assert_eq!(v.len(), 0);
+    }
+
+    #[test]
+    fn multi_file_diffs_defaults_empty() {
+        let tab = RepoTab::new_empty();
+        assert!(tab.multi_file_diffs.is_empty());
+    }
+
+    #[test]
+    fn keyboard_modifiers_default_has_no_shift() {
+        let state = GitKraft::new();
+        assert!(!state.keyboard_modifiers.shift());
+    }
+
+    #[test]
+    fn selected_commit_file_indices_preserves_insertion_order() {
+        let mut tab = RepoTab::new_empty();
+        tab.selected_commit_file_indices.push(5);
+        tab.selected_commit_file_indices.push(2);
+        tab.selected_commit_file_indices.push(8);
+        assert_eq!(tab.selected_commit_file_indices, vec![5, 2, 8]);
+    }
+
+    #[test]
+    fn selected_commit_file_indices_cleared_on_reset() {
+        let mut tab = RepoTab::new_empty();
+        tab.selected_commit_file_indices.push(0);
+        tab.selected_commit_file_indices.push(1);
+        tab.selected_commit_file_indices.clear();
+        assert!(tab.selected_commit_file_indices.is_empty());
+    }
+
+    #[test]
+    fn multi_file_diffs_cleared_on_reset() {
+        let mut tab = RepoTab::new_empty();
+        tab.multi_file_diffs.push(gitkraft_core::DiffInfo {
+            old_file: String::new(),
+            new_file: "a.rs".to_string(),
+            status: gitkraft_core::FileStatus::Modified,
+            hunks: vec![],
+        });
+        tab.multi_file_diffs.clear();
+        assert!(tab.multi_file_diffs.is_empty());
+    }
+
+    // ── ModifiersChanged update ───────────────────────────────────────────
+
+    #[test]
+    fn modifiers_changed_sets_shift_state() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        assert!(!state.keyboard_modifiers.shift());
+
+        state.update(Message::ModifiersChanged(iced::keyboard::Modifiers::SHIFT));
+        assert!(state.keyboard_modifiers.shift());
+
+        state.update(Message::ModifiersChanged(
+            iced::keyboard::Modifiers::default(),
+        ));
+        assert!(!state.keyboard_modifiers.shift());
+    }
+
+    // ── SelectDiffByIndex update ──────────────────────────────────────────
+
+    fn make_commit_files(names: &[&str]) -> Vec<gitkraft_core::DiffFileEntry> {
+        names
+            .iter()
+            .map(|name| gitkraft_core::DiffFileEntry {
+                old_file: String::new(),
+                new_file: name.to_string(),
+                status: gitkraft_core::FileStatus::Modified,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn select_diff_by_index_regular_click_clears_multi_selection() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        // Provide a repo_path and oid so the update handler can reach the
+        // `selected_file_index = Some(index)` assignment (the async task it
+        // spawns is dropped without execution — no real repo is needed).
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        state.active_tab_mut().selected_commit_oid = Some("abc123".to_string());
+        state.active_tab_mut().commit_files = make_commit_files(&["a.rs", "b.rs", "c.rs"]);
+        // Pre-populate a multi-selection
+        state.active_tab_mut().selected_commit_file_indices = vec![0, 1];
+
+        // Regular click (no Shift) — should collapse to single-file selection
+        state.update(Message::SelectDiffByIndex(0));
+
+        assert!(state.active_tab().selected_commit_file_indices.is_empty());
+        assert!(state.active_tab().multi_file_diffs.is_empty());
+        assert_eq!(state.active_tab().selected_file_index, Some(0));
+    }
+
+    #[test]
+    fn select_diff_by_index_shift_click_adds_both_files_to_selection() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        state.active_tab_mut().selected_commit_oid = Some("abc123".to_string());
+        state.active_tab_mut().commit_files = make_commit_files(&["a.rs", "b.rs", "c.rs"]);
+        state.active_tab_mut().selected_file_index = Some(0);
+
+        // Shift+Click on file 1 should anchor 0 and add 1
+        state.keyboard_modifiers = iced::keyboard::Modifiers::SHIFT;
+        state.update(Message::SelectDiffByIndex(1));
+
+        let sel = &state.active_tab().selected_commit_file_indices;
+        assert!(sel.contains(&0), "anchor file 0 should be selected");
+        assert!(sel.contains(&1), "newly clicked file 1 should be selected");
+        assert_eq!(sel.len(), 2);
+    }
+
+    #[test]
+    fn anchor_file_index_defaults_to_none() {
+        let tab = RepoTab::new_empty();
+        assert!(tab.anchor_file_index.is_none());
+    }
+
+    #[test]
+    fn regular_click_sets_anchor() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        state.active_tab_mut().selected_commit_oid = Some("abc123".to_string());
+        state.active_tab_mut().commit_files = make_commit_files(&["a.rs", "b.rs", "c.rs"]);
+
+        state.update(Message::SelectDiffByIndex(2));
+
+        assert_eq!(
+            state.active_tab().anchor_file_index,
+            Some(2),
+            "regular click must set anchor to the clicked index"
+        );
+    }
+
+    #[test]
+    fn shift_click_selects_range_downward_from_anchor() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        state.active_tab_mut().selected_commit_oid = Some("abc123".to_string());
+        state.active_tab_mut().commit_files =
+            make_commit_files(&["a.rs", "b.rs", "c.rs", "d.rs", "e.rs"]);
+        // Anchor at index 1
+        state.active_tab_mut().anchor_file_index = Some(1);
+        state.active_tab_mut().selected_file_index = Some(1);
+
+        // Shift+Click on index 4 — should select 1, 2, 3, 4
+        state.keyboard_modifiers = iced::keyboard::Modifiers::SHIFT;
+        state.update(Message::SelectDiffByIndex(4));
+
+        let sel = &state.active_tab().selected_commit_file_indices;
+        assert_eq!(
+            sel,
+            &vec![1, 2, 3, 4],
+            "range must be contiguous from anchor to click"
+        );
+    }
+
+    #[test]
+    fn shift_click_selects_range_upward_from_anchor() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        state.active_tab_mut().selected_commit_oid = Some("abc123".to_string());
+        state.active_tab_mut().commit_files =
+            make_commit_files(&["a.rs", "b.rs", "c.rs", "d.rs", "e.rs"]);
+        // Anchor at index 4 (bottom)
+        state.active_tab_mut().anchor_file_index = Some(4);
+        state.active_tab_mut().selected_file_index = Some(4);
+
+        // Shift+Click on index 1 — should select 1, 2, 3, 4 (ascending)
+        state.keyboard_modifiers = iced::keyboard::Modifiers::SHIFT;
+        state.update(Message::SelectDiffByIndex(1));
+
+        let sel = &state.active_tab().selected_commit_file_indices;
+        assert_eq!(
+            sel,
+            &vec![1, 2, 3, 4],
+            "range must be stored ascending regardless of click direction"
+        );
+    }
+
+    #[test]
+    fn shift_click_anchor_fixed_on_subsequent_clicks() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        state.active_tab_mut().selected_commit_oid = Some("abc123".to_string());
+        state.active_tab_mut().commit_files =
+            make_commit_files(&["a.rs", "b.rs", "c.rs", "d.rs", "e.rs"]);
+        // Anchor at index 2
+        state.active_tab_mut().anchor_file_index = Some(2);
+        state.active_tab_mut().selected_file_index = Some(2);
+        state.keyboard_modifiers = iced::keyboard::Modifiers::SHIFT;
+
+        // First Shift+Click: extend to 4 → range {2, 3, 4}
+        state.update(Message::SelectDiffByIndex(4));
+        assert_eq!(
+            state.active_tab().selected_commit_file_indices,
+            vec![2, 3, 4]
+        );
+
+        // Second Shift+Click: shrink back to 3 → range {2, 3} (anchor still 2)
+        state.update(Message::SelectDiffByIndex(3));
+        assert_eq!(
+            state.active_tab().selected_commit_file_indices,
+            vec![2, 3],
+            "anchor must stay fixed; second Shift+Click shrinks the range"
+        );
+
+        // Third Shift+Click: extend upward → range {0, 1, 2} (anchor still 2)
+        state.update(Message::SelectDiffByIndex(0));
+        assert_eq!(
+            state.active_tab().selected_commit_file_indices,
+            vec![0, 1, 2],
+            "anchor must stay fixed; can extend range in either direction"
+        );
+    }
+
+    #[test]
+    fn shift_click_on_anchor_itself_gives_single_item_range() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        state.active_tab_mut().selected_commit_oid = Some("abc123".to_string());
+        state.active_tab_mut().commit_files = make_commit_files(&["a.rs", "b.rs", "c.rs"]);
+        state.active_tab_mut().anchor_file_index = Some(1);
+        state.active_tab_mut().selected_file_index = Some(1);
+
+        // Shift+Click on the anchor itself → single-item range {1}
+        state.keyboard_modifiers = iced::keyboard::Modifiers::SHIFT;
+        state.update(Message::SelectDiffByIndex(1));
+
+        assert_eq!(state.active_tab().selected_commit_file_indices, vec![1]);
+        assert!(
+            state.active_tab().multi_file_diffs.is_empty(),
+            "single-item range must not populate multi_file_diffs"
+        );
+    }
+
+    #[test]
+    fn shift_click_range_is_always_ascending() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        state.active_tab_mut().selected_commit_oid = Some("abc123".to_string());
+        state.active_tab_mut().commit_files = make_commit_files(&["a.rs", "b.rs", "c.rs", "d.rs"]);
+        state.active_tab_mut().anchor_file_index = Some(3);
+        state.active_tab_mut().selected_file_index = Some(3);
+
+        state.keyboard_modifiers = iced::keyboard::Modifiers::SHIFT;
+        state.update(Message::SelectDiffByIndex(0));
+
+        let sel = &state.active_tab().selected_commit_file_indices;
+        let is_sorted = sel.windows(2).all(|w| w[0] < w[1]);
+        assert!(
+            is_sorted,
+            "selection must always be stored in ascending order"
+        );
+        assert_eq!(sel, &vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn checkout_file_at_commit_message_variants_exist() {
+        use crate::message::Message;
+        // Verify the new message variants can be constructed
+        let _single =
+            Message::CheckoutFileAtCommit("abc123".to_string(), "src/main.rs".to_string());
+        let _multi = Message::CheckoutMultiFilesAtCommit(
+            "abc123".to_string(),
+            vec!["a.rs".to_string(), "b.rs".to_string()],
+        );
+    }
+
+    #[test]
+    fn checkout_file_at_commit_closes_context_menu() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        state.active_tab_mut().context_menu = Some(crate::state::ContextMenu::CommitFile {
+            oid: "abc123".to_string(),
+            file_path: "src/main.rs".to_string(),
+        });
+        state.update(Message::CheckoutFileAtCommit(
+            "abc123".to_string(),
+            "src/main.rs".to_string(),
+        ));
+        assert!(state.active_tab().context_menu.is_none());
+    }
+
+    #[test]
+    fn checkout_multi_files_at_commit_closes_context_menu() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        state.active_tab_mut().context_menu = Some(crate::state::ContextMenu::CommitFile {
+            oid: "abc123".to_string(),
+            file_path: "src/main.rs".to_string(),
+        });
+        state.update(Message::CheckoutMultiFilesAtCommit(
+            "abc123".to_string(),
+            vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
+        ));
+        assert!(state.active_tab().context_menu.is_none());
     }
 }

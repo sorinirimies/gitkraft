@@ -359,6 +359,19 @@ pub enum Message {
     /// Show a file in the system file manager.
     ShowInFolder(String),
 
+    /// Keyboard modifier state changed (e.g. Shift pressed/released).
+    ModifiersChanged(iced::keyboard::Modifiers),
+    /// Multiple commit file diffs loaded for a multi-file selection.
+    CommitMultiDiffLoaded(Result<Vec<gitkraft_core::DiffInfo>, String>),
+
+    /// Diff multiple files from a specific commit against the current working tree.
+    DiffMultiWithWorkingTree(String, Vec<String>), // (oid, file_paths)
+
+    /// Restore a single file from a specific commit to the working directory.
+    CheckoutFileAtCommit(String, String), // (oid, file_path)
+    /// Restore multiple files from a specific commit to the working directory.
+    CheckoutMultiFilesAtCommit(String, Vec<String>), // (oid, file_paths)
+
     /// No-op (used for disabled buttons, etc.).
     Noop,
 }

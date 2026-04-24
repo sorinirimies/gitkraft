@@ -949,6 +949,10 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
             }
 
             col = col.push(view_utils::context_menu_separator::<Message>());
+            col = col.push(menu_item(
+                "Copy filename",
+                Message::CopyText(path.rsplit('/').next().unwrap_or(path).to_string()),
+            ));
             col = col.push(menu_item("Copy file path", Message::CopyText(path.clone())));
             col = col.push(menu_item(
                 "Open in editor",
@@ -1016,6 +1020,10 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
             }
 
             col = col.push(view_utils::context_menu_separator::<Message>());
+            col = col.push(menu_item(
+                "Copy filename",
+                Message::CopyText(path.rsplit('/').next().unwrap_or(path).to_string()),
+            ));
             col = col.push(menu_item("Copy file path", Message::CopyText(path.clone())));
             col = col.push(menu_item(
                 "Open in editor",
@@ -1034,23 +1042,100 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
         }
 
         Some(crate::state::ContextMenu::CommitFile { oid, file_path }) => {
-            let file_name = file_path.rsplit('/').next().unwrap_or(file_path);
-            let header =
-                view_utils::context_menu_header::<Message>(format!("File: {}", file_name), c.muted);
+            let tab = state.active_tab();
+            let multi_count = tab.selected_commit_file_indices.len();
 
-            column![
-                header,
-                menu_item(
-                    "Diff with working tree",
-                    Message::DiffFileWithWorkingTree(oid.clone(), file_path.clone()),
-                ),
-                view_utils::context_menu_separator::<Message>(),
-                menu_item("Copy file path", Message::CopyText(file_path.clone()),),
-                menu_item("Copy commit SHA", Message::CopyText(oid.clone()),),
-                menu_item("Open in editor", Message::OpenInEditor(file_path.clone()),),
-                menu_item("Show in folder", Message::ShowInFolder(file_path.clone()),),
-            ]
-            .into()
+            if multi_count > 1 {
+                // ── Multi-file ────────────────────────────────────────────────────
+                let header = view_utils::context_menu_header::<Message>(
+                    format!("{} files selected", multi_count),
+                    c.accent,
+                );
+
+                // Collect file paths in selection order
+                let file_paths: Vec<String> = tab
+                    .selected_commit_file_indices
+                    .iter()
+                    .filter_map(|&i| {
+                        tab.commit_files
+                            .get(i)
+                            .map(|f| f.display_path().to_string())
+                    })
+                    .collect();
+
+                let paths_joined = file_paths.join("\n");
+
+                let mut col = column![header];
+
+                // Group 1: actions
+                col = col.push(menu_item(
+                    &format!("Diff {} files with working tree", multi_count),
+                    Message::DiffMultiWithWorkingTree(oid.clone(), file_paths.clone()),
+                ));
+                col = col.push(menu_item(
+                    &format!("Checkout {} files from this commit", multi_count),
+                    Message::CheckoutMultiFilesAtCommit(oid.clone(), file_paths),
+                ));
+
+                // Group 2: copy
+                col = col.push(view_utils::context_menu_separator::<Message>());
+                col = col.push(menu_item(
+                    "Copy file paths",
+                    Message::CopyText(paths_joined),
+                ));
+                col = col.push(menu_item("Copy commit SHA", Message::CopyText(oid.clone())));
+
+                col.into()
+            } else {
+                // ── Single file ───────────────────────────────────────────────────
+                let file_name = file_path.rsplit('/').next().unwrap_or(file_path);
+                let header = view_utils::context_menu_header::<Message>(
+                    format!("File: {}", file_name),
+                    c.muted,
+                );
+
+                // Group 1: file actions
+                let mut col = column![
+                    header,
+                    menu_item(
+                        "Diff with working tree",
+                        Message::DiffFileWithWorkingTree(oid.clone(), file_path.clone()),
+                    ),
+                    menu_item(
+                        "Checkout file from this commit",
+                        Message::CheckoutFileAtCommit(oid.clone(), file_path.clone()),
+                    ),
+                ];
+
+                // Group 2: copy info
+                col = col.push(view_utils::context_menu_separator::<Message>());
+                col = col.push(menu_item(
+                    "Copy filename",
+                    Message::CopyText(file_name.to_string()),
+                ));
+                col = col.push(menu_item(
+                    "Copy file path",
+                    Message::CopyText(file_path.clone()),
+                ));
+                col = col.push(menu_item("Copy commit SHA", Message::CopyText(oid.clone())));
+
+                // Group 3: open
+                col = col.push(view_utils::context_menu_separator::<Message>());
+                col = col.push(menu_item(
+                    "Open in editor",
+                    Message::OpenInEditor(file_path.clone()),
+                ));
+                col = col.push(menu_item(
+                    "Open in default program",
+                    Message::OpenInDefaultProgram(file_path.clone()),
+                ));
+                col = col.push(menu_item(
+                    "Show in folder",
+                    Message::ShowInFolder(file_path.clone()),
+                ));
+
+                col.into()
+            }
         }
 
         None => Space::new().into(),

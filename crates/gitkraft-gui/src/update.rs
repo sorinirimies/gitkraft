@@ -84,7 +84,10 @@ impl GitKraft {
             | Message::CommitFileListLoaded(_)
             | Message::SingleFileDiffLoaded(_)
             | Message::DiffFileWithWorkingTree(_, _)
-            | Message::DiffWithWorkingTreeLoaded(_) => {
+            | Message::DiffWithWorkingTreeLoaded(_)
+            | Message::DiffMultiWithWorkingTree(_, _)
+            | Message::CheckoutFileAtCommit(_, _)
+            | Message::CheckoutMultiFilesAtCommit(_, _) => {
                 // Both the commits and diff features care about SelectCommit.
                 // We delegate to the commits handler which also loads the diff.
                 crate::features::commits::update::update(self, message)
@@ -162,8 +165,15 @@ impl GitKraft {
             }
 
             // ── UI / misc ─────────────────────────────────────────────────
-            Message::SelectDiff(_) | Message::SelectDiffByIndex(_) => {
+            Message::SelectDiff(_)
+            | Message::SelectDiffByIndex(_)
+            | Message::CommitMultiDiffLoaded(_) => {
                 crate::features::diff::update::update(self, message)
+            }
+
+            Message::ModifiersChanged(mods) => {
+                self.keyboard_modifiers = *mods;
+                Task::none()
             }
 
             Message::DismissError => {

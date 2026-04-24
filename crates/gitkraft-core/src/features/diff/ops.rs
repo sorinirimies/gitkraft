@@ -67,6 +67,27 @@ pub fn get_commit_diff(repo: &Repository, oid_str: &str) -> Result<Vec<DiffInfo>
     parse_diff(&diff)
 }
 
+/// Restore a specific file from a commit to the working directory.
+///
+/// Equivalent to `git checkout <oid> -- <file_path>`.
+/// After calling this, the file in the working tree matches the committed version.
+pub fn checkout_file_at_commit(repo: &Repository, oid_str: &str, file_path: &str) -> Result<()> {
+    let oid =
+        git2::Oid::from_str(oid_str).with_context(|| format!("invalid OID string: {oid_str}"))?;
+    let commit = repo
+        .find_commit(oid)
+        .with_context(|| format!("commit {oid_str} not found"))?;
+    let tree = commit.tree().context("commit has no tree")?;
+
+    let mut opts = git2::build::CheckoutBuilder::new();
+    opts.path(file_path).force().update_index(true);
+
+    repo.checkout_tree(&tree.into_object(), Some(&mut opts))
+        .with_context(|| format!("failed to checkout '{file_path}' from commit {oid_str}"))?;
+
+    Ok(())
+}
+
 /// Return just the list of changed files for a commit — no hunk / line parsing.
 ///
 /// This is much faster than [`get_commit_diff`] because it only reads the
@@ -575,6 +596,26 @@ mod tests {
             files.is_empty(),
             "should be empty when working tree matches commit"
         );
+    }
+
+    #[test]
+    fn checkout_file_at_commit_restores_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = init_repo_with_commit(dir.path());
+        // Get the HEAD commit OID
+        let head_oid = repo
+            .head()
+            .unwrap()
+            .peel_to_commit()
+            .unwrap()
+            .id()
+            .to_string();
+        // Modify the file
+        std::fs::write(dir.path().join("hello.txt"), "modified content").unwrap();
+        // Restore using checkout_file_at_commit
+        checkout_file_at_commit(&repo, &head_oid, "hello.txt").unwrap();
+        let content = std::fs::read_to_string(dir.path().join("hello.txt")).unwrap();
+        assert_eq!(content, "Hello, world!\n");
     }
 
     #[test]

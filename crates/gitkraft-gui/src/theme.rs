@@ -264,6 +264,20 @@ pub fn selected_row_style(theme: &iced::Theme) -> container::Style {
     }
 }
 
+/// Style for a row that is part of the multi-selection set but is not the
+/// primary cursor row.  Uses a subtle mix of the theme's `selection` colour
+/// blended toward the surface so it is visually distinct from the primary
+/// selected row without being too loud.
+pub fn highlight_row_style(theme: &iced::Theme) -> container::Style {
+    let c = ThemeColors::from_theme(theme);
+    // Mix selection (30 %) into the surface colour for a subtle tint.
+    let bg = mix(c.surface, c.selection, 0.30);
+    container::Style {
+        background: Some(Background::Color(bg)),
+        ..Default::default()
+    }
+}
+
 /// Style for a diff addition line.
 pub fn diff_add_style(theme: &iced::Theme) -> container::Style {
     let c = ThemeColors::from_theme(theme);

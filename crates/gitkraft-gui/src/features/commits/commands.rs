@@ -107,6 +107,50 @@ pub fn diff_file_with_working_tree(path: PathBuf, oid: String, file_path: String
     )
 }
 
+/// Load diffs for multiple files in a commit and return them all together.
+pub fn load_commit_multi_diffs(
+    path: PathBuf,
+    oid: String,
+    file_paths: Vec<String>,
+) -> Task<Message> {
+    git_task!(
+        Message::CommitMultiDiffLoaded,
+        (|| {
+            let repo = open_repo!(&path);
+            let mut diffs = Vec::with_capacity(file_paths.len());
+            for fp in &file_paths {
+                match gitkraft_core::features::diff::get_single_file_diff(&repo, &oid, fp) {
+                    Ok(diff) => diffs.push(diff),
+                    Err(e) => return Err(format!("{fp}: {e}")),
+                }
+            }
+            Ok(diffs)
+        })()
+    )
+}
+
+/// Diff multiple files from a specific commit against the current working tree.
+pub fn load_multi_file_commit_vs_workdir(
+    path: PathBuf,
+    oid: String,
+    file_paths: Vec<String>,
+) -> Task<Message> {
+    git_task!(
+        Message::CommitMultiDiffLoaded,
+        (|| {
+            let repo = open_repo!(&path);
+            let mut diffs = Vec::with_capacity(file_paths.len());
+            for fp in &file_paths {
+                match gitkraft_core::features::diff::diff_file_commit_vs_workdir(&repo, &oid, fp) {
+                    Ok(diff) => diffs.push(diff),
+                    Err(e) => return Err(format!("{fp}: {e}")),
+                }
+            }
+            Ok(diffs)
+        })()
+    )
+}
+
 pub fn create_commit(path: PathBuf, message: String) -> Task<Message> {
     git_task!(
         Message::CommitCreated,
@@ -115,6 +159,38 @@ pub fn create_commit(path: PathBuf, message: String) -> Task<Message> {
             gitkraft_core::features::commits::create_commit(&repo, &message)
                 .map(|_| ())
                 .map_err(|e| e.to_string())
+        })()
+    )
+}
+
+/// Restore a single file from a commit to the working directory.
+pub fn checkout_file_at_commit(path: PathBuf, oid: String, file_path: String) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let repo = open_repo!(&path);
+            gitkraft_core::features::diff::checkout_file_at_commit(&repo, &oid, &file_path)
+                .map_err(|e| e.to_string())?;
+            crate::features::repo::commands::load_repo_blocking(&path)
+        })()
+    )
+}
+
+/// Restore multiple files from a commit to the working directory.
+pub fn checkout_multi_files_at_commit(
+    path: PathBuf,
+    oid: String,
+    file_paths: Vec<String>,
+) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let repo = open_repo!(&path);
+            for fp in &file_paths {
+                gitkraft_core::features::diff::checkout_file_at_commit(&repo, &oid, fp)
+                    .map_err(|e| format!("{fp}: {e}"))?;
+            }
+            crate::features::repo::commands::load_repo_blocking(&path)
         })()
     )
 }
