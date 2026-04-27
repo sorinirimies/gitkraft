@@ -42,6 +42,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             app.should_quit = true;
         }
         // Tab management
+        // Open settings file in editor (works even before a repo is loaded)
+        KeyCode::Char(',') => {
+            app.open_settings_in_editor();
+        }
         KeyCode::Char('N') => {
             app.new_tab();
         }

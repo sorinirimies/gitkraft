@@ -6,25 +6,15 @@
 
 use std::path::PathBuf;
 
-use gitkraft_core::{
-    BranchInfo, CommitInfo, DiffFileEntry, DiffInfo, GraphRow, RemoteInfo, RepoInfo, StashEntry,
-};
+use gitkraft_core::{DiffFileEntry, DiffInfo, StashEntry};
 
 // ── Payload types ─────────────────────────────────────────────────────────────
 
 /// Payload returned after successfully opening / refreshing a repository.
-/// Bundles every piece of state the UI needs so we can update in one shot.
-#[derive(Debug, Clone)]
-pub struct RepoPayload {
-    pub info: RepoInfo,
-    pub branches: Vec<BranchInfo>,
-    pub commits: Vec<CommitInfo>,
-    pub graph_rows: Vec<GraphRow>,
-    pub unstaged: Vec<DiffInfo>,
-    pub staged: Vec<DiffInfo>,
-    pub stashes: Vec<StashEntry>,
-    pub remotes: Vec<RemoteInfo>,
-}
+///
+/// This is now a re-export of the shared core type so both GUI and TUI use
+/// the same struct definition.
+pub type RepoPayload = gitkraft_core::RepoSnapshot;
 
 /// Payload returned after a staging operation (stage / unstage / discard).
 #[derive(Debug, Clone)]
@@ -381,6 +371,36 @@ pub enum Message {
     /// Multiple commit file diffs loaded for a multi-file selection.
     CommitMultiDiffLoaded(Result<Vec<gitkraft_core::DiffInfo>, String>),
 
+    // ── File history overlay ──────────────────────────────────────────────────
+    /// Open the file-history overlay for a specific repo-relative path.
+    ViewFileHistory(String),
+    /// Background load of file-history commits completed.
+    FileHistoryLoaded(Result<(String, Vec<gitkraft_core::CommitInfo>), String>),
+    /// Close the file-history overlay without taking an action.
+    CloseFileHistory,
+    /// User scrolled the file-history list.
+    FileHistoryScrolled(f32),
+    /// User selected a commit in file history — load its diff and close overlay.
+    SelectFileHistoryCommit(String),
+
+    // ── Blame overlay ─────────────────────────────────────────────────────────
+    /// Open the blame overlay for a specific repo-relative path.
+    ViewFileBlame(String),
+    /// Background load of blame lines completed.
+    FileBlameLoaded(Result<(String, Vec<gitkraft_core::BlameLine>), String>),
+    /// Close the blame overlay.
+    CloseFileBlame,
+    /// User scrolled the blame view.
+    BlameScrolled(f32),
+
+    // ── File deletion ─────────────────────────────────────────────────────────
+    /// Show delete-confirmation banner for a working-tree file.
+    DeleteFile(String),
+    /// User confirmed the deletion.
+    ConfirmDeleteFile,
+    /// User cancelled the deletion.
+    CancelDeleteFile,
+
     /// Diff multiple files from a specific commit against the current working tree.
     DiffMultiWithWorkingTree(String, Vec<String>), // (oid, file_paths)
 
@@ -396,6 +416,21 @@ pub enum Message {
 
     /// Combined range diff across multiple selected commits was loaded.
     CommitRangeDiffLoaded(Result<Vec<gitkraft_core::DiffInfo>, String>),
+
+    /// The application window was resized.
+    WindowResized(f32, f32), // (width, height)
+    /// The application window was moved.
+    WindowMoved(f32, f32), // (x, y)
+
+    /// Open the GUI settings file (settings.json) in the configured editor.
+    /// Triggered by Ctrl/Cmd + , (like Zed).
+    OpenSettingsFile,
+
+    /// Shift+Down arrow — extends range selection in the file list (if files are
+    /// loaded) or in the commit log (fallback).
+    ShiftArrowDown,
+    /// Shift+Up arrow — same as above but upward.
+    ShiftArrowUp,
 
     /// No-op (used for disabled buttons, etc.).
     Noop,

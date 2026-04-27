@@ -2,6 +2,62 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.1] - 2026-04-27
+
+### ✨ Features
+- **Staging area range selection (TUI)** — Shift+↑/↓ or `J`/`K` while in the Staging pane extends the file selection range; numbered rank badges replace the plain `●` bullet when 2+ files are selected; anchor tracks the starting position so Shift+Up can shrink what Shift+Down expanded
+- **Diff file list range selection fix (TUI)** — `J`/`K` now properly build an anchor-based range (using `ascending_range`), replace (not accumulate) the selection on each press, and trigger background diff loads for **all** selected files so the concatenated multi-file diff renders immediately rather than showing "Loading…" indefinitely
+- **Keyboard enhancement (TUI)** — `PushKeyboardEnhancementFlags(DISAMBIGUATE_ESCAPE_CODES)` is enabled at startup on terminals that support it (Kitty, Alacritty, WezTerm, iTerm2 with xterm-keys); this makes Shift+arrow keys carry the SHIFT modifier flag; `J`/`K` uppercase aliases remain as a universal fallback for all other terminals
+- **Files panel hint** — the Files panel title now shows `[J/K select]` when focused and single-file, and `[J/K shrink]` when a range is active
+- **Blame view auto-close** — clicking any commit in the GUI commit log now automatically closes the blame overlay; same for `j`/`k`/`Enter` navigation in the TUI commit log
+
+### 🐛 Bug Fixes
+- **Diff file list Shift+Up/Down never worked** — the old `extend_file_selection` inserted only two individual items and never built a real range; no anchor was tracked; at the boundary it returned early with no feedback; all fixed
+- **Multi-file concatenated diff was blank** — background loads were only triggered for the focused file; every other file in the selection stayed as "Loading…"; now all selected files are loaded in parallel
+- **Staging J/K boundary now gives feedback** — pressing J at the last file (or K at the first) previously returned silently; now the anchor-to-current range is still applied so at least the current file gets selected
+- **Plain j/k in staging no longer resets anchor while range is active** — previously navigating with j/k inside an existing multi-selection would reset the anchor, breaking subsequent Shift extends
+- **GUI settings file keyboard shortcut** — `Ctrl/Cmd` shortcuts (including `Ctrl+,`) now fire regardless of widget focus; previously they were blocked when a text input had keyboard focus
+- **GUI blame close button** — made visible with `toolbar_button` style and `[Esc]` label; `Esc` key now closes the blame overlay from anywhere in the GUI
+- **TUI settings file opens browser** — `xdg-open` / `open` is no longer used as fallback for settings files (JSON files are often browser-associated); only the configured editor is used; if no editor is configured the file path is shown with a hint
+- **TUI editor fallback** — `load_tui_settings` now inherits `editor_name` from the GUI's `settings.json` when the TUI has no editor configured, so users only need to configure their editor once
+
+### 🔧 Refactoring / Internal
+- **`RepoSnapshot` + `load_repo_snapshot` in core** — the identical 8-call repo loading sequence was duplicated verbatim in both frontends; moved to `gitkraft-core` as a single canonical function; both `load_repo_blocking` implementations now delegate to it in one line
+- **`ascending_range(anchor, target)` utility in core** — the 5-line anchor-range computation was duplicated across GUI `SelectCommit`, TUI `select_commit_down/up`, and TUI `select_file_down/up`; now a shared `gitkraft_core::ascending_range` utility
+- **Mirror function collapse (TUI)** — `navigate_down`/`navigate_up` in commit events collapsed to a single `navigate_to(app, closure)` helper; `select_commit_down`/`select_commit_up` collapsed to `extend_commit_selection`; `select_file_down`/`select_file_up` collapsed to `extend_file_selection`; `select_down`/`select_up` in staging collapsed to `extend_staging_selection`
+- **`with_repo!` applied consistently (GUI)** — five handlers in `commits/update.rs` that used raw `if let Some(path) = repo_path` guards converted to use the existing `with_repo!` macro
+- **Mandatory test rule in `.zed/rules.md`** — every feature must be accompanied by tests; rule is at the top of the file and cross-referenced from Common Pitfalls #1
+
+## [0.8.0] - 2026-04-26
+
+### ✨ Features
+- **Multi-file selection in GUI commit diff** — Shift+Click selects a range of files; combined diff shown with `══ filename ══` separators; numbered selection badges; context menu adapts to "N files selected"
+- **Multi-file selection in TUI commit diff** — Shift+Up/Down for range selection; numbered badges; combined diff in the diff pane
+- **Multi-commit range selection in GUI** — Shift+Click selects a commit range; numbered badges; range diff (combined net diff) displayed in the diff panel
+- **Multi-commit range selection in TUI** — Shift+Up/Down for range selection; combined range diff auto-loaded; Space for toggle-select
+- **Combined commit range diff** — both GUI and TUI show the net diff across all selected commits (`git diff oldest^ newest`)
+- **Diff sub-pane navigation in TUI** — Right arrow enters the diff content area; Left arrow returns to the file list; sub-pane highlighted with active border
+- **Cherry-pick commits from context menu** — GUI context menu for N selected commits includes "Cherry-pick N commits"
+- **Checkout file from commit** — right-click a file in the commit diff list → "Checkout file from this commit" (restores the file to its committed state)
+- **Unified file context menus** — commit diff file menus reorganised into Actions / Copy info / Open sections; "Copy filename", "Open in default program" added throughout; multi-file menus show "N files selected"
+- **Settings file editor** — `Ctrl/Cmd+,` in GUI and `,` in TUI open `settings.json` / `tui-settings.json` in the configured editor (terminal editors suspend the TUI, GUI editors use platform activation); `,` also works from the Options panel and Welcome screen
+- **Window geometry persistence in GUI** — window size and position are saved on every resize/move and restored on next launch
+- **Blame view exit** — `Esc` key closes blame in GUI; close button is now prominently styled with `[Esc]` label; clicking a different commit automatically exits blame in both GUI and TUI
+
+### 🐛 Bug Fixes
+- **JSON persistence replaces redb** — settings are now stored in plain JSON (`settings.json` / `tui-settings.json`); redb was wiped on every version upgrade due to format incompatibility; atomic writes (write-tmp → rename) prevent corruption on crash
+- **Separate TUI and GUI settings files** — `tui-settings.json` for TUI, `settings.json` for GUI; opening repos in one frontend no longer clobbers the other's session; TUI falls back to GUI's `editor_name` when no TUI editor is configured
+- **Terminal editors in TUI** — Helix, Neovim, Vim etc. now work correctly by suspending the TUI (leave alternate screen), running the editor synchronously with a real TTY, then resuming; previously `Stdio::null()` caused silent failure
+- **Helix binary resolution** — platform-aware: macOS tries `hx` first, Linux tries `helix` first; no runtime probing during the TUI event loop
+- **GUI keyboard shortcuts fire regardless of widget focus** — `Ctrl/Cmd` shortcuts (including `Ctrl+,`) now work even when a text input has keyboard focus
+- **Multi-repo tab screen restoration** — switching tabs with `[`/`]` now correctly shows Main or Welcome based on whether the target tab has a repo loaded
+- **Diff auto-loads on commit navigation** — navigating the TUI commit log with `j`/`k` or arrow keys now automatically loads the diff for the selected commit
+- **Browser not opened for JSON settings** — `xdg-open` / `open` is no longer used for settings files (JSON is often browser-associated); only the configured editor is used
+
+### 🔧 Chores / Internal
+- **Mandatory test rule added to `.zed/rules.md`** — every feature implementation must be accompanied by tests
+- All new features covered by unit tests across `gitkraft-core`, `gitkraft-gui`, and `gitkraft-tui`
+
 ## 0.7.7 - 2026-04-24
 ### ➕ Added
 - Add split diff sub-pane navigation and multi-file select

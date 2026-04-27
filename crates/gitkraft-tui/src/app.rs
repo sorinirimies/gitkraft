@@ -65,18 +65,9 @@ macro_rules! bg_op {
 
 // ── Background task results ───────────────────────────────────────────────────
 
-/// Payload produced by a background `refresh` / `open_repo` task.
-#[derive(Debug)]
-pub struct RepoPayload {
-    pub info: RepoInfo,
-    pub branches: Vec<BranchInfo>,
-    pub commits: Vec<CommitInfo>,
-    pub graph_rows: Vec<gitkraft_core::GraphRow>,
-    pub unstaged: Vec<DiffInfo>,
-    pub staged: Vec<DiffInfo>,
-    pub stashes: Vec<StashEntry>,
-    pub remotes: Vec<RemoteInfo>,
-}
+/// Alias for the shared core type — kept for backward-compat with the
+/// `BackgroundResult::RepoLoaded` variant.
+pub type RepoPayload = gitkraft_core::RepoSnapshot;
 
 /// Results produced by background tasks and sent back to the main loop.
 #[derive(Debug)]
@@ -111,6 +102,16 @@ pub enum BackgroundResult {
     SearchResults(Result<Vec<gitkraft_core::CommitInfo>, String>),
     /// Combined range diff across multiple selected commits.
     CommitRangeDiffLoaded(Result<Vec<gitkraft_core::DiffInfo>, String>),
+    /// File history (commits touching a specific file) loaded.
+    FileHistoryLoaded {
+        path: String,
+        commits: Vec<gitkraft_core::CommitInfo>,
+    },
+    /// File blame lines loaded.
+    FileBlameLoaded {
+        path: String,
+        lines: Vec<gitkraft_core::BlameLine>,
+    },
 }
 
 /// Payload returned by an async staging refresh.
@@ -196,6 +197,8 @@ pub struct RepoTab {
     pub diff_scroll: u16,
     /// Which half of the diff split pane has keyboard focus.
     pub diff_sub_pane: DiffSubPane,
+    /// Anchor index for diff file list range selection (set on plain navigation).
+    pub anchor_file_index: Option<usize>,
     /// File indices currently multi-selected in the diff file list.
     pub selected_file_indices: std::collections::HashSet<usize>,
     /// Cache of per-file diffs keyed by file index (sparse — only loaded files are present).
@@ -235,6 +238,10 @@ pub struct RepoTab {
     pub selected_unstaged: std::collections::HashSet<usize>,
     /// Selected staged file indices for multi-select.
     pub selected_staged: std::collections::HashSet<usize>,
+    /// Anchor index for unstaged range selection (set on plain j/k navigation).
+    pub anchor_unstaged: Option<usize>,
+    /// Anchor index for staged range selection (set on plain j/k navigation).
+    pub anchor_staged: Option<usize>,
 
     /// Anchor commit index for range selection (Shift+Up/Down).
     pub anchor_commit_index: Option<usize>,
@@ -254,6 +261,23 @@ pub struct RepoTab {
     pub pending_action_kind: Option<gitkraft_core::CommitActionKind>,
     /// First input collected for the pending action (e.g. branch/tag name).
     pub action_input1: String,
+
+    /// When `Some(path)`, the file-history overlay is visible for that path.
+    pub file_history_path: Option<String>,
+    /// Commits that touch the file in the history overlay (newest first).
+    pub file_history_commits: Vec<gitkraft_core::CommitInfo>,
+    /// Which commit row is highlighted in the history overlay (0-based).
+    pub file_history_cursor: usize,
+
+    /// When `Some(path)`, the blame overlay is visible for that path.
+    pub blame_path: Option<String>,
+    /// Blame lines for the current blame overlay.
+    pub blame_lines: Vec<gitkraft_core::BlameLine>,
+    /// Scroll offset for the blame overlay (rows from top).
+    pub blame_scroll: u16,
+
+    /// When `Some(path)`, show a delete-confirmation prompt for that path.
+    pub confirm_delete_file: Option<String>,
 }
 
 impl RepoTab {
@@ -278,6 +302,7 @@ impl RepoTab {
             selected_diff: None,
             diff_scroll: 0,
             diff_sub_pane: DiffSubPane::FileList,
+            anchor_file_index: None,
             selected_file_indices: std::collections::HashSet::new(),
             commit_diffs: std::collections::HashMap::new(),
             commit_diff_file_index: 0,
@@ -303,6 +328,8 @@ impl RepoTab {
 
             selected_unstaged: std::collections::HashSet::new(),
             selected_staged: std::collections::HashSet::new(),
+            anchor_unstaged: None,
+            anchor_staged: None,
 
             anchor_commit_index: None,
             selected_commits: Vec::new(),
@@ -313,6 +340,14 @@ impl RepoTab {
             pending_commit_action_oid: None,
             pending_action_kind: None,
             action_input1: String::new(),
+
+            file_history_path: None,
+            file_history_commits: Vec::new(),
+            file_history_cursor: 0,
+            blame_path: None,
+            blame_lines: Vec::new(),
+            blame_scroll: 0,
+            confirm_delete_file: None,
         }
     }
 
@@ -384,6 +419,11 @@ pub struct App {
     /// Index of the currently active tab.
     pub active_tab_index: usize,
 
+    /// When `Some`, the event loop in `lib.rs` suspends the TUI, opens ALL listed
+    /// paths in the configured terminal editor, then resumes.
+    /// Supports both single-file (`vec![path]`) and multi-file (`vec![a, b, c]`) opens.
+    pub pending_editor_open: Option<Vec<std::path::PathBuf>>,
+
     /// Timestamp of the last auto-refresh.
     pub last_auto_refresh: std::time::Instant,
 }
@@ -393,7 +433,8 @@ impl App {
 
     #[must_use]
     pub fn new() -> Self {
-        let settings = gitkraft_core::features::persistence::load_settings().unwrap_or_default();
+        let settings =
+            gitkraft_core::features::persistence::load_tui_settings().unwrap_or_default();
 
         let theme_index = theme_name_to_index(settings.theme_name.as_deref().unwrap_or(""));
 
@@ -456,6 +497,8 @@ impl App {
             tabs: vec![RepoTab::new()],
             active_tab_index: 0,
 
+            pending_editor_open: None,
+
             last_auto_refresh: std::time::Instant::now(),
         }
     }
@@ -482,7 +525,7 @@ impl App {
         self.active_tab_index = self.tabs.len() - 1;
         self.screen = AppScreen::Welcome;
         // Reload recent repos so they're fresh on the welcome screen
-        if let Ok(settings) = gitkraft_core::features::persistence::load_settings() {
+        if let Ok(settings) = gitkraft_core::features::persistence::load_tui_settings() {
             self.recent_repos = settings.recent_repos;
         }
         self.save_session();
@@ -574,7 +617,7 @@ impl App {
 
     /// Persist the current theme selection to disk.
     pub fn save_theme(&self) {
-        let _ = gitkraft_core::features::persistence::save_theme(self.current_theme_name());
+        let _ = gitkraft_core::features::persistence::save_theme_tui(self.current_theme_name());
     }
 
     /// Persist the paths of all open tabs for session restore.
@@ -585,7 +628,7 @@ impl App {
             .filter_map(|t| t.repo_path.clone())
             .collect();
         let active = self.active_tab_index;
-        let _ = gitkraft_core::features::persistence::save_session(&paths, active);
+        let _ = gitkraft_core::features::persistence::save_session_tui(&paths, active);
     }
 
     // ── High-level operations ────────────────────────────────────────────
@@ -651,11 +694,11 @@ impl App {
                             self.tabs[tab_idx].repo_path = Some(canonical.clone());
 
                             // Persist
-                            let _ = gitkraft_core::features::persistence::record_repo_opened(
+                            let _ = gitkraft_core::features::persistence::record_repo_opened_tui(
                                 &canonical,
                             );
                             if let Ok(settings) =
-                                gitkraft_core::features::persistence::load_settings()
+                                gitkraft_core::features::persistence::load_tui_settings()
                             {
                                 self.recent_repos = settings.recent_repos;
                             }
@@ -839,6 +882,26 @@ impl App {
                             self.tab_mut().error_message = Some(format!("Range diff: {e}"));
                         }
                     }
+                }
+
+                BackgroundResult::FileHistoryLoaded { path, commits } => {
+                    let count = commits.len();
+                    let file_name = path.rsplit('/').next().unwrap_or(&path).to_string();
+                    let tab = self.tab_mut();
+                    tab.file_history_path = Some(path);
+                    tab.file_history_commits = commits;
+                    tab.file_history_cursor = 0;
+                    tab.status_message = Some(format!("History: {file_name} ({count} commits)"));
+                }
+
+                BackgroundResult::FileBlameLoaded { path, lines } => {
+                    let count = lines.len();
+                    let file_name = path.rsplit('/').next().unwrap_or(&path).to_string();
+                    let tab = self.tab_mut();
+                    tab.blame_path = Some(path);
+                    tab.blame_lines = lines;
+                    tab.blame_scroll = 0;
+                    tab.status_message = Some(format!("Blame: {file_name} ({count} lines)"));
                 }
             }
         }
@@ -1219,6 +1282,7 @@ impl App {
             return;
         }
         let new_index = (self.tab().commit_diff_file_index + 1) % self.tab().commit_files.len();
+        self.tab_mut().anchor_file_index = Some(new_index);
         self.tab_mut().commit_diff_file_index = new_index;
         self.tab_mut().selected_file_indices.clear();
         self.tab_mut().selected_file_indices.insert(new_index);
@@ -1248,6 +1312,7 @@ impl App {
         } else {
             self.tab().commit_diff_file_index - 1
         };
+        self.tab_mut().anchor_file_index = Some(new_index);
         self.tab_mut().commit_diff_file_index = new_index;
         self.tab_mut().selected_file_indices.clear();
         self.tab_mut().selected_file_indices.insert(new_index);
@@ -1350,7 +1415,7 @@ impl App {
         self.show_options_panel = false;
         self.screen = AppScreen::Welcome;
         // Reload recent repos
-        if let Ok(settings) = gitkraft_core::features::persistence::load_settings() {
+        if let Ok(settings) = gitkraft_core::features::persistence::load_tui_settings() {
             self.recent_repos = settings.recent_repos;
         }
         self.save_session();
@@ -1398,6 +1463,57 @@ impl App {
         self.refresh_browser();
         self.screen = AppScreen::DirBrowser;
     }
+    /// Open the TUI settings file (`tui-settings.json`) in the configured editor.
+    /// If no editor is configured, shows the file path in the status bar instead.
+    pub fn open_settings_in_editor(&mut self) {
+        let path = match gitkraft_core::features::persistence::ops::tui_settings_json_path() {
+            Ok(p) => p,
+            Err(e) => {
+                self.tab_mut().error_message = Some(format!("Cannot determine settings path: {e}"));
+                return;
+            }
+        };
+
+        // Ensure the file exists so the editor can open it immediately.
+        if !path.exists() {
+            let snap =
+                gitkraft_core::features::persistence::load_tui_settings().unwrap_or_default();
+            let _ = gitkraft_core::features::persistence::save_tui_settings(&snap);
+        }
+
+        let path_str = path.display().to_string();
+
+        if self.editor.is_terminal_editor() {
+            // Terminal editors (Helix, Neovim, Vim, …) need a real TTY.
+            // Signal the event loop in lib.rs to suspend the TUI, run the
+            // editor synchronously, then resume.
+            self.tab_mut().status_message =
+                Some(format!("Opening settings in {} — {path_str}", self.editor));
+            self.pending_editor_open = Some(vec![path]);
+        } else if !matches!(self.editor, gitkraft_core::Editor::None) {
+            // GUI editor (VS Code, Zed, …): open in background.
+            // We do NOT fall back to xdg-open / open because JSON files may
+            // be associated with a browser on many systems.
+            match self.editor.open_file(&path) {
+                Ok(()) => {
+                    self.tab_mut().status_message =
+                        Some(format!("Settings opened in {} — {path_str}", self.editor));
+                }
+                Err(e) => {
+                    self.tab_mut().error_message =
+                        Some(format!("Could not open settings ({e}) — path: {path_str}"));
+                }
+            }
+        } else {
+            // No editor configured — show the path so the user can open it
+            // manually, and remind them how to configure an editor.
+            self.tab_mut().status_message = Some(format!(
+                "Settings: {path_str}  \
+                 (no editor configured — press E to choose one, or set editor in GUI)"
+            ));
+        }
+    }
+
     /// Load the diff for a selected staging file into the diff pane.
     /// Open the currently selected staging file in the configured editor.
     pub fn open_selected_in_editor(&mut self) {
@@ -1422,15 +1538,96 @@ impl App {
         };
         if let (Some(fp), Some(repo_path)) = (file_path, self.tab().repo_path.as_ref()) {
             let full_path = repo_path.join(&fp);
-            match self.editor.open_file(&full_path) {
-                Ok(()) => {
-                    self.tab_mut().status_message =
-                        Some(format!("Opened {} in {}", fp, self.editor));
-                }
-                Err(e) => {
-                    self.tab_mut().error_message = Some(format!("Failed to open editor: {e}"));
+            if self.editor.is_terminal_editor() {
+                // Signal the event loop to suspend the TUI, run the editor
+                // synchronously with a real TTY, then resume.
+                self.tab_mut().status_message = Some(format!(
+                    "Opening {} in {} — suspending TUI",
+                    fp, self.editor
+                ));
+                self.pending_editor_open = Some(vec![full_path]);
+            } else {
+                match self.editor.open_file_or_default(&full_path) {
+                    Ok(method) => {
+                        self.tab_mut().status_message =
+                            Some(format!("Opened {} in {}", fp, method));
+                    }
+                    Err(e) => {
+                        self.tab_mut().error_message = Some(format!("Failed to open editor: {e}"));
+                    }
                 }
             }
+        }
+    }
+
+    /// Open files from the commit diff file list in the configured editor.
+    ///
+    /// If `selected_file_indices` contains 2+ items, opens all of them.
+    /// Otherwise opens just the currently focused file (`commit_diff_file_index`).
+    pub fn open_commit_files_in_editor(&mut self) {
+        let repo_path = match self.tab().repo_path.clone() {
+            Some(p) => p,
+            None => {
+                self.tab_mut().status_message = Some("No repository open".into());
+                return;
+            }
+        };
+
+        // Collect files to open: multi-selection takes priority over single cursor.
+        let indices: Vec<usize> = if self.tab().selected_file_indices.len() > 1 {
+            let mut v: Vec<usize> = self.tab().selected_file_indices.iter().copied().collect();
+            v.sort_unstable();
+            v
+        } else {
+            vec![self.tab().commit_diff_file_index]
+        };
+
+        let paths: Vec<std::path::PathBuf> = indices
+            .iter()
+            .filter_map(|&i| {
+                self.tab()
+                    .commit_files
+                    .get(i)
+                    .map(|f| repo_path.join(f.display_path()))
+            })
+            .collect();
+
+        if paths.is_empty() {
+            return;
+        }
+
+        let path_strs: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
+        let summary = if path_strs.len() == 1 {
+            path_strs[0].clone()
+        } else {
+            format!("{} files", path_strs.len())
+        };
+
+        if self.editor.is_terminal_editor() {
+            self.tab_mut().status_message = Some(format!(
+                "Opening {} in {} — suspending TUI",
+                summary, self.editor
+            ));
+            self.pending_editor_open = Some(paths);
+        } else if !matches!(self.editor, gitkraft_core::Editor::None) {
+            // For GUI editors: open each file individually (they handle multiple windows).
+            let mut last_error: Option<String> = None;
+            for path in &paths {
+                if let Err(e) = self.editor.open_file(path) {
+                    last_error = Some(format!("{e}"));
+                }
+            }
+            if let Some(e) = last_error {
+                self.tab_mut().error_message = Some(format!("Failed to open in editor: {e}"));
+            } else {
+                self.tab_mut().status_message =
+                    Some(format!("Opened {} in {}", summary, self.editor));
+            }
+        } else {
+            self.tab_mut().status_message = Some(format!(
+                "Files: {}  (no editor configured — press E to choose one)",
+                path_strs.join(", ")
+            ));
         }
     }
 
@@ -1684,6 +1881,141 @@ impl App {
         });
     }
 
+    /// Open the file-history overlay for the given repo-relative path.
+    pub fn open_file_history(&mut self, file_path: String) {
+        let repo_path = match self.tab().repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        let tab = self.tab_mut();
+        tab.blame_path = None; // close blame if open
+        tab.file_history_path = Some(file_path.clone());
+        tab.file_history_commits.clear();
+        tab.file_history_cursor = 0;
+        tab.status_message = Some(format!(
+            "Loading history for {}…",
+            file_path.rsplit('/').next().unwrap_or(&file_path)
+        ));
+        let tx = self.bg_tx.clone();
+        std::thread::spawn(move || {
+            let repo = match gitkraft_core::features::repo::open_repo(&repo_path) {
+                Ok(r) => r,
+                Err(e) => {
+                    let _ = tx.send(BackgroundResult::OperationDone {
+                        ok_message: None,
+                        err_message: Some(format!("file history: {e}")),
+                        needs_refresh: false,
+                        needs_staging_refresh: false,
+                    });
+                    return;
+                }
+            };
+            match gitkraft_core::file_history(&repo, &file_path, 500) {
+                Ok(commits) => {
+                    let _ = tx.send(BackgroundResult::FileHistoryLoaded {
+                        path: file_path,
+                        commits,
+                    });
+                }
+                Err(e) => {
+                    let _ = tx.send(BackgroundResult::OperationDone {
+                        ok_message: None,
+                        err_message: Some(format!("file history: {e}")),
+                        needs_refresh: false,
+                        needs_staging_refresh: false,
+                    });
+                }
+            }
+        });
+    }
+
+    /// Open the blame overlay for the given repo-relative path.
+    pub fn open_file_blame(&mut self, file_path: String) {
+        let repo_path = match self.tab().repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        let tab = self.tab_mut();
+        tab.file_history_path = None; // close history if open
+        tab.blame_path = Some(file_path.clone());
+        tab.blame_lines.clear();
+        tab.blame_scroll = 0;
+        tab.status_message = Some(format!(
+            "Loading blame for {}…",
+            file_path.rsplit('/').next().unwrap_or(&file_path)
+        ));
+        let tx = self.bg_tx.clone();
+        std::thread::spawn(move || {
+            let repo = match gitkraft_core::features::repo::open_repo(&repo_path) {
+                Ok(r) => r,
+                Err(e) => {
+                    let _ = tx.send(BackgroundResult::OperationDone {
+                        ok_message: None,
+                        err_message: Some(format!("blame: {e}")),
+                        needs_refresh: false,
+                        needs_staging_refresh: false,
+                    });
+                    return;
+                }
+            };
+            match gitkraft_core::blame_file(&repo, &file_path) {
+                Ok(lines) => {
+                    let _ = tx.send(BackgroundResult::FileBlameLoaded {
+                        path: file_path,
+                        lines,
+                    });
+                }
+                Err(e) => {
+                    let _ = tx.send(BackgroundResult::OperationDone {
+                        ok_message: None,
+                        err_message: Some(format!("blame: {e}")),
+                        needs_refresh: false,
+                        needs_staging_refresh: false,
+                    });
+                }
+            }
+        });
+    }
+
+    /// Prompt to delete the given working-tree file (first keypress).
+    pub fn prompt_delete_file(&mut self, file_path: String) {
+        let file_name = file_path
+            .rsplit('/')
+            .next()
+            .unwrap_or(&file_path)
+            .to_string();
+        self.tab_mut().confirm_delete_file = Some(file_path);
+        self.tab_mut().status_message = Some(format!(
+            "Delete '{file_name}'? Press 'd' again to confirm, any other key to cancel"
+        ));
+    }
+
+    /// Execute the pending file deletion (second keypress confirmation).
+    pub fn confirm_delete_file(&mut self) {
+        let path = match self.tab().confirm_delete_file.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        let repo_path = match self.tab().repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.tab_mut().confirm_delete_file = None;
+        self.tab_mut().is_loading = true;
+        let file_name = path.rsplit('/').next().unwrap_or(&path).to_string();
+        self.tab_mut().status_message = Some(format!("Deleting '{file_name}'…"));
+        let tx = self.bg_tx.clone();
+        std::thread::spawn(move || {
+            let res = gitkraft_core::delete_file(repo_path.as_path(), &path);
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res.as_ref().ok().map(|_| format!("Deleted '{file_name}'")),
+                err_message: res.err().map(|e| e.to_string()),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
+    }
+
     pub fn revert_selected_commit(&mut self) {
         let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
@@ -1705,6 +2037,73 @@ impl App {
             let _ = tx.send(BackgroundResult::OperationDone {
                 ok_message: res.as_ref().ok().map(|_| format!("Reverted {}", &oid[..7])),
                 err_message: res.err().map(|e| format!("revert: {e}")),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
+    }
+
+    /// Cherry-pick the selected commit(s) onto the current branch.
+    ///
+    /// If `selected_commits` has 2+ entries, cherry-picks all of them in
+    /// ascending OID order (oldest first so the history is linear).
+    /// Otherwise cherry-picks only the currently focused commit.
+    pub fn cherry_pick_selected(&mut self) {
+        let repo_path = match self.tab().repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+
+        // Collect OIDs: multi-selection wins over single cursor.
+        let oids: Vec<String> = if self.tab().selected_commits.len() > 1 {
+            // selected_commits is in cursor order; sort descending so we apply
+            // oldest-first (highest list-index = oldest commit).
+            let mut sorted = self.tab().selected_commits.clone();
+            sorted.sort_unstable_by(|a, b| b.cmp(a)); // reverse: highest index = oldest
+            sorted
+                .iter()
+                .filter_map(|&i| self.tab().commits.get(i).map(|c| c.oid.clone()))
+                .collect()
+        } else {
+            match self.tab().commit_list_state.selected() {
+                Some(i) => self
+                    .tab()
+                    .commits
+                    .get(i)
+                    .map(|c| vec![c.oid.clone()])
+                    .unwrap_or_default(),
+                None => return,
+            }
+        };
+
+        if oids.is_empty() {
+            return;
+        }
+
+        let count = oids.len();
+        let short = oids[0][..oids[0].len().min(7)].to_string();
+        let label = if count == 1 {
+            format!("Cherry-picking {short}…")
+        } else {
+            format!("Cherry-picking {count} commits…")
+        };
+
+        let tab = self.tab_mut();
+        tab.is_loading = true;
+        tab.status_message = Some(label);
+
+        let tx = self.bg_tx.clone();
+        std::thread::spawn(move || {
+            let res: Result<String, String> = (|| {
+                for oid in &oids {
+                    gitkraft_core::features::repo::cherry_pick_commit(&repo_path, oid)
+                        .map_err(|e| format!("cherry-pick {}: {e}", &oid[..oid.len().min(7)]))?;
+                }
+                Ok(format!("Cherry-picked {} commit(s)", oids.len()))
+            })();
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res.as_ref().ok().cloned(),
+                err_message: res.err(),
                 needs_refresh: true,
                 needs_staging_refresh: false,
             });
@@ -1786,33 +2185,7 @@ fn clamp_list_state(state: &mut ListState, len: usize) {
 /// Blocking helper that loads all repo data in one go.
 /// Runs inside `spawn_blocking` — must not touch any async APIs.
 fn load_repo_blocking(path: &std::path::Path) -> Result<RepoPayload, String> {
-    let mut repo = open_repo_str(path)?;
-
-    let info = gitkraft_core::features::repo::get_repo_info(&repo).map_err(|e| e.to_string())?;
-    let branches =
-        gitkraft_core::features::branches::list_branches(&repo).map_err(|e| e.to_string())?;
-    let commits =
-        gitkraft_core::features::commits::list_commits(&repo, 500).map_err(|e| e.to_string())?;
-    let graph_rows = gitkraft_core::features::graph::build_graph(&commits);
-    let unstaged =
-        gitkraft_core::features::diff::get_working_dir_diff(&repo).map_err(|e| e.to_string())?;
-    let staged =
-        gitkraft_core::features::diff::get_staged_diff(&repo).map_err(|e| e.to_string())?;
-    let remotes =
-        gitkraft_core::features::remotes::list_remotes(&repo).map_err(|e| e.to_string())?;
-    let stashes =
-        gitkraft_core::features::stash::list_stashes(&mut repo).map_err(|e| e.to_string())?;
-
-    Ok(RepoPayload {
-        info,
-        branches,
-        commits,
-        graph_rows,
-        unstaged,
-        staged,
-        stashes,
-        remotes,
-    })
+    gitkraft_core::load_repo_snapshot(path).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -2398,5 +2771,197 @@ mod tests {
         assert!(app.tab().pending_commit_action_oid.is_none());
         assert!(app.tab().pending_action_kind.is_none());
         assert!(app.tab().action_input1.is_empty());
+    }
+
+    // ── File history / blame / delete ─────────────────────────────────────
+
+    #[test]
+    fn file_history_defaults_empty() {
+        let tab = RepoTab::new();
+        assert!(tab.file_history_path.is_none());
+        assert!(tab.file_history_commits.is_empty());
+        assert_eq!(tab.file_history_cursor, 0);
+    }
+
+    #[test]
+    fn blame_defaults_empty() {
+        let tab = RepoTab::new();
+        assert!(tab.blame_path.is_none());
+        assert!(tab.blame_lines.is_empty());
+        assert_eq!(tab.blame_scroll, 0);
+    }
+
+    #[test]
+    fn confirm_delete_defaults_none() {
+        let tab = RepoTab::new();
+        assert!(tab.confirm_delete_file.is_none());
+    }
+
+    #[test]
+    fn open_file_history_no_repo_is_noop() {
+        let mut app = App::new();
+        // No repo_path — should not set file_history_path
+        app.open_file_history("src/main.rs".to_string());
+        assert!(app.tab().file_history_path.is_none());
+    }
+
+    #[test]
+    fn open_file_history_sets_path_and_clears_blame() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().blame_path = Some("old.rs".to_string());
+
+        app.open_file_history("src/main.rs".to_string());
+
+        assert_eq!(app.tab().file_history_path.as_deref(), Some("src/main.rs"));
+        // blame should be closed
+        assert!(app.tab().blame_path.is_none());
+    }
+
+    #[test]
+    fn open_file_blame_sets_path_and_clears_history() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().file_history_path = Some("old.rs".to_string());
+
+        app.open_file_blame("src/lib.rs".to_string());
+
+        assert_eq!(app.tab().blame_path.as_deref(), Some("src/lib.rs"));
+        // history should be closed
+        assert!(app.tab().file_history_path.is_none());
+    }
+
+    #[test]
+    fn prompt_delete_file_sets_confirm_and_status() {
+        let mut app = App::new();
+        app.prompt_delete_file("src/old.rs".to_string());
+        assert_eq!(app.tab().confirm_delete_file.as_deref(), Some("src/old.rs"));
+        assert!(app.tab().status_message.is_some());
+    }
+
+    #[test]
+    fn confirm_delete_file_no_repo_is_noop() {
+        let mut app = App::new();
+        app.tab_mut().confirm_delete_file = Some("src/old.rs".to_string());
+        // No repo_path
+        app.confirm_delete_file();
+        assert!(!app.tab().is_loading);
+    }
+
+    // ── open_commit_files_in_editor ───────────────────────────────────────
+
+    #[test]
+    fn open_commit_files_in_editor_shows_path_when_no_editor() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/repo"));
+        app.tab_mut().commit_files = vec![gitkraft_core::DiffFileEntry {
+            old_file: String::new(),
+            new_file: "src/main.rs".to_string(),
+            status: gitkraft_core::FileStatus::Modified,
+        }];
+        app.tab_mut().commit_diff_file_index = 0;
+        // editor is Editor::None by default
+
+        app.open_commit_files_in_editor();
+
+        // With no editor, shows a status message with the file path
+        assert!(app.tab().status_message.is_some());
+        let msg = app.tab().status_message.as_deref().unwrap();
+        assert!(msg.contains("no editor") || msg.contains("src/main.rs"));
+    }
+
+    #[test]
+    fn open_commit_files_in_editor_queues_multi_file_for_terminal_editor() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/repo"));
+        app.tab_mut().commit_files = vec![
+            gitkraft_core::DiffFileEntry {
+                old_file: String::new(),
+                new_file: "a.rs".to_string(),
+                status: gitkraft_core::FileStatus::Modified,
+            },
+            gitkraft_core::DiffFileEntry {
+                old_file: String::new(),
+                new_file: "b.rs".to_string(),
+                status: gitkraft_core::FileStatus::Modified,
+            },
+        ];
+        app.tab_mut().selected_file_indices.insert(0);
+        app.tab_mut().selected_file_indices.insert(1);
+        app.editor = gitkraft_core::Editor::Helix; // terminal editor
+
+        app.open_commit_files_in_editor();
+
+        // Both files should be queued for the editor
+        let queued = app.pending_editor_open.as_ref().unwrap();
+        assert_eq!(queued.len(), 2);
+    }
+
+    #[test]
+    fn cherry_pick_selected_single_commit_sets_loading() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().commits = vec![gitkraft_core::CommitInfo {
+            oid: "abc1234567890".to_string(),
+            short_oid: "abc1234".to_string(),
+            summary: "test".into(),
+            message: "test".into(),
+            author_name: "A".into(),
+            author_email: "a@a.com".into(),
+            time: Default::default(),
+            parent_ids: Vec::new(),
+        }];
+        app.tab_mut().commit_list_state.select(Some(0));
+
+        app.cherry_pick_selected();
+
+        assert!(app.tab().is_loading);
+    }
+
+    #[test]
+    fn cherry_pick_selected_no_repo_path_is_noop() {
+        let mut app = App::new();
+        app.tab_mut().commits = vec![gitkraft_core::CommitInfo {
+            oid: "abc1234567890".to_string(),
+            short_oid: "abc1234".to_string(),
+            summary: "test".into(),
+            message: "test".into(),
+            author_name: "A".into(),
+            author_email: "a@a.com".into(),
+            time: Default::default(),
+            parent_ids: Vec::new(),
+        }];
+        app.tab_mut().commit_list_state.select(Some(0));
+
+        app.cherry_pick_selected();
+
+        assert!(!app.tab().is_loading);
+    }
+
+    #[test]
+    fn open_commit_files_in_editor_uses_single_cursor_when_no_multi_selection() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/repo"));
+        app.tab_mut().commit_files = vec![
+            gitkraft_core::DiffFileEntry {
+                old_file: String::new(),
+                new_file: "a.rs".to_string(),
+                status: gitkraft_core::FileStatus::Modified,
+            },
+            gitkraft_core::DiffFileEntry {
+                old_file: String::new(),
+                new_file: "b.rs".to_string(),
+                status: gitkraft_core::FileStatus::Modified,
+            },
+        ];
+        app.tab_mut().commit_diff_file_index = 1; // cursor on b.rs
+        app.editor = gitkraft_core::Editor::Helix;
+        // selected_file_indices has 1 item (or 0) → should use cursor
+
+        app.open_commit_files_in_editor();
+
+        let queued = app.pending_editor_open.as_ref().unwrap();
+        assert_eq!(queued.len(), 1);
+        assert!(queued[0].ends_with("b.rs"));
     }
 }

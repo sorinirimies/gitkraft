@@ -50,9 +50,17 @@ impl GitKraft {
             // Show the tab bar above the welcome screen so users can
             // switch between tabs even when the active one has no repo.
             let welcome = features::repo::view::welcome_view(self);
-            let outer = column![tab_bar, welcome]
-                .width(Length::Fill)
-                .height(Length::Fill);
+            let tab = self.active_tab();
+            let mut outer = column![tab_bar];
+            // Error banner and status bar are shown even without a repo so
+            // messages like "Settings opened in …" are always visible.
+            if let Some(ref err) = tab.error_message {
+                outer = outer.push(error_banner(err, &c));
+            }
+            outer = outer.push(welcome);
+            if tab.status_message.is_some() {
+                outer = outer.push(status_bar_view(self));
+            }
             return container(outer)
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -105,7 +113,17 @@ impl GitKraft {
             .into();
 
         // ── Diff viewer (fills all remaining horizontal space) ────────────
-        let diff_viewer = container(features::diff::view::view(self))
+        let diff_panel_content: Element<'_, Message> = {
+            let tab = self.active_tab();
+            if tab.file_history_path.is_some() {
+                features::diff::view::file_history_view(self)
+            } else if tab.blame_path.is_some() {
+                features::diff::view::blame_view(self)
+            } else {
+                features::diff::view::view(self)
+            }
+        };
+        let diff_viewer = container(diff_panel_content)
             .width(Length::Fill)
             .height(Length::Fill);
 
@@ -132,6 +150,11 @@ impl GitKraft {
 
         if let Some(ref err) = tab.error_message {
             main_col = main_col.push(error_banner(err, &c));
+        }
+
+        if let Some(ref path) = tab.pending_delete_file {
+            let file_name = path.rsplit('/').next().unwrap_or(path.as_str());
+            main_col = main_col.push(delete_confirmation_banner(file_name, &c));
         }
 
         main_col = main_col
@@ -266,6 +289,55 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
         .width(Length::Fill)
         .style(theme::header_style)
         .into()
+}
+
+fn delete_confirmation_banner<'a>(file_name: &str, c: &ThemeColors) -> Element<'a, Message> {
+    use iced::widget::{button, row, text, Space};
+
+    let label = text(format!("Delete '{file_name}' permanently?"))
+        .size(13)
+        .color(c.text_primary);
+
+    let confirm_btn = button(text("Delete").size(12).color(c.red))
+        .padding([3, 12])
+        .style(theme::toolbar_button)
+        .on_press(Message::ConfirmDeleteFile);
+
+    let cancel_btn = button(text("Cancel").size(12).color(c.text_secondary))
+        .padding([3, 12])
+        .style(theme::toolbar_button)
+        .on_press(Message::CancelDeleteFile);
+
+    container(
+        row![
+            label,
+            Space::new().width(12),
+            confirm_btn,
+            Space::new().width(6),
+            cancel_btn
+        ]
+        .align_y(iced::Alignment::Center)
+        .padding([6, 12]),
+    )
+    .width(Length::Fill)
+    .style(|theme| {
+        let palette = theme.palette();
+        iced::widget::container::Style {
+            background: Some(iced::Background::Color(iced::Color {
+                r: 0.5,
+                g: 0.1,
+                b: 0.1,
+                a: 0.5,
+            })),
+            border: iced::Border {
+                color: palette.danger,
+                width: 0.0,
+                radius: 0.0.into(),
+            },
+            ..Default::default()
+        }
+    })
+    .into()
 }
 
 /// Render an error banner at the top of the window with a dismiss button.
@@ -1002,6 +1074,15 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                         hunks: Vec::new(),
                     });
 
+                col = col.push(menu_item(
+                    "File History",
+                    Message::ViewFileHistory(path.clone()),
+                ));
+                col = col.push(menu_item(
+                    "File Blame",
+                    Message::ViewFileBlame(path.clone()),
+                ));
+                col = col.push(view_utils::context_menu_separator::<Message>());
                 col = col.push(menu_item("View diff", Message::SelectDiff(diff)));
                 col = col.push(menu_item("Stage file", Message::StageFile(path.clone())));
                 col = col.push(view_utils::context_menu_separator::<Message>());
@@ -1029,6 +1110,8 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                 "Show in folder",
                 Message::ShowInFolder(path.clone()),
             ));
+            col = col.push(view_utils::context_menu_separator::<Message>());
+            col = col.push(menu_item("Delete file", Message::DeleteFile(path.clone())));
 
             col.into()
         }
@@ -1070,6 +1153,15 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                         hunks: Vec::new(),
                     });
 
+                col = col.push(menu_item(
+                    "File History",
+                    Message::ViewFileHistory(path.clone()),
+                ));
+                col = col.push(menu_item(
+                    "File Blame",
+                    Message::ViewFileBlame(path.clone()),
+                ));
+                col = col.push(view_utils::context_menu_separator::<Message>());
                 col = col.push(menu_item("View diff", Message::SelectDiff(diff)));
                 col = col.push(menu_item(
                     "Unstage file",
@@ -1157,18 +1249,27 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                     c.muted,
                 );
 
+                // Group 0: file analysis
+                let mut col = column![header];
+                col = col.push(menu_item(
+                    "File History",
+                    Message::ViewFileHistory(file_path.clone()),
+                ));
+                col = col.push(menu_item(
+                    "File Blame",
+                    Message::ViewFileBlame(file_path.clone()),
+                ));
+                col = col.push(view_utils::context_menu_separator::<Message>());
+
                 // Group 1: file actions
-                let mut col = column![
-                    header,
-                    menu_item(
-                        "Diff with working tree",
-                        Message::DiffFileWithWorkingTree(oid.clone(), file_path.clone()),
-                    ),
-                    menu_item(
-                        "Checkout file from this commit",
-                        Message::CheckoutFileAtCommit(oid.clone(), file_path.clone()),
-                    ),
-                ];
+                col = col.push(menu_item(
+                    "Diff with working tree",
+                    Message::DiffFileWithWorkingTree(oid.clone(), file_path.clone()),
+                ));
+                col = col.push(menu_item(
+                    "Checkout file from this commit",
+                    Message::CheckoutFileAtCommit(oid.clone(), file_path.clone()),
+                ));
 
                 // Group 2: copy info
                 col = col.push(view_utils::context_menu_separator::<Message>());

@@ -161,12 +161,21 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         theme.border_inactive
     };
 
+    let selected_count = app.tab().selected_commits.len();
     let title = if app.tab().search_active {
         format!(
             " Commit Log — Search: \"{}\" ({}) ",
             app.tab().search_query,
             app.tab().search_results.len()
         )
+    } else if selected_count > 1 {
+        format!(
+            " Commit Log ({}) — {} selected [J/K shrink] ",
+            app.tab().commits.len(),
+            selected_count
+        )
+    } else if is_active {
+        format!(" Commit Log ({}) [J/K select] ", app.tab().commits.len())
     } else {
         format!(" Commit Log ({}) ", app.tab().commits.len())
     };

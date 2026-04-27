@@ -22,12 +22,7 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                     .or(state.active_tab().selected_commit)
                     .unwrap_or(index);
 
-                let (start, end) = if anchor <= index {
-                    (anchor, index)
-                } else {
-                    (index, anchor)
-                };
-                let range: Vec<usize> = (start..=end).collect();
+                let range = gitkraft_core::ascending_range(anchor, index);
 
                 // Determine the oldest and newest commits in the selection.
                 // Commits are stored newest-first, so the highest index is the oldest.
@@ -80,6 +75,11 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             tab.selected_commit_file_indices.clear();
             tab.multi_file_diffs.clear();
             tab.commit_range_diffs.clear();
+            // Exit the blame overlay — clicking a different commit means the
+            // user wants to see that commit's diff, not the previous blame.
+            tab.blame_path = None;
+            tab.blame_lines.clear();
+            tab.blame_scroll = 0.0;
 
             // Load just the file list (instant — no line parsing).
             if let (Some(path), Some((oid, short_oid))) = (repo_path, commit_info) {
@@ -183,15 +183,16 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
 
         Message::DiffFileWithWorkingTree(oid, file_path) => {
             state.active_tab_mut().context_menu = None;
-            if let Some(path) = state.active_tab().repo_path.clone() {
-                state.active_tab_mut().status_message = Some(format!(
-                    "Comparing {} with working tree…",
-                    file_path.rsplit('/').next().unwrap_or(&file_path)
-                ));
-                commands::diff_file_with_working_tree(path, oid, file_path)
-            } else {
-                Task::none()
-            }
+            let label = file_path
+                .rsplit('/')
+                .next()
+                .unwrap_or(&file_path)
+                .to_string();
+            with_repo!(
+                state,
+                format!("Comparing {label} with working tree…"),
+                |repo_path| commands::diff_file_with_working_tree(repo_path, oid, file_path)
+            )
         }
 
         Message::DiffWithWorkingTreeLoaded(result) => {
@@ -225,50 +226,42 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
 
         Message::CheckoutFileAtCommit(oid, file_path) => {
             state.active_tab_mut().context_menu = None;
-            if let Some(path) = state.active_tab().repo_path.clone() {
-                state.active_tab_mut().status_message = Some(format!(
-                    "Restoring '{}'…",
-                    file_path.rsplit('/').next().unwrap_or(&file_path)
-                ));
-                commands::checkout_file_at_commit(path, oid.clone(), file_path.clone())
-            } else {
-                Task::none()
-            }
+            let label = file_path
+                .rsplit('/')
+                .next()
+                .unwrap_or(&file_path)
+                .to_string();
+            with_repo!(state, format!("Restoring '{label}'…"), |repo_path| {
+                commands::checkout_file_at_commit(repo_path, oid.clone(), file_path.clone())
+            })
         }
 
         Message::CheckoutMultiFilesAtCommit(oid, file_paths) => {
             state.active_tab_mut().context_menu = None;
-            if let Some(path) = state.active_tab().repo_path.clone() {
-                let count = file_paths.len();
-                state.active_tab_mut().status_message = Some(format!("Restoring {count} files…"));
-                commands::checkout_multi_files_at_commit(path, oid.clone(), file_paths.clone())
-            } else {
-                Task::none()
-            }
+            let count = file_paths.len();
+            with_repo!(state, format!("Restoring {count} files…"), |repo_path| {
+                commands::checkout_multi_files_at_commit(repo_path, oid.clone(), file_paths.clone())
+            })
         }
 
         Message::CherryPickCommits(oids) => {
             state.active_tab_mut().context_menu = None;
-            if let Some(path) = state.active_tab().repo_path.clone() {
-                let count = oids.len();
-                state.active_tab_mut().status_message =
-                    Some(format!("Cherry-picking {count} commit(s)…"));
-                commands::cherry_pick_commits(path, oids)
-            } else {
-                Task::none()
-            }
+            let count = oids.len();
+            with_repo!(
+                state,
+                format!("Cherry-picking {count} commit(s)…"),
+                |repo_path| commands::cherry_pick_commits(repo_path, oids)
+            )
         }
 
         Message::RevertCommits(oids) => {
             state.active_tab_mut().context_menu = None;
-            if let Some(path) = state.active_tab().repo_path.clone() {
-                let count = oids.len();
-                state.active_tab_mut().status_message =
-                    Some(format!("Reverting {count} commit(s)…"));
-                commands::revert_commits(path, oids)
-            } else {
-                Task::none()
-            }
+            let count = oids.len();
+            with_repo!(
+                state,
+                format!("Reverting {count} commit(s)…"),
+                |repo_path| commands::revert_commits(repo_path, oids)
+            )
         }
 
         Message::CommitRangeDiffLoaded(result) => {

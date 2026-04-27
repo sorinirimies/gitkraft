@@ -1433,7 +1433,7 @@ dependencies = [
 
 [[package]]
 name = "gitkraft"
-version = "0.7.7"
+version = "0.8.1"
 dependencies = [
  "dirs",
  "futures",
@@ -1448,13 +1448,12 @@ dependencies = [
 
 [[package]]
 name = "gitkraft-core"
-version = "0.7.7"
+version = "0.8.1"
 dependencies = [
  "anyhow",
  "chrono",
  "dirs",
  "git2",
- "redb",
  "serde",
  "serde_json",
  "tempfile",
@@ -1463,7 +1462,7 @@ dependencies = [
 
 [[package]]
 name = "gitkraft-tui"
-version = "0.7.7"
+version = "0.8.1"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -3609,15 +3608,6 @@ checksum = "7b634fabf032fab15307ffd272149b622260f55974d9fad689292a5d33df02e5"
 dependencies = [
  "bytemuck",
  "font-types 0.11.3",
-]
-
-[[package]]
-name = "redb"
-version = "4.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e925444704b5f17d32bf42f5b6e2df050bceebc3dcd6e71cc73dafe8092e839"
-dependencies = [
- "libc",
 ]
 
 [[package]]

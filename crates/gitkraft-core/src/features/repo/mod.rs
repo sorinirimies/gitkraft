@@ -5,7 +5,7 @@ pub mod ops;
 pub mod types;
 
 pub use ops::{
-    checkout_commit_detached, cherry_pick_commit, clone_repo, get_file_at_commit, get_repo_info,
-    init_repo, open_repo, reset_to_commit, revert_commit,
+    checkout_commit_detached, cherry_pick_commit, clone_repo, delete_file, get_file_at_commit,
+    get_repo_info, init_repo, load_repo_snapshot, open_repo, reset_to_commit, revert_commit,
 };
-pub use types::{RepoInfo, RepoState};
+pub use types::{RepoInfo, RepoSnapshot, RepoState};

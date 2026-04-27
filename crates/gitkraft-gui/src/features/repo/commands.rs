@@ -5,8 +5,8 @@
 //! result into a [`Message`] variant the update loop can handle.
 //!
 //! This module also contains async wrappers for persistence operations
-//! (`record_repo_opened`, `load_settings`, `save_theme`) so that redb
-//! database I/O never blocks the UI thread.
+//! (`record_repo_opened`, `load_settings`, `save_theme`) so that settings
+//! file I/O never blocks the UI thread.
 
 use std::path::PathBuf;
 
@@ -83,35 +83,7 @@ pub fn refresh_repo(path: PathBuf) -> Task<Message> {
 /// Opens the repository and collects every piece of state the UI needs into a
 /// single [`RepoPayload`].
 pub(crate) fn load_repo_blocking(path: &std::path::Path) -> Result<RepoPayload, String> {
-    // Open the repository once and reuse the handle for every operation.
-    // `list_stashes` needs `&mut`, so we declare the binding as `mut`.
-    let mut repo = open_repo!(path);
-
-    let info = gitkraft_core::features::repo::get_repo_info(&repo).map_err(|e| e.to_string())?;
-    let branches =
-        gitkraft_core::features::branches::list_branches(&repo).map_err(|e| e.to_string())?;
-    let commits =
-        gitkraft_core::features::commits::list_commits(&repo, 500).map_err(|e| e.to_string())?;
-    let graph_rows = gitkraft_core::features::graph::build_graph(&commits);
-    let unstaged =
-        gitkraft_core::features::diff::get_working_dir_diff(&repo).map_err(|e| e.to_string())?;
-    let staged =
-        gitkraft_core::features::diff::get_staged_diff(&repo).map_err(|e| e.to_string())?;
-    let remotes =
-        gitkraft_core::features::remotes::list_remotes(&repo).map_err(|e| e.to_string())?;
-    let stashes =
-        gitkraft_core::features::stash::list_stashes(&mut repo).map_err(|e| e.to_string())?;
-
-    Ok(RepoPayload {
-        info,
-        branches,
-        commits,
-        graph_rows,
-        unstaged,
-        staged,
-        stashes,
-        remotes,
-    })
+    gitkraft_core::load_repo_snapshot(path).map_err(|e| e.to_string())
 }
 
 /// Get the working directory of a repository, returning a user-friendly error
@@ -312,6 +284,43 @@ pub fn create_branch_at_commit_async(path: PathBuf, name: String, oid: String) -
     )
 }
 
+/// Load the commit history for a single file on a background thread.
+pub fn file_history_async(repo_path: PathBuf, file_path: String) -> Task<Message> {
+    git_task!(
+        Message::FileHistoryLoaded,
+        (|| {
+            let repo = open_repo!(&repo_path);
+            let commits =
+                gitkraft_core::file_history(&repo, &file_path, 500).map_err(|e| e.to_string())?;
+            Ok((file_path, commits))
+        })()
+    )
+}
+
+/// Load git-blame data for a single file on a background thread.
+pub fn blame_file_async(repo_path: PathBuf, file_path: String) -> Task<Message> {
+    git_task!(
+        Message::FileBlameLoaded,
+        (|| {
+            let repo = open_repo!(&repo_path);
+            let lines = gitkraft_core::blame_file(&repo, &file_path).map_err(|e| e.to_string())?;
+            Ok((file_path, lines))
+        })()
+    )
+}
+
+/// Delete a file from the working directory then refresh the staging area.
+pub fn delete_file_async(repo_path: PathBuf, file_path: String) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let wd = workdir(&repo_path)?;
+            gitkraft_core::delete_file(&wd, &file_path).map_err(|e| e.to_string())?;
+            load_repo_blocking(&repo_path)
+        })()
+    )
+}
+
 /// Execute any `CommitAction` against a specific commit then reload.
 pub fn execute_commit_action_async(
     path: PathBuf,
@@ -363,7 +372,7 @@ pub fn revert_commits_async(path: PathBuf, oids: Vec<String>) -> Task<Message> {
 /// Record that a repo was opened and return the refreshed recent-repos list.
 ///
 /// Runs `record_repo_opened` + `load_settings` on a background thread so that
-/// the redb database I/O never blocks the Iced event loop.
+/// settings file I/O never blocks the Iced event loop.
 pub fn record_repo_opened_async(path: std::path::PathBuf) -> Task<Message> {
     git_task!(
         Message::RepoRecorded,

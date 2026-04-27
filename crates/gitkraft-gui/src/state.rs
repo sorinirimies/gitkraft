@@ -185,6 +185,23 @@ pub struct RepoTab {
     pub has_more_commits: bool,
     /// Guard: true while a background load-more task is in flight (prevents duplicates).
     pub is_loading_more_commits: bool,
+
+    /// When `Some(path)`, the file-history overlay is shown for that repo-relative path.
+    pub file_history_path: Option<String>,
+    /// Commits loaded for the file-history overlay (newest first).
+    pub file_history_commits: Vec<gitkraft_core::CommitInfo>,
+    /// Scroll offset of the file-history list in pixels.
+    pub file_history_scroll: f32,
+
+    /// When `Some(path)`, the blame overlay is shown for that repo-relative path.
+    pub blame_path: Option<String>,
+    /// Blame lines loaded for the blame overlay.
+    pub blame_lines: Vec<gitkraft_core::BlameLine>,
+    /// Scroll offset of the blame view in pixels.
+    pub blame_scroll: f32,
+
+    /// When `Some(path)`, a delete-confirmation banner is shown for that file.
+    pub pending_delete_file: Option<String>,
 }
 
 impl RepoTab {
@@ -240,6 +257,13 @@ impl RepoTab {
             commit_display: Vec::new(),
             has_more_commits: true,
             is_loading_more_commits: false,
+            file_history_path: None,
+            file_history_commits: Vec::new(),
+            file_history_scroll: 0.0,
+            blame_path: None,
+            blame_lines: Vec::new(),
+            blame_scroll: 0.0,
+            pending_delete_file: None,
         }
     }
 
@@ -380,6 +404,16 @@ pub struct GitKraft {
 
     /// Current keyboard modifier state (updated via subscription).
     pub keyboard_modifiers: iced::keyboard::Modifiers,
+
+    // ── Window geometry ───────────────────────────────────────────────────
+    /// Last known window width (updated on WindowResized).
+    pub window_width: f32,
+    /// Last known window height (updated on WindowResized).
+    pub window_height: f32,
+    /// Last known window X position (updated on WindowMoved).
+    pub window_x: f32,
+    /// Last known window Y position (updated on WindowMoved).
+    pub window_y: f32,
 }
 
 impl Default for GitKraft {
@@ -458,6 +492,27 @@ impl GitKraft {
             search_diff_oid: None,
 
             keyboard_modifiers: iced::keyboard::Modifiers::default(),
+
+            window_width: settings
+                .layout
+                .as_ref()
+                .and_then(|l| l.window_width)
+                .unwrap_or(1400.0),
+            window_height: settings
+                .layout
+                .as_ref()
+                .and_then(|l| l.window_height)
+                .unwrap_or(800.0),
+            window_x: settings
+                .layout
+                .as_ref()
+                .and_then(|l| l.window_x)
+                .unwrap_or(0.0),
+            window_y: settings
+                .layout
+                .as_ref()
+                .and_then(|l| l.window_y)
+                .unwrap_or(0.0),
 
             editor: settings
                 .editor_name
@@ -653,6 +708,11 @@ impl GitKraft {
             diff_file_list_width: Some(self.diff_file_list_width),
             sidebar_expanded: Some(self.sidebar_expanded),
             ui_scale: Some(self.ui_scale),
+            window_width: Some(self.window_width),
+            window_height: Some(self.window_height),
+            window_x: Some(self.window_x),
+            window_y: Some(self.window_y),
+            window_maximized: None, // not tracked
         }
     }
 }
@@ -1368,5 +1428,223 @@ mod tests {
             status.contains("Revert commit"),
             "expected status to contain 'Revert commit', got: {status:?}"
         );
+    }
+
+    // ── File history / blame / delete state ──────────────────────────────
+
+    #[test]
+    fn file_history_defaults_empty() {
+        let tab = RepoTab::new_empty();
+        assert!(tab.file_history_path.is_none());
+        assert!(tab.file_history_commits.is_empty());
+        assert_eq!(tab.file_history_scroll, 0.0);
+    }
+
+    #[test]
+    fn blame_defaults_empty() {
+        let tab = RepoTab::new_empty();
+        assert!(tab.blame_path.is_none());
+        assert!(tab.blame_lines.is_empty());
+        assert_eq!(tab.blame_scroll, 0.0);
+    }
+
+    #[test]
+    fn pending_delete_file_defaults_none() {
+        let tab = RepoTab::new_empty();
+        assert!(tab.pending_delete_file.is_none());
+    }
+
+    #[test]
+    fn view_file_history_sets_path_and_clears_blame() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        state.active_tab_mut().blame_path = Some("some/file.rs".to_string());
+
+        let _ = state.update(Message::ViewFileHistory("src/main.rs".to_string()));
+
+        assert_eq!(
+            state.active_tab().file_history_path.as_deref(),
+            Some("src/main.rs")
+        );
+        // Opening history should close blame
+        assert!(state.active_tab().blame_path.is_none());
+    }
+
+    #[test]
+    fn close_file_history_clears_state() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().file_history_path = Some("src/lib.rs".to_string());
+        state.active_tab_mut().file_history_commits = vec![gitkraft_core::CommitInfo {
+            oid: "abc".to_string(),
+            short_oid: "abc".to_string(),
+            summary: "s".to_string(),
+            message: "s".to_string(),
+            author_name: "a".to_string(),
+            author_email: "a@b.com".to_string(),
+            time: Default::default(),
+            parent_ids: vec![],
+        }];
+
+        let _ = state.update(Message::CloseFileHistory);
+
+        assert!(state.active_tab().file_history_path.is_none());
+        assert!(state.active_tab().file_history_commits.is_empty());
+    }
+
+    #[test]
+    fn view_file_blame_sets_path_and_clears_history() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        state.active_tab_mut().file_history_path = Some("some/file.rs".to_string());
+
+        let _ = state.update(Message::ViewFileBlame("src/lib.rs".to_string()));
+
+        assert_eq!(state.active_tab().blame_path.as_deref(), Some("src/lib.rs"));
+        // Opening blame should close history
+        assert!(state.active_tab().file_history_path.is_none());
+    }
+
+    #[test]
+    fn selecting_new_commit_closes_blame_overlay() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        // Pre-populate a commit list so SelectCommit can find the commit.
+        state.active_tab_mut().commits = vec![
+            gitkraft_core::CommitInfo {
+                oid: "abc1".into(),
+                short_oid: "abc1".into(),
+                summary: "first".into(),
+                message: "first".into(),
+                author_name: "A".into(),
+                author_email: "a@a.com".into(),
+                time: Default::default(),
+                parent_ids: Vec::new(),
+            },
+            gitkraft_core::CommitInfo {
+                oid: "abc2".into(),
+                short_oid: "abc2".into(),
+                summary: "second".into(),
+                message: "second".into(),
+                author_name: "A".into(),
+                author_email: "a@a.com".into(),
+                time: Default::default(),
+                parent_ids: Vec::new(),
+            },
+        ];
+        // Blame is currently open for a file from the first commit.
+        state.active_tab_mut().blame_path = Some("src/lib.rs".to_string());
+        state.active_tab_mut().blame_lines = vec![gitkraft_core::BlameLine {
+            line_number: 1,
+            content: "fn main() {}".into(),
+            short_oid: "abc1".into(),
+            oid: "abc1".into(),
+            author_name: "A".into(),
+            time: Default::default(),
+        }];
+
+        // Click a different commit — blame must close automatically.
+        let _ = state.update(Message::SelectCommit(1));
+
+        assert!(
+            state.active_tab().blame_path.is_none(),
+            "blame_path must be cleared when a new commit is selected"
+        );
+        assert!(
+            state.active_tab().blame_lines.is_empty(),
+            "blame_lines must be cleared when a new commit is selected"
+        );
+    }
+
+    #[test]
+    fn close_file_blame_clears_state() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().blame_path = Some("src/lib.rs".to_string());
+
+        let _ = state.update(Message::CloseFileBlame);
+
+        assert!(state.active_tab().blame_path.is_none());
+        assert!(state.active_tab().blame_lines.is_empty());
+    }
+
+    #[test]
+    fn delete_file_sets_pending() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+
+        let _ = state.update(Message::DeleteFile("src/old.rs".to_string()));
+
+        assert_eq!(
+            state.active_tab().pending_delete_file.as_deref(),
+            Some("src/old.rs")
+        );
+        assert!(state.active_tab().context_menu.is_none());
+    }
+
+    #[test]
+    fn cancel_delete_file_clears_pending() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().pending_delete_file = Some("src/old.rs".to_string());
+
+        let _ = state.update(Message::CancelDeleteFile);
+
+        assert!(state.active_tab().pending_delete_file.is_none());
+    }
+
+    #[test]
+    fn confirm_delete_file_no_repo_is_noop() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().pending_delete_file = Some("src/old.rs".to_string());
+        // No repo_path → should not set is_loading
+
+        let _ = state.update(Message::ConfirmDeleteFile);
+
+        assert!(!state.active_tab().is_loading);
+    }
+
+    #[test]
+    fn shift_arrow_down_extends_file_list_selection_when_files_loaded() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        state.active_tab_mut().commit_files = make_commit_files(&["a.rs", "b.rs", "c.rs"]);
+        state.active_tab_mut().selected_file_index = Some(0);
+        state.active_tab_mut().anchor_file_index = Some(0);
+        // keyboard_modifiers must have SHIFT set for range selection to trigger
+        state.keyboard_modifiers = iced::keyboard::Modifiers::SHIFT;
+
+        let _ = state.update(Message::ShiftArrowDown);
+
+        assert_eq!(state.active_tab().selected_file_index, Some(1));
+        // Range should now include both files
+        assert!(state.active_tab().selected_commit_file_indices.contains(&0));
+        assert!(state.active_tab().selected_commit_file_indices.contains(&1));
+    }
+
+    #[test]
+    fn shift_arrow_down_falls_through_to_commit_log_when_no_files() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().commits = make_test_commits(5);
+        state.active_tab_mut().selected_commit = Some(1);
+        state.active_tab_mut().anchor_commit_index = Some(1);
+        state.keyboard_modifiers = iced::keyboard::Modifiers::SHIFT;
+        // no commit_files
+
+        let _ = state.update(Message::ShiftArrowDown);
+
+        assert_eq!(state.active_tab().selected_commit, Some(2));
+        assert!(state.active_tab().selected_commits.contains(&1));
+        assert!(state.active_tab().selected_commits.contains(&2));
     }
 }

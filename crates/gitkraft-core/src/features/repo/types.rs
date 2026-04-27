@@ -64,3 +64,24 @@ pub struct RepoInfo {
     /// Current repository state.
     pub state: RepoState,
 }
+
+use crate::features::{
+    branches::BranchInfo, commits::CommitInfo, diff::DiffInfo, graph::GraphRow,
+    remotes::RemoteInfo, stash::StashEntry,
+};
+
+/// Full snapshot of a repository loaded in one background operation.
+///
+/// Returned by [`load_repo_snapshot`] and used by both GUI and TUI to
+/// apply a fresh repo state without multiple round-trips.
+#[derive(Debug, Clone)]
+pub struct RepoSnapshot {
+    pub info: RepoInfo,
+    pub branches: Vec<BranchInfo>,
+    pub commits: Vec<CommitInfo>,
+    pub graph_rows: Vec<GraphRow>,
+    pub unstaged: Vec<DiffInfo>,
+    pub staged: Vec<DiffInfo>,
+    pub stashes: Vec<StashEntry>,
+    pub remotes: Vec<RemoteInfo>,
+}

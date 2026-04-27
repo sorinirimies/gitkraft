@@ -197,9 +197,153 @@ impl GitKraft {
                 crate::features::repo::commands::save_layout_async(self.current_layout())
             }
 
+            Message::ShiftArrowDown => {
+                // Priority 1: file list (if commit files are loaded and a file is selected).
+                let file_info: Option<(usize, usize)> = {
+                    let tab = self.active_tab();
+                    if !tab.commit_files.is_empty() {
+                        tab.selected_file_index
+                            .map(|cur| (cur, tab.commit_files.len()))
+                    } else {
+                        None
+                    }
+                };
+                if let Some((current, files_len)) = file_info {
+                    let new_idx = (current + 1).min(files_len.saturating_sub(1));
+                    if new_idx != current {
+                        return crate::features::diff::update::update(
+                            self,
+                            Message::SelectDiffByIndex(new_idx),
+                        );
+                    }
+                    return Task::none();
+                }
+                // Priority 2: commit log.
+                let commit_info: Option<(usize, usize)> = {
+                    let tab = self.active_tab();
+                    if !tab.commits.is_empty() {
+                        Some((tab.selected_commit.unwrap_or(0), tab.commits.len()))
+                    } else {
+                        None
+                    }
+                };
+                if let Some((current, commits_len)) = commit_info {
+                    let new_idx = (current + 1).min(commits_len.saturating_sub(1));
+                    if new_idx != current {
+                        return crate::features::commits::update::update(
+                            self,
+                            Message::SelectCommit(new_idx),
+                        );
+                    }
+                }
+                Task::none()
+            }
+
+            Message::ShiftArrowUp => {
+                // Priority 1: file list (if commit files are loaded and a file is selected).
+                let file_info: Option<(usize, usize)> = {
+                    let tab = self.active_tab();
+                    if !tab.commit_files.is_empty() {
+                        tab.selected_file_index
+                            .map(|cur| (cur, tab.commit_files.len()))
+                    } else {
+                        None
+                    }
+                };
+                if let Some((current, _files_len)) = file_info {
+                    let new_idx = current.saturating_sub(1);
+                    if new_idx != current {
+                        return crate::features::diff::update::update(
+                            self,
+                            Message::SelectDiffByIndex(new_idx),
+                        );
+                    }
+                    return Task::none();
+                }
+                // Priority 2: commit log.
+                let commit_info: Option<(usize, usize)> = {
+                    let tab = self.active_tab();
+                    if !tab.commits.is_empty() {
+                        Some((tab.selected_commit.unwrap_or(0), tab.commits.len()))
+                    } else {
+                        None
+                    }
+                };
+                if let Some((current, _commits_len)) = commit_info {
+                    let new_idx = current.saturating_sub(1);
+                    if new_idx != current {
+                        return crate::features::commits::update::update(
+                            self,
+                            Message::SelectCommit(new_idx),
+                        );
+                    }
+                }
+                Task::none()
+            }
+
             Message::ToggleSidebar => {
                 self.sidebar_expanded = !self.sidebar_expanded;
                 crate::features::repo::commands::save_layout_async(self.current_layout())
+            }
+
+            Message::WindowResized(w, h) => {
+                let w = *w;
+                let h = *h;
+                self.window_width = w;
+                self.window_height = h;
+                crate::features::repo::commands::save_layout_async(self.current_layout())
+            }
+
+            Message::WindowMoved(x, y) => {
+                let x = *x;
+                let y = *y;
+                self.window_x = x;
+                self.window_y = y;
+                crate::features::repo::commands::save_layout_async(self.current_layout())
+            }
+
+            Message::OpenSettingsFile => {
+                // Resolve the settings file path.
+                let path = match gitkraft_core::features::persistence::ops::settings_json_path() {
+                    Ok(p) => p,
+                    Err(e) => {
+                        let msg = format!("Cannot determine settings path: {e}");
+                        self.active_tab_mut().error_message = Some(msg);
+                        return Task::none();
+                    }
+                };
+
+                // Ensure the file exists so the editor can open it immediately.
+                if !path.exists() {
+                    let snap = gitkraft_core::features::persistence::ops::load_settings()
+                        .unwrap_or_default();
+                    if let Err(e) = gitkraft_core::features::persistence::ops::save_settings(&snap)
+                    {
+                        let msg = format!("Could not create settings file: {e}");
+                        self.active_tab_mut().error_message = Some(msg);
+                        return Task::none();
+                    }
+                }
+
+                let path_str = path.display().to_string();
+
+                // open_file_or_default tries the configured editor first, then
+                // falls back to the system default opener (xdg-open / open /
+                // start).  On macOS, GUI editors are activated via `open -a`
+                // so the existing window is brought to the front.
+                match self.editor.open_file_or_default(&path) {
+                    Ok(method) => {
+                        let msg = format!("Settings opened in {method} — {path_str}");
+                        self.active_tab_mut().status_message = Some(msg);
+                    }
+                    Err(e) => {
+                        // Opening failed entirely — show the path so the user
+                        // can find and open the file manually.
+                        let msg = format!("Could not open settings ({e}) — file is at: {path_str}");
+                        self.active_tab_mut().error_message = Some(msg);
+                    }
+                }
+                Task::none()
             }
 
             // ── Pane resize ───────────────────────────────────────────────
@@ -971,6 +1115,169 @@ impl GitKraft {
                             Some(format!("Failed to show in folder: {e}"));
                     }
                 }
+                Task::none()
+            }
+
+            // ── File history overlay ──────────────────────────────────────────────
+            Message::ViewFileHistory(path) => {
+                let path = path.clone();
+                if let Some(repo_path) = self.active_tab().repo_path.clone() {
+                    let tab = self.active_tab_mut();
+                    tab.blame_path = None; // close blame if open
+                    tab.file_history_path = Some(path.clone());
+                    tab.file_history_commits.clear();
+                    tab.file_history_scroll = 0.0;
+                    tab.context_menu = None;
+                    tab.status_message = Some(format!(
+                        "Loading history for {}…",
+                        path.rsplit('/').next().unwrap_or(&path)
+                    ));
+                    crate::features::repo::commands::file_history_async(repo_path, path)
+                } else {
+                    Task::none()
+                }
+            }
+
+            Message::FileHistoryLoaded(result) => {
+                match result {
+                    Ok((path, commits)) => {
+                        let tab = self.active_tab_mut();
+                        tab.file_history_path = Some(path.clone());
+                        tab.file_history_commits = commits.clone();
+                        tab.status_message = Some(format!(
+                            "{} commits touch {}",
+                            commits.len(),
+                            path.rsplit('/').next().unwrap_or(path)
+                        ));
+                    }
+                    Err(e) => {
+                        let tab = self.active_tab_mut();
+                        tab.file_history_path = None;
+                        tab.error_message = Some(format!("File history failed: {e}"));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::CloseFileHistory => {
+                let tab = self.active_tab_mut();
+                tab.file_history_path = None;
+                tab.file_history_commits.clear();
+                tab.file_history_scroll = 0.0;
+                Task::none()
+            }
+
+            Message::FileHistoryScrolled(y) => {
+                self.active_tab_mut().file_history_scroll = *y;
+                Task::none()
+            }
+
+            Message::SelectFileHistoryCommit(oid) => {
+                let oid = oid.clone();
+                let repo_path = self.active_tab().repo_path.clone();
+                {
+                    let tab = self.active_tab_mut();
+                    tab.file_history_path = None;
+                    tab.file_history_commits.clear();
+                    tab.selected_commit_oid = Some(oid.clone());
+                    tab.commit_files.clear();
+                    tab.selected_diff = None;
+                    tab.show_commit_detail = true;
+                }
+                if let Some(path) = repo_path {
+                    crate::features::commits::commands::load_commit_file_list(path, oid)
+                } else {
+                    Task::none()
+                }
+            }
+
+            // ── Blame overlay ─────────────────────────────────────────────────────
+            Message::ViewFileBlame(path) => {
+                let path = path.clone();
+                if let Some(repo_path) = self.active_tab().repo_path.clone() {
+                    let tab = self.active_tab_mut();
+                    tab.file_history_path = None; // close history if open
+                    tab.blame_path = Some(path.clone());
+                    tab.blame_lines.clear();
+                    tab.blame_scroll = 0.0;
+                    tab.context_menu = None;
+                    tab.status_message = Some(format!(
+                        "Loading blame for {}…",
+                        path.rsplit('/').next().unwrap_or(&path)
+                    ));
+                    crate::features::repo::commands::blame_file_async(repo_path, path)
+                } else {
+                    Task::none()
+                }
+            }
+
+            Message::FileBlameLoaded(result) => {
+                match result {
+                    Ok((path, lines)) => {
+                        let tab = self.active_tab_mut();
+                        tab.blame_path = Some(path.clone());
+                        tab.blame_lines = lines.clone();
+                        tab.status_message = Some(format!(
+                            "Blame: {} ({} lines)",
+                            path.rsplit('/').next().unwrap_or(path),
+                            lines.len()
+                        ));
+                    }
+                    Err(e) => {
+                        let tab = self.active_tab_mut();
+                        tab.blame_path = None;
+                        tab.error_message = Some(format!("Blame failed: {e}"));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::CloseFileBlame => {
+                let tab = self.active_tab_mut();
+                tab.blame_path = None;
+                tab.blame_lines.clear();
+                tab.blame_scroll = 0.0;
+                Task::none()
+            }
+
+            Message::BlameScrolled(y) => {
+                self.active_tab_mut().blame_scroll = *y;
+                Task::none()
+            }
+
+            // ── File deletion ─────────────────────────────────────────────────────
+            Message::DeleteFile(path) => {
+                let tab = self.active_tab_mut();
+                tab.context_menu = None;
+                tab.pending_delete_file = Some(path.clone());
+                tab.status_message = Some(format!(
+                    "Delete '{}' — press Confirm to delete permanently",
+                    path.rsplit('/').next().unwrap_or(path)
+                ));
+                Task::none()
+            }
+
+            Message::ConfirmDeleteFile => {
+                let path = self.active_tab().pending_delete_file.clone();
+                let repo_path = self.active_tab().repo_path.clone();
+                if let (Some(file_path), Some(repo_path)) = (path, repo_path) {
+                    let tab = self.active_tab_mut();
+                    tab.pending_delete_file = None;
+                    tab.is_loading = true;
+                    tab.status_message = Some(format!(
+                        "Deleting '{}'…",
+                        file_path.rsplit('/').next().unwrap_or(&file_path)
+                    ));
+                    crate::features::repo::commands::delete_file_async(repo_path, file_path)
+                } else {
+                    Task::none()
+                }
+            }
+
+            Message::CancelDeleteFile => {
+                let tab = self.active_tab_mut();
+                tab.pending_delete_file = None;
+                tab.status_message = None;
                 Task::none()
             }
 

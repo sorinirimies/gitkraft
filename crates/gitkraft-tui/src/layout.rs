@@ -105,6 +105,10 @@ fn render_main(app: &mut App, frame: &mut Frame) {
         features::options::view::render(app, frame, overlay_rect);
     } else if app.show_editor_panel {
         features::editor::view::render(app, frame, main_cols[2]);
+    } else if app.tab().file_history_path.is_some() {
+        features::diff::view::render_file_history(app, frame, main_cols[2]);
+    } else if app.tab().blame_path.is_some() {
+        features::diff::view::render_blame(app, frame, main_cols[2]);
     } else {
         features::diff::view::render(app, frame, main_cols[2]);
     }

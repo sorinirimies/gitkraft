@@ -118,7 +118,7 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
 /// same payload and should update the same state fields.
 ///
 /// Persistence (recording the repo open and refreshing the recent-repos list)
-/// is dispatched as an async [`Task`] so the redb I/O never blocks the UI.
+/// is dispatched as an async [`Task`] so the settings file I/O never blocks the UI.
 fn handle_repo_loaded(state: &mut GitKraft, result: Result<RepoPayload, String>) -> Task<Message> {
     state.active_tab_mut().is_loading = false;
 
@@ -135,8 +135,8 @@ fn handle_repo_loaded(state: &mut GitKraft, result: Result<RepoPayload, String>)
             tab.apply_payload(payload, path.clone());
             tab.commit_display = compute_commit_display(&tab.commits);
 
-            // Record the repo open AND persist the full session in one DB
-            // write, on a background thread so redb I/O doesn't block the UI.
+            // Record the repo open AND persist the full session in one atomic
+            // write, on a background thread so settings file I/O doesn't block the UI.
             let open_tabs = state.open_tab_paths();
             let active = state.active_tab;
             Task::batch([

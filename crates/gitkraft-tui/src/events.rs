@@ -100,6 +100,18 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 return;
             }
 
+            // If file-history overlay is open, route all keys there
+            if app.tab().file_history_path.is_some() {
+                features::diff::events::handle_file_history_key(app, key);
+                return;
+            }
+
+            // If blame overlay is open, route all keys there
+            if app.tab().blame_path.is_some() {
+                features::diff::events::handle_blame_key(app, key);
+                return;
+            }
+
             // -- Global keys (available in Normal mode on the Main screen) --
             match key.code {
                 KeyCode::Char('q') => app.should_quit = true,
@@ -108,6 +120,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 }
                 KeyCode::Tab => cycle_pane_forward(app),
                 KeyCode::BackTab => cycle_pane_backward(app),
+                KeyCode::Char(',') => app.open_settings_in_editor(),
                 KeyCode::Char('r') => app.refresh(),
                 KeyCode::Char('f') => app.fetch_remote(),
                 KeyCode::Char('p') => app.pull_rebase(),
@@ -214,7 +227,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                         }
                     },
                     ActivePane::Staging => {
-                        features::staging::events::navigate_up(app);
+                        if key.modifiers.contains(KeyModifiers::SHIFT) {
+                            features::staging::events::select_up(app);
+                        } else {
+                            features::staging::events::navigate_up(app);
+                        }
                     }
                 },
                 KeyCode::Down => match app.active_pane {
@@ -253,7 +270,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                         }
                     },
                     ActivePane::Staging => {
-                        features::staging::events::navigate_down(app);
+                        if key.modifiers.contains(KeyModifiers::SHIFT) {
+                            features::staging::events::select_down(app);
+                        } else {
+                            features::staging::events::navigate_down(app);
+                        }
                     }
                 },
 
@@ -717,6 +738,89 @@ mod tests {
         assert_eq!(app.tab().selected_file_indices.len(), 1);
     }
 
+    // ── CommitLog pane: Shift+Up/Down range selection ─────────────────────
+
+    #[test]
+    fn shift_down_in_commitlog_extends_selection() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::CommitLog;
+        app.tab_mut().commits = (0..5)
+            .map(|_| gitkraft_core::CommitInfo {
+                oid: String::new(),
+                short_oid: String::new(),
+                summary: String::new(),
+                message: String::new(),
+                author_name: String::new(),
+                author_email: String::new(),
+                time: Default::default(),
+                parent_ids: Vec::new(),
+            })
+            .collect();
+        app.tab_mut().commit_list_state.select(Some(1));
+        app.tab_mut().anchor_commit_index = Some(1);
+
+        handle_key(&mut app, key_shift(KeyCode::Down));
+
+        assert!(app.tab().selected_commits.contains(&1));
+        assert!(app.tab().selected_commits.contains(&2));
+        assert_eq!(app.tab().commit_list_state.selected(), Some(2));
+    }
+
+    #[test]
+    fn shift_up_in_commitlog_extends_selection() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::CommitLog;
+        app.tab_mut().commits = (0..5)
+            .map(|_| gitkraft_core::CommitInfo {
+                oid: String::new(),
+                short_oid: String::new(),
+                summary: String::new(),
+                message: String::new(),
+                author_name: String::new(),
+                author_email: String::new(),
+                time: Default::default(),
+                parent_ids: Vec::new(),
+            })
+            .collect();
+        app.tab_mut().commit_list_state.select(Some(3));
+        app.tab_mut().anchor_commit_index = Some(3);
+
+        handle_key(&mut app, key_shift(KeyCode::Up));
+
+        assert!(app.tab().selected_commits.contains(&2));
+        assert!(app.tab().selected_commits.contains(&3));
+        assert_eq!(app.tab().commit_list_state.selected(), Some(2));
+    }
+
+    #[test]
+    fn unshifted_down_in_commitlog_navigates_and_clears_selection() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::CommitLog;
+        app.tab_mut().commits = (0..5)
+            .map(|_| gitkraft_core::CommitInfo {
+                oid: String::new(),
+                short_oid: String::new(),
+                summary: String::new(),
+                message: String::new(),
+                author_name: String::new(),
+                author_email: String::new(),
+                time: Default::default(),
+                parent_ids: Vec::new(),
+            })
+            .collect();
+        app.tab_mut().commit_list_state.select(Some(0));
+        // Pre-populate a multi-selection
+        app.tab_mut().selected_commits = vec![0, 1];
+
+        handle_key(&mut app, key(KeyCode::Down));
+
+        // Plain navigation clears the range
+        assert!(app.tab().selected_commits.is_empty());
+    }
+
     // ── DiffView Content sub-pane: Up/Down scrolls ───────────────────────
 
     #[test]
@@ -739,5 +843,55 @@ mod tests {
         app.tab_mut().diff_scroll = 5;
         handle_key(&mut app, key(KeyCode::Up));
         assert_eq!(app.tab().diff_scroll, 4);
+    }
+
+    // ── Settings shortcut ─────────────────────────────────────────────────
+
+    #[test]
+    fn comma_on_main_screen_queues_settings_open() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        // No editor configured — open_settings_in_editor falls through to
+        // the GUI-editor / system-default branch, which is fine for testing
+        // that the key is handled at all.
+        handle_key(&mut app, key(KeyCode::Char(',')));
+        // With no editor, it shows a status message (path info) rather than
+        // setting pending_editor_open.  Either outcome means the key was
+        // handled rather than silently dropped.
+        let handled = app.pending_editor_open.is_some()
+            || app.tab().status_message.is_some()
+            || app.tab().error_message.is_some();
+        assert!(handled, "comma on Main must trigger settings open path");
+    }
+
+    #[test]
+    fn comma_on_welcome_screen_queues_settings_open() {
+        let mut app = App::new();
+        // Welcome screen is the default.
+        assert_eq!(app.screen, AppScreen::Welcome);
+        handle_key(&mut app, key(KeyCode::Char(',')));
+        let handled = app.pending_editor_open.is_some()
+            || app.tab().status_message.is_some()
+            || app.tab().error_message.is_some();
+        assert!(handled, "comma on Welcome must trigger settings open path");
+    }
+
+    #[test]
+    fn comma_while_options_panel_open_closes_panel_and_opens_settings() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.show_options_panel = true;
+        handle_key(&mut app, key(KeyCode::Char(',')));
+        assert!(
+            !app.show_options_panel,
+            "options panel must be closed after comma"
+        );
+        let handled = app.pending_editor_open.is_some()
+            || app.tab().status_message.is_some()
+            || app.tab().error_message.is_some();
+        assert!(
+            handled,
+            "settings open must be triggered after closing options panel"
+        );
     }
 }

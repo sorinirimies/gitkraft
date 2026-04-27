@@ -40,8 +40,19 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('k') => {
             navigate_up(app);
         }
+        // Range selection — uppercase J/K work in all terminals since Shift+letter
+        // produces uppercase regardless of the terminal's modifier-key support.
+        KeyCode::Char('J') => {
+            select_commit_down(app);
+        }
+        KeyCode::Char('K') => {
+            select_commit_up(app);
+        }
         KeyCode::Enter => {
-            // Load the diff for the selected commit
+            // Exit blame and load the diff for the selected commit.
+            app.tab_mut().blame_path = None;
+            app.tab_mut().blame_lines.clear();
+            app.tab_mut().blame_scroll = 0;
             if let Some(idx) = app.tab().commit_list_state.selected() {
                 let commits = if app.tab().search_active && !app.tab().search_results.is_empty() {
                     &app.tab().search_results
@@ -90,6 +101,17 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                     tab.commit_list_state.select(Some(idx + 1));
                 }
             }
+        }
+
+        // Cherry-pick this commit (or all selected commits if multi-selection is active).
+        // C is the natural uppercase alias since Shift+c → C in every terminal.
+        KeyCode::Char('C') => {
+            app.cherry_pick_selected();
+        }
+
+        // Reset to this commit — mixed mode (keeps working-tree changes, unstages everything).
+        KeyCode::Char('n') => {
+            app.reset_to_selected_commit("mixed");
         }
 
         // Revert selected commit
@@ -190,116 +212,81 @@ fn active_commits_len(app: &App) -> usize {
     }
 }
 
-/// Move commit selection down by one and auto-load the diff for the new selection.
-pub fn navigate_down(app: &mut App) {
+/// Shared implementation for commit-cursor movement.
+/// `next_index` is a closure that, given the current index and list length,
+/// returns the new index to move to.
+fn navigate_to(app: &mut App, next_index: impl Fn(usize, usize) -> usize) {
     let len = active_commits_len(app);
     if len == 0 {
         return;
     }
-    let i = match app.tab().commit_list_state.selected() {
-        Some(i) => {
-            if i >= len - 1 {
-                i
-            } else {
-                i + 1
-            }
-        }
-        None => 0,
-    };
+    let current = app.tab().commit_list_state.selected().unwrap_or(0);
+    let i = next_index(current, len);
     app.tab_mut().commit_list_state.select(Some(i));
     app.tab_mut().anchor_commit_index = Some(i);
     app.tab_mut().selected_commits.clear();
     app.tab_mut().commit_range_diffs.clear();
+    // Exit blame when navigating to a different commit.
+    app.tab_mut().blame_path = None;
+    app.tab_mut().blame_lines.clear();
+    app.tab_mut().blame_scroll = 0;
     load_diff_at(app, i);
+}
+
+/// Move commit selection down by one and auto-load the diff for the new selection.
+pub fn navigate_down(app: &mut App) {
+    navigate_to(app, |i, len| if i >= len - 1 { i } else { i + 1 });
 }
 
 /// Move commit selection up by one and auto-load the diff for the new selection.
 pub fn navigate_up(app: &mut App) {
+    navigate_to(app, |i, _| if i == 0 { 0 } else { i - 1 });
+}
+
+/// Shared implementation for extending the commit range selection.
+/// `next_idx_fn` computes the new cursor index given `(current, len)`.
+/// Returns early if the cursor is already at the boundary.
+fn extend_commit_selection(app: &mut App, next_idx_fn: impl Fn(usize, usize) -> Option<usize>) {
     let len = active_commits_len(app);
     if len == 0 {
         return;
     }
-    let i = match app.tab().commit_list_state.selected() {
-        Some(i) => {
-            if i == 0 {
-                0
-            } else {
-                i - 1
-            }
-        }
-        None => 0,
+    let current = app.tab().commit_list_state.selected().unwrap_or(0);
+    let new_idx = match next_idx_fn(current, len) {
+        Some(i) => i,
+        None => return,
     };
-    app.tab_mut().commit_list_state.select(Some(i));
-    app.tab_mut().anchor_commit_index = Some(i);
-    app.tab_mut().selected_commits.clear();
-    app.tab_mut().commit_range_diffs.clear();
-    load_diff_at(app, i);
+    let anchor = app
+        .tab()
+        .anchor_commit_index
+        .or(app.tab().commit_list_state.selected())
+        .unwrap_or(new_idx);
+
+    let range = gitkraft_core::ascending_range(anchor, new_idx);
+    app.tab_mut().commit_list_state.select(Some(new_idx));
+    app.tab_mut().selected_commits = range;
+    let count = app.tab().selected_commits.len();
+    app.tab_mut().status_message = Some(format!("{count} commits selected"));
+    app.load_commit_range_diff();
 }
 
 /// Extend the commit selection range downward (Shift+Down).
 pub fn select_commit_down(app: &mut App) {
-    let len = active_commits_len(app);
-    if len == 0 {
-        return;
-    }
-    let current = app.tab().commit_list_state.selected().unwrap_or(0);
-    if current + 1 >= len {
-        return;
-    }
-    let new_idx = current + 1;
-
-    let anchor = app
-        .tab()
-        .anchor_commit_index
-        .or(app.tab().commit_list_state.selected())
-        .unwrap_or(new_idx);
-
-    let (start, end) = if anchor <= new_idx {
-        (anchor, new_idx)
-    } else {
-        (new_idx, anchor)
-    };
-    let range: Vec<usize> = (start..=end).collect();
-
-    app.tab_mut().commit_list_state.select(Some(new_idx));
-    app.tab_mut().selected_commits = range;
-    let count = app.tab().selected_commits.len();
-    app.tab_mut().status_message = Some(format!("{count} commits selected"));
-    // Trigger the combined diff load for the selected range
-    app.load_commit_range_diff();
+    extend_commit_selection(
+        app,
+        |cur, len| {
+            if cur + 1 >= len {
+                None
+            } else {
+                Some(cur + 1)
+            }
+        },
+    );
 }
 
 /// Extend the commit selection range upward (Shift+Up).
 pub fn select_commit_up(app: &mut App) {
-    let len = active_commits_len(app);
-    if len == 0 {
-        return;
-    }
-    let current = app.tab().commit_list_state.selected().unwrap_or(0);
-    if current == 0 {
-        return;
-    }
-    let new_idx = current - 1;
-
-    let anchor = app
-        .tab()
-        .anchor_commit_index
-        .or(app.tab().commit_list_state.selected())
-        .unwrap_or(new_idx);
-
-    let (start, end) = if anchor <= new_idx {
-        (anchor, new_idx)
-    } else {
-        (new_idx, anchor)
-    };
-    let range: Vec<usize> = (start..=end).collect();
-
-    app.tab_mut().commit_list_state.select(Some(new_idx));
-    app.tab_mut().selected_commits = range;
-    let count = app.tab().selected_commits.len();
-    app.tab_mut().status_message = Some(format!("{count} commits selected"));
-    // Trigger the combined diff load for the selected range
-    app.load_commit_range_diff();
+    extend_commit_selection(app, |cur, _| if cur == 0 { None } else { Some(cur - 1) });
 }
 
 #[cfg(test)]
@@ -358,6 +345,52 @@ mod tests {
         handle_key(&mut app, key(KeyCode::Char(' ')));
 
         assert_eq!(app.tab().commit_list_state.selected(), Some(2));
+    }
+
+    #[test]
+    fn navigate_down_clears_blame_overlay() {
+        let mut app = App::new();
+        app.tab_mut().commits = make_commits(3);
+        app.tab_mut().commit_list_state.select(Some(0));
+        app.tab_mut().blame_path = Some("src/lib.rs".to_string());
+        app.tab_mut().blame_lines = vec![]; // populated in real usage
+
+        navigate_down(&mut app);
+
+        assert!(
+            app.tab().blame_path.is_none(),
+            "navigate_down must clear the blame overlay"
+        );
+    }
+
+    #[test]
+    fn navigate_up_clears_blame_overlay() {
+        let mut app = App::new();
+        app.tab_mut().commits = make_commits(3);
+        app.tab_mut().commit_list_state.select(Some(2));
+        app.tab_mut().blame_path = Some("src/main.rs".to_string());
+
+        navigate_up(&mut app);
+
+        assert!(
+            app.tab().blame_path.is_none(),
+            "navigate_up must clear the blame overlay"
+        );
+    }
+
+    #[test]
+    fn enter_clears_blame_overlay() {
+        let mut app = App::new();
+        app.tab_mut().commits = make_commits(3);
+        app.tab_mut().commit_list_state.select(Some(1));
+        app.tab_mut().blame_path = Some("src/main.rs".to_string());
+
+        handle_key(&mut app, key(KeyCode::Enter));
+
+        assert!(
+            app.tab().blame_path.is_none(),
+            "Enter in commit log must clear the blame overlay"
+        );
     }
 
     #[test]
@@ -638,5 +671,72 @@ mod tests {
         // No repo_path, so load will be a no-op — just verify selected_commits is set
         select_commit_down(&mut app);
         assert_eq!(app.tab().selected_commits, vec![1, 2]);
+    }
+
+    #[test]
+    fn j_extends_commit_range_selection_downward() {
+        let mut app = App::new();
+        app.tab_mut().commits = make_commits(5);
+        app.tab_mut().commit_list_state.select(Some(1));
+        app.tab_mut().anchor_commit_index = Some(1);
+
+        handle_key(&mut app, key(KeyCode::Char('J')));
+
+        assert!(app.tab().selected_commits.contains(&1));
+        assert!(app.tab().selected_commits.contains(&2));
+        assert_eq!(app.tab().commit_list_state.selected(), Some(2));
+    }
+
+    #[test]
+    fn k_extends_commit_range_selection_upward() {
+        let mut app = App::new();
+        app.tab_mut().commits = make_commits(5);
+        app.tab_mut().commit_list_state.select(Some(3));
+        app.tab_mut().anchor_commit_index = Some(3);
+
+        handle_key(&mut app, key(KeyCode::Char('K')));
+
+        assert!(app.tab().selected_commits.contains(&2));
+        assert!(app.tab().selected_commits.contains(&3));
+        assert_eq!(app.tab().commit_list_state.selected(), Some(2));
+    }
+
+    #[test]
+    fn j_does_not_go_past_last_commit() {
+        let mut app = App::new();
+        app.tab_mut().commits = make_commits(3);
+        app.tab_mut().commit_list_state.select(Some(2));
+        app.tab_mut().anchor_commit_index = Some(2);
+
+        handle_key(&mut app, key(KeyCode::Char('J')));
+
+        assert_eq!(app.tab().commit_list_state.selected(), Some(2));
+        assert!(app.tab().selected_commits.is_empty());
+    }
+
+    #[test]
+    fn c_cherry_picks_current_commit() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().commits = make_commits(3);
+        app.tab_mut().commit_list_state.select(Some(1));
+
+        handle_key(&mut app, key(KeyCode::Char('C')));
+
+        // With a repo_path set, cherry_pick_selected should set is_loading.
+        assert!(app.tab().is_loading);
+    }
+
+    #[test]
+    fn n_resets_to_mixed() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().commits = make_commits(3);
+        app.tab_mut().commit_list_state.select(Some(0));
+
+        handle_key(&mut app, key(KeyCode::Char('n')));
+
+        // reset_to_selected_commit("mixed") should set is_loading.
+        assert!(app.tab().is_loading);
     }
 }

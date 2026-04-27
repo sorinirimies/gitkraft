@@ -58,9 +58,28 @@ fn render_file_list(
     let theme = app.theme();
     let tab = app.tab();
     let commit_diff_file_index = tab.commit_diff_file_index;
+    let is_active_file_list = app.active_pane == crate::app::ActivePane::DiffView
+        && tab.diff_sub_pane == crate::app::DiffSubPane::FileList;
+
+    // Pre-sort selected indices for stable 1-based rank badges.
+    let mut sorted_selected: Vec<usize> = tab.selected_file_indices.iter().copied().collect();
+    sorted_selected.sort_unstable();
+    let multi = sorted_selected.len() >= 2;
+
+    let title = if multi {
+        format!(
+            " Files ({}) — {} selected [J/K shrink · e open all] ",
+            tab.commit_files.len(),
+            sorted_selected.len()
+        )
+    } else if is_active_file_list {
+        format!(" Files ({}) [J/K select · e open] ", tab.commit_files.len())
+    } else {
+        format!(" Files ({}) ", tab.commit_files.len())
+    };
 
     let block = Block::default()
-        .title(format!(" Files ({}) ", tab.commit_files.len()))
+        .title(title)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
 
@@ -84,19 +103,31 @@ fn render_file_list(
             let name_style = if is_current {
                 Style::default().fg(theme.text_primary)
             } else if is_multi {
-                Style::default().fg(theme.accent)
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(theme.text_secondary)
             };
 
-            // Apply a background for multi-selected items that aren't the cursor
-            let item_style = if is_multi && !is_current {
-                Style::default().bg(theme.sel_bg)
+            // Rank badge: number for range selection, ● for single toggle, blank otherwise.
+            let badge = if let Some(pos) = sorted_selected.iter().position(|&s| s == i) {
+                if multi {
+                    format!("{:<2}", pos + 1)
+                } else {
+                    "● ".to_string()
+                }
             } else {
-                Style::default()
+                "  ".to_string()
             };
 
             let line = Line::from(vec![
+                Span::styled(
+                    badge,
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(
                     format!("{} ", status_char),
                     Style::default()
@@ -106,7 +137,7 @@ fn render_file_list(
                 Span::styled(file_name.to_string(), name_style),
             ]);
 
-            ListItem::new(line).style(item_style)
+            ListItem::new(line)
         })
         .collect();
 
@@ -211,6 +242,164 @@ fn styled_diff_line(
                 .add_modifier(Modifier::BOLD),
         )),
     }
+}
+
+/// Render the file-history overlay in the diff column.
+pub fn render_file_history(app: &mut App, frame: &mut Frame, area: Rect) {
+    let theme = app.theme();
+    let is_active = app.active_pane == ActivePane::DiffView;
+    let border_color = if is_active {
+        theme.border_active
+    } else {
+        theme.border_inactive
+    };
+
+    let path = app.tab().file_history_path.clone().unwrap_or_default();
+    let file_name = path.rsplit('/').next().unwrap_or(&path).to_string();
+
+    let title = format!(" File History: {file_name}  Esc close  Enter select ");
+
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color));
+
+    let cursor = app.tab().file_history_cursor;
+    let commits = app.tab().file_history_commits.clone();
+
+    if commits.is_empty() {
+        let p = Paragraph::new(Line::from(Span::styled(
+            "Loading… (or no commits touch this file)",
+            Style::default().fg(theme.text_muted),
+        )))
+        .block(block);
+        frame.render_widget(p, area);
+        return;
+    }
+
+    let items: Vec<ListItem> = commits
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let is_sel = i == cursor;
+            let style = if is_sel {
+                Style::default()
+                    .fg(theme.text_primary)
+                    .bg(theme.sel_bg)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme.text_primary)
+            };
+            let rel = c.relative_time();
+            let summary = gitkraft_core::truncate_str(&c.summary, 48);
+            let line = Line::from(vec![
+                Span::styled(
+                    format!("{} ", c.short_oid),
+                    Style::default().fg(theme.warning),
+                ),
+                Span::styled(summary, style),
+                Span::styled(
+                    format!(" ({}, {})", c.author_name, rel),
+                    Style::default().fg(theme.text_muted),
+                ),
+            ]);
+            ListItem::new(line)
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(
+            Style::default()
+                .bg(theme.sel_bg)
+                .add_modifier(Modifier::REVERSED),
+        )
+        .highlight_symbol("▶ ");
+
+    let mut list_state = ratatui::widgets::ListState::default();
+    list_state.select(Some(cursor));
+    frame.render_stateful_widget(list, area, &mut list_state);
+}
+
+/// Render the blame overlay in the diff column.
+pub fn render_blame(app: &mut App, frame: &mut Frame, area: Rect) {
+    let theme = app.theme();
+    let is_active = app.active_pane == ActivePane::DiffView;
+    let border_color = if is_active {
+        theme.border_active
+    } else {
+        theme.border_inactive
+    };
+
+    let path = app.tab().blame_path.clone().unwrap_or_default();
+    let file_name = path.rsplit('/').next().unwrap_or(&path).to_string();
+    let title = format!(" Blame: {file_name}  Esc close  j/k scroll ");
+
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color));
+
+    let lines_data = app.tab().blame_lines.clone();
+
+    if lines_data.is_empty() {
+        let p = Paragraph::new(Line::from(Span::styled(
+            "Loading blame…",
+            Style::default().fg(theme.text_muted),
+        )))
+        .block(block);
+        frame.render_widget(p, area);
+        return;
+    }
+
+    let lines: Vec<Line> = lines_data
+        .iter()
+        .map(|bl| {
+            let rel = bl.relative_time();
+            let author = gitkraft_core::truncate_str(&bl.author_name, 12);
+            Line::from(vec![
+                Span::styled(
+                    format!("{} ", bl.short_oid),
+                    Style::default().fg(theme.warning),
+                ),
+                Span::styled(
+                    format!("{:<12} ", author),
+                    Style::default().fg(theme.accent),
+                ),
+                Span::styled(
+                    format!("{:<8} ", rel),
+                    Style::default().fg(theme.text_muted),
+                ),
+                Span::styled(
+                    format!("{:>4}  ", bl.line_number),
+                    Style::default().fg(theme.text_muted),
+                ),
+                Span::styled(bl.content.clone(), Style::default().fg(theme.text_primary)),
+            ])
+        })
+        .collect();
+
+    // Clamp scroll
+    let content_height = lines.len() as u16;
+    let visible_height = area.height.saturating_sub(2);
+    {
+        let tab = app.tab_mut();
+        if content_height > visible_height {
+            if tab.blame_scroll > content_height.saturating_sub(visible_height) {
+                tab.blame_scroll = content_height.saturating_sub(visible_height);
+            }
+        } else {
+            tab.blame_scroll = 0;
+        }
+    }
+
+    let scroll = app.tab().blame_scroll;
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false })
+        .scroll((scroll, 0));
+
+    frame.render_widget(paragraph, area);
 }
 
 /// Render the diff content for the currently selected file (or all selected files).

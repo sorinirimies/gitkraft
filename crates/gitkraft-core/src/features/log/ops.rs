@@ -106,6 +106,68 @@ pub fn search_commits(repo: &Repository, query: &str, max_count: usize) -> Resul
     Ok(results)
 }
 
+/// Return commits that touched `file_path`, newest-first, up to `max_count`.
+///
+/// A commit "touches" a file if the file appears in its diff against the
+/// first parent (or against the empty tree for root commits).
+pub fn file_history(
+    repo: &Repository,
+    file_path: &str,
+    max_count: usize,
+) -> Result<Vec<CommitInfo>> {
+    let mut revwalk = repo.revwalk().context("failed to create revwalk")?;
+    revwalk.push_head().context("failed to push HEAD")?;
+    revwalk
+        .set_sorting(git2::Sort::TIME | git2::Sort::TOPOLOGICAL)
+        .context("failed to set sorting")?;
+
+    let mut results = Vec::new();
+
+    for oid_result in revwalk {
+        if results.len() >= max_count {
+            break;
+        }
+        let oid = oid_result.context("revwalk iteration error")?;
+        let commit = repo
+            .find_commit(oid)
+            .context("failed to find commit during file history walk")?;
+
+        if commit_touches_file(repo, &commit, file_path) {
+            results.push(CommitInfo::from_git2_commit(&commit));
+        }
+    }
+
+    Ok(results)
+}
+
+/// Return `true` if `commit` introduces any change to `file_path` relative to
+/// its first parent (or the empty tree for a root commit).
+fn commit_touches_file(repo: &Repository, commit: &git2::Commit<'_>, file_path: &str) -> bool {
+    let tree = match commit.tree() {
+        Ok(t) => t,
+        Err(_) => return false,
+    };
+    let parent_tree = commit.parents().next().and_then(|p| p.tree().ok());
+
+    let diff = match repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), None) {
+        Ok(d) => d,
+        Err(_) => return false,
+    };
+
+    diff.deltas().any(|d| {
+        d.new_file()
+            .path()
+            .and_then(|p| p.to_str())
+            .map(|s| s == file_path)
+            .unwrap_or(false)
+            || d.old_file()
+                .path()
+                .and_then(|p| p.to_str())
+                .map(|s| s == file_path)
+                .unwrap_or(false)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,5 +289,71 @@ mod tests {
         let (_dir, repo) = setup_repo_with_commits();
         let results = search_commits(&repo, "zzzznonexistent", 100).unwrap();
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn file_history_returns_only_touching_commits() {
+        let (dir, repo) = setup_repo_with_commits();
+
+        // Add a third commit that only touches a.txt
+        {
+            let head = repo.head().unwrap().peel_to_commit().unwrap();
+            std::fs::write(dir.path().join("a.txt"), "updated\n").unwrap();
+            let mut index = repo.index().unwrap();
+            index.add_path(std::path::Path::new("a.txt")).unwrap();
+            index.write().unwrap();
+            let tree_oid = index.write_tree().unwrap();
+            let tree = repo.find_tree(tree_oid).unwrap();
+            let sig = repo.signature().unwrap();
+            repo.commit(
+                Some("HEAD"),
+                &sig,
+                &sig,
+                "update a.txt only",
+                &tree,
+                &[&head],
+            )
+            .unwrap();
+        }
+
+        // a.txt was touched in commit 1 ("first commit") and commit 3
+        let hist = file_history(&repo, "a.txt", 100).unwrap();
+        assert_eq!(hist.len(), 2, "expected 2 commits touching a.txt");
+        assert_eq!(hist[0].summary, "update a.txt only");
+        assert_eq!(hist[1].summary, "first commit");
+
+        // b.txt was only touched in commit 2
+        let hist_b = file_history(&repo, "b.txt", 100).unwrap();
+        assert_eq!(hist_b.len(), 1);
+        assert_eq!(hist_b[0].summary, "second commit by Bob");
+    }
+
+    #[test]
+    fn file_history_respects_max_count() {
+        let (dir, repo) = setup_repo_with_commits();
+
+        // Add second touch of a.txt
+        {
+            let head = repo.head().unwrap().peel_to_commit().unwrap();
+            std::fs::write(dir.path().join("a.txt"), "v2\n").unwrap();
+            let mut index = repo.index().unwrap();
+            index.add_path(std::path::Path::new("a.txt")).unwrap();
+            index.write().unwrap();
+            let tree_oid = index.write_tree().unwrap();
+            let tree = repo.find_tree(tree_oid).unwrap();
+            let sig = repo.signature().unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "touch a again", &tree, &[&head])
+                .unwrap();
+        }
+
+        let hist = file_history(&repo, "a.txt", 1).unwrap();
+        assert_eq!(hist.len(), 1);
+    }
+
+    #[test]
+    fn file_history_nonexistent_file_returns_empty() {
+        let (_dir, repo) = setup_repo_with_commits();
+        let hist = file_history(&repo, "nonexistent.txt", 100).unwrap();
+        assert!(hist.is_empty());
     }
 }

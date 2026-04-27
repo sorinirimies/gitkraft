@@ -5,4 +5,4 @@
 
 pub mod ops;
 
-pub use ops::{get_log, search_commits};
+pub use ops::{file_history, get_log, search_commits};

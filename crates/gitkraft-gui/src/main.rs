@@ -4,6 +4,25 @@ use iced::Settings;
 fn main() -> iced::Result {
     tracing_subscriber::fmt::init();
 
+    // Read saved window geometry before starting the app.
+    let saved_layout = gitkraft_core::features::persistence::ops::get_saved_layout()
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+
+    let window_size = iced::Size::new(
+        saved_layout.window_width.unwrap_or(1400.0),
+        saved_layout.window_height.unwrap_or(800.0),
+    );
+
+    let window_position = match (saved_layout.window_x, saved_layout.window_y) {
+        // Only restore position when it looks like a valid on-screen location.
+        (Some(x), Some(y)) if x > -200.0 && y > -200.0 && x < 8000.0 && y < 8000.0 => {
+            iced::window::Position::Specific(iced::Point::new(x, y))
+        }
+        _ => iced::window::Position::Default,
+    };
+
     iced::application(boot, GitKraft::update, GitKraft::view)
         .title("GitKraft — Git IDE")
         .theme(|state: &GitKraft| state.iced_theme())
@@ -14,13 +33,43 @@ fn main() -> iced::Result {
                 {
                     return Some(gitkraft_gui::Message::ModifiersChanged(mods));
                 }
-                if let iced::event::Status::Ignored = status {
-                    if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
-                        key,
-                        modifiers,
-                        ..
-                    }) = event
+                // Track window geometry for persistence.
+                if let iced::Event::Window(iced::window::Event::Resized(size)) = &event {
+                    return Some(gitkraft_gui::Message::WindowResized(
+                        size.width,
+                        size.height,
+                    ));
+                }
+                if let iced::Event::Window(iced::window::Event::Moved(point)) = &event {
+                    return Some(gitkraft_gui::Message::WindowMoved(point.x, point.y));
+                }
+                // Ctrl/Cmd shortcuts fire regardless of widget focus so that
+                // Ctrl+, (settings), Ctrl+F (search), Ctrl++/- (zoom) etc.
+                // always work even when a text input has keyboard focus.
+                if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                    key,
+                    modifiers,
+                    ..
+                }) = event
+                {
+                    // Always handle Ctrl/Cmd shortcuts regardless of widget focus.
+                    if modifiers.control() || modifiers.command() {
+                        return handle_key_press(key, modifiers);
+                    }
+                    // Always handle Shift+arrow shortcuts for range selection.
+                    if modifiers.shift()
+                        && matches!(
+                            key,
+                            iced::keyboard::Key::Named(
+                                iced::keyboard::key::Named::ArrowDown
+                                    | iced::keyboard::key::Named::ArrowUp
+                            )
+                        )
                     {
+                        return handle_key_press(key, modifiers);
+                    }
+                    // Other shortcuts only when no widget has keyboard focus.
+                    if let iced::event::Status::Ignored = status {
                         return handle_key_press(key, modifiers);
                     }
                 }
@@ -35,7 +84,8 @@ fn main() -> iced::Result {
             ..Default::default()
         })
         .window(iced::window::Settings {
-            size: iced::Size::new(1400.0, 800.0),
+            size: window_size,
+            position: window_position,
             ..Default::default()
         })
         .run()
@@ -105,6 +155,8 @@ fn handle_key_press(
 ) -> Option<gitkraft_gui::Message> {
     use iced::keyboard::Key;
 
+    use iced::keyboard::key::Named;
+
     if modifiers.control() || modifiers.command() {
         match key {
             // Ctrl/Cmd + Plus (or Ctrl/Cmd + =)
@@ -117,9 +169,27 @@ fn handle_key_press(
             Key::Character(ref c) if c.as_str() == "0" => Some(gitkraft_gui::Message::ZoomReset),
             // Ctrl/Cmd + F — toggle search
             Key::Character(ref c) if c.as_str() == "f" => Some(gitkraft_gui::Message::ToggleSearch),
+            // Ctrl/Cmd + , — open settings.json in the configured editor (like Zed)
+            Key::Character(ref c) if c.as_str() == "," => {
+                Some(gitkraft_gui::Message::OpenSettingsFile)
+            }
+            _ => None,
+        }
+    } else if modifiers.shift() {
+        // Shift+arrow: extend range selection in the file list or commit log.
+        match key {
+            Key::Named(Named::ArrowDown) => Some(gitkraft_gui::Message::ShiftArrowDown),
+            Key::Named(Named::ArrowUp) => Some(gitkraft_gui::Message::ShiftArrowUp),
             _ => None,
         }
     } else {
-        None
+        // Bare-key shortcuts (only when no widget has focus / Status::Ignored)
+        match key {
+            Key::Named(iced::keyboard::key::Named::Escape) => {
+                // Esc closes the blame overlay, context menu, or other overlays.
+                Some(gitkraft_gui::Message::CloseFileBlame)
+            }
+            _ => None,
+        }
     }
 }

@@ -61,6 +61,10 @@ fn render_unstaged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bo
     }
 
     let selected = app.tab().selected_unstaged.clone();
+    // Pre-sort selected indices so we can show a stable 1-based rank badge.
+    let mut sorted_selected: Vec<usize> = selected.iter().copied().collect();
+    sorted_selected.sort_unstable();
+    let multi = sorted_selected.len() >= 2;
     let items: Vec<ListItem> = app
         .tab()
         .unstaged_changes
@@ -71,7 +75,16 @@ fn render_unstaged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bo
             let (status_char, status_color) = status_display(&diff.status, &theme);
             let is_selected = selected.contains(&idx);
 
-            let marker = if is_selected { "● " } else { "  " };
+            // Single selection: show ● bullet. Range selection (2+): show rank number.
+            let badge = if let Some(pos) = sorted_selected.iter().position(|&i| i == idx) {
+                if multi {
+                    format!("{:<2}", pos + 1)
+                } else {
+                    "● ".to_string()
+                }
+            } else {
+                "  ".to_string()
+            };
             let name_style = if is_selected {
                 Style::default()
                     .fg(theme.accent)
@@ -81,7 +94,7 @@ fn render_unstaged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bo
             };
 
             let line = Line::from(vec![
-                Span::styled(marker, Style::default().fg(theme.accent)),
+                Span::styled(badge, Style::default().fg(theme.accent)),
                 Span::styled(
                     format!("{} ", status_char),
                     Style::default()
@@ -138,6 +151,9 @@ fn render_staged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool
     }
 
     let selected = app.tab().selected_staged.clone();
+    let mut sorted_selected: Vec<usize> = selected.iter().copied().collect();
+    sorted_selected.sort_unstable();
+    let multi = sorted_selected.len() >= 2;
     let items: Vec<ListItem> = app
         .tab()
         .staged_changes
@@ -148,7 +164,15 @@ fn render_staged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool
             let (status_char, status_color) = status_display(&diff.status, &theme);
             let is_selected = selected.contains(&idx);
 
-            let marker = if is_selected { "● " } else { "  " };
+            let badge = if let Some(pos) = sorted_selected.iter().position(|&i| i == idx) {
+                if multi {
+                    format!("{:<2}", pos + 1)
+                } else {
+                    "● ".to_string()
+                }
+            } else {
+                "  ".to_string()
+            };
             let name_style = if is_selected {
                 Style::default()
                     .fg(theme.accent)
@@ -158,7 +182,7 @@ fn render_staged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool
             };
 
             let line = Line::from(vec![
-                Span::styled(marker, Style::default().fg(theme.accent)),
+                Span::styled(badge, Style::default().fg(theme.accent)),
                 Span::styled(
                     format!("{} ", status_char),
                     Style::default()
@@ -287,9 +311,9 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
                 ]),
                 Line::from(vec![
                     Span::styled(pad_right("Space", 8), key_style),
-                    Span::styled(pad_right("select", 12), desc_style),
-                    Span::styled(pad_right("e", 8), key_style),
-                    Span::styled("edit", desc_style),
+                    Span::styled(pad_right("toggle", 12), desc_style),
+                    Span::styled(pad_right("J/K", 8), key_style),
+                    Span::styled("range select", desc_style),
                 ]),
                 Line::from(vec![
                     Span::styled(pad_right("E", 8), key_style),

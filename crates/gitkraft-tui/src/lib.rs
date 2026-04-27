@@ -38,7 +38,7 @@ use crate::app::App;
 pub fn run(mut repo_path: Option<PathBuf>) -> Result<()> {
     // If no repo path was given, try loading the last-opened repo from settings.
     if repo_path.is_none() {
-        repo_path = gitkraft_core::features::persistence::get_last_repo()
+        repo_path = gitkraft_core::features::persistence::get_last_tui_repo()
             .ok()
             .flatten();
     }
@@ -55,10 +55,32 @@ pub fn run(mut repo_path: Option<PathBuf>) -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
+
+    // Always attempt to enable enhanced keyboard input.
+    //
+    // `PushKeyboardEnhancementFlags` writes a short escape sequence
+    // (`\x1b[>flags u`).  Terminals that understand the Kitty keyboard
+    // protocol (Kitty, Alacritty, WezTerm, recent iTerm2, …) will honour it
+    // and start sending Shift+arrow keys with the SHIFT modifier flag, making
+    // Shift+↑/↓ range-selection work natively.  Terminals that don't
+    // understand the sequence simply ignore it — no garbage is produced.
+    //
+    // We unconditionally push (ignoring the result) and unconditionally pop on
+    // exit so the terminal is always left in a clean state.
+    let _ = execute!(
+        stdout,
+        crossterm::event::PushKeyboardEnhancementFlags(
+            crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES,
+        )
+    );
+
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     let result = run_app(&mut terminal, repo_path);
+
+    // Always pop the keyboard enhancement flags so the terminal is left clean.
+    let _ = execute!(io::stdout(), crossterm::event::PopKeyboardEnhancementFlags);
 
     restore_terminal()?;
     terminal.show_cursor()?;
@@ -80,7 +102,7 @@ where
         app.open_repo(path);
     } else {
         // Try to restore the saved session (multiple tabs)
-        if let Ok(settings) = gitkraft_core::features::persistence::load_settings() {
+        if let Ok(settings) = gitkraft_core::features::persistence::load_tui_settings() {
             let paths: Vec<PathBuf> = settings
                 .open_tabs
                 .into_iter()
@@ -126,6 +148,86 @@ where
                 }
             }
         }
+
+        // ── Terminal-editor handoff ───────────────────────────────────────
+        // If a key handler set `pending_editor_open`, suspend the TUI now,
+        // run the terminal editor synchronously (it inherits the real TTY),
+        // then restore the TUI.  This works for Helix, Neovim, Vim, etc.
+        if let Some(paths) = app.pending_editor_open.take() {
+            // 1. Suspend: leave the alternate screen and restore the terminal
+            //    to its normal (cooked, echo) state so the editor can use it.
+            disable_raw_mode()?;
+            execute!(io::stdout(), LeaveAlternateScreen)?;
+            terminal.show_cursor()?;
+
+            // 2. Try each binary candidate in order.
+            let candidates = app.editor.binary_candidates();
+            tracing::debug!(
+                "[gitkraft] opening {:?} with {} (candidates: {})",
+                paths,
+                app.editor,
+                candidates.join(", ")
+            );
+
+            let mut opened = false;
+            let mut error_msg: Option<String> = None;
+
+            for bin in &candidates {
+                let parts: Vec<&str> = bin.split_whitespace().collect();
+                if let Some((cmd, args)) = parts.split_first() {
+                    tracing::debug!("[gitkraft] trying binary: {cmd}");
+                    match std::process::Command::new(cmd)
+                        .args(args.iter())
+                        .args(paths.iter()) // ← pass ALL paths
+                        .stdin(std::process::Stdio::inherit())
+                        .stdout(std::process::Stdio::inherit())
+                        .stderr(std::process::Stdio::inherit())
+                        .status()
+                    {
+                        Ok(status) => {
+                            tracing::debug!("[gitkraft] editor exited with {status}");
+                            opened = true;
+                            break;
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                            tracing::debug!("[gitkraft] binary '{cmd}' not found, trying next");
+                            continue;
+                        }
+                        Err(e) => {
+                            let msg = format!("Editor '{cmd}' failed to launch: {e}");
+                            tracing::warn!("[gitkraft] {msg}");
+                            error_msg = Some(msg);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if !opened {
+                let msg = error_msg.unwrap_or_else(|| {
+                    format!(
+                        "Could not find {} in PATH — tried: {} \
+                         (check that the binary is installed and in your $PATH)",
+                        app.editor,
+                        candidates.join(", ")
+                    )
+                });
+                tracing::warn!("[gitkraft] {msg}");
+                app.tab_mut().error_message = Some(msg);
+            } else {
+                let count = paths.len();
+                app.tab_mut().status_message = Some(format!(
+                    "Returned from {} — {} file(s) edited",
+                    app.editor, count
+                ));
+            }
+
+            // 3. Resume: re-enter the alternate screen and raw mode.
+            enable_raw_mode()?;
+            execute!(io::stdout(), EnterAlternateScreen)?;
+            terminal.clear()?;
+        }
+        // ─────────────────────────────────────────────────────────────────
 
         if app.should_quit {
             break;

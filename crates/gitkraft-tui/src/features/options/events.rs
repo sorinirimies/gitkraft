@@ -13,6 +13,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             app.show_options_panel = false;
             app.show_theme_panel = true;
         }
+        // Open settings file in editor (same shortcut shown in this panel)
+        KeyCode::Char(',') => {
+            app.show_options_panel = false;
+            app.open_settings_in_editor();
+        }
         _ => {}
     }
 }

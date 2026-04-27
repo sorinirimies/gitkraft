@@ -53,26 +53,84 @@ pub const EDITOR_NAMES: &[&str] = &[
 impl Editor {
     /// Return the launch binary for this editor. Returns `None` for `Editor::None`.
     pub fn binary(&self) -> Option<String> {
+        self.binary_candidates().into_iter().next()
+    }
+
+    /// Return the ordered list of binary names to try when launching this editor.
+    ///
+    /// Most editors have exactly one binary name.  Helix has two (`helix` on
+    /// Linux, `hx` on macOS) so we return both and let the caller try them in
+    /// order, stopping at the first one that is found in `$PATH`.
+    pub fn binary_candidates(&self) -> Vec<String> {
         match self {
-            Editor::None => Option::None,
-            Editor::Helix => Some(Self::resolve_helix()),
-            Editor::Neovim => Some("nvim".into()),
-            Editor::Vim => Some("vim".into()),
-            Editor::Nano => Some("nano".into()),
-            Editor::Micro => Some("micro".into()),
-            Editor::Emacs => Some("emacs".into()),
-            Editor::VSCode => Some("code --reuse-window".into()),
-            Editor::Zed => Some("zed".into()),
-            Editor::Sublime => Some("subl".into()),
-            Editor::RustRover => Some("rustrover".into()),
-            Editor::IntelliJIdea => Some("idea".into()),
-            Editor::WebStorm => Some("webstorm".into()),
-            Editor::PyCharm => Some("pycharm".into()),
-            Editor::GoLand => Some("goland".into()),
-            Editor::CLion => Some("clion".into()),
-            Editor::Fleet => Some("fleet".into()),
-            Editor::AndroidStudio => Some("studio".into()),
-            Editor::Custom(s) => Some(s.clone()),
+            Editor::None => vec![],
+            Editor::Helix => {
+                // macOS (Homebrew) installs Helix as `hx`.
+                // Linux package managers install it as `helix` (Arch, Debian,
+                // Fedora) or occasionally `hx`.  We try the platform default
+                // first, then the alternative.
+                if cfg!(target_os = "macos") {
+                    vec!["hx".into(), "helix".into()]
+                } else {
+                    vec!["helix".into(), "hx".into()]
+                }
+            }
+            Editor::Neovim => vec!["nvim".into()],
+            Editor::Vim => vec!["vim".into()],
+            Editor::Nano => vec!["nano".into()],
+            Editor::Micro => vec!["micro".into()],
+            Editor::Emacs => vec!["emacs".into()],
+            Editor::VSCode => vec!["code --reuse-window".into()],
+            Editor::Zed => vec!["zed".into()],
+            Editor::Sublime => vec!["subl".into()],
+            Editor::RustRover => vec!["rustrover".into()],
+            Editor::IntelliJIdea => vec!["idea".into()],
+            Editor::WebStorm => vec!["webstorm".into()],
+            Editor::PyCharm => vec!["pycharm".into()],
+            Editor::GoLand => vec!["goland".into()],
+            Editor::CLion => vec!["clion".into()],
+            Editor::Fleet => vec!["fleet".into()],
+            Editor::AndroidStudio => vec!["studio".into()],
+            Editor::Custom(s) => vec![s.clone()],
+        }
+    }
+
+    /// Returns `true` for editors that run inside a terminal (TTY required).
+    ///
+    /// These editors cannot be spawned in the background from a TUI
+    /// application — the TUI must suspend itself first, run the editor
+    /// synchronously, then resume.
+    pub fn is_terminal_editor(&self) -> bool {
+        matches!(
+            self,
+            Editor::Helix
+                | Editor::Neovim
+                | Editor::Vim
+                | Editor::Nano
+                | Editor::Micro
+                | Editor::Emacs
+        )
+    }
+
+    /// macOS application bundle name for GUI editors.
+    /// Returns `None` for terminal editors (they can't be activated via `open -a`).
+    #[cfg(target_os = "macos")]
+    fn macos_app_name(&self) -> Option<&'static str> {
+        match self {
+            Editor::VSCode => Some("Visual Studio Code"),
+            Editor::Zed => Some("Zed"),
+            Editor::Sublime => Some("Sublime Text"),
+            Editor::RustRover => Some("RustRover"),
+            Editor::IntelliJIdea => Some("IntelliJ IDEA"),
+            Editor::WebStorm => Some("WebStorm"),
+            Editor::PyCharm => Some("PyCharm"),
+            Editor::GoLand => Some("GoLand"),
+            Editor::CLion => Some("CLion"),
+            Editor::Fleet => Some("Fleet"),
+            Editor::AndroidStudio => Some("Android Studio"),
+            // Terminal editors and Helix/Neovim/Vim/Nano/Micro/Emacs don't
+            // have a stable macOS bundle name we can rely on for `open -a`.
+            _ => None,
         }
     }
 
@@ -125,45 +183,82 @@ impl Editor {
         }
     }
 
-    /// Open a file in this editor. Returns an error if the editor is not found.
+    /// Open a file in this editor as a **background** process.
+    ///
+    /// Stdin/stdout/stderr are detached so the caller is not blocked.
+    /// This is correct for **GUI editors** (VS Code, Zed, IntelliJ, …).
+    ///
+    /// **Do not call this for terminal editors from a running TUI** — use the
+    /// `pending_editor_open` mechanism in `App` instead so the TUI can
+    /// suspend itself before handing the terminal to the editor.
+    ///
+    /// On macOS, GUI editors are opened via `open -a "App Name" file` so the
+    /// existing application window is activated and brought to the front.
     pub fn open_file(&self, file_path: &std::path::Path) -> anyhow::Result<()> {
-        let bin = self.binary().ok_or_else(|| {
-            anyhow::anyhow!("no editor configured — select one from the editor picker")
-        })?;
-
-        let parts: Vec<&str> = bin.split_whitespace().collect();
-        let (cmd, args) = parts
-            .split_first()
-            .ok_or_else(|| anyhow::anyhow!("empty editor binary"))?;
-
-        let mut command = std::process::Command::new(cmd);
-        command.args(args.iter());
-        command.arg(file_path);
-        // Detach stdin/stdout/stderr so the editor runs independently
-        command.stdin(std::process::Stdio::null());
-        command.stdout(std::process::Stdio::null());
-        command.stderr(std::process::Stdio::null());
-        command
-            .spawn()
-            .map_err(|e| anyhow::anyhow!("failed to launch '{}': {}", cmd, e))?;
-
-        Ok(())
-    }
-
-    /// Probe `$PATH` for the Helix binary name.
-    fn resolve_helix() -> String {
-        for candidate in &["hx", "helix"] {
-            if std::process::Command::new(candidate)
-                .arg("--version")
+        #[cfg(target_os = "macos")]
+        if let Some(app_name) = self.macos_app_name() {
+            std::process::Command::new("open")
+                .arg("-a")
+                .arg(app_name)
+                .arg(file_path)
+                .stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
-                .status()
-                .is_ok()
+                .spawn()
+                .map_err(|e| anyhow::anyhow!("failed to run 'open -a {}': {}", app_name, e))?;
+            return Ok(());
+        }
+
+        // Try each binary candidate in order, stopping at the first found.
+        let candidates = self.binary_candidates();
+        if candidates.is_empty() {
+            anyhow::bail!("no editor configured — select one from the editor picker");
+        }
+        let mut last_err =
+            anyhow::anyhow!("no editor configured — select one from the editor picker");
+        for bin in &candidates {
+            let parts: Vec<&str> = bin.split_whitespace().collect();
+            let Some((cmd, args)) = parts.split_first() else {
+                continue;
+            };
+            match std::process::Command::new(cmd)
+                .args(args.iter())
+                .arg(file_path)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
             {
-                return candidate.to_string();
+                Ok(_) => return Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    last_err = anyhow::anyhow!("'{}' not found in PATH", cmd);
+                    continue;
+                }
+                Err(e) => return Err(anyhow::anyhow!("failed to launch '{}': {}", cmd, e)),
             }
         }
-        "hx".to_string()
+        Err(last_err)
+    }
+
+    /// Open a file in this editor, falling back to the system default opener
+    /// (`xdg-open` / `open` / `start`) when no editor is configured or the
+    /// configured editor fails to launch.
+    ///
+    /// Always succeeds as long as the system has a default file handler.
+    /// Returns the method used: `"editor"`, `"system default"`, or an error.
+    pub fn open_file_or_default(&self, file_path: &std::path::Path) -> anyhow::Result<String> {
+        if !matches!(self, Editor::None) {
+            match self.open_file(file_path) {
+                Ok(()) => return Ok(self.display_name().to_string()),
+                Err(e) => {
+                    tracing::warn!(
+                        "configured editor failed ({e}), falling back to system default"
+                    );
+                }
+            }
+        }
+        open_file_default(file_path)?;
+        Ok("system default".to_string())
     }
 }
 
@@ -223,6 +318,38 @@ mod tests {
             Editor::Custom("my-editor".into()).binary(),
             Some("my-editor".into())
         );
+    }
+
+    #[test]
+    fn helix_binary_candidates_platform_default_first() {
+        let candidates = Editor::Helix.binary_candidates();
+        assert_eq!(candidates.len(), 2);
+        #[cfg(target_os = "macos")]
+        assert_eq!(candidates[0], "hx");
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(candidates[0], "helix");
+    }
+
+    #[test]
+    fn is_terminal_editor_classifies_correctly() {
+        assert!(Editor::Helix.is_terminal_editor());
+        assert!(Editor::Neovim.is_terminal_editor());
+        assert!(Editor::Vim.is_terminal_editor());
+        assert!(Editor::Nano.is_terminal_editor());
+        assert!(!Editor::VSCode.is_terminal_editor());
+        assert!(!Editor::Zed.is_terminal_editor());
+        assert!(!Editor::IntelliJIdea.is_terminal_editor());
+        assert!(!Editor::None.is_terminal_editor());
+    }
+
+    #[test]
+    fn binary_candidates_single_for_most_editors() {
+        assert_eq!(Editor::Neovim.binary_candidates(), vec!["nvim"]);
+        assert_eq!(
+            Editor::VSCode.binary_candidates(),
+            vec!["code --reuse-window"]
+        );
+        assert_eq!(Editor::Zed.binary_candidates(), vec!["zed"]);
     }
 
     #[test]

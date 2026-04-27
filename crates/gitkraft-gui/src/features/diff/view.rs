@@ -487,3 +487,205 @@ fn render_line<'a>(line: &DiffLine, c: &ThemeColors) -> Element<'a, Message> {
         DiffLine::Context(s) => diff_line_widget(" ", s, c.text_secondary, None),
     }
 }
+
+// ── File history overlay ──────────────────────────────────────────────────────
+
+/// Render the file-history overlay in the diff panel area.
+pub fn file_history_view(state: &GitKraft) -> Element<'_, Message> {
+    let tab = state.active_tab();
+    let c = state.colors();
+    let path = tab.file_history_path.as_deref().unwrap_or("");
+    let file_name = path.rsplit('/').next().unwrap_or(path);
+
+    let close_btn = button(text("✕").size(13).color(c.muted))
+        .padding([2, 8])
+        .style(theme::ghost_button)
+        .on_press(Message::CloseFileHistory);
+
+    let header = row![
+        icon!(icons::CLOCK, 14, c.accent),
+        Space::new().width(6),
+        text(format!("File History: {file_name}"))
+            .size(14)
+            .color(c.text_primary),
+        Space::new().width(Length::Fill),
+        close_btn,
+    ]
+    .align_y(Alignment::Center)
+    .padding([8, 10]);
+
+    let body: Element<'_, Message> = if tab.file_history_commits.is_empty() {
+        let msg = if tab.is_loading {
+            "Loading…"
+        } else {
+            "No commits touch this file."
+        };
+        container(text(msg).size(13).color(c.muted))
+            .width(Length::Fill)
+            .padding(20)
+            .center_x(Length::Fill)
+            .into()
+    } else {
+        let mut list = column![].width(Length::Fill);
+        for commit in &tab.file_history_commits {
+            let short = commit.short_oid.as_str();
+            let summary = view_utils::truncate_to_fit(&commit.summary, 280.0, 7.0);
+            let rel_time = commit.relative_time();
+
+            let row_content = row![
+                text(short).size(11).color(c.accent).font(Font::MONOSPACE),
+                Space::new().width(8),
+                container(
+                    text(summary)
+                        .size(12)
+                        .color(c.text_primary)
+                        .wrapping(iced::widget::text::Wrapping::None),
+                )
+                .width(Length::Fill)
+                .clip(true),
+                Space::new().width(8),
+                text(rel_time).size(11).color(c.muted),
+            ]
+            .align_y(Alignment::Center)
+            .padding([3, 8]);
+
+            let oid = commit.oid.clone();
+            list = list.push(
+                button(row_content)
+                    .padding(0)
+                    .width(Length::Fill)
+                    .style(theme::ghost_button)
+                    .on_press(Message::SelectFileHistoryCommit(oid)),
+            );
+        }
+
+        scrollable(list)
+            .height(Length::Fill)
+            .on_scroll(|vp| Message::FileHistoryScrolled(vp.absolute_offset().y))
+            .direction(view_utils::thin_scrollbar())
+            .style(theme::overlay_scrollbar)
+            .into()
+    };
+
+    let content = column![header, body]
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+    view_utils::surface_panel(content, Length::Fill)
+}
+
+// ── Blame overlay ─────────────────────────────────────────────────────────────
+
+/// Render the blame overlay in the diff panel area.
+pub fn blame_view(state: &GitKraft) -> Element<'_, Message> {
+    let tab = state.active_tab();
+    let c = state.colors();
+    let path = tab.blame_path.as_deref().unwrap_or("");
+    let file_name = path.rsplit('/').next().unwrap_or(path);
+
+    let close_btn = button(
+        row![
+            text("✕").size(12).color(c.text_primary),
+            Space::new().width(4),
+            text("Close").size(12).color(c.text_primary),
+            Space::new().width(4),
+            text("[Esc]").size(11).color(c.muted),
+        ]
+        .align_y(Alignment::Center),
+    )
+    .padding([4, 10])
+    .style(theme::toolbar_button)
+    .on_press(Message::CloseFileBlame);
+
+    let header = row![
+        icon!(icons::CLOCK, 14, c.accent),
+        Space::new().width(6),
+        text(format!("Blame: {file_name}"))
+            .size(14)
+            .color(c.text_primary),
+        Space::new().width(Length::Fill),
+        close_btn,
+    ]
+    .align_y(Alignment::Center)
+    .padding([8, 10]);
+
+    let body: Element<'_, Message> = if tab.blame_lines.is_empty() {
+        let msg = if tab.is_loading {
+            "Loading…"
+        } else {
+            "No blame data."
+        };
+        container(text(msg).size(13).color(c.muted))
+            .width(Length::Fill)
+            .padding(20)
+            .center_x(Length::Fill)
+            .into()
+    } else {
+        let mut list = column![].width(Length::Fill);
+        for line in &tab.blame_lines {
+            let rel_time = line.relative_time();
+            let author = view_utils::truncate_to_fit(&line.author_name, 80.0, 7.0);
+            let line_content = container(
+                text(line.content.as_str())
+                    .size(11)
+                    .color(c.text_primary)
+                    .font(Font::MONOSPACE)
+                    .wrapping(iced::widget::text::Wrapping::None),
+            )
+            .width(Length::Fill)
+            .clip(true);
+
+            let blame_row = row![
+                text(line.short_oid.as_str())
+                    .size(10)
+                    .color(c.accent)
+                    .font(Font::MONOSPACE),
+                Space::new().width(6),
+                container(
+                    text(author)
+                        .size(10)
+                        .color(c.text_secondary)
+                        .wrapping(iced::widget::text::Wrapping::None),
+                )
+                .width(80)
+                .clip(true),
+                Space::new().width(4),
+                container(
+                    text(rel_time)
+                        .size(10)
+                        .color(c.muted)
+                        .wrapping(iced::widget::text::Wrapping::None),
+                )
+                .width(54)
+                .clip(true),
+                Space::new().width(4),
+                container(
+                    text(format!("{:4}", line.line_number))
+                        .size(10)
+                        .color(c.muted)
+                        .font(Font::MONOSPACE),
+                )
+                .width(32),
+                Space::new().width(6),
+                line_content,
+            ]
+            .align_y(Alignment::Center)
+            .padding([1, 8]);
+
+            list = list.push(blame_row);
+        }
+
+        scrollable(list)
+            .height(Length::Fill)
+            .on_scroll(|vp| Message::BlameScrolled(vp.absolute_offset().y))
+            .direction(view_utils::thin_scrollbar())
+            .style(theme::overlay_scrollbar)
+            .into()
+    };
+
+    let content = column![header, body]
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+    view_utils::surface_panel(content, Length::Fill)
+}

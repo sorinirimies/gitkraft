@@ -52,7 +52,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         .constraints([
             Constraint::Length(1),  // close hint
             Constraint::Length(1),  // spacer
-            Constraint::Length(6),  // Settings section
+            Constraint::Length(7),  // Settings section (one extra line for settings path)
             Constraint::Length(1),  // spacer
             Constraint::Length(8),  // Navigation section
             Constraint::Length(1),  // spacer
@@ -62,7 +62,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             Constraint::Length(1),  // spacer
             Constraint::Length(7),  // Branch Actions section
             Constraint::Length(1),  // spacer
-            Constraint::Length(7),  // Commit Actions section
+            Constraint::Length(10), // Commit Actions section
             Constraint::Min(0),     // remaining
         ])
         .split(inner_area);
@@ -90,11 +90,21 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             .fg(theme.success)
             .add_modifier(Modifier::BOLD);
 
+        let settings_path = gitkraft_core::features::persistence::ops::tui_settings_json_path()
+            .ok()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "~/.config/gitkraft/tui-settings.json".to_string());
+
         let lines = vec![
             Line::from(vec![
                 Span::styled(pad_right("Shift + T", 14), key_style),
                 Span::styled(pad_right("theme", 16), desc_style),
                 Span::styled(theme_name, value_style),
+            ]),
+            Line::from(vec![
+                Span::styled(pad_right(",", 14), key_style),
+                Span::styled(pad_right("edit settings", 16), desc_style),
+                Span::styled(settings_path, value_style),
             ]),
             Line::from(vec![
                 Span::styled(pad_right("commits", 14), muted_style),
@@ -265,6 +275,11 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
 
         let lines = vec![
             Line::from(vec![
+                Span::styled(pad_right("Enter", 14), key_style),
+                Span::styled(pad_right("checkout", 18), desc_style),
+                Span::styled("selected branch", value_style),
+            ]),
+            Line::from(vec![
                 Span::styled(pad_right("m", 14), key_style),
                 Span::styled(pad_right("merge", 18), desc_style),
                 Span::styled("selected → HEAD", value_style),
@@ -295,6 +310,16 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
 
         let lines = vec![
             Line::from(vec![
+                Span::styled(pad_right("C", 14), key_style),
+                Span::styled(pad_right("cherry-pick", 18), desc_style),
+                Span::styled("onto current", value_style),
+            ]),
+            Line::from(vec![
+                Span::styled(pad_right("n", 14), key_style),
+                Span::styled(pad_right("reset mixed", 18), desc_style),
+                Span::styled("keep files", value_style),
+            ]),
+            Line::from(vec![
                 Span::styled(pad_right("e", 14), key_style),
                 Span::styled(pad_right("revert", 18), desc_style),
                 Span::styled("selected commit", value_style),
@@ -308,6 +333,11 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 Span::styled(pad_right("X", 14), key_style),
                 Span::styled(pad_right("reset hard", 18), desc_style),
                 Span::styled("to selected", value_style),
+            ]),
+            Line::from(vec![
+                Span::styled(pad_right("a", 14), key_style),
+                Span::styled(pad_right("all actions…", 18), desc_style),
+                Span::styled("popup menu", value_style),
             ]),
         ];
 

@@ -20,6 +20,21 @@ pub struct LayoutSettings {
     /// UI scale factor (1.0 = 100%, 0.8 = 80%, 1.2 = 120%).
     #[serde(default)]
     pub ui_scale: Option<f32>,
+    /// Saved window width in logical pixels.
+    #[serde(default)]
+    pub window_width: Option<f32>,
+    /// Saved window height in logical pixels.
+    #[serde(default)]
+    pub window_height: Option<f32>,
+    /// Saved window X position (top-left corner, logical pixels).
+    #[serde(default)]
+    pub window_x: Option<f32>,
+    /// Saved window Y position (top-left corner, logical pixels).
+    #[serde(default)]
+    pub window_y: Option<f32>,
+    /// Whether the window was maximized when last closed.
+    #[serde(default)]
+    pub window_maximized: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

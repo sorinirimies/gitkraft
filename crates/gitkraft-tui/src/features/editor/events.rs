@@ -23,8 +23,9 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                     gitkraft_core::Editor::from_index(idx - 1)
                 };
                 app.tab_mut().status_message = Some(format!("Editor set to {}", app.editor));
-                let _ =
-                    gitkraft_core::features::persistence::save_editor(app.editor.display_name());
+                let _ = gitkraft_core::features::persistence::save_editor_tui(
+                    app.editor.display_name(),
+                );
                 app.show_editor_panel = false;
             }
         }
