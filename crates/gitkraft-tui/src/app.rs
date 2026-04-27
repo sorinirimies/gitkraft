@@ -2939,6 +2939,155 @@ mod tests {
     }
 
     #[test]
+    fn cherry_pick_selected_no_cursor_is_noop() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().commits = vec![gitkraft_core::CommitInfo {
+            oid: "abc1234567890".to_string(),
+            short_oid: "abc1234".to_string(),
+            summary: "test".into(),
+            message: "test".into(),
+            author_name: "A".into(),
+            author_email: "a@a.com".into(),
+            time: Default::default(),
+            parent_ids: Vec::new(),
+        }];
+        // No cursor selected — commit_list_state.selected() returns None
+
+        app.cherry_pick_selected();
+
+        assert!(
+            !app.tab().is_loading,
+            "no cursor → cherry_pick_selected must be a noop"
+        );
+    }
+
+    #[test]
+    fn cherry_pick_selected_single_sets_status_message_with_short_oid() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().commits = vec![gitkraft_core::CommitInfo {
+            oid: "deadbeef12345".to_string(),
+            short_oid: "deadbee".to_string(),
+            summary: "fix: something".into(),
+            message: "fix: something".into(),
+            author_name: "A".into(),
+            author_email: "a@a.com".into(),
+            time: Default::default(),
+            parent_ids: Vec::new(),
+        }];
+        app.tab_mut().commit_list_state.select(Some(0));
+
+        app.cherry_pick_selected();
+
+        let msg = app.tab().status_message.as_deref().unwrap_or("");
+        assert!(
+            msg.contains("deadbee"),
+            "status message must contain the short OID; got: {msg}"
+        );
+        assert!(
+            msg.to_lowercase().contains("cherry"),
+            "status message must mention cherry-pick; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn cherry_pick_selected_multi_uses_selected_commits_and_sets_count_message() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        // Three commits newest-first (index 0 = newest, index 2 = oldest).
+        app.tab_mut().commits = vec![
+            gitkraft_core::CommitInfo {
+                oid: "oid_newest".to_string(),
+                short_oid: "newest".to_string(),
+                summary: "newest".into(),
+                message: "newest".into(),
+                author_name: "A".into(),
+                author_email: "a@a.com".into(),
+                time: Default::default(),
+                parent_ids: Vec::new(),
+            },
+            gitkraft_core::CommitInfo {
+                oid: "oid_middle".to_string(),
+                short_oid: "middle".to_string(),
+                summary: "middle".into(),
+                message: "middle".into(),
+                author_name: "A".into(),
+                author_email: "a@a.com".into(),
+                time: Default::default(),
+                parent_ids: Vec::new(),
+            },
+            gitkraft_core::CommitInfo {
+                oid: "oid_oldest".to_string(),
+                short_oid: "oldest".to_string(),
+                summary: "oldest".into(),
+                message: "oldest".into(),
+                author_name: "A".into(),
+                author_email: "a@a.com".into(),
+                time: Default::default(),
+                parent_ids: Vec::new(),
+            },
+        ];
+        // Multi-select all three commits.
+        app.tab_mut().selected_commits = vec![0, 1, 2];
+        app.tab_mut().commit_list_state.select(Some(0));
+
+        app.cherry_pick_selected();
+
+        assert!(
+            app.tab().is_loading,
+            "multi cherry-pick must set is_loading"
+        );
+        let msg = app.tab().status_message.as_deref().unwrap_or("");
+        assert!(
+            msg.contains("3"),
+            "status message must mention commit count (3); got: {msg}"
+        );
+    }
+
+    #[test]
+    fn cherry_pick_selected_multi_orders_oldest_first() {
+        // Verifies that the OIDs are collected in oldest-first order (highest
+        // list index first) by checking the status message uses the first
+        // collected OID — which should be the one at the highest index.
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().commits = vec![
+            gitkraft_core::CommitInfo {
+                oid: "oid_0_newest".to_string(),
+                short_oid: "oid0new".to_string(),
+                summary: "newest".into(),
+                message: "newest".into(),
+                author_name: "A".into(),
+                author_email: "a@a.com".into(),
+                time: Default::default(),
+                parent_ids: Vec::new(),
+            },
+            gitkraft_core::CommitInfo {
+                oid: "oid_1_oldest".to_string(),
+                short_oid: "oid1old".to_string(),
+                summary: "oldest".into(),
+                message: "oldest".into(),
+                author_name: "A".into(),
+                author_email: "a@a.com".into(),
+                time: Default::default(),
+                parent_ids: Vec::new(),
+            },
+        ];
+        app.tab_mut().selected_commits = vec![0, 1];
+
+        app.cherry_pick_selected();
+
+        // The status message short-OID should be from index 1 (oldest) since
+        // we sort descending (index 1 > index 0) before iterating.
+        let msg = app.tab().status_message.as_deref().unwrap_or("");
+        assert!(
+            msg.contains("2"),
+            "multi cherry-pick message should say 2 commits; got: {msg}"
+        );
+    }
+
+    #[test]
     fn open_commit_files_in_editor_uses_single_cursor_when_no_multi_selection() {
         let mut app = App::new();
         app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/repo"));

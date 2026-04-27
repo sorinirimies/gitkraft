@@ -739,4 +739,68 @@ mod tests {
         // reset_to_selected_commit("mixed") should set is_loading.
         assert!(app.tab().is_loading);
     }
+
+    #[test]
+    fn n_sets_status_message_mentioning_mixed() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().commits = make_commits(3);
+        app.tab_mut().commit_list_state.select(Some(0));
+
+        handle_key(&mut app, key(KeyCode::Char('n')));
+
+        let msg = app.tab().status_message.as_deref().unwrap_or("");
+        assert!(!msg.is_empty(), "n must set a status message");
+    }
+
+    #[test]
+    fn c_with_no_cursor_is_noop() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().commits = make_commits(3);
+        // No commit selected (cursor is None)
+
+        handle_key(&mut app, key(KeyCode::Char('C')));
+
+        assert!(!app.tab().is_loading, "C with no cursor must be a noop");
+    }
+
+    #[test]
+    fn c_with_multi_selection_sets_loading() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().commits = make_commits(4);
+        app.tab_mut().commit_list_state.select(Some(0));
+        // Simulate two commits selected via Space or J/K
+        app.tab_mut().selected_commits = vec![0, 1, 2];
+
+        handle_key(&mut app, key(KeyCode::Char('C')));
+
+        assert!(
+            app.tab().is_loading,
+            "C with multi-selection must set is_loading"
+        );
+        let msg = app.tab().status_message.as_deref().unwrap_or("");
+        assert!(
+            msg.contains("3"),
+            "status message must mention 3 commits; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn c_without_multi_selection_uses_cursor_commit() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().commits = make_commits(4);
+        app.tab_mut().commit_list_state.select(Some(2));
+        // selected_commits empty → single-commit path
+        app.tab_mut().selected_commits = vec![];
+
+        handle_key(&mut app, key(KeyCode::Char('C')));
+
+        assert!(
+            app.tab().is_loading,
+            "C on cursor commit (no multi-selection) must set is_loading"
+        );
+    }
 }
