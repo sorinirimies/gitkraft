@@ -2,146 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.8.1] - 2026-04-27
-
-### ✨ Features
-- **Staging area range selection (TUI)** — Shift+↑/↓ or `J`/`K` while in the Staging pane extends the file selection range; numbered rank badges replace the plain `●` bullet when 2+ files are selected; anchor tracks the starting position so Shift+Up can shrink what Shift+Down expanded
-- **Diff file list range selection fix (TUI)** — `J`/`K` now properly build an anchor-based range (using `ascending_range`), replace (not accumulate) the selection on each press, and trigger background diff loads for **all** selected files so the concatenated multi-file diff renders immediately rather than showing "Loading…" indefinitely
-- **Keyboard enhancement (TUI)** — `PushKeyboardEnhancementFlags(DISAMBIGUATE_ESCAPE_CODES)` is enabled at startup on terminals that support it (Kitty, Alacritty, WezTerm, iTerm2 with xterm-keys); this makes Shift+arrow keys carry the SHIFT modifier flag; `J`/`K` uppercase aliases remain as a universal fallback for all other terminals
-- **Files panel hint** — the Files panel title now shows `[J/K select]` when focused and single-file, and `[J/K shrink]` when a range is active
-- **Blame view auto-close** — clicking any commit in the GUI commit log now automatically closes the blame overlay; same for `j`/`k`/`Enter` navigation in the TUI commit log
-
-### 🐛 Bug Fixes
-- **Diff file list Shift+Up/Down never worked** — the old `extend_file_selection` inserted only two individual items and never built a real range; no anchor was tracked; at the boundary it returned early with no feedback; all fixed
-- **Multi-file concatenated diff was blank** — background loads were only triggered for the focused file; every other file in the selection stayed as "Loading…"; now all selected files are loaded in parallel
-- **Staging J/K boundary now gives feedback** — pressing J at the last file (or K at the first) previously returned silently; now the anchor-to-current range is still applied so at least the current file gets selected
-- **Plain j/k in staging no longer resets anchor while range is active** — previously navigating with j/k inside an existing multi-selection would reset the anchor, breaking subsequent Shift extends
-- **GUI settings file keyboard shortcut** — `Ctrl/Cmd` shortcuts (including `Ctrl+,`) now fire regardless of widget focus; previously they were blocked when a text input had keyboard focus
-- **GUI blame close button** — made visible with `toolbar_button` style and `[Esc]` label; `Esc` key now closes the blame overlay from anywhere in the GUI
-- **TUI settings file opens browser** — `xdg-open` / `open` is no longer used as fallback for settings files (JSON files are often browser-associated); only the configured editor is used; if no editor is configured the file path is shown with a hint
-- **TUI editor fallback** — `load_tui_settings` now inherits `editor_name` from the GUI's `settings.json` when the TUI has no editor configured, so users only need to configure their editor once
-
-### 🔧 Refactoring / Internal
-- **`RepoSnapshot` + `load_repo_snapshot` in core** — the identical 8-call repo loading sequence was duplicated verbatim in both frontends; moved to `gitkraft-core` as a single canonical function; both `load_repo_blocking` implementations now delegate to it in one line
-- **`ascending_range(anchor, target)` utility in core** — the 5-line anchor-range computation was duplicated across GUI `SelectCommit`, TUI `select_commit_down/up`, and TUI `select_file_down/up`; now a shared `gitkraft_core::ascending_range` utility
-- **Mirror function collapse (TUI)** — `navigate_down`/`navigate_up` in commit events collapsed to a single `navigate_to(app, closure)` helper; `select_commit_down`/`select_commit_up` collapsed to `extend_commit_selection`; `select_file_down`/`select_file_up` collapsed to `extend_file_selection`; `select_down`/`select_up` in staging collapsed to `extend_staging_selection`
-- **`with_repo!` applied consistently (GUI)** — five handlers in `commits/update.rs` that used raw `if let Some(path) = repo_path` guards converted to use the existing `with_repo!` macro
-- **Mandatory test rule in `.zed/rules.md`** — every feature must be accompanied by tests; rule is at the top of the file and cross-referenced from Common Pitfalls #1
-
-## [0.8.0] - 2026-04-26
-
-### ✨ Features
-- **Multi-file selection in GUI commit diff** — Shift+Click selects a range of files; combined diff shown with `══ filename ══` separators; numbered selection badges; context menu adapts to "N files selected"
-- **Multi-file selection in TUI commit diff** — Shift+Up/Down for range selection; numbered badges; combined diff in the diff pane
-- **Multi-commit range selection in GUI** — Shift+Click selects a commit range; numbered badges; range diff (combined net diff) displayed in the diff panel
-- **Multi-commit range selection in TUI** — Shift+Up/Down for range selection; combined range diff auto-loaded; Space for toggle-select
-- **Combined commit range diff** — both GUI and TUI show the net diff across all selected commits (`git diff oldest^ newest`)
-- **Diff sub-pane navigation in TUI** — Right arrow enters the diff content area; Left arrow returns to the file list; sub-pane highlighted with active border
-- **Cherry-pick commits from context menu** — GUI context menu for N selected commits includes "Cherry-pick N commits"
-- **Checkout file from commit** — right-click a file in the commit diff list → "Checkout file from this commit" (restores the file to its committed state)
-- **Unified file context menus** — commit diff file menus reorganised into Actions / Copy info / Open sections; "Copy filename", "Open in default program" added throughout; multi-file menus show "N files selected"
-- **Settings file editor** — `Ctrl/Cmd+,` in GUI and `,` in TUI open `settings.json` / `tui-settings.json` in the configured editor (terminal editors suspend the TUI, GUI editors use platform activation); `,` also works from the Options panel and Welcome screen
-- **Window geometry persistence in GUI** — window size and position are saved on every resize/move and restored on next launch
-- **Blame view exit** — `Esc` key closes blame in GUI; close button is now prominently styled with `[Esc]` label; clicking a different commit automatically exits blame in both GUI and TUI
-
-### 🐛 Bug Fixes
-- **JSON persistence replaces redb** — settings are now stored in plain JSON (`settings.json` / `tui-settings.json`); redb was wiped on every version upgrade due to format incompatibility; atomic writes (write-tmp → rename) prevent corruption on crash
-- **Separate TUI and GUI settings files** — `tui-settings.json` for TUI, `settings.json` for GUI; opening repos in one frontend no longer clobbers the other's session; TUI falls back to GUI's `editor_name` when no TUI editor is configured
-- **Terminal editors in TUI** — Helix, Neovim, Vim etc. now work correctly by suspending the TUI (leave alternate screen), running the editor synchronously with a real TTY, then resuming; previously `Stdio::null()` caused silent failure
-- **Helix binary resolution** — platform-aware: macOS tries `hx` first, Linux tries `helix` first; no runtime probing during the TUI event loop
-- **GUI keyboard shortcuts fire regardless of widget focus** — `Ctrl/Cmd` shortcuts (including `Ctrl+,`) now work even when a text input has keyboard focus
-- **Multi-repo tab screen restoration** — switching tabs with `[`/`]` now correctly shows Main or Welcome based on whether the target tab has a repo loaded
-- **Diff auto-loads on commit navigation** — navigating the TUI commit log with `j`/`k` or arrow keys now automatically loads the diff for the selected commit
-- **Browser not opened for JSON settings** — `xdg-open` / `open` is no longer used for settings files (JSON is often browser-associated); only the configured editor is used
-
-### 🔧 Chores / Internal
-- **Mandatory test rule added to `.zed/rules.md`** — every feature implementation must be accompanied by tests
-- All new features covered by unit tests across `gitkraft-core`, `gitkraft-gui`, and `gitkraft-tui`
-
-## 0.7.7 - 2026-04-24
-### ➕ Added
-- Add split diff sub-pane navigation and multi-file select
-- Add multi-file diff selection and viewing to GUI
-- Add multi-commit selection and range diff support
-### 🔧 Chores
-- chore(deps): nightly dependency upgrade 2026-04-24
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.7.4...v0.7.7
-## 0.7.4 - 2026-04-23
+## 0.8.2 - 2026-04-27
+### ♻️ Refactor
+- Refactor key event handlers to reduce nesting and improve clarity
+- Refactor GUI view helpers and TUI commit diff loading
+- Refactor row! macro usage for consistency and readability
+- Refactor header toolbar into left and right item rows
 ### ✨ Features
 - feat(gui): diff search results against working tree
 - feat(gui): 'Diff Selected' button for multi-file diff in search
 - feat: auto-focus search input, add tests for new features
-### 🐛 Bug Fixes
-- fix(tui): open repo in new tab when current tab already has one
-- fix(gui): prevent search dialog from dismissing when clicking diff content
-### 📚 Documentation
-- docs: regenerate all TUI VHS GIFs with updated layout
-### 📦 Other Changes
-- ui(tui): full-height overlay panels and expanded staging Actions
-- ui(gui): add close button to right panel headers in search overlay
-### 🔧 Chores
-- chore: bump version to 0.7.4
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.7.3...v0.7.4
-## 0.7.3 - 2026-04-23
+### ➕ Added
+- Add collapsible branch sections and overlay scrollbars to GUI
+- Add loading spinner to login button
+- Add tag creation actions and truncate-to-fit utility
+- Add remote branch delete/checkout, icons module, and file list diff
+- Add UI zoom support with keyboard shortcuts and status bar indicator
+- Add tests for core types and refactor repo open logic
+- Add VHS demo GIF tasks to justfile and improve musl build
+- Add step to install Rust stable in release workflow
+- Add support for Gitea Starscream remote in justfile
+- Add loading spinner to login button
+- Add push-all-force recipe to force-push main to all remotes
+- Add commit search feature to GUI and TUI
+- Add editor selection support to GUI and TUI
+- Add split diff sub-pane navigation and multi-file select
+- Add multi-file diff selection and viewing to GUI
+- Add multi-commit selection and range diff support
+- Add tests for cherry-pick and commit event handling
 ### 🐛 Bug Fixes
 - fix doc comments
-### 🔧 Chores
-- chore: bump version to 0.7.3
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.7.2...v0.7.3
-## 0.7.2 - 2026-04-23
-### ➕ Added
-- Add editor selection support to GUI and TUI
-### 🔧 Chores
-- chore: bump version to 0.7.2
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.7.1...v0.7.2
-## 0.7.1 - 2026-04-23
-### ➕ Added
-- Add commit search feature to GUI and TUI
+- fix(tui): open repo in new tab when current tab already has one
+- fix(gui): prevent search dialog from dismissing when clicking diff content
 ### 📚 Documentation
 - docs: add VHS-generated preview GIFs tracked with Git LFS
 - docs: remove non-UI GIFs from Preview section
 - docs: hide cargo run from TUI tapes and remove tui-build GIF
 - docs: add TUI theme selector and multi-repo tabs VHS tapes
 - docs: rewrite tui-tabs tape to open a real second repo
+- docs: regenerate all TUI VHS GIFs with updated layout
 ### 📦 Other Changes
-- Remove tui-build.tape example from vhs directory
-### 🔄 Updated
-- Update dependencies in Cargo.lock for rfd and iced_fonts
-### 🔧 Chores
-- chore(deps): nightly dependency upgrade 2026-04-22
-- chore: add .zed/rules.md with project conventions for agents
-- chore(deps): nightly dependency upgrade 2026-04-23
-- chore: bump version to 0.7.0
-- chore: bump version to 0.7.1
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.6...v0.7.1
-## 0.6.6 - 2026-04-21
-### 🔧 Chores
-- chore: bump version to 0.6.6
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.5...v0.6.6
-## 0.6.5 - 2026-04-21
-### ♻️ Refactor
-- Refactor header toolbar into left and right item rows
-### 🔧 Chores
-- chore: bump version to 0.6.5
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.4...v0.6.5
-## 0.6.4 - 2026-04-21
-### 📦 Other Changes
-- Simplify and update README features and layout sections
-- Close context menu when checking out or deleting branch
-### 🔄 Updated
-- Update Iced to 0.14 and refactor for new widget APIs
-### 🔧 Chores
-- chore: bump version to 0.6.4
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.3...v0.6.4
-## 0.6.3 - 2026-04-20
-### 🔧 Chores
-- chore: bump version to 0.6.3
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.2...v0.6.3
-## 0.6.2 - 2026-04-20
-### ➕ Added
-- Add loading spinner to login button
-- Add push-all-force recipe to force-push main to all remotes
-### 📦 Other Changes
+- Reformat codebase with rustfmt and improve formatting checks
+- Sort recent repos using sort_by_key with Reverse
+- Remove Tokio and futures dependencies from TUI and switch to std::mpsc
+- Simplify README to remove toolkit mentions and dependency tables
+- Remove musl and aarch64 targets from release workflow
+- Fail bump if version is unchanged
+- Move release notes generation to scripts/ci and update workflow
+- Replace Space::with_width/with_height with Space::new throughout GUI
 - Replace dtolnay/rust-toolchain with manual rustup install in CI
 - Make all multi-remote tasks continue on failure
 - Bump version to 0.6.0 and update changelog
@@ -151,95 +59,47 @@ All notable changes to this project will be documented in this file.
 - Move repo state to per-tab struct and update all usages
 - Hide context menu when copying text
 - Replace GitHub release action with Gitea API script
-### 🔧 Chores
-- chore: bump version to 0.6.2
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.7...v0.6.2
-## 0.5.7 - 2026-04-19
-### 🔧 Chores
-- chore: bump version to 0.5.7
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.6...v0.5.7
-## 0.5.6 - 2026-04-19
-### 🔧 Chores
-- chore: bump version to 0.5.6
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.5...v0.5.6
-## 0.5.5 - 2026-04-19
-### ♻️ Refactor
-- Refactor row! macro usage for consistency and readability
-### ➕ Added
-- Add support for Gitea Starscream remote in justfile
-### 📦 Other Changes
-- Move release notes generation to scripts/ci and update workflow
-- Replace Space::with_width/with_height with Space::new throughout GUI
-### 🔧 Chores
-- chore: bump version to 0.5.5
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.4...v0.5.5
-## 0.5.4 - 2026-04-17
-### ♻️ Refactor
-- Refactor GUI view helpers and TUI commit diff loading
-### 📦 Other Changes
-- Fail bump if version is unchanged
-### 🔧 Chores
-- chore: bump version to 0.5.4
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.3...v0.5.4
-## 0.5.3 - 2026-04-17
-### ➕ Added
-- Add step to install Rust stable in release workflow
-### 🔧 Chores
-- chore: bump version to 0.5.3
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.2...v0.5.3
-## 0.5.2 - 2026-04-17
-### 📦 Other Changes
-- Simplify README to remove toolkit mentions and dependency tables
-- Remove musl and aarch64 targets from release workflow
-### 🔧 Chores
-- chore: bump version to 0.5.2
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.1...v0.5.2
-## 0.5.1 - 2026-04-17
-### ➕ Added
-- Add VHS demo GIF tasks to justfile and improve musl build
-### 🔧 Chores
-- chore: bump version to 0.5.1
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.0...v0.5.1
-## 0.5.0 - 2026-04-17
-### 📦 Other Changes
-- Remove Tokio and futures dependencies from TUI and switch to std::mpsc
-### 🔄 Updated
-- Update release workflow to fix artifact handling and tool installs
-### 🔧 Chores
-- chore: bump version to 0.5.0
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.4.3...v0.5.0
-## 0.4.3 - 2026-04-17
-### ♻️ Refactor
-- Refactor key event handlers to reduce nesting and improve clarity
-### 🔧 Chores
-- chore: bump version to 0.4.3
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.4.2...v0.4.3
-## 0.4.2 - 2026-04-17
-### 📦 Other Changes
-- Sort recent repos using sort_by_key with Reverse
+- Simplify and update README features and layout sections
+- Close context menu when checking out or deleting branch
+- Remove tui-build.tape example from vhs directory
+- ui(tui): full-height overlay panels and expanded staging Actions
+- ui(gui): add close button to right panel headers in search overlay
+- Release v0.8.1
 ### 🔄 Updated
 - Update install-tools to install nu if missing
-### 🔧 Chores
-- chore: bump version to 0.4.2
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.4.1...v0.4.2
-## 0.4.1 - 2026-04-17
-### ➕ Added
-- Add remote branch delete/checkout, icons module, and file list diff
-- Add UI zoom support with keyboard shortcuts and status bar indicator
-- Add tests for core types and refactor repo open logic
-### 📦 Other Changes
-- Reformat codebase with rustfmt and improve formatting checks
-### 🔧 Chores
-- chore: bump version to 0.4.1
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.4.0...v0.4.1
-## 0.4.0 - 2026-04-16
-### ➕ Added
-- Add collapsible branch sections and overlay scrollbars to GUI
-- Add loading spinner to login button
-- Add tag creation actions and truncate-to-fit utility
+- Update release workflow to fix artifact handling and tool installs
+- Update Iced to 0.14 and refactor for new widget APIs
+- Update dependencies in Cargo.lock for rfd and iced_fonts
+- Update tui-themes.gif
 ### 🔧 Chores
 - chore: bump version to 0.4.0
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.9...v0.4.0
+- chore: bump version to 0.4.1
+- chore: bump version to 0.4.2
+- chore: bump version to 0.4.3
+- chore: bump version to 0.5.0
+- chore: bump version to 0.5.1
+- chore: bump version to 0.5.2
+- chore: bump version to 0.5.3
+- chore: bump version to 0.5.4
+- chore: bump version to 0.5.5
+- chore: bump version to 0.5.6
+- chore: bump version to 0.5.7
+- chore: bump version to 0.6.2
+- chore: bump version to 0.6.3
+- chore: bump version to 0.6.4
+- chore: bump version to 0.6.5
+- chore: bump version to 0.6.6
+- chore(deps): nightly dependency upgrade 2026-04-22
+- chore: add .zed/rules.md with project conventions for agents
+- chore(deps): nightly dependency upgrade 2026-04-23
+- chore: bump version to 0.7.0
+- chore: bump version to 0.7.1
+- chore: bump version to 0.7.2
+- chore: bump version to 0.7.3
+- chore: bump version to 0.7.4
+- chore(deps): nightly dependency upgrade 2026-04-24
+- chore: bump version to 0.7.7
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.9...v0.8.2
 ## 0.3.9 - 2026-04-14
 ### 📦 Other Changes
 - Make branches sidebar width responsive
