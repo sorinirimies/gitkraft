@@ -223,17 +223,22 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .color(name_color)
                 .wrapping(iced::widget::text::Wrapping::None);
 
-            let checkout_msg =
-                (!is_current).then_some(Message::CheckoutBranch(branch.name.clone()));
-            let checkout_btn = view_utils::on_press_maybe(
-                button(
-                    row![indicator, Space::new().width(6), name_label].align_y(Alignment::Center),
-                )
-                .padding([4, 8])
-                .width(Length::Fill)
-                .style(theme::ghost_button),
-                checkout_msg,
-            );
+            // Always give the button an on_press so Iced keeps it in the
+            // Active/Hovered state machine.  For the current branch we use
+            // Noop (can't checkout the branch you're already on), but the
+            // button still receives hover events — fixing the missing highlight.
+            let checkout_msg = if is_current {
+                Message::Noop
+            } else {
+                Message::CheckoutBranch(branch.name.clone())
+            };
+            let checkout_btn = button(
+                row![indicator, Space::new().width(6), name_label].align_y(Alignment::Center),
+            )
+            .padding([4, 8])
+            .width(Length::Fill)
+            .style(theme::ghost_button)
+            .on_press(checkout_msg);
 
             let delete_icon = icon!(icons::TRASH, 12, c.red);
 
@@ -241,7 +246,14 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             let delete_btn = view_utils::on_press_maybe(
                 button(delete_icon)
                     .padding([4, 6])
-                    .style(theme::icon_button),
+                    .style(theme::icon_button)
+                    // Hide the delete button entirely for the current branch —
+                    // visually cleaner since it can't be deleted anyway.
+                    .width(if is_current {
+                        Length::Fixed(0.0)
+                    } else {
+                        Length::Shrink
+                    }),
                 delete_msg,
             );
 
