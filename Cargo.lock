@@ -1368,7 +1368,7 @@ dependencies = [
 
 [[package]]
 name = "gitkraft"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "dirs",
  "futures",
@@ -1383,7 +1383,7 @@ dependencies = [
 
 [[package]]
 name = "gitkraft-core"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1397,7 +1397,7 @@ dependencies = [
 
 [[package]]
 name = "gitkraft-tui"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "anyhow",
  "crossterm",
