@@ -2,9 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.8.3 - 2026-04-27
+## 0.8.4 - 2026-04-28
 ### ➕ Added
 - Add tests for cherry-pick and commit event handling
+- Add reactive git-state watcher using notify crate
 ### 🐛 Bug Fixes
 - Fix branch button highlight and hide delete for current branch
 ### 📦 Other Changes
@@ -13,7 +14,9 @@ All notable changes to this project will be documented in this file.
 - Update tui-themes.gif
 ### 🔧 Chores
 - chore: bump version to 0.8.2
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.7.7...v0.8.3
+- chore(deps): nightly dependency upgrade 2026-04-28
+- chore: bump version to 0.8.3
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.7.7...v0.8.4
 ## 0.7.7 - 2026-04-24
 ### ➕ Added
 - Add split diff sub-pane navigation and multi-file select

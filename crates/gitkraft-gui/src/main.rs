@@ -146,6 +146,10 @@ fn git_watch_subscription(
 }
 
 /// Indirection required by `Subscription::run_with` (needs `fn` pointer, not closure).
+///
+/// `run_with` is typed as `fn(&D) -> S` where `D = PathBuf`, so the parameter
+/// must be `&PathBuf` even though clippy prefers `&Path`.
+#[allow(clippy::ptr_arg)]
 fn git_watch_builder(
     path: &std::path::PathBuf,
 ) -> impl futures::Stream<Item = gitkraft_gui::Message> {
