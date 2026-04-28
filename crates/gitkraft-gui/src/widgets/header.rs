@@ -1,6 +1,6 @@
 //! Top toolbar / header bar for the GitKraft main layout.
 //!
-//! Shows: repo name │ branch name │ fetch button │ refresh button │ toggle sidebar.
+//! Shows: repo name │ branch name │ fetch button │ toggle sidebar.
 
 use iced::widget::{button, container, row, text, Space};
 use iced::{Alignment, Element, Length};
@@ -62,11 +62,6 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         fetch_msg,
     );
 
-    // ── Refresh button ────────────────────────────────────────────────────
-    let refresh_icon = icon!(icons::ARROW_REPEAT, 14, c.accent);
-
-    let refresh_btn = view_utils::toolbar_btn(refresh_icon, "Refresh", Message::RefreshRepo);
-
     // ── Open another repo button ──────────────────────────────────────────
     let open_icon = icon!(icons::FOLDER_OPEN, 14, c.text_secondary);
 
@@ -126,8 +121,6 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     let right_items = row![
         fetch_btn,
-        Space::new().width(4),
-        refresh_btn,
         Space::new().width(4),
         open_btn,
         Space::new().width(4),

@@ -112,6 +112,8 @@ pub enum BackgroundResult {
         path: String,
         lines: Vec<gitkraft_core::BlameLine>,
     },
+    /// The `.git` directory changed from outside the TUI — trigger a full refresh.
+    GitStateChanged,
 }
 
 /// Payload returned by an async staging refresh.
@@ -903,19 +905,29 @@ impl App {
                     tab.blame_scroll = 0;
                     tab.status_message = Some(format!("Blame: {file_name} ({count} lines)"));
                 }
+
+                BackgroundResult::GitStateChanged => {
+                    // Only refresh if not already loading to avoid stacking refreshes.
+                    if !self.tab().is_loading {
+                        self.refresh();
+                    }
+                }
             }
         }
     }
 
-    /// Reload only the staging area (unstaged + staged diffs).
-    /// Check if enough time has passed and trigger a staging refresh.
+    /// Fallback poll — triggers a full refresh every 5 seconds as a safety net.
+    ///
+    /// The `notify`-based watcher in `lib.rs` handles immediate reactive refresh;
+    /// this keeps the UI current on network file systems or other environments
+    /// where inotify events may not be delivered reliably.
     pub fn maybe_auto_refresh(&mut self) {
         if self.tab().repo_path.is_some()
             && !self.tab().is_loading
-            && self.last_auto_refresh.elapsed() >= std::time::Duration::from_secs(3)
+            && self.last_auto_refresh.elapsed() >= std::time::Duration::from_secs(5)
         {
             self.last_auto_refresh = std::time::Instant::now();
-            self.refresh_staging();
+            self.refresh();
         }
     }
 
@@ -3112,5 +3124,57 @@ mod tests {
         let queued = app.pending_editor_open.as_ref().unwrap();
         assert_eq!(queued.len(), 1);
         assert!(queued[0].ends_with("b.rs"));
+    }
+
+    #[test]
+    fn git_state_changed_triggers_full_refresh_when_repo_open() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        // Simulate receiving GitStateChanged via poll_background
+        // by sending it through the channel first.
+        app.bg_tx
+            .send(crate::app::BackgroundResult::GitStateChanged)
+            .unwrap();
+        app.poll_background();
+        // After GitStateChanged, a full refresh should have been enqueued
+        // (is_loading set true because refresh() calls load_repo_blocking).
+        assert!(
+            app.tab().is_loading,
+            "GitStateChanged must trigger a full refresh (is_loading should be true)"
+        );
+    }
+
+    #[test]
+    fn git_state_changed_is_noop_when_already_loading() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().is_loading = true; // already loading — guard should prevent another refresh
+        app.bg_tx
+            .send(crate::app::BackgroundResult::GitStateChanged)
+            .unwrap();
+        app.poll_background();
+        // refresh() sets status_message = "Refreshing…" when called.
+        // The guard `if !self.tab().is_loading` must have blocked the call,
+        // so status_message should NOT have been updated to "Refreshing…".
+        assert_ne!(
+            app.tab().status_message.as_deref(),
+            Some("Refreshing\u{2026}"),
+            "GitStateChanged must be a noop when already loading"
+        );
+    }
+
+    #[test]
+    fn maybe_auto_refresh_triggers_full_refresh_after_interval() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        // Force the last_auto_refresh to be long ago so the interval has elapsed.
+        app.last_auto_refresh = std::time::Instant::now() - std::time::Duration::from_secs(10);
+
+        app.maybe_auto_refresh();
+
+        assert!(
+            app.tab().is_loading,
+            "maybe_auto_refresh must trigger a full refresh after the interval"
+        );
     }
 }

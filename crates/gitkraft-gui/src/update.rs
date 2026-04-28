@@ -1062,9 +1062,7 @@ impl GitKraft {
 
             Message::FileSystemChanged => {
                 if self.has_repo() && !self.active_tab().is_loading {
-                    if let Some(path) = self.active_tab().repo_path.clone() {
-                        return crate::features::repo::commands::refresh_staging_only(path);
-                    }
+                    return self.refresh_active_tab();
                 }
                 Task::none()
             }

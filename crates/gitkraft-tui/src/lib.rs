@@ -126,6 +126,9 @@ where
         }
     }
 
+    // Watcher thread handle — restarted whenever it exits or the repo changes.
+    let mut git_watcher_thread: Option<std::thread::JoinHandle<()>> = None;
+
     loop {
         app.tick_count = app.tick_count.wrapping_add(1);
 
@@ -134,6 +137,29 @@ where
         // latest state.
         app.poll_background();
         app.maybe_auto_refresh();
+
+        // ── Reactive git watcher ──────────────────────────────────────────
+        // Spawn a background thread to watch the .git directory whenever:
+        //   • no watcher is running yet, or
+        //   • the previous watcher thread exited (e.g., repo was closed).
+        // The thread sends GitStateChanged via bg_tx on every file-system
+        // event (debounced 300 ms) and on a 5-second fallback poll.
+        // It exits automatically when bg_tx.send() fails (TUI exited).
+        if git_watcher_thread
+            .as_ref()
+            .map(|t| t.is_finished())
+            .unwrap_or(true)
+        {
+            if let Some(ref path) = app.tab().repo_path.clone() {
+                let git_dir = path.join(".git");
+                let tx = app.bg_tx.clone();
+                git_watcher_thread = Some(gitkraft_core::spawn_git_watcher(git_dir, move || {
+                    tx.send(crate::app::BackgroundResult::GitStateChanged)
+                        .is_ok()
+                }));
+            }
+        }
+        // ─────────────────────────────────────────────────────────────────
 
         terminal.draw(|frame| layout::render(&mut app, frame))?;
 

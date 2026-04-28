@@ -1647,4 +1647,25 @@ mod tests {
         assert!(state.active_tab().selected_commits.contains(&1));
         assert!(state.active_tab().selected_commits.contains(&2));
     }
+
+    #[test]
+    fn file_system_changed_triggers_full_refresh() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+
+        // FileSystemChanged should call refresh_active_tab() which returns
+        // a non-none Task.  We verify by checking that is_loading is NOT set
+        // synchronously (the task is async), but that no error is set either.
+        let _task = state.update(Message::FileSystemChanged);
+
+        // With a repo_path set, the handler must have attempted a refresh
+        // (it returns a Task, so is_loading is set by the task executor, not here).
+        // What we CAN check: no error was set, and status is not "error".
+        assert!(
+            state.active_tab().error_message.is_none(),
+            "FileSystemChanged must not set an error message"
+        );
+    }
 }

@@ -25,6 +25,7 @@ pub use features::graph::{GraphEdge, GraphRow};
 pub use features::log::file_history;
 pub use features::persistence::{AppSettings, LayoutSettings, RepoHistoryEntry};
 pub use features::remotes::RemoteInfo;
+pub use features::repo::spawn_git_watcher;
 pub use features::repo::{delete_file, load_repo_snapshot, RepoInfo, RepoSnapshot, RepoState};
 pub use features::stash::StashEntry;
 pub use features::theme::{

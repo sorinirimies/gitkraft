@@ -75,8 +75,9 @@ fn main() -> iced::Result {
                 }
                 None
             });
-            let auto_refresh = auto_refresh_subscription(state.has_repo());
-            iced::Subscription::batch([keyboard, auto_refresh])
+            let repo_path = state.active_tab().repo_path.clone();
+            let git_watcher = git_watch_subscription(repo_path);
+            iced::Subscription::batch([keyboard, git_watcher])
         })
         .scale_factor(|state: &GitKraft| state.ui_scale)
         .settings(Settings {
@@ -123,28 +124,57 @@ fn boot() -> (GitKraft, iced::Task<gitkraft_gui::Message>) {
     (state, iced::Task::batch([maximize_task, restore_task]))
 }
 
-/// Periodic auto-refresh subscription — emits `FileSystemChanged` every ~2 seconds.
+/// Reactive git-state watcher subscription.
 ///
-/// Uses `Subscription::run` with `futures::stream::unfold` and a blocking
-/// `std::thread::sleep` so it works with any async backend (thread-pool, tokio,
-/// smol, etc.).  The handler in `update.rs` short-circuits when no repo is open
-/// or when the tab is already loading, so a no-repo guard here just avoids
-/// spawning the stream at all.
-fn auto_refresh_subscription(has_repo: bool) -> iced::Subscription<gitkraft_gui::Message> {
-    if !has_repo {
+/// Spawns a background OS thread that uses `notify` to watch the repo's `.git`
+/// directory for any file change.  Changes are debounced (300 ms) so that a
+/// single git operation (which writes several files) triggers only one refresh.
+/// A 5-second fallback poll is included so the UI stays current on network
+/// file systems or environments where inotify events are not delivered.
+///
+/// Returns `Subscription::none()` when no repository is open.
+fn git_watch_subscription(
+    repo_path: Option<std::path::PathBuf>,
+) -> iced::Subscription<gitkraft_gui::Message> {
+    let Some(path) = repo_path else {
         return iced::Subscription::none();
-    }
-
-    iced::Subscription::run(auto_refresh_stream)
+    };
+    // `run_with` hashes both `path` and the function pointer as the subscription
+    // ID, so switching repos automatically tears down the old watcher and starts
+    // a fresh one.
+    iced::Subscription::run_with(path, git_watch_builder)
 }
 
-/// Build a never-ending stream that yields `FileSystemChanged` every 2 seconds.
-fn auto_refresh_stream() -> impl futures::Stream<Item = gitkraft_gui::Message> {
-    futures::stream::unfold((), |()| async {
-        // Blocking sleep is acceptable here — iced's thread-pool backend
-        // drives each subscription on its own worker thread.
-        std::thread::sleep(std::time::Duration::from_secs(2));
-        Some((gitkraft_gui::Message::FileSystemChanged, ()))
+/// Indirection required by `Subscription::run_with` (needs `fn` pointer, not closure).
+fn git_watch_builder(
+    path: &std::path::PathBuf,
+) -> impl futures::Stream<Item = gitkraft_gui::Message> {
+    git_watch_stream(path.clone())
+}
+
+/// Stream that emits `FileSystemChanged` whenever the `.git` directory changes.
+///
+/// Uses `spawn_git_watcher` from core (debounced, fallback poll) and a
+/// blocking `mpsc::Receiver` — no spin-wait, zero CPU overhead when idle.
+fn git_watch_stream(
+    repo_path: std::path::PathBuf,
+) -> impl futures::Stream<Item = gitkraft_gui::Message> {
+    use std::sync::mpsc;
+
+    let (tx, rx) = mpsc::channel::<()>();
+    let git_dir = repo_path.join(".git");
+
+    // Spawn the core watcher; the thread exits when tx.send() fails (rx dropped).
+    gitkraft_core::spawn_git_watcher(git_dir, move || tx.send(()).is_ok());
+
+    // The stream blocks on recv() — safe because iced runs each subscription
+    // on its own worker thread (same reasoning as the existing blocking sleep).
+    futures::stream::unfold(rx, |rx| async move {
+        // Block until the watcher signals a change or the sender is dropped.
+        match rx.recv() {
+            Ok(()) => Some((gitkraft_gui::Message::FileSystemChanged, rx)),
+            Err(_) => None, // watcher thread exited — end the stream
+        }
     })
 }
 

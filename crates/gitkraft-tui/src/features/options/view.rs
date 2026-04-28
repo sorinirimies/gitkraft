@@ -58,7 +58,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             Constraint::Length(1),  // spacer
             Constraint::Length(8),  // Staging section
             Constraint::Length(1),  // spacer
-            Constraint::Length(11), // Git section
+            Constraint::Length(10), // Git section
             Constraint::Length(1),  // spacer
             Constraint::Length(7),  // Branch Actions section
             Constraint::Length(1),  // spacer
@@ -233,11 +233,6 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 Span::styled(pad_right("Z", 14), key_style),
                 Span::styled(pad_right("stash pop", 18), desc_style),
                 Span::styled("latest", value_style),
-            ]),
-            Line::from(vec![
-                Span::styled(pad_right("r", 14), key_style),
-                Span::styled(pad_right("refresh", 18), desc_style),
-                Span::styled("all data", value_style),
             ]),
             Line::from(vec![
                 Span::styled(pad_right("f", 14), key_style),

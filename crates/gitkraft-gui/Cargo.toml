@@ -23,6 +23,7 @@ gitkraft-core = { workspace = true }
 iced       = { workspace = true }
 iced_fonts = { version = "0.1", features = ["bootstrap"] }
 rfd        = "0.15"
+notify        = { workspace = true }
 futures       = { workspace = true }
 tracing       = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
