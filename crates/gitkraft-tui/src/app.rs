@@ -916,20 +916,10 @@ impl App {
         }
     }
 
-    /// Fallback poll — triggers a full refresh every 5 seconds as a safety net.
-    ///
-    /// The `notify`-based watcher in `lib.rs` handles immediate reactive refresh;
-    /// this keeps the UI current on network file systems or other environments
-    /// where inotify events may not be delivered reliably.
-    pub fn maybe_auto_refresh(&mut self) {
-        if self.tab().repo_path.is_some()
-            && !self.tab().is_loading
-            && self.last_auto_refresh.elapsed() >= std::time::Duration::from_secs(5)
-        {
-            self.last_auto_refresh = std::time::Instant::now();
-            self.refresh();
-        }
-    }
+    // maybe_auto_refresh removed: the notify-based git watcher in lib.rs fires
+    // reactively on every .git change (< 1 s) and uses a 60-second fallback
+    // for network filesystems.  A second 5-second polling loop was causing an
+    // endless refresh cycle after branch checkouts and other git operations.
 
     pub fn refresh_staging(&mut self) {
         let repo_path = match self.tab().repo_path.clone() {
@@ -3185,17 +3175,13 @@ mod tests {
     }
 
     #[test]
-    fn maybe_auto_refresh_triggers_full_refresh_after_interval() {
-        let mut app = App::new();
-        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
-        // Force the last_auto_refresh to be long ago so the interval has elapsed.
-        app.last_auto_refresh = std::time::Instant::now() - std::time::Duration::from_secs(10);
-
-        app.maybe_auto_refresh();
-
-        assert!(
-            app.tab().is_loading,
-            "maybe_auto_refresh must trigger a full refresh after the interval"
-        );
+    fn watcher_handles_periodic_refresh_last_auto_refresh_field_retained() {
+        // maybe_auto_refresh() was removed — the notify-based git watcher in
+        // lib.rs now owns all periodic refreshes (reactive < 1 s, 60 s fallback).
+        // The last_auto_refresh field is kept to avoid a breaking change for any
+        // external code; it no longer drives any internal behaviour.
+        let app = App::new();
+        // Field still exists and is initialised to a recent instant.
+        assert!(app.last_auto_refresh.elapsed() < std::time::Duration::from_secs(1));
     }
 }

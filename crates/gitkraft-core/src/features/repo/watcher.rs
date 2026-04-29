@@ -4,10 +4,10 @@
 //! API (inotify on Linux, FSEvents on macOS, ReadDirectoryChangesW on Windows)
 //! and calls a callback after each debounced burst of changes.
 //!
-//! Falls back to a 5-second poll when:
-//! - the `notify` watcher can't be set up (e.g. network file system), or
-//! - no events arrive within 5 seconds (ensures the UI refreshes even when
-//!   notifications are missed).
+//! Reactive events fire within ~300 ms of any `.git` change.
+//! A configurable fallback poll fires when no events arrive within the timeout
+//! (default 60 s) — useful for network file systems or CI environments where
+//! inotify events may not be delivered.
 
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -17,21 +17,24 @@ use std::time::Duration;
 /// Spawn a background thread that watches `git_dir` for changes and calls
 /// `on_change` after each debounced burst.
 ///
-/// The thread exits when `on_change` returns `false` (the caller signals it
-/// should stop — typically because a channel send failed).
-///
-/// # Debouncing
-///
-/// A single git operation (commit, checkout, stash, …) writes multiple files
-/// to `.git` in quick succession.  The watcher drains all buffered events and
-/// then sleeps 300 ms so the entire burst counts as one refresh.
-///
-/// # Fallback poll
-///
-/// If no events arrive within 5 seconds the callback is also fired, ensuring
-/// the UI reflects external changes on network file systems or in CI
-/// environments where inotify is unreliable.
+/// Uses a 60-second fallback poll so that the UI eventually reflects external
+/// changes even on network file systems. Use [`spawn_git_watcher_with_fallback`]
+/// when a custom fallback interval is needed (e.g. in tests).
 pub fn spawn_git_watcher<F>(git_dir: PathBuf, on_change: F) -> JoinHandle<()>
+where
+    F: Fn() -> bool + Send + 'static,
+{
+    spawn_git_watcher_with_fallback(git_dir, Duration::from_secs(60), on_change)
+}
+
+/// Like [`spawn_git_watcher`] but with a custom fallback poll `timeout`.
+///
+/// Useful in tests to keep waiting times short.
+pub fn spawn_git_watcher_with_fallback<F>(
+    git_dir: PathBuf,
+    fallback: Duration,
+    on_change: F,
+) -> JoinHandle<()>
 where
     F: Fn() -> bool + Send + 'static,
 {
@@ -53,8 +56,8 @@ where
         }
 
         loop {
-            // Block until a notify event arrives or 5 seconds elapse (fallback poll).
-            let _ = raw_rx.recv_timeout(Duration::from_secs(5));
+            // Block until a notify event arrives or the fallback timeout elapses.
+            let _ = raw_rx.recv_timeout(fallback);
             // Drain any extra events so a rapid burst counts as one refresh.
             while raw_rx.try_recv().is_ok() {}
             // Debounce: give git time to finish writing all its index files.
@@ -119,22 +122,24 @@ mod tests {
     #[test]
     fn watcher_fires_fallback_poll_when_no_events() {
         // Use a path that doesn't exist — notify will fail to watch it, so no
-        // events will ever arrive.  The fallback 5-second poll must still fire.
+        // events will ever arrive.  Uses a 2-second fallback (not the production
+        // 60-second default) to keep the test fast.
         let dir = tempfile::tempdir().unwrap();
         let fake_git = dir.path().join(".git_nonexistent");
 
         let fired = Arc::new(Mutex::new(false));
         let fired_clone = Arc::clone(&fired);
 
-        let _handle = spawn_git_watcher(fake_git, move || {
-            *fired_clone.lock().unwrap() = true;
-            false
-        });
+        let _handle =
+            spawn_git_watcher_with_fallback(fake_git, Duration::from_secs(2), move || {
+                *fired_clone.lock().unwrap() = true;
+                false
+            });
 
-        // The fallback triggers after 5 s + 300 ms debounce — wait up to 7 s.
+        // 2 s fallback + 300 ms debounce + margin.
         assert!(
-            wait_for(|| *fired.lock().unwrap(), Duration::from_secs(7)),
-            "fallback poll did not fire within 7 seconds"
+            wait_for(|| *fired.lock().unwrap(), Duration::from_secs(4)),
+            "fallback poll did not fire within 4 seconds"
         );
     }
 
@@ -144,13 +149,15 @@ mod tests {
         let git_dir = dir.path().join(".git");
         std::fs::create_dir_all(&git_dir).unwrap();
 
-        let handle = spawn_git_watcher(git_dir.clone(), move || {
-            false // immediately request exit on first call
-        });
+        // 2-second fallback so the thread exits quickly in CI.
+        let handle =
+            spawn_git_watcher_with_fallback(git_dir.clone(), Duration::from_secs(2), move || {
+                false // immediately request exit on first call
+            });
 
-        // Thread must finish within 7 s (5 s fallback + 300 ms debounce + margin).
+        // Thread must finish within 4 s (2 s fallback + 300 ms debounce + margin).
         assert!(
-            wait_for(|| handle.is_finished(), Duration::from_secs(7)),
+            wait_for(|| handle.is_finished(), Duration::from_secs(4)),
             "watcher thread did not exit after callback returned false"
         );
     }

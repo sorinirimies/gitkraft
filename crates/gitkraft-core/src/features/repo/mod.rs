@@ -10,4 +10,4 @@ pub use ops::{
     get_repo_info, init_repo, load_repo_snapshot, open_repo, reset_to_commit, revert_commit,
 };
 pub use types::{RepoInfo, RepoSnapshot, RepoState};
-pub use watcher::spawn_git_watcher;
+pub use watcher::{spawn_git_watcher, spawn_git_watcher_with_fallback};

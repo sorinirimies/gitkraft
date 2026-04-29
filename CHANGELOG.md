@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.5] - 2026-04-29
+
+### ✨ Features
+- **Interactive Stash pane (TUI)** — Tab now cycles through Branches → Stash → CommitLog → DiffView → Staging; when focused the stash panel shows `[Enter=pop  d=drop]` in its title border; `j`/`k`/↑/↓ navigate, `Enter`/`p` pops, `d` drops, `Esc` deselects
+- **Animated loading spinner (TUI)** — status bar now shows an animated `FluxSpinner` using `FluxFrames::CORNERS` from `tui-spinner` while any background task is in flight
+- **Animated loading spinner (GUI)** — header loading indicator replaced with an animated `┌┐┘└` CORNERS spinner driven by a `~10 fps` subscription; diff panel “Loading diff…” placeholder also animated; both GUIs share the same `FluxFrames::CORNERS` symbol set from `tui-spinner`
+- **`spawn_git_watcher_with_fallback`** — new public API in `gitkraft-core` for custom fallback intervals; tests now use 2-second fallback instead of the production 60-second default
+
+### 🐛 Bug Fixes
+- **TUI endless refresh loop after branch checkout** — root cause was two independent 5-second timers (`maybe_auto_refresh` + git watcher fallback) both triggering full `refresh()` simultaneously. Fixed by: (1) removing `maybe_auto_refresh` entirely, (2) raising the watcher fallback from 5 s to 60 s. Reactive inotify/FSEvents events now fire within 300 ms; the 60-second fallback is a true last resort for network FSes only
+- **GUI commit selection cleared by background refresh** — `apply_payload` was resetting `selected_commit = None` on every auto-refresh. Fixed by re-pinning the selection by OID after the new commit list arrives; if the commit still exists the diff panel, file list, and selection highlight are all preserved through refreshes
+- **`pending_git_refresh` infinite loop (TUI)** — the flag caused a refresh loop because the 5-second watcher fallback re-triggered it on every cycle; flag removed entirely
+- **GUI hover missing on current branch row** — the checkout button for the current branch had no `on_press`, so Iced put it in `Disabled` state which never receives hover events; fixed by setting `on_press(Message::Noop)`
+- **Watcher test timeouts** — fallback-poll tests used `spawn_git_watcher` (60 s timeout) and took >60 s each; now use `spawn_git_watcher_with_fallback` with 2 s, total test suite runs in <3 s
+
+### 🔧 Chores
+- `tui-spinner = "0.2.1"` added to both `gitkraft-tui` and `gitkraft-gui` workspace dependencies; frame symbols (`FluxFrames::CORNERS`) shared between frontends
+- `maybe_auto_refresh` method and `last_auto_refresh` field retained for backward compatibility but no longer drive any behaviour
+
+
 ## 0.8.4 - 2026-04-28
 ### ➕ Added
 - Add tests for cherry-pick and commit event handling

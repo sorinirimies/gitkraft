@@ -132,11 +132,8 @@ where
     loop {
         app.tick_count = app.tick_count.wrapping_add(1);
 
-        // Drain any results from background tasks (open_repo, refresh,
-        // stage, commit, etc.) before drawing so the UI reflects the
-        // latest state.
+        // Drain any results from background tasks before drawing.
         app.poll_background();
-        app.maybe_auto_refresh();
 
         // ── Reactive git watcher ──────────────────────────────────────────
         // Spawn a background thread to watch the .git directory whenever:
