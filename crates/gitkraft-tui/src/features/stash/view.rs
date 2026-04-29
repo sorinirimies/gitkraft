@@ -9,9 +9,21 @@ use crate::app::App;
 /// Render the stash list in the sidebar below the branches list.
 pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let theme = app.theme();
-    let border_color = theme.border_inactive;
+    let is_active = app.active_pane == crate::app::ActivePane::Stash;
+    let border_color = if is_active {
+        theme.border_active
+    } else {
+        theme.border_inactive
+    };
 
-    let title = format!(" Stashes ({}) ", app.tab().stashes.len());
+    let title = if is_active && !app.tab().stashes.is_empty() {
+        format!(
+            " Stashes ({}) [Enter=pop  d=drop] ",
+            app.tab().stashes.len()
+        )
+    } else {
+        format!(" Stashes ({}) ", app.tab().stashes.len())
+    };
 
     let block = Block::default()
         .title(title)

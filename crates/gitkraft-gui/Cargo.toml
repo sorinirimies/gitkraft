@@ -20,6 +20,7 @@ path = "src/main.rs"
 
 [dependencies]
 gitkraft-core = { workspace = true }
+tui-spinner   = { workspace = true }
 iced       = { workspace = true }
 iced_fonts = { version = "0.1", features = ["bootstrap"] }
 rfd        = "0.15"

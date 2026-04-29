@@ -432,6 +432,10 @@ pub enum Message {
     /// Shift+Up arrow — same as above but upward.
     ShiftArrowUp,
 
+    /// Fired ~10× per second to advance loading-spinner animation frames.
+    /// Only emitted while at least one tab is loading.
+    AnimationTick,
+
     /// No-op (used for disabled buttons, etc.).
     Noop,
 }

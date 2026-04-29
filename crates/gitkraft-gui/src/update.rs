@@ -197,6 +197,11 @@ impl GitKraft {
                 crate::features::repo::commands::save_layout_async(self.current_layout())
             }
 
+            Message::AnimationTick => {
+                self.animation_tick = self.animation_tick.wrapping_add(1);
+                Task::none()
+            }
+
             Message::ShiftArrowDown => {
                 // Priority 1: file list (if commit files are loaded and a file is selected).
                 let file_info: Option<(usize, usize)> = {

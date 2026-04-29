@@ -1454,6 +1454,7 @@ dependencies = [
  "serde",
  "tracing",
  "tracing-subscriber",
+ "tui-spinner",
 ]
 
 [[package]]
@@ -1484,6 +1485,7 @@ dependencies = [
  "ratatui",
  "tracing",
  "tracing-subscriber",
+ "tui-spinner",
 ]
 
 [[package]]
@@ -4604,6 +4606,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
 dependencies = [
  "core_maths",
+]
+
+[[package]]
+name = "tui-spinner"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d80630eeb326b5fd8ab69bbb0eb0fbad747ce2a9f852ae3d39a7f206cf5b1e51"
+dependencies = [
+ "ratatui",
 ]
 
 [[package]]

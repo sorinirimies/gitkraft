@@ -77,7 +77,17 @@ fn main() -> iced::Result {
             });
             let repo_path = state.active_tab().repo_path.clone();
             let git_watcher = git_watch_subscription(repo_path);
-            iced::Subscription::batch([keyboard, git_watcher])
+            // Animation tick — ~10 fps via a blocking-sleep stream (same pattern
+            // as the existing git-watcher and former auto-refresh streams).
+            // Only active while at least one tab is loading to avoid CPU waste
+            // at rest.
+            let any_loading = state.tabs.iter().any(|t| t.is_loading);
+            let animation_ticker = if any_loading {
+                iced::Subscription::run(animation_tick_stream)
+            } else {
+                iced::Subscription::none()
+            };
+            iced::Subscription::batch([keyboard, git_watcher, animation_ticker])
         })
         .scale_factor(|state: &GitKraft| state.ui_scale)
         .settings(Settings {
@@ -179,6 +189,19 @@ fn git_watch_stream(
             Ok(()) => Some((gitkraft_gui::Message::FileSystemChanged, rx)),
             Err(_) => None, // watcher thread exited — end the stream
         }
+    })
+}
+
+/// Blocking-sleep stream that emits `AnimationTick` at ~10 fps.
+///
+/// Runs on its own worker thread (same approach as [`git_watch_stream`]).
+/// Only subscribed while loading is in progress.
+fn animation_tick_stream() -> impl futures::Stream<Item = gitkraft_gui::Message> {
+    futures::stream::unfold((), |()| async {
+        // 100 ms ≈ 10 fps.  Blocking sleep is safe here — Iced runs each
+        // Subscription on its own thread-pool worker.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        Some((gitkraft_gui::Message::AnimationTick, ()))
     })
 }
 

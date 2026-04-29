@@ -43,16 +43,16 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .into();
     }
 
-    // ── Priority 2: loading indicator for range diff ───────────────────────
+    // ── Priority 2: loading indicator for range diff ─────────────────────
     if tab.selected_commits.len() > 1 && tab.is_loading_file_diff {
-        return container(loading_diff_view(&c))
+        return container(loading_diff_view(&c, state.animation_tick))
             .width(Length::Fill)
             .height(Length::Fill)
             .style(theme::surface_style)
             .into();
     }
 
-    // ── Priority 3: multi-file diff (existing code unchanged below) ────────
+    // ── Priority 3: multi-file diff (existing code unchanged below) ────
     // Multi-file mode: show concatenated diffs for all selected files.
     if !tab.multi_file_diffs.is_empty() {
         let file_list = commit_file_list(state, &c, state.diff_file_list_width);
@@ -110,7 +110,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                     &c,
                 );
                 let right_panel = if tab.is_loading_file_diff {
-                    loading_diff_view(&c)
+                    loading_diff_view(&c, state.animation_tick)
                 } else {
                     placeholder_view(&c)
                 };
@@ -358,8 +358,16 @@ fn placeholder_view<'a>(c: &ThemeColors) -> Element<'a, Message> {
 }
 
 /// Loading indicator shown while a single file's diff is being fetched.
-fn loading_diff_view<'a>(c: &ThemeColors) -> Element<'a, Message> {
-    view_utils::centered_placeholder(icons::ARROW_REPEAT, 24, "Loading diff…", c.muted)
+fn loading_diff_view<'a>(c: &ThemeColors, animation_tick: u64) -> Element<'a, Message> {
+    let frames = tui_spinner::FluxFrames::CORNERS;
+    let frame = frames[animation_tick as usize % frames.len()].to_string();
+    let label = format!("{frame}  Loading diff…");
+    container(text(label).size(14).color(c.muted).font(Font::MONOSPACE))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
+        .into()
 }
 
 /// Render the full diff content for a single [`DiffInfo`] with virtual

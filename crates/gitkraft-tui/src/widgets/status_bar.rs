@@ -1,8 +1,9 @@
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
+use tui_spinner::{FluxFrames, FluxSpinner};
 
 use crate::app::{App, InputMode, InputPurpose};
 
@@ -16,6 +17,42 @@ use crate::app::{App, InputMode, InputPurpose};
 pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let theme = app.theme();
 
+    // Fill the whole status-bar row with the background colour first.
+    frame.render_widget(
+        Paragraph::new("").style(Style::default().bg(theme.border_inactive)),
+        area,
+    );
+
+    // ── Layout ────────────────────────────────────────────────────────────
+    // [3 cols: spinner/dot/blank] [rest: mode + message]
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .split(area);
+    let left = chunks[0];
+    let right = chunks[1];
+
+    // ── Spinner area ──────────────────────────────────────────────────────
+    // Centre a 1×1 cell inside the 3-col left block (1 col padding each side).
+    let spinner_cell = Rect {
+        x: left.x + 1,
+        y: left.y,
+        width: 1,
+        height: 1,
+    };
+
+    if app.tab().is_loading {
+        // Animated CORNERS spinner while a background task is in flight.
+        frame.render_widget(
+            FluxSpinner::new(app.tick_count)
+                .frames(FluxFrames::CORNERS)
+                .color(theme.accent),
+            spinner_cell,
+        );
+    }
+    // else: blank — no spinner rendered
+
+    // ── Mode indicator + message ──────────────────────────────────────────
     let mode_str = match app.input_mode {
         InputMode::Normal => "NORMAL",
         InputMode::Input => match app.input_purpose {
@@ -31,7 +68,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     };
 
     let mut spans: Vec<Span> = vec![
-        Span::styled(" [", Style::default().fg(theme.text_muted)),
+        Span::styled("[", Style::default().fg(theme.text_muted)),
         Span::styled(
             mode_str,
             Style::default()
@@ -41,15 +78,14 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         Span::styled("] ", Style::default().fg(theme.text_muted)),
     ];
 
-    // Show input buffer contents when in input mode
     if app.input_mode == InputMode::Input {
         spans.push(Span::styled(
             &app.input_buffer,
             Style::default().fg(theme.text_primary),
         ));
-        let cursor_char = if app.tick_count % 10 < 5 { "█" } else { " " };
+        let cursor = if app.tick_count % 10 < 5 { "█" } else { " " };
         spans.push(Span::styled(
-            cursor_char,
+            cursor,
             Style::default()
                 .fg(theme.warning)
                 .add_modifier(Modifier::BOLD),
@@ -60,7 +96,6 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         ));
     }
 
-    // Show error or status message (error takes precedence)
     if let Some(ref err) = app.tab().error_message {
         spans.push(Span::styled(
             err,
@@ -72,8 +107,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         spans.push(Span::styled(msg, Style::default().fg(theme.success)));
     }
 
-    let line = Line::from(spans);
-    let paragraph = Paragraph::new(line).style(Style::default().bg(theme.border_inactive));
-
-    frame.render_widget(paragraph, area);
+    let paragraph =
+        Paragraph::new(Line::from(spans)).style(Style::default().bg(theme.border_inactive));
+    frame.render_widget(paragraph, right);
 }

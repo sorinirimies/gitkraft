@@ -85,12 +85,23 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .style(theme::icon_button)
         .on_press(Message::ToggleSidebar);
 
-    // ── Loading indicator ─────────────────────────────────────────────────
+    // ── Loading indicator ─────────────────────────────────────────────
+    // Use FluxFrames::CORNERS from tui-spinner so both GUI and TUI share
+    // the same symbol set — no duplication.
+    let spinner_frame: String = {
+        let frames = tui_spinner::FluxFrames::CORNERS; // &'static [char]
+        let ch = frames[state.animation_tick as usize % frames.len()];
+        ch.to_string()
+    };
+
     let loading_indicator: Element<'_, Message> = if tab.is_loading {
         row![
-            icon!(icons::ARROW_REPEAT, 12, c.yellow),
+            text(spinner_frame)
+                .size(15)
+                .color(c.accent)
+                .font(iced::Font::MONOSPACE),
             iced::widget::Space::new().width(4),
-            text("Loading…").size(12).color(c.yellow)
+            text("Loading…").size(12).color(c.yellow),
         ]
         .align_y(iced::Alignment::Center)
         .into()

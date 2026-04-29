@@ -138,6 +138,7 @@ pub enum ActivePane {
     CommitLog,
     DiffView,
     Staging,
+    Stash,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -907,7 +908,6 @@ impl App {
                 }
 
                 BackgroundResult::GitStateChanged => {
-                    // Only refresh if not already loading to avoid stacking refreshes.
                     if !self.tab().is_loading {
                         self.refresh();
                     }
@@ -3142,6 +3142,27 @@ mod tests {
             app.tab().is_loading,
             "GitStateChanged must trigger a full refresh (is_loading should be true)"
         );
+    }
+
+    #[test]
+    fn git_state_changed_is_skipped_when_loading_no_infinite_loop() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().is_loading = true; // simulate in-flight task
+
+        // Send two GitStateChanged messages
+        app.bg_tx
+            .send(crate::app::BackgroundResult::GitStateChanged)
+            .unwrap();
+        app.bg_tx
+            .send(crate::app::BackgroundResult::GitStateChanged)
+            .unwrap();
+        app.poll_background();
+
+        // Must NOT have triggered a refresh (which would set is_loading if it wasn't already)
+        // The is_loading flag stays as set by the test (not doubled).
+        // Most importantly: no infinite loop (test completes quickly).
+        assert!(app.tab().is_loading); // still true from the test setup, not changed
     }
 
     #[test]

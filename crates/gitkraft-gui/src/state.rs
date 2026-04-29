@@ -282,11 +282,18 @@ impl RepoTab {
     }
 
     /// Apply a full repo payload to this tab, resetting transient UI state.
+    ///
+    /// The currently selected commit (if any) is **re-pinned** by OID after the
+    /// new commit list arrives, so background auto-refreshes (git-watcher or
+    /// staging changes) never clear the user's selection.
     pub fn apply_payload(
         &mut self,
         payload: crate::message::RepoPayload,
         path: std::path::PathBuf,
     ) {
+        // ── Save selection so we can restore it after the data refresh ────
+        let prev_oid = self.selected_commit_oid.clone();
+
         self.current_branch = payload.info.head_branch.clone();
         self.repo_path = Some(path);
         self.repo_info = Some(payload.info);
@@ -299,19 +306,16 @@ impl RepoTab {
         self.remotes = payload.remotes;
 
         // Reset transient UI state.
+        // NOTE: selected_commit / commit_files / selected_diff are restored
+        // below so they survive background auto-refreshes.
         self.selected_commit = None;
         self.anchor_commit_index = None;
         self.selected_commits.clear();
-        self.selected_diff = None;
-        self.commit_files.clear();
         self.selected_commit_oid = None;
-        self.selected_file_index = None;
-        self.is_loading_file_diff = false;
         self.commit_message.clear();
         self.error_message = None;
         self.status_message = Some("Repository loaded.".into());
         self.commit_scroll_offset = 0.0;
-        self.diff_scroll_offset = 0.0;
         self.has_more_commits = true;
         self.is_loading_more_commits = false;
         self.selected_unstaged.clear();
@@ -320,6 +324,35 @@ impl RepoTab {
         self.selected_commit_file_indices.clear();
         self.multi_file_diffs.clear();
         self.commit_range_diffs.clear();
+
+        // ── Restore the previously selected commit by OID ─────────────────
+        // If the commit still exists in the refreshed list, re-select it so
+        // the diff panel, file list, and selection highlight are all
+        // preserved.  This means auto-refreshes (every 5 s fallback, git
+        // watcher) never interrupt the user's view.
+        if let Some(oid) = prev_oid {
+            if let Some(new_idx) = self.commits.iter().position(|c| c.oid == oid) {
+                self.selected_commit = Some(new_idx);
+                self.selected_commit_oid = Some(oid);
+                // commit_files, selected_diff, selected_file_index,
+                // is_loading_file_diff, diff_scroll_offset are intentionally
+                // left unchanged — the commit content hasn't changed.
+            } else {
+                // Commit was rebased / force-pushed away — clear everything.
+                self.selected_diff = None;
+                self.commit_files.clear();
+                self.selected_file_index = None;
+                self.is_loading_file_diff = false;
+                self.diff_scroll_offset = 0.0;
+            }
+        } else {
+            // No previous selection — safe to clear diff state.
+            self.selected_diff = None;
+            self.commit_files.clear();
+            self.selected_file_index = None;
+            self.is_loading_file_diff = false;
+            self.diff_scroll_offset = 0.0;
+        }
     }
 }
 
@@ -404,6 +437,10 @@ pub struct GitKraft {
 
     /// Current keyboard modifier state (updated via subscription).
     pub keyboard_modifiers: iced::keyboard::Modifiers,
+
+    /// Monotonically-increasing counter incremented on every `AnimationTick`.
+    /// Drives the loading-spinner frame selection in all UI widgets.
+    pub animation_tick: u64,
 
     // ── Window geometry ───────────────────────────────────────────────────
     /// Last known window width (updated on WindowResized).
@@ -492,6 +529,7 @@ impl GitKraft {
             search_diff_oid: None,
 
             keyboard_modifiers: iced::keyboard::Modifiers::default(),
+            animation_tick: 0,
 
             window_width: settings
                 .layout

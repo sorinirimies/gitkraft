@@ -201,6 +201,9 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                             tab.branch_list_state.select(Some(new));
                         }
                     }
+                    ActivePane::Stash => {
+                        features::stash::events::handle_key(app, key);
+                    }
                     ActivePane::CommitLog => {
                         if key.modifiers.contains(KeyModifiers::SHIFT) {
                             features::commits::events::select_commit_up(app);
@@ -243,6 +246,9 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                             let new = (i + 1) % len;
                             tab.branch_list_state.select(Some(new));
                         }
+                    }
+                    ActivePane::Stash => {
+                        features::stash::events::handle_key(app, key);
                     }
                     ActivePane::CommitLog => {
                         if key.modifiers.contains(KeyModifiers::SHIFT) {
@@ -295,6 +301,9 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                         }
                         ActivePane::Staging => {
                             features::staging::events::handle_key(app, key);
+                        }
+                        ActivePane::Stash => {
+                            features::stash::events::handle_key(app, key);
                         }
                     }
                 }
@@ -398,7 +407,7 @@ fn submit_input(app: &mut App) {
     }
 }
 
-/// Cycle the active pane forward: Branches -> CommitLog -> DiffView -> Staging -> Branches
+/// Cycle the active pane forward: Branches -> Stash -> CommitLog -> DiffView -> Staging -> Branches
 fn cycle_pane_forward(app: &mut App) {
     app.tab_mut().confirm_discard = false;
     if app.active_pane == ActivePane::DiffView {
@@ -406,14 +415,15 @@ fn cycle_pane_forward(app: &mut App) {
         app.tab_mut().selected_file_indices.clear();
     }
     app.active_pane = match app.active_pane {
-        ActivePane::Branches => ActivePane::CommitLog,
+        ActivePane::Branches => ActivePane::Stash,
+        ActivePane::Stash => ActivePane::CommitLog,
         ActivePane::CommitLog => ActivePane::DiffView,
         ActivePane::DiffView => ActivePane::Staging,
         ActivePane::Staging => ActivePane::Branches,
     };
 }
 
-/// Cycle the active pane backward: Branches -> Staging -> DiffView -> CommitLog -> Branches
+/// Cycle the active pane backward: Branches -> Staging -> DiffView -> CommitLog -> Stash -> Branches
 fn cycle_pane_backward(app: &mut App) {
     app.tab_mut().confirm_discard = false;
     if app.active_pane == ActivePane::DiffView {
@@ -422,7 +432,8 @@ fn cycle_pane_backward(app: &mut App) {
     }
     app.active_pane = match app.active_pane {
         ActivePane::Branches => ActivePane::Staging,
-        ActivePane::CommitLog => ActivePane::Branches,
+        ActivePane::Stash => ActivePane::Branches,
+        ActivePane::CommitLog => ActivePane::Stash,
         ActivePane::DiffView => ActivePane::CommitLog,
         ActivePane::Staging => ActivePane::DiffView,
     };
@@ -451,7 +462,7 @@ mod tests {
         app.screen = AppScreen::Main;
         assert_eq!(app.active_pane, ActivePane::Branches);
         handle_key(&mut app, key(KeyCode::Tab));
-        assert_eq!(app.active_pane, ActivePane::CommitLog);
+        assert_eq!(app.active_pane, ActivePane::Stash);
     }
 
     #[test]
@@ -538,7 +549,7 @@ mod tests {
         app.screen = AppScreen::Main;
         assert_eq!(app.active_pane, ActivePane::Branches);
         handle_key(&mut app, key(KeyCode::Right));
-        assert_eq!(app.active_pane, ActivePane::CommitLog);
+        assert_eq!(app.active_pane, ActivePane::Stash);
     }
 
     #[test]
@@ -846,6 +857,26 @@ mod tests {
     }
 
     // ── Settings shortcut ─────────────────────────────────────────────────
+
+    #[test]
+    fn tab_cycles_through_stash_pane() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        assert_eq!(app.active_pane, ActivePane::Branches);
+        handle_key(&mut app, key(KeyCode::Tab)); // Branches → Stash
+        assert_eq!(app.active_pane, ActivePane::Stash);
+        handle_key(&mut app, key(KeyCode::Tab)); // Stash → CommitLog
+        assert_eq!(app.active_pane, ActivePane::CommitLog);
+    }
+
+    #[test]
+    fn tab_backward_reaches_stash() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::CommitLog;
+        handle_key(&mut app, key(KeyCode::BackTab)); // CommitLog → Stash
+        assert_eq!(app.active_pane, ActivePane::Stash);
+    }
 
     #[test]
     fn comma_on_main_screen_queues_settings_open() {
