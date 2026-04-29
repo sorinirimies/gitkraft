@@ -52,7 +52,19 @@ where
         .ok();
 
         if let Some(ref mut w) = watcher {
-            let _ = w.watch(&git_dir, RecursiveMode::Recursive);
+            // Watch top-level .git files NON-recursively: HEAD, index,
+            // packed-refs, MERGE_HEAD, COMMIT_EDITMSG, etc.
+            // Intentionally excludes objects/, pack/, and logs/ which git2
+            // writes to when READING commits — watching those directories
+            // causes a read→write→notify→refresh→read loop.
+            let _ = w.watch(&git_dir, RecursiveMode::NonRecursive);
+
+            // Watch refs/ recursively to catch branch/tag/stash changes
+            // (.git/refs/heads/, .git/refs/tags/, .git/refs/stash, …).
+            let refs_dir = git_dir.join("refs");
+            if refs_dir.exists() {
+                let _ = w.watch(&refs_dir, RecursiveMode::Recursive);
+            }
         }
 
         loop {

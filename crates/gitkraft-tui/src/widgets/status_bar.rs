@@ -53,32 +53,27 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     // else: blank — no spinner rendered
 
     // ── Mode indicator + message ──────────────────────────────────────────
-    let mode_str = match app.input_mode {
-        InputMode::Normal => "NORMAL",
-        InputMode::Input => match app.input_purpose {
-            InputPurpose::CommitMessage => "INPUT: Commit",
-            InputPurpose::BranchName => "INPUT: Branch",
-            InputPurpose::RepoPath => "INPUT: Path",
-            InputPurpose::SearchQuery => "INPUT: Search",
-            InputPurpose::StashMessage => "INPUT: Stash Msg",
-            InputPurpose::CommitActionInput1 => "INPUT: Action",
-            InputPurpose::CommitActionInput2 => "INPUT: Action (2)",
-            InputPurpose::None => "INPUT",
-        },
-    };
+    // Only show the mode bracket when actively typing — NORMAL is the default
+    // state and adds visual noise without communicating anything useful.
+    let mut spans: Vec<Span> = Vec::new();
 
-    let mut spans: Vec<Span> = vec![
-        Span::styled("[", Style::default().fg(theme.text_muted)),
-        Span::styled(
-            mode_str,
+    if app.input_mode == InputMode::Input {
+        let input_label = match app.input_purpose {
+            InputPurpose::CommitMessage => "Commit message",
+            InputPurpose::BranchName => "New branch name",
+            InputPurpose::RepoPath => "Repository path",
+            InputPurpose::SearchQuery => "Search commits",
+            InputPurpose::StashMessage => "Stash message",
+            InputPurpose::CommitActionInput1 => "Input",
+            InputPurpose::CommitActionInput2 => "Input (2)",
+            InputPurpose::None => "Input",
+        };
+        spans.push(Span::styled(
+            format!("{input_label}: "),
             Style::default()
                 .fg(theme.warning)
                 .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("] ", Style::default().fg(theme.text_muted)),
-    ];
-
-    if app.input_mode == InputMode::Input {
+        ));
         spans.push(Span::styled(
             &app.input_buffer,
             Style::default().fg(theme.text_primary),
@@ -91,7 +86,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ));
         spans.push(Span::styled(
-            "  (Enter: submit │ Esc: cancel)",
+            "  (Enter: confirm │ Esc: cancel)",
             Style::default().fg(theme.text_muted),
         ));
     }

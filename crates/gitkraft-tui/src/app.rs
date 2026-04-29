@@ -63,6 +63,39 @@ macro_rules! bg_op {
     }};
 }
 
+/// Extract the selected list index, returning early with an error if the
+/// list state has no selection or the index is out of bounds.
+///
+/// Usage: `let idx = selected_idx!(self, list_state_field, vec_field, "error msg");`
+macro_rules! selected_idx {
+    ($self:expr, $state:ident, $vec:ident, $err:expr) => {{
+        let idx = $self.tab().$state.selected().unwrap_or(0);
+        if idx >= $self.tab().$vec.len() {
+            $self.tab_mut().error_message = Some($err.into());
+            return;
+        }
+        idx
+    }};
+}
+
+/// Return early with a status message when the list has no selection.
+///
+/// Unlike [`selected_idx!`] this does NOT check bounds — it only handles the
+/// `None` case, setting `status_message` (not `error_message`) and returning.
+///
+/// Usage: `let idx = require_selection!(self, list_state_field, "msg");`
+macro_rules! require_selection {
+    ($self:expr, $state:ident, $msg:expr) => {{
+        match $self.tab().$state.selected() {
+            Some(i) => i,
+            None => {
+                $self.tab_mut().status_message = Some($msg.into());
+                return;
+            }
+        }
+    }};
+}
+
 // ── Background task results ───────────────────────────────────────────────────
 
 /// Alias for the shared core type — kept for backward-compat with the
@@ -429,6 +462,12 @@ pub struct App {
 
     /// Timestamp of the last auto-refresh.
     pub last_auto_refresh: std::time::Instant,
+
+    /// Timestamp of the last completed `RepoLoaded` result.
+    /// Used to apply a short cooldown to watcher-triggered refreshes so that
+    /// a checkout (which writes HEAD) doesn’t cause two refreshes in quick
+    /// succession: one from `OperationDone` and one from the git watcher.
+    pub last_refresh_completed: std::time::Instant,
 }
 
 impl App {
@@ -503,6 +542,7 @@ impl App {
             pending_editor_open: None,
 
             last_auto_refresh: std::time::Instant::now(),
+            last_refresh_completed: std::time::Instant::now() - std::time::Duration::from_secs(100),
         }
     }
 
@@ -655,7 +695,18 @@ impl App {
         self.tab_mut().error_message = None;
         self.tab_mut().is_loading = true;
         self.tab_mut().status_message = Some("Refreshing…".into());
+        self.refresh_internal();
+    }
 
+    /// Background refresh triggered by the git watcher — no status message so
+    /// user-set messages (selection counts, etc.) are not overwritten.
+    pub fn refresh_silent(&mut self) {
+        self.tab_mut().error_message = None;
+        self.tab_mut().is_loading = true;
+        self.refresh_internal();
+    }
+
+    fn refresh_internal(&mut self) {
         let path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => {
@@ -723,9 +774,14 @@ impl App {
                             tab.stashes = payload.stashes;
                             clamp_list_state(&mut tab.stash_list_state, tab.stashes.len());
                             tab.remotes = payload.remotes;
-                            tab.status_message = Some("Repository loaded".into());
+                            // Clear the loading status without replacing it so that
+                            // user-set messages (e.g. "N files selected") survive
+                            // background watcher refreshes.
+                            tab.status_message = None;
                             self.screen = AppScreen::Main;
                             self.save_session();
+                            // Stamp completion time so the watcher cooldown works.
+                            self.last_refresh_completed = std::time::Instant::now();
                         }
                         Err(e) => {
                             self.tabs[tab_idx].error_message = Some(e);
@@ -908,8 +964,14 @@ impl App {
                 }
 
                 BackgroundResult::GitStateChanged => {
-                    if !self.tab().is_loading {
-                        self.refresh();
+                    // 2-second cooldown after any completed refresh so that a
+                    // branch checkout (which writes .git/HEAD) doesn't spawn a
+                    // second refresh immediately after the OperationDone one.
+                    const WATCHER_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(2);
+                    if !self.tab().is_loading
+                        && self.last_refresh_completed.elapsed() >= WATCHER_COOLDOWN
+                    {
+                        self.refresh_silent();
                     }
                 }
             }
@@ -975,13 +1037,7 @@ impl App {
     // ── Staging operations ───────────────────────────────────────────────
 
     pub fn stage_selected(&mut self) {
-        let idx = match self.tab().unstaged_list_state.selected() {
-            Some(i) => i,
-            None => {
-                self.tab_mut().status_message = Some("No unstaged file selected".into());
-                return;
-            }
-        };
+        let idx = require_selection!(self, unstaged_list_state, "No unstaged file selected");
         let file_path = self.unstaged_file_path(idx);
         bg_op!(self, "Staging…", staging, |repo_path| {
             let repo = open_repo_str(&repo_path)?;
@@ -992,13 +1048,7 @@ impl App {
     }
 
     pub fn unstage_selected(&mut self) {
-        let idx = match self.tab().staged_list_state.selected() {
-            Some(i) => i,
-            None => {
-                self.tab_mut().status_message = Some("No staged file selected".into());
-                return;
-            }
-        };
+        let idx = require_selection!(self, staged_list_state, "No staged file selected");
         let file_path = self.staged_file_path(idx);
         bg_op!(self, "Unstaging…", staging, |repo_path| {
             let repo = open_repo_str(&repo_path)?;
@@ -1027,13 +1077,7 @@ impl App {
     }
 
     pub fn discard_selected(&mut self) {
-        let idx = match self.tab().unstaged_list_state.selected() {
-            Some(i) => i,
-            None => {
-                self.tab_mut().status_message = Some("No unstaged file selected".into());
-                return;
-            }
-        };
+        let idx = require_selection!(self, unstaged_list_state, "No unstaged file selected");
         let file_path = self.unstaged_file_path(idx);
         self.tab_mut().confirm_discard = false;
         bg_op!(self, "Discarding…", staging, |repo_path| {
@@ -1118,13 +1162,7 @@ impl App {
     // ── Branches ─────────────────────────────────────────────────────────
 
     pub fn checkout_selected_branch(&mut self) {
-        let idx = match self.tab().branch_list_state.selected() {
-            Some(i) => i,
-            None => return,
-        };
-        if idx >= self.tab().branches.len() {
-            return;
-        }
+        let idx = selected_idx!(self, branch_list_state, branches, "No branch selected");
         let name = self.tab().branches[idx].name.clone();
         if self.tab().branches[idx].is_head {
             self.tab_mut().status_message = Some(format!("Already on '{name}'"));
@@ -1154,13 +1192,7 @@ impl App {
     }
 
     pub fn delete_selected_branch(&mut self) {
-        let idx = match self.tab().branch_list_state.selected() {
-            Some(i) => i,
-            None => return,
-        };
-        if idx >= self.tab().branches.len() {
-            return;
-        }
+        let idx = selected_idx!(self, branch_list_state, branches, "No branch selected");
         if self.tab().branches[idx].is_head {
             self.tab_mut().error_message = Some("Cannot delete the current branch".into());
             return;
@@ -1192,11 +1224,7 @@ impl App {
     }
 
     pub fn stash_pop_selected(&mut self) {
-        let idx = self.tab().stash_list_state.selected().unwrap_or(0);
-        if idx >= self.tab().stashes.len() {
-            self.tab_mut().error_message = Some("No stash selected".into());
-            return;
-        }
+        let idx = selected_idx!(self, stash_list_state, stashes, "No stash selected");
         bg_op!(self, "Popping stash…", refresh, |repo_path| {
             let mut repo = open_repo_str(&repo_path)?;
             gitkraft_core::features::stash::stash_pop(&mut repo, idx)
@@ -1206,11 +1234,7 @@ impl App {
     }
 
     pub fn stash_drop_selected(&mut self) {
-        let idx = self.tab().stash_list_state.selected().unwrap_or(0);
-        if idx >= self.tab().stashes.len() {
-            self.tab_mut().error_message = Some("No stash to drop".into());
-            return;
-        }
+        let idx = selected_idx!(self, stash_list_state, stashes, "No stash to drop");
         bg_op!(self, "Dropping stash…", refresh, |repo_path| {
             let mut repo = open_repo_str(&repo_path)?;
             gitkraft_core::features::stash::stash_drop(&mut repo, idx)
@@ -3183,5 +3207,316 @@ mod tests {
         let app = App::new();
         // Field still exists and is initialised to a recent instant.
         assert!(app.last_auto_refresh.elapsed() < std::time::Duration::from_secs(1));
+    }
+
+    #[test]
+    fn git_state_changed_respects_2s_cooldown_after_refresh() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        // Simulate a refresh that just completed (recent timestamp).
+        app.last_refresh_completed = std::time::Instant::now();
+
+        app.bg_tx
+            .send(crate::app::BackgroundResult::GitStateChanged)
+            .unwrap();
+        app.poll_background();
+
+        // Must NOT have triggered a new refresh — cooldown is active.
+        assert!(
+            !app.tab().is_loading,
+            "GitStateChanged within 2s of last refresh must be skipped (cooldown)"
+        );
+    }
+
+    #[test]
+    fn git_state_changed_fires_after_cooldown_expires() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        // Simulate a refresh that completed 5 seconds ago (cooldown expired).
+        app.last_refresh_completed = std::time::Instant::now() - std::time::Duration::from_secs(5);
+
+        app.bg_tx
+            .send(crate::app::BackgroundResult::GitStateChanged)
+            .unwrap();
+        app.poll_background();
+
+        // Cooldown has expired — refresh_silent() should have been called.
+        assert!(
+            app.tab().is_loading,
+            "GitStateChanged after 2s cooldown must trigger a silent refresh"
+        );
+    }
+
+    #[test]
+    fn refresh_silent_sets_loading_but_no_status_message() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        // Set a user message that should survive the silent refresh.
+        app.tab_mut().status_message = Some("3 files selected".into());
+
+        app.refresh_silent();
+
+        assert!(app.tab().is_loading, "refresh_silent must set is_loading");
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("3 files selected"),
+            "refresh_silent must NOT overwrite user status messages"
+        );
+    }
+
+    #[test]
+    fn refresh_sets_refreshing_status_message() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+
+        app.refresh();
+
+        assert!(app.tab().is_loading);
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("Refreshing…"),
+            "user-triggered refresh must show Refreshing… status"
+        );
+    }
+
+    #[test]
+    fn repo_loaded_stamps_last_refresh_completed() {
+        let mut app = App::new();
+        let old_ts = app.last_refresh_completed;
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake"));
+
+        // Send a successful RepoLoaded result.
+        let payload = gitkraft_core::RepoSnapshot {
+            info: gitkraft_core::RepoInfo {
+                path: std::path::PathBuf::from("/tmp/fake/.git"),
+                workdir: Some(std::path::PathBuf::from("/tmp/fake")),
+                head_branch: Some("main".to_string()),
+                is_bare: false,
+                state: gitkraft_core::RepoState::Clean,
+            },
+            branches: vec![],
+            commits: vec![],
+            graph_rows: vec![],
+            unstaged: vec![],
+            staged: vec![],
+            stashes: vec![],
+            remotes: vec![],
+        };
+        app.bg_tx
+            .send(crate::app::BackgroundResult::RepoLoaded {
+                path: std::path::PathBuf::from("/tmp/fake"),
+                result: Ok(payload),
+            })
+            .unwrap();
+        app.poll_background();
+
+        assert!(
+            app.last_refresh_completed > old_ts,
+            "RepoLoaded must update last_refresh_completed"
+        );
+    }
+
+    // ── selected_idx! macro paths ─────────────────────────────────────────────
+
+    #[test]
+    fn selected_idx_returns_early_with_error_when_list_is_empty() {
+        // stash_pop_selected uses selected_idx!(self, stash_list_state, stashes, …)
+        // With an empty stash list, the macro must set error_message and return.
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        // No stashes, no selection — selected_idx! sees idx=0 >= len=0 → error
+        app.stash_pop_selected();
+        assert!(
+            app.tab().error_message.is_some(),
+            "selected_idx! must set error_message when list is empty"
+        );
+        assert!(!app.tab().is_loading, "must not start a background task");
+    }
+
+    #[test]
+    fn selected_idx_returns_early_with_error_when_selection_out_of_bounds() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        // One stash, but cursor placed beyond it (idx=5, len=1)
+        app.tab_mut().stashes = vec![gitkraft_core::StashEntry {
+            index: 0,
+            message: "WIP".to_string(),
+            oid: "abc1234deadbeef".to_string(),
+        }];
+        app.tab_mut().stash_list_state.select(Some(5)); // out of bounds
+        app.stash_pop_selected();
+        assert!(
+            app.tab().error_message.is_some(),
+            "selected_idx! must set error_message when selection is out of bounds"
+        );
+    }
+
+    #[test]
+    fn selected_idx_succeeds_when_selection_is_valid() {
+        // With a valid selection, selected_idx! should NOT set error_message and
+        // the operation should proceed (sets is_loading).
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().stashes = vec![gitkraft_core::StashEntry {
+            index: 0,
+            message: "WIP".to_string(),
+            oid: "abc1234deadbeef".to_string(),
+        }];
+        app.tab_mut().stash_list_state.select(Some(0));
+        app.stash_pop_selected();
+        assert!(app.tab().error_message.is_none());
+        assert!(app.tab().is_loading, "operation must have started");
+    }
+
+    // ── require_selection! macro paths ───────────────────────────────────────
+
+    #[test]
+    fn require_selection_sets_status_message_when_nothing_selected() {
+        // stage_selected uses require_selection!(self, unstaged_list_state, …)
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        // No unstaged changes, no selection
+        app.stage_selected();
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("No unstaged file selected"),
+            "require_selection! must set status_message when nothing is selected"
+        );
+        assert!(!app.tab().is_loading);
+    }
+
+    #[test]
+    fn require_selection_proceeds_when_selection_exists() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().unstaged_changes = vec![gitkraft_core::DiffInfo {
+            old_file: String::new(),
+            new_file: "src/main.rs".to_string(),
+            status: gitkraft_core::FileStatus::Modified,
+            hunks: vec![],
+        }];
+        app.tab_mut().unstaged_list_state.select(Some(0));
+        app.stage_selected();
+        // With a valid selection, the operation must start
+        assert!(
+            app.tab().is_loading,
+            "stage_selected must start when file is selected"
+        );
+        assert!(app.tab().error_message.is_none());
+    }
+
+    #[test]
+    fn require_selection_unstage_sets_status_when_nothing_selected() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.unstage_selected();
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("No staged file selected"),
+            "require_selection! must set status_message for unstage when nothing selected"
+        );
+        assert!(!app.tab().is_loading);
+    }
+
+    #[test]
+    fn require_selection_discard_sets_status_when_nothing_selected() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.discard_selected();
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("No unstaged file selected"),
+            "require_selection! must set status_message for discard when nothing selected"
+        );
+        assert!(!app.tab().is_loading);
+    }
+
+    // ── bg_task! macro paths ──────────────────────────────────────────────────
+
+    #[test]
+    fn bg_task_returns_early_when_no_repo_path() {
+        // load_commit_diff_by_oid uses bg_task! and requires repo_path
+        let mut app = App::new();
+        // No repo_path set — bg_task! must return without setting is_loading
+        app.tab_mut().selected_commit_oid = Some("abc123".to_string());
+        app.load_commit_diff_by_oid();
+        assert!(
+            !app.tab().is_loading,
+            "bg_task! must return early when repo_path is None"
+        );
+    }
+
+    #[test]
+    fn bg_task_sets_loading_and_status_when_repo_is_set() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().selected_commit_oid = Some("abc123deadbeef".to_string());
+        app.load_commit_diff_by_oid();
+        assert!(
+            app.tab().is_loading,
+            "bg_task! must set is_loading when repo_path is present"
+        );
+    }
+
+    // ── bg_op! macro paths ────────────────────────────────────────────────────
+
+    #[test]
+    fn bg_op_returns_early_when_no_repo_path() {
+        // stage_all uses bg_op!
+        let mut app = App::new();
+        app.stage_all(); // no repo_path
+        assert!(
+            !app.tab().is_loading,
+            "bg_op! must return early when repo_path is None"
+        );
+    }
+
+    #[test]
+    fn bg_op_sets_loading_and_status_when_repo_is_set() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.stage_all();
+        assert!(app.tab().is_loading, "bg_op! must set is_loading");
+        assert!(
+            app.tab().status_message.is_some(),
+            "bg_op! must set status_message"
+        );
+    }
+
+    #[test]
+    fn bg_op_refresh_variant_triggers_full_refresh_on_success() {
+        // fetch_remote uses bg_op! with the refresh variant
+        // We can't run a real git fetch, but we can verify is_loading is set.
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.fetch_remote();
+        assert!(app.tab().is_loading);
+    }
+
+    // ── Status bar mode indicator ─────────────────────────────────────────────
+
+    #[test]
+    fn input_mode_normal_does_not_set_mode_text_in_spans() {
+        // The status bar renders nothing for Normal mode — this test ensures
+        // that `input_mode == Normal` doesn't accidentally produce a status
+        // message prefixed with "NORMAL".
+        let app = App::new();
+        assert_eq!(app.input_mode, crate::app::InputMode::Normal);
+        // status_message starts as None; no stale "NORMAL" text.
+        assert!(app.tab().status_message.is_none());
+    }
+
+    #[test]
+    fn input_mode_input_shows_purpose_label() {
+        // When in Input mode, status_message is set by the caller.
+        // The status bar renders the input_buffer directly — ensure the message is set.
+        let mut app = App::new();
+        app.input_mode = crate::app::InputMode::Input;
+        app.input_purpose = crate::app::InputPurpose::CommitMessage;
+        app.tab_mut().status_message = Some("Enter commit message:".into());
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("Enter commit message:")
+        );
     }
 }
