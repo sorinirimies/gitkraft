@@ -23,6 +23,14 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 /// Render the full Main screen layout with header, content columns, staging
 /// area, and status bar.
 fn render_main(app: &mut App, frame: &mut Frame) {
+    // Show the shimmering skeleton while the initial repo data is loading.
+    // Once commits arrive the real content takes over; background refreshes
+    // (watcher-triggered) use real content + the status-bar spinner instead.
+    let initial_load = app.tab().is_loading && app.tab().commits.is_empty();
+    if initial_load {
+        features::skeleton::render(app, frame);
+        return;
+    }
     // -- Outer vertical split --
     //  [0] Header bar          — 3 rows
     //  [1] Main content area   — flexible

@@ -12,6 +12,12 @@ use super::commands;
 pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
     match message {
         Message::OpenRepo => {
+            // If the active tab already has a repo open, create a new tab
+            // so the user doesn't lose their current work.
+            if state.active_tab().has_repo() {
+                state.tabs.push(crate::state::RepoTab::new_empty());
+                state.active_tab = state.tabs.len() - 1;
+            }
             let tab = state.active_tab_mut();
             tab.is_loading = true;
             tab.status_message = Some("Opening folder picker…".into());
@@ -27,13 +33,48 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
 
         Message::RepoSelected(maybe_path) => {
             if let Some(path) = maybe_path {
+                // If this repo is already open in another tab, switch to it
+                // instead of opening a duplicate.
+                if let Some(existing_idx) = state.tabs.iter().position(|t| {
+                    t.repo_path.as_deref() == Some(path.as_path()) && t.repo_info.is_some()
+                }) {
+                    // Remove the newly created empty tab if it has no repo
+                    if !state.active_tab().has_repo()
+                        && state.active_tab != existing_idx
+                        && state.tabs.len() > 1
+                    {
+                        state.tabs.remove(state.active_tab);
+                        // Adjust existing_idx if it shifted
+                        let adjusted = if existing_idx > state.active_tab {
+                            existing_idx - 1
+                        } else {
+                            existing_idx
+                        };
+                        state.active_tab = adjusted;
+                    } else {
+                        state.active_tab = existing_idx;
+                    }
+                    let tab = state.active_tab_mut();
+                    tab.is_loading = false;
+                    tab.status_message = None;
+                    return Task::none();
+                }
                 let tab = state.active_tab_mut();
                 tab.status_message = Some(format!("Opening {}…", path.display()));
                 commands::load_repo(path)
             } else {
-                let tab = state.active_tab_mut();
-                tab.is_loading = false;
-                tab.status_message = None;
+                // User cancelled the folder picker — clean up the empty tab
+                // if we created one for this operation.
+                if !state.active_tab().has_repo() && state.tabs.len() > 1 {
+                    state.tabs.remove(state.active_tab);
+                    if state.active_tab >= state.tabs.len() {
+                        state.active_tab = state.tabs.len() - 1;
+                    }
+                } else {
+                    let tab = state.active_tab_mut();
+                    tab.is_loading = false;
+                    tab.status_message = None;
+                }
                 Task::none()
             }
         }
@@ -60,6 +101,18 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         Message::RepoRefreshed(result) => handle_repo_loaded(state, result),
 
         Message::OpenRecentRepo(path) => {
+            // If this repo is already open in another tab, switch to it.
+            if let Some(existing_idx) = state.tabs.iter().position(|t| {
+                t.repo_path.as_deref() == Some(path.as_path()) && t.repo_info.is_some()
+            }) {
+                state.active_tab = existing_idx;
+                return Task::none();
+            }
+            // If the active tab already has a repo open, create a new tab.
+            if state.active_tab().has_repo() {
+                state.tabs.push(crate::state::RepoTab::new_empty());
+                state.active_tab = state.tabs.len() - 1;
+            }
             let tab = state.active_tab_mut();
             tab.is_loading = true;
             tab.status_message = Some(format!("Opening {}…", path.display()));

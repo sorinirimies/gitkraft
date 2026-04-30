@@ -5,6 +5,7 @@ pub mod editor;
 pub mod options;
 pub mod remotes;
 pub mod repo;
+pub mod skeleton;
 pub mod staging;
 pub mod stash;
 pub mod theme;

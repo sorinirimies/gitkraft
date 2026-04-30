@@ -45,6 +45,7 @@ crossterm            = "0.29"
 tui-file-explorer    = "1.0.6"
 tui-checkbox         = "0.4.4"
 tui-spinner          = "0.2.1"
+tui-skeleton         = "0.3.0"
 
 # Internal crates
 gitkraft-core = { path = "crates/gitkraft-core", version = "0.8.6" }

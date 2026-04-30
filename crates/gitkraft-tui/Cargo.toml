@@ -29,3 +29,4 @@ tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }
 notify             = { workspace = true }
 tui-spinner        = { workspace = true }
+tui-skeleton       = { workspace = true }

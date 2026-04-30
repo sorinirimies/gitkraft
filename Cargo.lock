@@ -1485,6 +1485,7 @@ dependencies = [
  "ratatui",
  "tracing",
  "tracing-subscriber",
+ "tui-skeleton",
  "tui-spinner",
 ]
 
@@ -4606,6 +4607,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
 dependencies = [
  "core_maths",
+]
+
+[[package]]
+name = "tui-skeleton"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d3eb5b0d4f9fc43565038283e53913bfd961a63f914d3352a71348c695e508e"
+dependencies = [
+ "ratatui-core",
+ "ratatui-widgets",
 ]
 
 [[package]]
