@@ -38,10 +38,11 @@ pub const THEME_NAMES: &[&str] = &[
     "Moonfly",
     "Nightfly",
     "Oxocarbon",
+    "Cyberpunk",
 ];
 
 /// Total number of themes.
-pub const THEME_COUNT: usize = 27;
+pub const THEME_COUNT: usize = 28;
 
 /// Get a theme by index (0-based). Returns `default()` for out-of-range.
 pub fn theme_by_index(index: usize) -> AppTheme {
@@ -73,6 +74,7 @@ pub fn theme_by_index(index: usize) -> AppTheme {
         24 => moonfly(),
         25 => nightfly(),
         26 => oxocarbon(),
+        27 => cyberpunk(),
         _ => default(),
     }
 }
@@ -977,7 +979,40 @@ pub fn oxocarbon() -> AppTheme {
     }
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
+/// Cyberpunk — inspired by Cyberpunk 2077's signature electric yellow
+/// accent with cyan neon highlights against a deep dark background.
+pub fn cyberpunk() -> AppTheme {
+    AppTheme {
+        is_dark: true,
+        background: Rgb::new(10, 10, 16),
+        surface: Rgb::new(20, 20, 30),
+        border: Rgb::new(45, 45, 55),
+        selection: Rgb::new(50, 48, 20),
+        text_primary: Rgb::new(230, 230, 220),
+        text_secondary: Rgb::new(0, 210, 235),
+        text_muted: Rgb::new(90, 90, 100),
+        accent: Rgb::new(252, 238, 10),
+        success: Rgb::new(0, 220, 180),
+        warning: Rgb::new(255, 150, 0),
+        error: Rgb::new(255, 50, 70),
+        diff_add: Rgb::new(0, 220, 180),
+        diff_del: Rgb::new(255, 50, 70),
+        diff_context: Rgb::new(90, 90, 100),
+        diff_hunk: Rgb::new(0, 210, 235),
+        graph_colors: [
+            Rgb::new(252, 238, 10),
+            Rgb::new(0, 210, 235),
+            Rgb::new(0, 220, 180),
+            Rgb::new(255, 150, 0),
+            Rgb::new(180, 60, 255),
+            Rgb::new(255, 80, 120),
+            Rgb::new(100, 255, 220),
+            Rgb::new(255, 200, 60),
+        ],
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

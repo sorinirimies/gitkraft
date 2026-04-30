@@ -629,14 +629,14 @@ impl App {
     // ── Theme helpers ────────────────────────────────────────────────────
 
     pub fn cycle_theme_next(&mut self) {
-        let count = 27; // number of themes
+        let count = gitkraft_core::THEME_COUNT;
         self.current_theme_index = (self.current_theme_index + 1) % count;
         self.theme_list_state.select(Some(self.current_theme_index));
         self.tab_mut().status_message = Some(format!("Theme: {}", self.current_theme_name()));
     }
 
     pub fn cycle_theme_prev(&mut self) {
-        let count = 27;
+        let count = gitkraft_core::THEME_COUNT;
         if self.current_theme_index == 0 {
             self.current_theme_index = count - 1;
         } else {
@@ -2238,7 +2238,7 @@ mod tests {
         app.cycle_theme_next();
         assert_eq!(app.current_theme_index, 1);
         // Cycle to end
-        for _ in 0..26 {
+        for _ in 0..(gitkraft_core::THEME_COUNT - 1) {
             app.cycle_theme_next();
         }
         assert_eq!(app.current_theme_index, 0); // wrapped
@@ -2249,7 +2249,7 @@ mod tests {
         let mut app = App::new();
         app.current_theme_index = 0;
         app.cycle_theme_prev();
-        assert_eq!(app.current_theme_index, 26); // wrapped to last
+        assert_eq!(app.current_theme_index, gitkraft_core::THEME_COUNT - 1); // wrapped to last
     }
 
     #[test]
