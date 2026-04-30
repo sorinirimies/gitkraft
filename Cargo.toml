@@ -44,7 +44,7 @@ ratatui              = "0.30"
 crossterm            = "0.29"
 tui-file-explorer    = "1.0.6"
 tui-checkbox         = "0.4.4"
-tui-spinner          = "0.2.1"
+tui-spinner          = "0.2.3"
 tui-skeleton         = "0.3.0"
 
 # Internal crates
