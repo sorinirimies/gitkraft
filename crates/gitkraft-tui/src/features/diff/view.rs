@@ -81,7 +81,8 @@ fn render_file_list(
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color));
+        .border_style(Style::default().fg(border_color))
+        .style(Style::default().bg(theme.bg));
 
     let items: Vec<ListItem> = tab
         .commit_files
@@ -172,7 +173,8 @@ fn render_commit_range_diff(app: &mut App, frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color));
+        .border_style(Style::default().fg(border_color))
+        .style(Style::default().bg(theme.bg));
 
     let diffs = app.tab().commit_range_diffs.clone();
     let mut lines: Vec<Line> = Vec::new();
@@ -262,7 +264,8 @@ pub fn render_file_history(app: &mut App, frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color));
+        .border_style(Style::default().fg(border_color))
+        .style(Style::default().bg(theme.bg));
 
     let cursor = app.tab().file_history_cursor;
     let commits = app.tab().file_history_commits.clone();
@@ -338,7 +341,8 @@ pub fn render_blame(app: &mut App, frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color));
+        .border_style(Style::default().fg(border_color))
+        .style(Style::default().bg(theme.bg));
 
     let lines_data = app.tab().blame_lines.clone();
 
@@ -422,7 +426,8 @@ fn render_diff_content(
         let block = Block::default()
             .title(title)
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(border_color));
+            .border_style(Style::default().fg(border_color))
+            .style(Style::default().bg(theme.bg));
 
         let mut lines: Vec<Line> = Vec::new();
         for idx in &sorted_indices {
@@ -499,7 +504,8 @@ fn render_diff_content(
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color));
+        .border_style(Style::default().fg(border_color))
+        .style(Style::default().bg(theme.bg));
 
     match &tab.selected_diff {
         None => {

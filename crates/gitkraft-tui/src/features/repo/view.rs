@@ -14,6 +14,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.border_active))
+        .style(Style::default().bg(theme.bg))
         .title(" GitKraft ")
         .title_alignment(Alignment::Center);
 
@@ -150,6 +151,7 @@ pub fn render_browser(app: &mut App, frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.border_active))
+        .style(Style::default().bg(theme.bg))
         .title(format!(" 📂 {} ", app.browser_dir.display()))
         .title_alignment(Alignment::Left);
 

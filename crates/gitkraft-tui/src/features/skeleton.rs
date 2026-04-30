@@ -65,7 +65,13 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         ])
         .split(main_cols[0]);
 
-    let inner = pane(frame, sidebar[0], " Branches ", theme.border_inactive);
+    let inner = pane(
+        frame,
+        sidebar[0],
+        " Branches ",
+        theme.border_inactive,
+        theme.bg,
+    );
     frame.render_widget(
         SkeletonList::new(elapsed_ms)
             .mode(AnimationMode::Sweep)
@@ -75,7 +81,13 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         inner,
     );
 
-    let inner = pane(frame, sidebar[1], " Stashes ", theme.border_inactive);
+    let inner = pane(
+        frame,
+        sidebar[1],
+        " Stashes ",
+        theme.border_inactive,
+        theme.bg,
+    );
     frame.render_widget(
         SkeletonList::new(elapsed_ms)
             .mode(AnimationMode::Sweep)
@@ -85,7 +97,13 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         inner,
     );
 
-    let inner = pane(frame, sidebar[2], " Remotes ", theme.border_inactive);
+    let inner = pane(
+        frame,
+        sidebar[2],
+        " Remotes ",
+        theme.border_inactive,
+        theme.bg,
+    );
     frame.render_widget(
         SkeletonList::new(elapsed_ms)
             .mode(AnimationMode::Sweep)
@@ -96,7 +114,13 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     );
 
     // Commit log — table with graph | OID | summary | author | time columns.
-    let inner = pane(frame, main_cols[1], " Commit Log ", theme.border_inactive);
+    let inner = pane(
+        frame,
+        main_cols[1],
+        " Commit Log ",
+        theme.border_inactive,
+        theme.bg,
+    );
     frame.render_widget(
         SkeletonTable::new(elapsed_ms)
             .mode(AnimationMode::Sweep)
@@ -115,7 +139,13 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     );
 
     // Diff pane — solid shimmer block.
-    let inner = pane(frame, main_cols[2], " Diff ", theme.border_inactive);
+    let inner = pane(
+        frame,
+        main_cols[2],
+        " Diff ",
+        theme.border_inactive,
+        theme.bg,
+    );
     frame.render_widget(
         SkeletonBlock::new(elapsed_ms)
             .mode(AnimationMode::Sweep)
@@ -130,7 +160,13 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
         .split(outer[2]);
 
-    let inner = pane(frame, staging_cols[0], " Unstaged ", theme.border_inactive);
+    let inner = pane(
+        frame,
+        staging_cols[0],
+        " Unstaged ",
+        theme.border_inactive,
+        theme.bg,
+    );
     frame.render_widget(
         SkeletonList::new(elapsed_ms)
             .mode(AnimationMode::Sweep)
@@ -140,7 +176,13 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         inner,
     );
 
-    let inner = pane(frame, staging_cols[1], " Staged ", theme.border_inactive);
+    let inner = pane(
+        frame,
+        staging_cols[1],
+        " Staged ",
+        theme.border_inactive,
+        theme.bg,
+    );
     frame.render_widget(
         SkeletonList::new(elapsed_ms)
             .mode(AnimationMode::Sweep)
@@ -155,11 +197,18 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 }
 
 /// Draw a titled bordered pane and return the inner [`Rect`] for the caller to fill.
-fn pane(frame: &mut Frame, area: Rect, title: &str, border_color: ratatui::style::Color) -> Rect {
+fn pane(
+    frame: &mut Frame,
+    area: Rect,
+    title: &str,
+    border_color: ratatui::style::Color,
+    bg_color: ratatui::style::Color,
+) -> Rect {
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color));
+        .border_style(Style::default().fg(border_color))
+        .style(Style::default().bg(bg_color));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     inner

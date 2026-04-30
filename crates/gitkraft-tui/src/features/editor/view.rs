@@ -12,7 +12,8 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .title(" Editor — Shift+E close ")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.border_active));
+        .border_style(Style::default().fg(theme.border_active))
+        .style(Style::default().bg(theme.bg));
 
     let items: Vec<ListItem> = std::iter::once(("none", gitkraft_core::Editor::None))
         .chain(

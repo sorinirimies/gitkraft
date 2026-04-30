@@ -48,7 +48,8 @@ fn render_unstaged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bo
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color));
+        .border_style(Style::default().fg(border_color))
+        .style(Style::default().bg(theme.bg));
 
     if app.tab().unstaged_changes.is_empty() {
         let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(
@@ -138,7 +139,8 @@ fn render_staged(app: &mut App, frame: &mut Frame, area: Rect, pane_active: bool
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color));
+        .border_style(Style::default().fg(border_color))
+        .style(Style::default().bg(theme.bg));
 
     if app.tab().staged_changes.is_empty() {
         let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(
@@ -226,7 +228,8 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
         let block = Block::default()
             .title(" Commit Message ")
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.warning));
+            .border_style(Style::default().fg(theme.warning))
+            .style(Style::default().bg(theme.bg));
 
         let cursor_char = if app.tick_count % 10 < 5 { "█" } else { " " };
 
@@ -265,6 +268,7 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
             ]))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(border_color))
+            .style(Style::default().bg(theme.bg))
             .padding(Padding::new(1, 1, 0, 0));
 
         let inner_area = outer_block.inner(area);
@@ -294,7 +298,8 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
             let block = Block::default()
                 .title(Span::styled(" Staging ", section_title))
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme.border_inactive));
+                .border_style(Style::default().fg(theme.border_inactive))
+                .style(Style::default().bg(theme.bg));
 
             let lines = vec![
                 Line::from(vec![
@@ -332,7 +337,8 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
             let block = Block::default()
                 .title(Span::styled(" Git ", section_title))
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme.border_inactive));
+                .border_style(Style::default().fg(theme.border_inactive))
+                .style(Style::default().bg(theme.bg));
 
             let lines = vec![
                 Line::from(vec![
@@ -370,7 +376,8 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
             let block = Block::default()
                 .title(Span::styled(" Branch Actions ", section_title))
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme.border_inactive));
+                .border_style(Style::default().fg(theme.border_inactive))
+                .style(Style::default().bg(theme.bg));
 
             let lines = vec![
                 Line::from(vec![
@@ -396,7 +403,8 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
             let block = Block::default()
                 .title(Span::styled(" Commit Actions ", section_title))
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme.border_inactive));
+                .border_style(Style::default().fg(theme.border_inactive))
+                .style(Style::default().bg(theme.bg));
 
             let lines = vec![
                 Line::from(vec![
@@ -422,6 +430,10 @@ fn render_commit_or_hints(app: &mut App, frame: &mut Frame, area: Rect, pane_act
                 Span::styled(" focus  ", desc_style),
                 Span::styled("Enter", key_style),
                 Span::styled(" diff  ", desc_style),
+                Span::styled("E", key_style),
+                Span::styled(" editor  ", value_style),
+                Span::styled("T", key_style),
+                Span::styled(" theme  ", value_style),
                 Span::styled("O", key_style),
                 Span::styled(" options", value_style),
             ])];

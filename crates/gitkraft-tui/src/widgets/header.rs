@@ -120,12 +120,19 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         ),
         Span::styled(" fetch ", Style::default().fg(theme.text_primary)),
         Span::styled(
-            "[T]",
+            "[t]",
             Style::default()
                 .fg(theme.warning)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(" theme ", Style::default().fg(theme.text_primary)),
+        Span::styled(
+            "[E]",
+            Style::default()
+                .fg(theme.warning)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" editor ", Style::default().fg(theme.text_primary)),
         Span::styled(
             "[O]",
             Style::default()

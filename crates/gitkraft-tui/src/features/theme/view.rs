@@ -76,7 +76,8 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .title(" Themes  ↑ prev  ↓/t next ")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.border_active));
+        .border_style(Style::default().fg(theme.border_active))
+        .style(Style::default().bg(theme.bg));
 
     let highlight_style = Style::default()
         .bg(theme.sel_bg)

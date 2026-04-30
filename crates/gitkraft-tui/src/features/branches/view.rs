@@ -21,7 +21,8 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .title(" Branches ")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color));
+        .border_style(Style::default().fg(border_color))
+        .style(Style::default().bg(theme.bg));
 
     if app.tab().branches.is_empty() {
         let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(

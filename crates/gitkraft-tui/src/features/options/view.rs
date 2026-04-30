@@ -35,6 +35,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         ]))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.border_active))
+        .style(Style::default().bg(theme.bg))
         .padding(Padding::new(1, 1, 0, 0));
 
     let inner_area = outer_block.inner(area);
@@ -52,7 +53,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         .constraints([
             Constraint::Length(1),  // close hint
             Constraint::Length(1),  // spacer
-            Constraint::Length(7),  // Settings section (one extra line for settings path)
+            Constraint::Length(9),  // Settings section
             Constraint::Length(1),  // spacer
             Constraint::Length(8),  // Navigation section
             Constraint::Length(1),  // spacer
@@ -75,9 +76,11 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             .title(Span::styled(" Settings ", section_title_style))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.border_inactive))
+            .style(Style::default().bg(theme.bg))
             .padding(Padding::new(1, 1, 0, 0));
 
         let theme_name = app.current_theme_name();
+        let editor_name = app.editor.to_string();
         let last_repo = app
             .tab()
             .repo_path
@@ -97,9 +100,19 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
 
         let lines = vec![
             Line::from(vec![
-                Span::styled(pad_right("Shift + T", 14), key_style),
-                Span::styled(pad_right("theme", 16), desc_style),
+                Span::styled(pad_right("t", 14), key_style),
+                Span::styled(pad_right("next theme", 16), desc_style),
                 Span::styled(theme_name, value_style),
+            ]),
+            Line::from(vec![
+                Span::styled(pad_right("Shift + T", 14), key_style),
+                Span::styled(pad_right("theme picker", 16), desc_style),
+                Span::styled("panel", value_style),
+            ]),
+            Line::from(vec![
+                Span::styled(pad_right("Shift + E", 14), key_style),
+                Span::styled(pad_right("editor", 16), desc_style),
+                Span::styled(editor_name, value_style),
             ]),
             Line::from(vec![
                 Span::styled(pad_right(",", 14), key_style),
@@ -128,6 +141,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             .title(Span::styled(" Navigation ", section_title_style))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.border_inactive))
+            .style(Style::default().bg(theme.bg))
             .padding(Padding::new(1, 1, 0, 0));
 
         let lines = vec![
@@ -167,6 +181,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             .title(Span::styled(" Staging ", section_title_style))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.border_inactive))
+            .style(Style::default().bg(theme.bg))
             .padding(Padding::new(1, 1, 0, 0));
 
         let lines = vec![
@@ -211,6 +226,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             .title(Span::styled(" Git ", section_title_style))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.border_inactive))
+            .style(Style::default().bg(theme.bg))
             .padding(Padding::new(1, 1, 0, 0));
 
         let lines = vec![
@@ -266,6 +282,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             .title(Span::styled(" Branch Actions ", section_title_style))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.border_inactive))
+            .style(Style::default().bg(theme.bg))
             .padding(Padding::new(1, 1, 0, 0));
 
         let lines = vec![
@@ -301,6 +318,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             .title(Span::styled(" Commit Actions ", section_title_style))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.border_inactive))
+            .style(Style::default().bg(theme.bg))
             .padding(Padding::new(1, 1, 0, 0));
 
         let lines = vec![

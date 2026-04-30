@@ -1,4 +1,6 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::style::Style;
+use ratatui::widgets::Block;
 use ratatui::Frame;
 
 use crate::app::{App, AppScreen};
@@ -7,6 +9,15 @@ use crate::widgets;
 
 /// Main render entry point — called once per frame from the event loop.
 pub fn render(app: &mut App, frame: &mut Frame) {
+    // Paint the entire terminal area with the theme's background colour.
+    // Without this, light themes appear broken because ratatui defaults
+    // unstyled cells to `Color::Reset` (the terminal's own background).
+    let bg = app.theme().bg;
+    frame.render_widget(
+        Block::default().style(Style::default().bg(bg)),
+        frame.area(),
+    );
+
     match app.screen {
         AppScreen::Welcome => {
             features::repo::view::render(&*app, frame, frame.area());

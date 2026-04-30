@@ -125,6 +125,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 KeyCode::Char('f') => app.fetch_remote(),
                 KeyCode::Char('p') => app.pull_rebase(),
                 KeyCode::Char('P') => app.push_branch(),
+                KeyCode::Char('t') => {
+                    app.cycle_theme_next();
+                    app.save_theme();
+                }
                 KeyCode::Char('T') => {
                     app.show_theme_panel = !app.show_theme_panel;
                     app.show_options_panel = false; // close options if open

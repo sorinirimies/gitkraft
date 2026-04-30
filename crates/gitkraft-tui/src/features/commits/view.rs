@@ -183,7 +183,8 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color));
+        .border_style(Style::default().fg(border_color))
+        .style(Style::default().bg(theme.bg));
 
     // Use search results if search is active, otherwise show the full commit list
     let commits_to_show: &Vec<gitkraft_core::CommitInfo> =
@@ -348,7 +349,8 @@ fn render_action_popup(app: &mut App, frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .title(format!(" Actions: {oid_short} "))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.border_active));
+        .border_style(Style::default().fg(theme.border_active))
+        .style(Style::default().bg(theme.bg));
 
     frame.render_widget(Clear, popup_rect);
     let list = List::new(items).block(block);
