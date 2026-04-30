@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.8.7 - 2026-04-30
+### ➕ Added
+- Add skeleton loading screen using tui-skeleton
+- Add theme background to all panes and update theme switching
+- Add Cyberpunk theme and update theme count references
+### 🐛 Bug Fixes
+- Fix tab targeting for repo refresh and deduplication
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.8.6...v0.8.7
 ## 0.8.6 - 2026-04-29
 ### ➕ Added
 - Add animated loading spinner to GUI and TUI using tui-spinner
@@ -9,6 +17,8 @@ All notable changes to this project will be documented in this file.
 - Improve git watcher efficiency and add stash list tests
 ### 📦 Other Changes
 - Release 0.8.5 with improved git watcher and UI features
+### 🔧 Chores
+- chore: bump version to 0.8.6
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.8.4...v0.8.6
 ## 0.8.4 - 2026-04-28
 ### ➕ Added
