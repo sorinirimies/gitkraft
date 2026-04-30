@@ -170,11 +170,15 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
 /// Shared handler for both `RepoOpened` and `RepoRefreshed` — they carry the
 /// same payload and should update the same state fields.
 ///
+/// When a refresh result arrives, the active tab may have changed since the
+/// refresh was initiated (e.g. the user opened a new tab). To prevent writing
+/// the payload into the wrong tab, we resolve the target tab by matching the
+/// repo path from the payload against all open tabs, falling back to the active
+/// tab only for brand-new opens (where no tab has that path yet).
+///
 /// Persistence (recording the repo open and refreshing the recent-repos list)
 /// is dispatched as an async [`Task`] so the settings file I/O never blocks the UI.
 fn handle_repo_loaded(state: &mut GitKraft, result: Result<RepoPayload, String>) -> Task<Message> {
-    state.active_tab_mut().is_loading = false;
-
     match result {
         Ok(payload) => {
             // Derive the workdir path (preferred) or fall back to the .git path.
@@ -184,7 +188,16 @@ fn handle_repo_loaded(state: &mut GitKraft, result: Result<RepoPayload, String>)
                 .clone()
                 .unwrap_or_else(|| payload.info.path.clone());
 
-            let tab = state.active_tab_mut();
+            // Find the tab that owns this repo path. If none match (brand-new
+            // open), fall back to the active tab.
+            let target_idx = state
+                .tabs
+                .iter()
+                .position(|t| t.repo_path.as_deref() == Some(path.as_path()))
+                .unwrap_or(state.active_tab);
+
+            let tab = &mut state.tabs[target_idx];
+            tab.is_loading = false;
             tab.apply_payload(payload, path.clone());
             tab.commit_display = compute_commit_display(&tab.commits);
 
@@ -195,13 +208,14 @@ fn handle_repo_loaded(state: &mut GitKraft, result: Result<RepoPayload, String>)
             Task::batch([
                 commands::record_repo_and_save_session_async(path, open_tabs, active),
                 iced::widget::operation::scroll_to(
-                    crate::features::commits::view::commit_log_scroll_id(active),
+                    crate::features::commits::view::commit_log_scroll_id(target_idx),
                     iced::widget::operation::AbsoluteOffset { x: 0.0, y: 0.0 },
                 ),
             ])
         }
         Err(e) => {
             let tab = state.active_tab_mut();
+            tab.is_loading = false;
             tab.error_message = Some(e);
             tab.status_message = None;
             Task::none()
