@@ -18,7 +18,7 @@ use crate::app::App;
 
 /// Render the full shimmering skeleton in place of the main view.
 ///
-/// Called from [`crate::layout::render_main`] when `is_loading && commits.is_empty()`.
+/// Called from `layout::render_main` when `is_loading && commits.is_empty()`.
 pub fn render(app: &mut App, frame: &mut Frame) {
     let theme = app.theme();
 
