@@ -5,6 +5,8 @@
 **A Git IDE written entirely in Rust — desktop GUI & terminal UI**
 
 [![Crates.io](https://img.shields.io/crates/v/gitkraft.svg)](https://crates.io/crates/gitkraft)
+[![Downloads](https://img.shields.io/crates/d/gitkraft)](https://crates.io/crates/gitkraft)
+[![Downloads](https://img.shields.io/crates/d/gitkraft-tui)](https://crates.io/crates/gitkraft-tui)
 [![docs.rs](https://docs.rs/gitkraft-core/badge.svg)](https://docs.rs/gitkraft-core)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -42,7 +44,7 @@ GitKraft ships two front-ends from a single Rust workspace:
 - **Context menus (GUI)** — right-click for checkout, rebase, merge, reset, revert, tag, copy SHA
 - **UI zoom (GUI)** — Ctrl+/- to scale 50%–200%, persisted
 - **Directory browser (TUI)** — press `o` to browse and open repos
-- **27 colour themes** — Dracula, Nord, Catppuccin, Tokyo Night, Kanagawa, and more
+- **28 colour themes** — Dracula, Nord, Catppuccin, Tokyo Night, Kanagawa, Cyberpunk, and more
 - **Virtual scrolling** — smooth performance with large histories
 - **Two-phase diff loading** — file list appears instantly, diffs load per-file
 - **Draggable pane dividers (GUI)** — layout saved automatically
@@ -118,9 +120,9 @@ cargo run --release -p gitkraft-tui -- /path/to/repo
 
 ## Themes
 
-27 built-in themes, persisted per-user and shared between GUI and TUI:
+28 built-in themes, persisted per-user and shared between GUI and TUI:
 
-> Default · Grape · Ocean · Sunset · Forest · Rose · Mono · Neon · Dracula · Nord · Solarized Dark/Light · Gruvbox Dark/Light · Catppuccin Latte/Frappé/Macchiato/Mocha · Tokyo Night/Storm/Light · Kanagawa Wave/Dragon/Lotus · Moonfly · Nightfly · Oxocarbon
+> Default · Grape · Ocean · Sunset · Forest · Rose · Mono · Neon · Dracula · Nord · Solarized Dark/Light · Gruvbox Dark/Light · Catppuccin Latte/Frappé/Macchiato/Mocha · Tokyo Night/Storm/Light · Kanagawa Wave/Dragon/Lotus · Moonfly · Nightfly · Oxocarbon · Cyberpunk
 
 ## Development
 
