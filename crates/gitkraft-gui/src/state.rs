@@ -294,6 +294,18 @@ impl RepoTab {
         // ── Save selection so we can restore it after the data refresh ────
         let prev_oid = self.selected_commit_oid.clone();
 
+        // Save multi-selection OIDs so we can re-map them after the commit
+        // list is replaced.  Without this, background auto-refreshes (git
+        // watcher, fallback poll) would silently clear a Shift+click range.
+        let prev_anchor_oid = self
+            .anchor_commit_index
+            .and_then(|i| self.commits.get(i).map(|c| c.oid.clone()));
+        let prev_selected_oids: Vec<String> = self
+            .selected_commits
+            .iter()
+            .filter_map(|&i| self.commits.get(i).map(|c| c.oid.clone()))
+            .collect();
+
         self.current_branch = payload.info.head_branch.clone();
         self.repo_path = Some(path);
         self.repo_info = Some(payload.info);
@@ -329,14 +341,14 @@ impl RepoTab {
         // If the commit still exists in the refreshed list, re-select it so
         // the diff panel, file list, and selection highlight are all
         // preserved.  This means auto-refreshes (every 5 s fallback, git
-        // watcher) never interrupt the user's view.
+        // watcher) never interrupt the user’s view.
         if let Some(oid) = prev_oid {
             if let Some(new_idx) = self.commits.iter().position(|c| c.oid == oid) {
                 self.selected_commit = Some(new_idx);
                 self.selected_commit_oid = Some(oid);
                 // commit_files, selected_diff, selected_file_index,
                 // is_loading_file_diff, diff_scroll_offset are intentionally
-                // left unchanged — the commit content hasn't changed.
+                // left unchanged — the commit content hasn’t changed.
             } else {
                 // Commit was rebased / force-pushed away — clear everything.
                 self.selected_diff = None;
@@ -352,6 +364,25 @@ impl RepoTab {
             self.selected_file_index = None;
             self.is_loading_file_diff = false;
             self.diff_scroll_offset = 0.0;
+        }
+
+        // ── Restore multi-selection by OID ─────────────────────────────
+        // Re-map the saved anchor and range selection from OIDs back to
+        // indices in the (possibly reordered) new commit list.
+        if let Some(anchor_oid) = prev_anchor_oid {
+            if let Some(new_anchor) = self.commits.iter().position(|c| c.oid == anchor_oid) {
+                self.anchor_commit_index = Some(new_anchor);
+            }
+        }
+        if !prev_selected_oids.is_empty() {
+            let restored: Vec<usize> = prev_selected_oids
+                .iter()
+                .filter_map(|oid| self.commits.iter().position(|c| &c.oid == oid))
+                .collect();
+            if !restored.is_empty() {
+                self.selected_commits = restored;
+                self.selected_commits.sort_unstable();
+            }
         }
     }
 }
@@ -2078,5 +2109,79 @@ mod tests {
             state.tabs[0].repo_path.as_deref(),
             Some(std::path::Path::new("/home/user/repo-a"))
         );
+    }
+
+    // ── Multi-selection preservation across refresh ───────────────────────
+
+    #[test]
+    fn apply_payload_preserves_multi_selection_by_oid() {
+        let mut tab = RepoTab::new_empty();
+        tab.commits = make_test_commits(5);
+        // Simulate user selecting commits 1..=3 with Shift+click.
+        tab.anchor_commit_index = Some(1);
+        tab.selected_commits = vec![1, 2, 3];
+        tab.selected_commit = Some(3);
+        tab.selected_commit_oid = Some(tab.commits[3].oid.clone());
+
+        // Build a payload with the same commits (simulating a background refresh).
+        let mut payload = fake_payload("/tmp/repo");
+        payload.commits = make_test_commits(5);
+
+        tab.apply_payload(payload, std::path::PathBuf::from("/tmp/repo"));
+
+        // The multi-selection must survive the refresh.
+        assert_eq!(tab.anchor_commit_index, Some(1));
+        assert_eq!(tab.selected_commits, vec![1, 2, 3]);
+        assert_eq!(tab.selected_commit, Some(3));
+    }
+
+    #[test]
+    fn apply_payload_preserves_anchor_even_without_range() {
+        let mut tab = RepoTab::new_empty();
+        tab.commits = make_test_commits(5);
+        tab.anchor_commit_index = Some(2);
+        tab.selected_commit = Some(2);
+        tab.selected_commit_oid = Some(tab.commits[2].oid.clone());
+        // No range selection — just a single click with anchor set.
+
+        let mut payload = fake_payload("/tmp/repo");
+        payload.commits = make_test_commits(5);
+
+        tab.apply_payload(payload, std::path::PathBuf::from("/tmp/repo"));
+
+        assert_eq!(tab.anchor_commit_index, Some(2));
+        assert_eq!(tab.selected_commit, Some(2));
+    }
+
+    #[test]
+    fn apply_payload_clears_selection_when_commits_disappear() {
+        let mut tab = RepoTab::new_empty();
+        tab.commits = make_test_commits(5);
+        tab.anchor_commit_index = Some(2);
+        tab.selected_commits = vec![2, 3, 4];
+        tab.selected_commit = Some(4);
+        tab.selected_commit_oid = Some(tab.commits[4].oid.clone());
+
+        // Payload has completely different commits (e.g. force-push).
+        let mut payload = fake_payload("/tmp/repo");
+        payload.commits = (0..3)
+            .map(|i| gitkraft_core::CommitInfo {
+                oid: format!("new_oid_{i}"),
+                short_oid: format!("new_{i}"),
+                summary: format!("new commit {i}"),
+                message: String::new(),
+                author_name: "Author".into(),
+                author_email: "a@b.c".into(),
+                time: Default::default(),
+                parent_ids: Vec::new(),
+            })
+            .collect();
+
+        tab.apply_payload(payload, std::path::PathBuf::from("/tmp/repo"));
+
+        // All old OIDs are gone — selection should be cleared.
+        assert!(tab.selected_commits.is_empty());
+        assert!(tab.anchor_commit_index.is_none());
+        assert!(tab.selected_commit.is_none());
     }
 }
