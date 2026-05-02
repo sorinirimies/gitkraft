@@ -1,5 +1,5 @@
 # VHS tape — GitKraft TUI · Theme Selector
-# Showcases cycling through the 27 built-in colour themes.
+# Showcases cycling through the 28 built-in colour themes.
 #
 # Run: vhs crates/gitkraft-tui/examples/vhs/tui-themes.tape
 
@@ -75,8 +75,12 @@ Type "j"
 Sleep 800ms
 Type "j"
 Sleep 800ms
+Type "j"
+Sleep 800ms
 
 # ── Scroll back up to the top ─────────────────────────────────────────────────
+Type "k"
+Sleep 300ms
 Type "k"
 Sleep 300ms
 Type "k"
