@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.9.0 - 2026-05-02
+### 🐛 Bug Fixes
+- fix: broken rustdoc link to private render_main function
+### 🔄 Updated
+- Update dependencies in Cargo.lock
+- Update dependencies in Cargo.lock
+### 🔧 Chores
+- chore(deps): nightly dependency upgrade 2026-05-01
+- chore(deps): nightly dependency upgrade 2026-05-02
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.8.8...v0.9.0
 ## 0.8.8 - 2026-04-30
 ### ➕ Added
 - Add skeleton loading screen using tui-skeleton
@@ -12,6 +22,7 @@ All notable changes to this project will be documented in this file.
 ### 🔧 Chores
 - chore(deps): nightly dependency upgrade 2026-04-30
 - chore: bump version to 0.8.7
+- chore: bump version to 0.8.8
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.8.6...v0.8.8
 ## 0.8.6 - 2026-04-29
 ### ➕ Added
