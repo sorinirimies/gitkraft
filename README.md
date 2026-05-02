@@ -5,8 +5,8 @@
 **A Git IDE written entirely in Rust — desktop GUI & terminal UI**
 
 [![Crates.io](https://img.shields.io/crates/v/gitkraft.svg)](https://crates.io/crates/gitkraft)
-[![Downloads](https://img.shields.io/crates/d/gitkraft)](https://crates.io/crates/gitkraft)
-[![Downloads](https://img.shields.io/crates/d/gitkraft-tui)](https://crates.io/crates/gitkraft-tui)
+[![GUI Downloads](https://img.shields.io/crates/d/gitkraft?label=GUI%20downloads)](https://crates.io/crates/gitkraft)
+[![TUI Downloads](https://img.shields.io/crates/d/gitkraft-tui?label=TUI%20downloads)](https://crates.io/crates/gitkraft-tui)
 [![docs.rs](https://docs.rs/gitkraft-core/badge.svg)](https://docs.rs/gitkraft-core)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
