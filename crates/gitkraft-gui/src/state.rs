@@ -306,6 +306,14 @@ impl RepoTab {
             .filter_map(|&i| self.commits.get(i).map(|c| c.oid.clone()))
             .collect();
 
+        // Save file-level selection state.  File indices reference into
+        // `commit_files` which is NOT replaced during a refresh (the commit
+        // content hasn't changed), so these can be restored as-is.
+        let prev_anchor_file = self.anchor_file_index;
+        let prev_file_indices = self.selected_commit_file_indices.clone();
+        let prev_multi_file_diffs = std::mem::take(&mut self.multi_file_diffs);
+        let prev_commit_range_diffs = std::mem::take(&mut self.commit_range_diffs);
+
         self.current_branch = payload.info.head_branch.clone();
         self.repo_path = Some(path);
         self.repo_info = Some(payload.info);
@@ -349,6 +357,13 @@ impl RepoTab {
                 // commit_files, selected_diff, selected_file_index,
                 // is_loading_file_diff, diff_scroll_offset are intentionally
                 // left unchanged — the commit content hasn’t changed.
+
+                // Restore file-level selection — the commit (and its file
+                // list) survived, so these indices are still valid.
+                self.anchor_file_index = prev_anchor_file;
+                self.selected_commit_file_indices = prev_file_indices;
+                self.multi_file_diffs = prev_multi_file_diffs;
+                self.commit_range_diffs = prev_commit_range_diffs;
             } else {
                 // Commit was rebased / force-pushed away — clear everything.
                 self.selected_diff = None;
@@ -2314,5 +2329,104 @@ mod tests {
         assert!(tab.selected_commits.is_empty());
         assert!(tab.anchor_commit_index.is_none());
         assert!(tab.selected_commit.is_none());
+    }
+
+    // ── File multi-selection preservation across refresh ─────────────────
+
+    #[test]
+    fn apply_payload_preserves_file_selection_when_commit_survives() {
+        let mut tab = RepoTab::new_empty();
+        tab.commits = make_test_commits(3);
+        tab.selected_commit = Some(1);
+        tab.selected_commit_oid = Some(tab.commits[1].oid.clone());
+        tab.commit_files = make_commit_files(&["a.rs", "b.rs", "c.rs"]);
+
+        // Simulate user Shift+clicking files 0..=2.
+        tab.anchor_file_index = Some(0);
+        tab.selected_commit_file_indices = vec![0, 1, 2];
+        tab.multi_file_diffs = vec![gitkraft_core::DiffInfo {
+            old_file: String::new(),
+            new_file: "a.rs".into(),
+            status: gitkraft_core::FileStatus::Modified,
+            hunks: vec![],
+        }];
+
+        // Background refresh with the same commits.
+        let mut payload = fake_payload("/tmp/repo");
+        payload.commits = make_test_commits(3);
+
+        tab.apply_payload(payload, std::path::PathBuf::from("/tmp/repo"));
+
+        // File selection must survive.
+        assert_eq!(tab.anchor_file_index, Some(0));
+        assert_eq!(tab.selected_commit_file_indices, vec![0, 1, 2]);
+        assert!(
+            !tab.multi_file_diffs.is_empty(),
+            "multi_file_diffs must survive when commit is preserved"
+        );
+    }
+
+    #[test]
+    fn apply_payload_clears_file_selection_when_commit_disappears() {
+        let mut tab = RepoTab::new_empty();
+        tab.commits = make_test_commits(3);
+        tab.selected_commit = Some(1);
+        tab.selected_commit_oid = Some(tab.commits[1].oid.clone());
+        tab.commit_files = make_commit_files(&["a.rs", "b.rs"]);
+        tab.anchor_file_index = Some(0);
+        tab.selected_commit_file_indices = vec![0, 1];
+        tab.multi_file_diffs = vec![gitkraft_core::DiffInfo {
+            old_file: String::new(),
+            new_file: "a.rs".into(),
+            status: gitkraft_core::FileStatus::Modified,
+            hunks: vec![],
+        }];
+
+        // Payload with completely different commits (force-push).
+        let mut payload = fake_payload("/tmp/repo");
+        payload.commits = (0..2)
+            .map(|i| gitkraft_core::CommitInfo {
+                oid: format!("new_{i}"),
+                short_oid: format!("n{i}"),
+                summary: String::new(),
+                message: String::new(),
+                author_name: String::new(),
+                author_email: String::new(),
+                time: Default::default(),
+                parent_ids: Vec::new(),
+            })
+            .collect();
+
+        tab.apply_payload(payload, std::path::PathBuf::from("/tmp/repo"));
+
+        // Commit is gone → file selection must be cleared.
+        assert!(tab.anchor_file_index.is_none());
+        assert!(tab.selected_commit_file_indices.is_empty());
+        assert!(tab.multi_file_diffs.is_empty());
+        assert!(tab.commit_files.is_empty());
+    }
+
+    #[test]
+    fn apply_payload_preserves_commit_range_diffs_when_commit_survives() {
+        let mut tab = RepoTab::new_empty();
+        tab.commits = make_test_commits(5);
+        tab.selected_commit = Some(2);
+        tab.selected_commit_oid = Some(tab.commits[2].oid.clone());
+        tab.commit_range_diffs = vec![gitkraft_core::DiffInfo {
+            old_file: String::new(),
+            new_file: "x.rs".into(),
+            status: gitkraft_core::FileStatus::Modified,
+            hunks: vec![],
+        }];
+
+        let mut payload = fake_payload("/tmp/repo");
+        payload.commits = make_test_commits(5);
+
+        tab.apply_payload(payload, std::path::PathBuf::from("/tmp/repo"));
+
+        assert!(
+            !tab.commit_range_diffs.is_empty(),
+            "commit_range_diffs must survive when commit is preserved"
+        );
     }
 }
