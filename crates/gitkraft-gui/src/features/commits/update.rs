@@ -131,6 +131,11 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                 Ok(diff) => {
                     tab.selected_diff = Some(diff);
                     tab.diff_scroll_offset = 0.0;
+                    // Clear multi-file state now that the single-file diff is
+                    // ready.  Doing this here (instead of on click) avoids a
+                    // widget-tree restructure that causes the file list to blink.
+                    tab.multi_file_diffs.clear();
+                    tab.commit_range_diffs.clear();
                 }
                 Err(e) => {
                     tab.selected_diff = None;

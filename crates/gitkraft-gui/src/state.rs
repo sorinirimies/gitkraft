@@ -1135,8 +1135,139 @@ mod tests {
         let _ = state.update(Message::SelectDiffByIndex(0));
 
         assert!(state.active_tab().selected_commit_file_indices.is_empty());
-        assert!(state.active_tab().multi_file_diffs.is_empty());
         assert_eq!(state.active_tab().selected_file_index, Some(0));
+    }
+
+    #[test]
+    fn regular_click_preserves_multi_file_diffs_until_load_completes() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        state.active_tab_mut().selected_commit_oid = Some("abc123".to_string());
+        state.active_tab_mut().commit_files = make_commit_files(&["a.rs", "b.rs", "c.rs"]);
+
+        // Pre-populate multi_file_diffs as if user had a multi-file selection
+        state.active_tab_mut().multi_file_diffs = vec![gitkraft_core::DiffInfo {
+            old_file: String::new(),
+            new_file: "a.rs".to_string(),
+            status: gitkraft_core::FileStatus::Modified,
+            hunks: vec![],
+        }];
+
+        // Regular click — should NOT clear multi_file_diffs immediately
+        // (deferred to SingleFileDiffLoaded to avoid visual blink).
+        let _ = state.update(Message::SelectDiffByIndex(1));
+
+        assert!(
+            !state.active_tab().multi_file_diffs.is_empty(),
+            "multi_file_diffs must NOT be cleared on click (deferred to diff load)"
+        );
+        assert_eq!(state.active_tab().selected_file_index, Some(1));
+        assert!(state.active_tab().is_loading_file_diff);
+    }
+
+    #[test]
+    fn regular_click_preserves_diff_scroll_until_load_completes() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        state.active_tab_mut().selected_commit_oid = Some("abc123".to_string());
+        state.active_tab_mut().commit_files = make_commit_files(&["a.rs", "b.rs"]);
+        state.active_tab_mut().diff_scroll_offset = 150.0;
+
+        // Regular click — should NOT reset diff_scroll_offset immediately.
+        let _ = state.update(Message::SelectDiffByIndex(1));
+
+        assert_eq!(
+            state.active_tab().diff_scroll_offset,
+            150.0,
+            "diff_scroll_offset must NOT be reset on click (deferred to diff load)"
+        );
+    }
+
+    #[test]
+    fn single_file_diff_loaded_clears_deferred_state() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        state.active_tab_mut().selected_commit_oid = Some("abc123".to_string());
+        state.active_tab_mut().commit_files = make_commit_files(&["a.rs", "b.rs"]);
+
+        // Pre-populate multi_file_diffs and commit_range_diffs
+        state.active_tab_mut().multi_file_diffs = vec![gitkraft_core::DiffInfo {
+            old_file: String::new(),
+            new_file: "a.rs".to_string(),
+            status: gitkraft_core::FileStatus::Modified,
+            hunks: vec![],
+        }];
+        state.active_tab_mut().commit_range_diffs = vec![gitkraft_core::DiffInfo {
+            old_file: String::new(),
+            new_file: "b.rs".to_string(),
+            status: gitkraft_core::FileStatus::Modified,
+            hunks: vec![],
+        }];
+        state.active_tab_mut().is_loading_file_diff = true;
+        state.active_tab_mut().diff_scroll_offset = 200.0;
+
+        // Simulate SingleFileDiffLoaded arriving with the new diff.
+        let new_diff = gitkraft_core::DiffInfo {
+            old_file: String::new(),
+            new_file: "b.rs".to_string(),
+            status: gitkraft_core::FileStatus::Modified,
+            hunks: vec![],
+        };
+        let _ = state.update(Message::SingleFileDiffLoaded(Ok(new_diff)));
+
+        // All deferred state should now be cleared.
+        assert!(
+            state.active_tab().multi_file_diffs.is_empty(),
+            "multi_file_diffs must be cleared when new diff arrives"
+        );
+        assert!(
+            state.active_tab().commit_range_diffs.is_empty(),
+            "commit_range_diffs must be cleared when new diff arrives"
+        );
+        assert!(
+            state.active_tab().selected_diff.is_some(),
+            "selected_diff must be set to the loaded diff"
+        );
+        assert!(
+            !state.active_tab().is_loading_file_diff,
+            "is_loading_file_diff must be cleared after load"
+        );
+        assert_eq!(
+            state.active_tab().diff_scroll_offset,
+            0.0,
+            "diff_scroll_offset must be reset when new diff arrives"
+        );
+    }
+
+    #[test]
+    fn regular_click_preserves_commit_range_diffs_until_load_completes() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        state.active_tab_mut().selected_commit_oid = Some("abc123".to_string());
+        state.active_tab_mut().commit_files = make_commit_files(&["a.rs", "b.rs"]);
+
+        // Pre-populate commit_range_diffs
+        state.active_tab_mut().commit_range_diffs = vec![gitkraft_core::DiffInfo {
+            old_file: String::new(),
+            new_file: "x.rs".to_string(),
+            status: gitkraft_core::FileStatus::Modified,
+            hunks: vec![],
+        }];
+
+        let _ = state.update(Message::SelectDiffByIndex(0));
+
+        assert!(
+            !state.active_tab().commit_range_diffs.is_empty(),
+            "commit_range_diffs must NOT be cleared on click (deferred to diff load)"
+        );
     }
 
     #[test]

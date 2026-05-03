@@ -83,8 +83,13 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                 let tab = state.active_tab_mut();
                 tab.anchor_file_index = Some(index); // fix the anchor for future Shift+Clicks
                 tab.selected_commit_file_indices.clear();
-                tab.multi_file_diffs.clear();
-                tab.commit_range_diffs.clear();
+                // NOTE: multi_file_diffs, commit_range_diffs, and
+                // diff_scroll_offset are intentionally NOT cleared here.
+                // Clearing them immediately would change the widget-tree
+                // structure before the replacement diff is ready, causing the
+                // file list panel to visually flash/blink.  Instead we defer
+                // those resets to SingleFileDiffLoaded where the new diff
+                // content is set atomically.
 
                 let file_entry = tab.commit_files.get(index).cloned();
                 if let (Some(entry), Some(path), Some(oid)) = (file_entry, repo_path, oid) {
@@ -92,7 +97,6 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                     let tab = state.active_tab_mut();
                     tab.selected_file_index = Some(index);
                     tab.is_loading_file_diff = true;
-                    tab.diff_scroll_offset = 0.0;
                     crate::features::commits::commands::load_single_file_diff(path, oid, file_path)
                 } else {
                     Task::none()
