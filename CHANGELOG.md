@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.9.2 - 2026-05-03
+### 📦 Other Changes
+- Defer clearing multi-file diff state until diff load completes
+- Preserve file selection and diffs across refresh if commit survives
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.9.1...v0.9.2
 ## 0.9.1 - 2026-05-02
 ### 📦 Other Changes
 - Preserve multi-selection across commit list refreshes
@@ -9,6 +14,8 @@ All notable changes to this project will be documented in this file.
 - Update badges and theme count in README
 - Update download badges in README with clearer labels
 - Update VHS demo GIFs and theme tape for new theme
+### 🔧 Chores
+- chore: bump version to 0.9.1
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.9.0...v0.9.1
 ## 0.9.0 - 2026-05-02
 ### 🐛 Bug Fixes
