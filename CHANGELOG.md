@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 ### 📦 Other Changes
 - Defer clearing multi-file diff state until diff load completes
 - Preserve file selection and diffs across refresh if commit survives
+### 🔧 Chores
+- chore: bump version to 0.9.2
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.9.1...v0.9.2
 ## 0.9.1 - 2026-05-02
 ### 📦 Other Changes
