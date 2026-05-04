@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.9.3 - 2026-05-03
+### 🔧 Chores
+- chore: bump version to 0.9.3
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.9.2...v0.9.3
 ## 0.9.2 - 2026-05-03
 ### 📦 Other Changes
 - Defer clearing multi-file diff state until diff load completes
