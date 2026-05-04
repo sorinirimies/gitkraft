@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.9.5 - 2026-05-04
+### ➕ Added
+- Add 15 new themes and update theme picker to 43 total
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.9.4...v0.9.5
+## 0.9.4 - 2026-05-04
+### 🔧 Chores
+- chore: bump version to 0.9.4
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.9.3...v0.9.4
 ## 0.9.3 - 2026-05-03
 ### 🔧 Chores
 - chore: bump version to 0.9.3
