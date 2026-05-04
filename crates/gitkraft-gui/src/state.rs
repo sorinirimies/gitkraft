@@ -881,18 +881,20 @@ mod tests {
         assert!(pal.background.r < 0.5, "Default theme bg should be dark");
         assert_eq!(iced_t.to_string(), "Default");
 
-        // Index 11 = Solarized Light — custom theme with light background
-        state.current_theme_index = 11;
+        // Solarized Light — custom theme with light background
+        let sol_idx = gitkraft_core::theme_index_by_name("Solarized Light");
+        state.current_theme_index = sol_idx;
         let iced_t = state.iced_theme();
         let pal = iced_t.palette();
         assert!(pal.background.r > 0.5, "Solarized Light bg should be light");
         assert_eq!(iced_t.to_string(), "Solarized Light");
 
-        // Index 12 = Gruvbox Dark — accent should come from core
-        state.current_theme_index = 12;
+        // Gruvbox Dark — accent should come from core
+        let gruvbox_idx = gitkraft_core::theme_index_by_name("Gruvbox Dark");
+        state.current_theme_index = gruvbox_idx;
         let iced_t = state.iced_theme();
         let pal = iced_t.palette();
-        let core = gitkraft_core::theme_by_index(12);
+        let core = gitkraft_core::theme_by_index(gruvbox_idx);
         let expected_accent = rgb_to_iced(core.accent);
         assert!(
             (pal.primary.r - expected_accent.r).abs() < 0.01
@@ -924,7 +926,7 @@ mod tests {
     #[test]
     fn current_theme_name_round_trips() {
         let mut state = GitKraft::new();
-        state.current_theme_index = 8;
+        state.current_theme_index = gitkraft_core::theme_index_by_name("Dracula");
         assert_eq!(state.current_theme_name(), "Dracula");
         state.current_theme_index = 0;
         assert_eq!(state.current_theme_name(), "Default");

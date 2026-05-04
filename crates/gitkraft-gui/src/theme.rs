@@ -608,7 +608,8 @@ mod tests {
 
     #[test]
     fn from_core_light_theme() {
-        let core = gitkraft_core::theme_by_index(11); // Solarized Light
+        let core =
+            gitkraft_core::theme_by_index(gitkraft_core::theme_index_by_name("Solarized Light")); // Solarized Light
         let colors = ThemeColors::from_core(&core);
         // Light theme should have a light background
         assert!(colors.bg.r > 0.5);

@@ -23,7 +23,7 @@ fn accent_color_for_index(index: usize) -> Color {
 /// Render the theme picker panel on the right side of the main content area.
 ///
 /// Shows a bordered block titled "Themes" with navigation hints at the top.
-/// Lists all theme names numbered 1–27. The current theme is highlighted with
+/// Lists all theme names numbered 1–43. The current theme is highlighted with
 /// a reversed style and a `← ` arrow prefix.
 pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let theme = app.theme();

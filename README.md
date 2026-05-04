@@ -44,7 +44,7 @@ GitKraft ships two front-ends from a single Rust workspace:
 - **Context menus (GUI)** — right-click for checkout, rebase, merge, reset, revert, tag, copy SHA
 - **UI zoom (GUI)** — Ctrl+/- to scale 50%–200%, persisted
 - **Directory browser (TUI)** — press `o` to browse and open repos
-- **28 colour themes** — Dracula, Nord, Catppuccin, Tokyo Night, Kanagawa, Cyberpunk, and more
+- **43 colour themes** — Dracula, Nord, Catppuccin, Tokyo Night, Kanagawa, Rose Pine, Cyberpunk, Synthwave, and more
 - **Virtual scrolling** — smooth performance with large histories
 - **Two-phase diff loading** — file list appears instantly, diffs load per-file
 - **Draggable pane dividers (GUI)** — layout saved automatically
@@ -120,9 +120,9 @@ cargo run --release -p gitkraft-tui -- /path/to/repo
 
 ## Themes
 
-28 built-in themes, persisted per-user and shared between GUI and TUI:
+43 built-in themes, persisted per-user and shared between GUI and TUI:
 
-> Default · Grape · Ocean · Sunset · Forest · Rose · Mono · Neon · Dracula · Nord · Solarized Dark/Light · Gruvbox Dark/Light · Catppuccin Latte/Frappé/Macchiato/Mocha · Tokyo Night/Storm/Light · Kanagawa Wave/Dragon/Lotus · Moonfly · Nightfly · Oxocarbon · Cyberpunk
+> Default · Default Light · Grape · Ocean · Sunset · Forest · Rose · Mono · Neon · Dracula · Nord · Solarized Dark/Light · Gruvbox Dark/Light · Catppuccin Latte/Frappé/Macchiato/Mocha · Tokyo Night/Storm/Light · Kanagawa Wave/Dragon/Lotus · Moonfly · Nightfly · Oxocarbon · Cyberpunk · Rose Pine/Moon/Dawn · Ayu Mirage · Everforest Dark · Atom One Dark/Light · Night Owl · Poimandres · Flexoki Dark/Light · Carbonfox · Andromeda · Synthwave
 
 ## Development
 

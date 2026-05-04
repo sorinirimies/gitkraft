@@ -1,5 +1,5 @@
 # VHS tape — GitKraft TUI · Theme Selector
-# Showcases cycling through the 28 built-in colour themes.
+# Showcases cycling through the 43 built-in colour themes.
 #
 # Run: vhs crates/gitkraft-tui/examples/vhs/tui-themes.tape
 
@@ -9,7 +9,7 @@ Set Theme "Catppuccin Mocha"
 Set Width 1400
 Set Height 900
 Set FontSize 14
-Set PlaybackSpeed 1.5
+Set PlaybackSpeed 2
 
 # ── Launch on the current repo (hidden from recording) ───────────────────────
 Hide
@@ -22,117 +22,177 @@ Show
 Type "T"
 Sleep 1s
 
-# ── Cycle through themes slowly so each one is visible ────────────────────────
+# ── Cycle through all 42 remaining themes ─────────────────────────────────────
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
 Type "j"
-Sleep 800ms
+Sleep 600ms
+Type "j"
+Sleep 600ms
+Type "j"
+Sleep 600ms
+Type "j"
+Sleep 600ms
+Type "j"
+Sleep 600ms
+Type "j"
+Sleep 600ms
+Type "j"
+Sleep 600ms
+Type "j"
+Sleep 600ms
+Type "j"
+Sleep 600ms
+Type "j"
+Sleep 600ms
+Type "j"
+Sleep 600ms
+Type "j"
+Sleep 600ms
+Type "j"
+Sleep 600ms
+Type "j"
+Sleep 600ms
+Type "j"
+Sleep 600ms
+Type "j"
+Sleep 600ms
 
 # ── Scroll back up to the top ─────────────────────────────────────────────────
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
 Type "k"
-Sleep 300ms
+Sleep 200ms
+Type "k"
+Sleep 200ms
+Type "k"
+Sleep 200ms
+Type "k"
+Sleep 200ms
+Type "k"
+Sleep 200ms
+Type "k"
+Sleep 200ms
+Type "k"
+Sleep 200ms
+Type "k"
+Sleep 200ms
+Type "k"
+Sleep 200ms
+Type "k"
+Sleep 200ms
+Type "k"
+Sleep 200ms
+Type "k"
+Sleep 200ms
+Type "k"
+Sleep 200ms
+Type "k"
+Sleep 200ms
+Type "k"
+Sleep 200ms
+Type "k"
+Sleep 200ms
 
 # ── Close theme picker ────────────────────────────────────────────────────────
 Escape

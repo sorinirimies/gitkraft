@@ -2257,18 +2257,18 @@ mod tests {
         let mut app = App::new();
         app.current_theme_index = 0;
         let theme = app.theme();
-        // Default theme active border comes from the core accent (88, 166, 255)
+        // Default theme active border comes from the core accent (80, 200, 255)
         assert_eq!(
             format!("{:?}", theme.border_active),
-            format!("{:?}", ratatui::style::Color::Rgb(88, 166, 255))
+            format!("{:?}", ratatui::style::Color::Rgb(80, 200, 255))
         );
     }
 
     #[test]
     fn theme_name_to_index_known() {
         assert_eq!(theme_name_to_index("Default"), 0);
-        assert_eq!(theme_name_to_index("Dracula"), 8);
-        assert_eq!(theme_name_to_index("Nord"), 9);
+        assert_eq!(theme_name_to_index("Dracula"), 9);
+        assert_eq!(theme_name_to_index("Nord"), 10);
     }
 
     #[test]
