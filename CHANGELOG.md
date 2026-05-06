@@ -2,9 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.0.0 - 2026-05-06
+### ♻️ Refactor
+- Refactor staging selection logic and context menu handling
+### ➕ Added
+- Add draggable dividers for staging and sidebar panels
+- Add multi-file open and preview actions to context menus
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.9.5...v1.0.0
 ## 0.9.5 - 2026-05-04
 ### ➕ Added
 - Add 15 new themes and update theme picker to 43 total
+### 🔧 Chores
+- chore: bump version to 0.9.5
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.9.4...v0.9.5
 ## 0.9.4 - 2026-05-04
 ### 🔧 Chores
