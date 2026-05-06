@@ -1,11 +1,50 @@
 //! Update logic for staging-related messages.
 
+use std::collections::HashSet;
+
+use gitkraft_core::DiffInfo;
 use iced::Task;
 
 use crate::message::Message;
 use crate::state::GitKraft;
 
 use super::commands;
+
+/// Shared logic for shift-click / regular-click file selection in the staging area.
+/// Updates `selection` and `anchor` based on click type, then returns the diff
+/// for the clicked file (if found) so the caller can set `selected_diff`.
+fn toggle_staging_file(
+    changes: &[DiffInfo],
+    selection: &mut HashSet<String>,
+    anchor: &mut Option<usize>,
+    path: &str,
+    shift_held: bool,
+) -> Option<DiffInfo> {
+    let clicked_idx = changes.iter().position(|d| d.display_path() == path);
+
+    if shift_held {
+        if let Some(idx) = clicked_idx {
+            let range = crate::view_utils::shift_click_range(*anchor, idx);
+            selection.clear();
+            for i in &range {
+                if let Some(d) = changes.get(*i) {
+                    selection.insert(d.display_path().to_string());
+                }
+            }
+        }
+    } else {
+        if selection.contains(path) {
+            selection.remove(path);
+        } else {
+            selection.insert(path.to_string());
+        }
+        if let Some(idx) = clicked_idx {
+            *anchor = Some(idx);
+        }
+    }
+
+    changes.iter().find(|d| d.display_path() == path).cloned()
+}
 
 /// Handle all staging-related messages, returning a [`Task`] for any follow-up
 /// async work.
@@ -84,40 +123,14 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         Message::ToggleSelectUnstaged(path) => {
             let shift_held = state.keyboard_modifiers.shift();
             let tab = state.active_tab_mut();
-
-            let clicked_idx = tab
-                .unstaged_changes
-                .iter()
-                .position(|d| d.display_path() == path);
-
-            if shift_held {
-                if let Some(idx) = clicked_idx {
-                    let range =
-                        crate::view_utils::shift_click_range(tab.anchor_unstaged_index, idx);
-                    tab.selected_unstaged.clear();
-                    for i in &range {
-                        if let Some(d) = tab.unstaged_changes.get(*i) {
-                            tab.selected_unstaged.insert(d.display_path().to_string());
-                        }
-                    }
-                }
-            } else {
-                if tab.selected_unstaged.contains(&path) {
-                    tab.selected_unstaged.remove(&path);
-                } else {
-                    tab.selected_unstaged.insert(path.clone());
-                }
-                if let Some(idx) = clicked_idx {
-                    tab.anchor_unstaged_index = Some(idx);
-                }
-            }
-
-            if let Some(diff) = tab
-                .unstaged_changes
-                .iter()
-                .find(|d| d.display_path() == path)
-                .cloned()
-            {
+            let diff = toggle_staging_file(
+                &tab.unstaged_changes,
+                &mut tab.selected_unstaged,
+                &mut tab.anchor_unstaged_index,
+                &path,
+                shift_held,
+            );
+            if let Some(diff) = diff {
                 tab.selected_diff = Some(diff);
                 tab.diff_scroll_offset = 0.0;
             }
@@ -127,39 +140,14 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         Message::ToggleSelectStaged(path) => {
             let shift_held = state.keyboard_modifiers.shift();
             let tab = state.active_tab_mut();
-
-            let clicked_idx = tab
-                .staged_changes
-                .iter()
-                .position(|d| d.display_path() == path);
-
-            if shift_held {
-                if let Some(idx) = clicked_idx {
-                    let range = crate::view_utils::shift_click_range(tab.anchor_staged_index, idx);
-                    tab.selected_staged.clear();
-                    for i in &range {
-                        if let Some(d) = tab.staged_changes.get(*i) {
-                            tab.selected_staged.insert(d.display_path().to_string());
-                        }
-                    }
-                }
-            } else {
-                if tab.selected_staged.contains(&path) {
-                    tab.selected_staged.remove(&path);
-                } else {
-                    tab.selected_staged.insert(path.clone());
-                }
-                if let Some(idx) = clicked_idx {
-                    tab.anchor_staged_index = Some(idx);
-                }
-            }
-
-            if let Some(diff) = tab
-                .staged_changes
-                .iter()
-                .find(|d| d.display_path() == path)
-                .cloned()
-            {
+            let diff = toggle_staging_file(
+                &tab.staged_changes,
+                &mut tab.selected_staged,
+                &mut tab.anchor_staged_index,
+                &path,
+                shift_held,
+            );
+            if let Some(diff) = diff {
                 tab.selected_diff = Some(diff);
                 tab.diff_scroll_offset = 0.0;
             }

@@ -481,10 +481,7 @@ impl GitKraft {
 
             // ── Context menu lifecycle ────────────────────────────────────────────────
             Message::OpenBranchContextMenu(name, local_index, is_current) => {
-                let pos = (self.cursor_pos.x, self.cursor_pos.y);
-                let tab = self.active_tab_mut();
-                tab.context_menu_pos = pos;
-                tab.context_menu = Some(crate::state::ContextMenu::Branch {
+                self.open_context_menu(crate::state::ContextMenu::Branch {
                     name: name.clone(),
                     is_current: *is_current,
                     local_index: *local_index,
@@ -493,19 +490,14 @@ impl GitKraft {
             }
 
             Message::OpenRemoteBranchContextMenu(name) => {
-                let pos = (self.cursor_pos.x, self.cursor_pos.y);
-                let tab = self.active_tab_mut();
-                tab.context_menu_pos = pos;
-                tab.context_menu =
-                    Some(crate::state::ContextMenu::RemoteBranch { name: name.clone() });
+                self.open_context_menu(crate::state::ContextMenu::RemoteBranch {
+                    name: name.clone(),
+                });
                 Task::none()
             }
 
             Message::OpenCommitFileContextMenu(oid, file_path) => {
-                let pos = (self.cursor_pos.x, self.cursor_pos.y);
-                let tab = self.active_tab_mut();
-                tab.context_menu_pos = pos;
-                tab.context_menu = Some(crate::state::ContextMenu::CommitFile {
+                self.open_context_menu(crate::state::ContextMenu::CommitFile {
                     oid: oid.clone(),
                     file_path: file_path.clone(),
                 });
@@ -514,38 +506,28 @@ impl GitKraft {
 
             Message::OpenStashContextMenu(index) => {
                 let index = *index;
-                let pos = (self.cursor_pos.x, self.cursor_pos.y);
-                let tab = self.active_tab_mut();
-                tab.context_menu_pos = pos;
-                tab.context_menu = Some(crate::state::ContextMenu::Stash { index });
+                self.open_context_menu(crate::state::ContextMenu::Stash { index });
                 Task::none()
             }
 
             Message::OpenUnstagedFileContextMenu(path) => {
-                let pos = (self.cursor_pos.x, self.cursor_pos.y);
-                let tab = self.active_tab_mut();
-                tab.context_menu_pos = pos;
-                tab.context_menu =
-                    Some(crate::state::ContextMenu::UnstagedFile { path: path.clone() });
+                self.open_context_menu(crate::state::ContextMenu::UnstagedFile {
+                    path: path.clone(),
+                });
                 Task::none()
             }
 
             Message::OpenStagedFileContextMenu(path) => {
-                let pos = (self.cursor_pos.x, self.cursor_pos.y);
-                let tab = self.active_tab_mut();
-                tab.context_menu_pos = pos;
-                tab.context_menu =
-                    Some(crate::state::ContextMenu::StagedFile { path: path.clone() });
+                self.open_context_menu(crate::state::ContextMenu::StagedFile {
+                    path: path.clone(),
+                });
                 Task::none()
             }
 
             Message::OpenCommitContextMenu(idx) => {
                 let oid = self.active_tab().commits.get(*idx).map(|c| c.oid.clone());
-                let pos = (self.cursor_pos.x, self.cursor_pos.y);
                 if let Some(oid) = oid {
-                    let tab = self.active_tab_mut();
-                    tab.context_menu_pos = pos;
-                    tab.context_menu = Some(crate::state::ContextMenu::Commit { index: *idx, oid });
+                    self.open_context_menu(crate::state::ContextMenu::Commit { index: *idx, oid });
                 }
                 Task::none()
             }
@@ -553,16 +535,13 @@ impl GitKraft {
             Message::OpenSearchResultContextMenu(idx) => {
                 if let Some(commit) = self.search_results.get(*idx) {
                     let oid = commit.oid.clone();
-                    let pos = (self.cursor_pos.x, self.cursor_pos.y);
-                    let tab = self.active_tab_mut();
-                    tab.context_menu_pos = pos;
-                    tab.context_menu = Some(crate::state::ContextMenu::Commit { index: *idx, oid });
+                    self.open_context_menu(crate::state::ContextMenu::Commit { index: *idx, oid });
                 }
                 Task::none()
             }
 
             Message::CloseContextMenu => {
-                self.active_tab_mut().context_menu = None;
+                self.dismiss_menu();
                 Task::none()
             }
 
@@ -627,7 +606,7 @@ impl GitKraft {
                     .first()
                     .map(|r| r.name.clone())
                     .unwrap_or_else(|| "origin".to_string());
-                self.active_tab_mut().context_menu = None;
+                self.dismiss_menu();
                 with_repo!(
                     self,
                     loading,
@@ -643,7 +622,7 @@ impl GitKraft {
                     .first()
                     .map(|r| r.name.clone())
                     .unwrap_or_else(|| "origin".to_string());
-                self.active_tab_mut().context_menu = None;
+                self.dismiss_menu();
                 with_repo!(
                     self,
                     loading,
@@ -654,7 +633,7 @@ impl GitKraft {
 
             Message::RebaseOnto(target) => {
                 let target = target.clone();
-                self.active_tab_mut().context_menu = None;
+                self.dismiss_menu();
                 with_repo!(
                     self,
                     loading,
@@ -665,7 +644,7 @@ impl GitKraft {
 
             Message::MergeBranch(name) => {
                 let name = name.clone();
-                self.active_tab_mut().context_menu = None;
+                self.dismiss_menu();
                 with_repo!(
                     self,
                     loading,
@@ -676,7 +655,7 @@ impl GitKraft {
 
             Message::CheckoutRemoteBranch(name) => {
                 let name = name.clone();
-                self.active_tab_mut().context_menu = None;
+                self.dismiss_menu();
                 with_repo!(self, loading, format!("Checking out '{name}'…"), |path| {
                     crate::features::repo::commands::checkout_remote_branch_async(path, name)
                 })
@@ -684,7 +663,7 @@ impl GitKraft {
 
             Message::DeleteRemoteBranch(name) => {
                 let name = name.clone();
-                self.active_tab_mut().context_menu = None;
+                self.dismiss_menu();
                 with_repo!(
                     self,
                     loading,
@@ -758,7 +737,7 @@ impl GitKraft {
             Message::CherryPickCommit(oid) => {
                 let oid = oid.clone();
                 let short = gitkraft_core::utils::short_oid_str(&oid).to_string();
-                self.active_tab_mut().context_menu = None;
+                self.dismiss_menu();
                 with_repo!(self, loading, format!("Cherry-picking {short}…"), |path| {
                     crate::features::repo::commands::cherry_pick_async(path, oid)
                 })
@@ -811,7 +790,7 @@ impl GitKraft {
                 let oid = oid.clone();
                 let action = action.clone();
                 let label = action.label();
-                self.active_tab_mut().context_menu = None;
+                self.dismiss_menu();
                 with_repo!(self, loading, format!("{label}…"), |path| {
                     crate::features::repo::commands::execute_commit_action_async(path, oid, action)
                 })
@@ -820,7 +799,7 @@ impl GitKraft {
             Message::CheckoutCommitDetached(oid) => {
                 let oid = oid.clone();
                 let short = gitkraft_core::utils::short_oid_str(&oid).to_string();
-                self.active_tab_mut().context_menu = None;
+                self.dismiss_menu();
                 with_repo!(self, loading, format!("Checking out {short}…"), |path| {
                     crate::features::repo::commands::checkout_commit_async(path, oid)
                 })
@@ -1207,15 +1186,13 @@ impl GitKraft {
             Message::PreviewFile(path) => {
                 self.active_tab_mut().context_menu = None;
                 if let Some(repo_path) = self.active_tab().repo_path.clone() {
-                    let full_path = repo_path.join(&path);
-                    let file_path = path.to_string();
+                    let full_path = repo_path.join(path);
+                    let file_path = full_path.display().to_string();
                     git_task!(
                         Message::FilePreviewLoaded,
-                        (|| {
-                            std::fs::read_to_string(&full_path)
-                                .map(|content| (file_path, content))
-                                .map_err(|e| e.to_string())
-                        })()
+                        std::fs::read_to_string(&full_path)
+                            .map(|content| (file_path, content))
+                            .map_err(|e| e.to_string())
                     )
                 } else {
                     Task::none()

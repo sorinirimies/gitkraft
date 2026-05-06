@@ -335,6 +335,11 @@ impl RepoTab {
         let prev_anchor_unstaged = self.anchor_unstaged_index;
         let prev_anchor_staged = self.anchor_staged_index;
 
+        // Save standalone diff (set from staging click or file preview).
+        // When no commit is selected, this is the only diff the user sees.
+        let prev_selected_diff = self.selected_diff.take();
+        let prev_diff_scroll = self.diff_scroll_offset;
+
         self.current_branch = payload.info.head_branch.clone();
         self.repo_path = Some(path);
         self.repo_info = Some(payload.info);
@@ -359,14 +364,10 @@ impl RepoTab {
         self.commit_scroll_offset = 0.0;
         self.has_more_commits = true;
         self.is_loading_more_commits = false;
-        self.selected_unstaged.clear();
-        self.selected_staged.clear();
         self.anchor_unstaged_index = None;
         self.anchor_staged_index = None;
         self.anchor_file_index = None;
         self.selected_commit_file_indices.clear();
-        self.multi_file_diffs.clear();
-        self.commit_range_diffs.clear();
 
         // ── Restore the previously selected commit by OID ─────────────────
         // If the commit still exists in the refreshed list, re-select it so
@@ -377,9 +378,14 @@ impl RepoTab {
             if let Some(new_idx) = self.commits.iter().position(|c| c.oid == oid) {
                 self.selected_commit = Some(new_idx);
                 self.selected_commit_oid = Some(oid);
-                // commit_files, selected_diff, selected_file_index,
-                // is_loading_file_diff, diff_scroll_offset are intentionally
-                // left unchanged — the commit content hasn’t changed.
+                // commit_files, selected_file_index, is_loading_file_diff,
+                // diff_scroll_offset are intentionally left unchanged —
+                // the commit content hasn’t changed.
+
+                // Restore selected_diff (may have been set from commit view,
+                // staging click, or file preview).
+                self.selected_diff = prev_selected_diff;
+                self.diff_scroll_offset = prev_diff_scroll;
 
                 // Restore file-level selection — the commit (and its file
                 // list) survived, so these indices are still valid.
@@ -389,19 +395,17 @@ impl RepoTab {
                 self.commit_range_diffs = prev_commit_range_diffs;
             } else {
                 // Commit was rebased / force-pushed away — clear everything.
-                self.selected_diff = None;
-                self.commit_files.clear();
-                self.selected_file_index = None;
-                self.is_loading_file_diff = false;
-                self.diff_scroll_offset = 0.0;
+                self.clear_diff_state();
             }
         } else {
-            // No previous selection — safe to clear diff state.
-            self.selected_diff = None;
-            self.commit_files.clear();
-            self.selected_file_index = None;
-            self.is_loading_file_diff = false;
-            self.diff_scroll_offset = 0.0;
+            // No commit was selected. Preserve any standalone diff set from
+            // a staging click or file preview so it survives background refreshes.
+            if prev_selected_diff.is_some() {
+                self.selected_diff = prev_selected_diff;
+                self.diff_scroll_offset = prev_diff_scroll;
+            } else {
+                self.clear_diff_state();
+            }
         }
 
         // ── Restore multi-selection by OID ─────────────────────────────
@@ -437,6 +441,16 @@ impl RepoTab {
         self.anchor_unstaged_index =
             prev_anchor_unstaged.filter(|&i| i < self.unstaged_changes.len());
         self.anchor_staged_index = prev_anchor_staged.filter(|&i| i < self.staged_changes.len());
+    }
+
+    /// Clear all diff-related state (used when the selected commit disappears
+    /// or no commit was selected before a refresh).
+    fn clear_diff_state(&mut self) {
+        self.selected_diff = None;
+        self.commit_files.clear();
+        self.selected_file_index = None;
+        self.is_loading_file_diff = false;
+        self.diff_scroll_offset = 0.0;
     }
 }
 
@@ -740,6 +754,19 @@ impl GitKraft {
     /// Get a mutable reference to the currently active tab.
     pub fn active_tab_mut(&mut self) -> &mut RepoTab {
         &mut self.tabs[self.active_tab]
+    }
+
+    /// Dismiss any open context menu.
+    pub fn dismiss_menu(&mut self) {
+        self.active_tab_mut().context_menu = None;
+    }
+
+    /// Open a context menu at the current cursor position.
+    pub fn open_context_menu(&mut self, menu: ContextMenu) {
+        let pos = (self.cursor_pos.x, self.cursor_pos.y);
+        let tab = self.active_tab_mut();
+        tab.context_menu_pos = pos;
+        tab.context_menu = Some(menu);
     }
 
     /// Whether the active tab has a repository open.
