@@ -394,6 +394,31 @@ impl GitKraft {
                                 self.diff_file_list_width =
                                     (self.diff_file_list_width + dx).clamp(100.0, 400.0);
                             }
+                            DragTarget::StagingUnstagedRight => {
+                                let staging_w = self.window_width;
+                                if staging_w > 0.0 {
+                                    let ratio_delta = dx / staging_w;
+                                    self.staging_unstaged_ratio = (self.staging_unstaged_ratio
+                                        + ratio_delta)
+                                        .clamp(0.15, 0.7);
+                                    let max_staged =
+                                        (1.0 - self.staging_unstaged_ratio - 0.1).max(0.1);
+                                    if self.staging_staged_ratio > max_staged {
+                                        self.staging_staged_ratio = max_staged;
+                                    }
+                                }
+                            }
+                            DragTarget::StagingStagedRight => {
+                                let staging_w = self.window_width;
+                                if staging_w > 0.0 {
+                                    let ratio_delta = dx / staging_w;
+                                    let max_staged =
+                                        (1.0 - self.staging_unstaged_ratio - 0.1).max(0.1);
+                                    self.staging_staged_ratio = (self.staging_staged_ratio
+                                        + ratio_delta)
+                                        .clamp(0.1, max_staged);
+                                }
+                            }
                         }
                     }
                 }
@@ -411,6 +436,33 @@ impl GitKraft {
                                 // Dragging up → larger staging area (subtract dy).
                                 self.staging_height =
                                     (self.staging_height - dy).clamp(100.0, 600.0);
+                            }
+                            DragTargetH::SidebarBranchesBottom => {
+                                // Convert pixel delta to ratio delta based on
+                                // the approximate sidebar height.
+                                let sidebar_h = self.window_height - 120.0;
+                                if sidebar_h > 0.0 {
+                                    let ratio_delta = dy / sidebar_h;
+                                    self.sidebar_branches_ratio =
+                                        (self.sidebar_branches_ratio + ratio_delta).clamp(0.1, 0.8);
+                                    // Ensure stash doesn't get squeezed out.
+                                    let max_stash =
+                                        (1.0 - self.sidebar_branches_ratio - 0.05).max(0.05);
+                                    if self.sidebar_stash_ratio > max_stash {
+                                        self.sidebar_stash_ratio = max_stash;
+                                    }
+                                }
+                            }
+                            DragTargetH::SidebarStashBottom => {
+                                let sidebar_h = self.window_height - 120.0;
+                                if sidebar_h > 0.0 {
+                                    let ratio_delta = dy / sidebar_h;
+                                    let max_stash =
+                                        (1.0 - self.sidebar_branches_ratio - 0.05).max(0.05);
+                                    self.sidebar_stash_ratio = (self.sidebar_stash_ratio
+                                        + ratio_delta)
+                                        .clamp(0.05, max_stash);
+                                }
                             }
                         }
                     }

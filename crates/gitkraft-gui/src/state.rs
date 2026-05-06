@@ -19,6 +19,10 @@ pub enum DragTarget {
     /// The divider between the diff-viewer file list and the diff content
     /// (only visible when a multi-file commit is selected).
     DiffFileListRight,
+    /// The divider between the unstaged and staged panels in the staging area.
+    StagingUnstagedRight,
+    /// The divider between the staged and commit panels in the staging area.
+    StagingStagedRight,
 }
 
 /// Which horizontal divider the user is currently dragging (if any).
@@ -26,6 +30,10 @@ pub enum DragTarget {
 pub enum DragTargetH {
     /// The divider between the middle row and the staging area.
     StagingTop,
+    /// The divider between branches and stashes in the sidebar.
+    SidebarBranchesBottom,
+    /// The divider between stashes and remotes in the sidebar.
+    SidebarStashBottom,
 }
 
 /// What item was right-clicked to open the context menu.
@@ -132,10 +140,14 @@ pub struct RepoTab {
     /// Text in the "stash message" input.
     pub stash_message: String,
 
-    /// Set of selected unstaged file paths (for multi-select with Shift+Click).
+    /// Set of selected unstaged file paths (for multi-select).
     pub selected_unstaged: std::collections::HashSet<String>,
-    /// Set of selected staged file paths (for multi-select with Shift+Click).
+    /// Set of selected staged file paths (for multi-select).
     pub selected_staged: std::collections::HashSet<String>,
+    /// Anchor index for Shift+Click range selection in the unstaged list.
+    pub anchor_unstaged_index: Option<usize>,
+    /// Anchor index for Shift+Click range selection in the staged list.
+    pub anchor_staged_index: Option<usize>,
 
     /// File path pending discard confirmation (None = no pending discard).
     pub pending_discard: Option<String>,
@@ -239,6 +251,8 @@ impl RepoTab {
             stash_message: String::new(),
             selected_unstaged: std::collections::HashSet::new(),
             selected_staged: std::collections::HashSet::new(),
+            anchor_unstaged_index: None,
+            anchor_staged_index: None,
             pending_discard: None,
             status_message: None,
             error_message: None,
@@ -314,6 +328,13 @@ impl RepoTab {
         let prev_multi_file_diffs = std::mem::take(&mut self.multi_file_diffs);
         let prev_commit_range_diffs = std::mem::take(&mut self.commit_range_diffs);
 
+        // Save staging selection — these are path-based so we can re-validate
+        // them against the refreshed unstaged/staged lists.
+        let prev_selected_unstaged = std::mem::take(&mut self.selected_unstaged);
+        let prev_selected_staged = std::mem::take(&mut self.selected_staged);
+        let prev_anchor_unstaged = self.anchor_unstaged_index;
+        let prev_anchor_staged = self.anchor_staged_index;
+
         self.current_branch = payload.info.head_branch.clone();
         self.repo_path = Some(path);
         self.repo_info = Some(payload.info);
@@ -340,6 +361,8 @@ impl RepoTab {
         self.is_loading_more_commits = false;
         self.selected_unstaged.clear();
         self.selected_staged.clear();
+        self.anchor_unstaged_index = None;
+        self.anchor_staged_index = None;
         self.anchor_file_index = None;
         self.selected_commit_file_indices.clear();
         self.multi_file_diffs.clear();
@@ -399,6 +422,21 @@ impl RepoTab {
                 self.selected_commits.sort_unstable();
             }
         }
+
+        // ── Restore staging selection ───────────────────────────────────
+        // Keep only paths that still appear in the refreshed file lists.
+        self.selected_unstaged = prev_selected_unstaged
+            .into_iter()
+            .filter(|p| self.unstaged_changes.iter().any(|d| d.display_path() == p))
+            .collect();
+        self.selected_staged = prev_selected_staged
+            .into_iter()
+            .filter(|p| self.staged_changes.iter().any(|d| d.display_path() == p))
+            .collect();
+        // Restore anchors only if they still point to a valid index.
+        self.anchor_unstaged_index =
+            prev_anchor_unstaged.filter(|&i| i < self.unstaged_changes.len());
+        self.anchor_staged_index = prev_anchor_staged.filter(|&i| i < self.staged_changes.len());
     }
 }
 
@@ -425,6 +463,16 @@ pub struct GitKraft {
     pub staging_height: f32,
     /// Width of the diff file-list sidebar in pixels.
     pub diff_file_list_width: f32,
+    /// Fraction of sidebar height allocated to the branches section (0.0–1.0).
+    pub sidebar_branches_ratio: f32,
+    /// Fraction of sidebar height allocated to the stashes section (0.0–1.0).
+    /// Remotes get the remainder: 1.0 - branches_ratio - stash_ratio.
+    pub sidebar_stash_ratio: f32,
+    /// Fraction of staging area width allocated to the unstaged column (0.0–1.0).
+    pub staging_unstaged_ratio: f32,
+    /// Fraction of staging area width allocated to the staged column (0.0–1.0).
+    /// Commit column gets: 1.0 - unstaged_ratio - staged_ratio.
+    pub staging_staged_ratio: f32,
 
     /// UI scale factor (1.0 = default). Adjusted with Ctrl+/Ctrl- keyboard shortcuts.
     pub ui_scale: f32,
@@ -550,6 +598,10 @@ impl GitKraft {
             commit_log_width,
             staging_height,
             diff_file_list_width,
+            sidebar_branches_ratio: 0.6,
+            sidebar_stash_ratio: 0.25,
+            staging_unstaged_ratio: 0.4,
+            staging_staged_ratio: 0.3,
 
             ui_scale,
 

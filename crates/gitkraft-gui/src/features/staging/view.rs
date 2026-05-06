@@ -15,14 +15,40 @@ use crate::view_utils;
 
 /// Render the full staging area panel (unstaged | staged | commit input).
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
+    let c = state.colors();
     let unstaged_panel = unstaged_view(state);
     let staged_panel = staged_view(state);
     let commit_panel = commit_view(state);
 
-    let content = row![unstaged_panel, staged_panel, commit_panel]
-        .spacing(1)
-        .height(Length::Fill)
-        .width(Length::Fill);
+    let unstaged_pct = (state.staging_unstaged_ratio * 100.0) as u16;
+    let staged_pct = (state.staging_staged_ratio * 100.0) as u16;
+    let commit_pct = 100u16
+        .saturating_sub(unstaged_pct)
+        .saturating_sub(staged_pct)
+        .max(10);
+
+    let divider1 = crate::widgets::divider::vertical_divider(
+        crate::state::DragTarget::StagingUnstagedRight,
+        &c,
+    );
+    let divider2 =
+        crate::widgets::divider::vertical_divider(crate::state::DragTarget::StagingStagedRight, &c);
+
+    let content = row![
+        container(unstaged_panel)
+            .width(Length::FillPortion(unstaged_pct))
+            .height(Length::Fill),
+        divider1,
+        container(staged_panel)
+            .width(Length::FillPortion(staged_pct))
+            .height(Length::Fill),
+        divider2,
+        container(commit_panel)
+            .width(Length::FillPortion(commit_pct))
+            .height(Length::Fill),
+    ]
+    .height(Length::Fill)
+    .width(Length::Fill);
 
     container(content)
         .width(Length::Fill)
@@ -106,8 +132,8 @@ fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
             let file_row = row![
                 status_badge,
                 Space::new().width(6),
-                file_label,
-                Space::new().width(Length::Fill),
+                container(file_label).width(Length::Fill).clip(true),
+                Space::new().width(4),
                 view_btn,
                 Space::new().width(2),
                 stage_btn,
@@ -226,8 +252,8 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
             let file_row = row![
                 status_badge,
                 Space::new().width(6),
-                file_label,
-                Space::new().width(Length::Fill),
+                container(file_label).width(Length::Fill).clip(true),
+                Space::new().width(4),
                 view_btn,
                 Space::new().width(2),
                 unstage_btn,

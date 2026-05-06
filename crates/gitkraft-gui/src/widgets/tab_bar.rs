@@ -14,7 +14,7 @@ use crate::theme::ThemeColors;
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let c = state.colors();
 
-    let mut tabs_row = row![].spacing(0).align_y(Alignment::Center);
+    let mut tabs_row = row![].spacing(2).align_y(Alignment::Center);
 
     for (idx, tab) in state.tabs.iter().enumerate() {
         let is_active = idx == state.active_tab;
@@ -42,36 +42,31 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             c.text_secondary
         });
 
-        // Close button (only show if there's more than 1 tab)
-        let close_btn: Element<'_, Message> = if state.tabs.len() > 1 {
-            button(icon!(icons::X_CIRCLE, 10, c.muted))
-                .padding([0, 4])
+        // Build the inner row: icon + name + optional close button
+        let mut tab_content = row![icon, Space::new().width(6), label].align_y(Alignment::Center);
+
+        if state.tabs.len() > 1 {
+            let close_btn = button(icon!(icons::X_CIRCLE, 10, c.muted))
+                .padding([0, 2])
                 .style(theme::ghost_button)
-                .on_press(Message::CloseTab(idx))
-                .into()
+                .on_press(Message::CloseTab(idx));
+            tab_content = tab_content.push(Space::new().width(6)).push(close_btn);
+        }
+
+        // Wrap in a mouse_area so clicking the label/icon area switches tabs
+        // without interfering with the close button.
+        let tab_style = if is_active {
+            theme::active_tab_button as fn(&iced::Theme, button::Status) -> button::Style
         } else {
-            Space::new().into()
+            theme::ghost_button as fn(&iced::Theme, button::Status) -> button::Style
         };
 
-        let tab_content = row![
-            icon,
-            Space::new().width(6),
-            label,
-            Space::new().width(4),
-            close_btn
-        ]
-        .align_y(Alignment::Center);
-
-        let tab_btn = button(tab_content)
-            .padding([6, 12])
-            .style(if is_active {
-                theme::active_tab_button
-            } else {
-                theme::ghost_button
-            })
+        let tab_widget = button(tab_content)
+            .padding([6, 10])
+            .style(tab_style)
             .on_press(Message::SwitchTab(idx));
 
-        tabs_row = tabs_row.push(tab_btn);
+        tabs_row = tabs_row.push(tab_widget);
     }
 
     // "+" button to add a new tab

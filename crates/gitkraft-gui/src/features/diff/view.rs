@@ -492,7 +492,7 @@ fn render_line<'a>(line: &DiffLine, c: &ThemeColors) -> Element<'a, Message> {
         }
         DiffLine::Addition(s) => diff_line_widget("+", s, c.green, Some(theme::diff_add_style)),
         DiffLine::Deletion(s) => diff_line_widget("-", s, c.red, Some(theme::diff_del_style)),
-        DiffLine::Context(s) => diff_line_widget(" ", s, c.text_secondary, None),
+        DiffLine::Context(s) => diff_line_widget(" ", s, c.diff_context, None),
     }
 }
 

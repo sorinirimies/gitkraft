@@ -11,6 +11,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 select_down(app);
             } else {
                 navigate_down(app);
+                app.load_staging_diff();
             }
         }
         KeyCode::Char('k') => {
@@ -18,6 +19,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 select_up(app);
             } else {
                 navigate_up(app);
+                app.load_staging_diff();
             }
         }
         // Shift+J / Shift+K aliases for Shift+j / Shift+k (terminals send uppercase for Shift+letter)

@@ -82,21 +82,91 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         }
 
         Message::ToggleSelectUnstaged(path) => {
+            let shift_held = state.keyboard_modifiers.shift();
             let tab = state.active_tab_mut();
-            if tab.selected_unstaged.contains(&path) {
-                tab.selected_unstaged.remove(&path);
+
+            // Find the index of the clicked file.
+            let clicked_idx = tab
+                .unstaged_changes
+                .iter()
+                .position(|d| d.display_path() == path);
+
+            if shift_held {
+                // Shift+Click: range selection from anchor to clicked index.
+                if let Some(idx) = clicked_idx {
+                    let anchor = tab.anchor_unstaged_index.unwrap_or(idx);
+                    let range = gitkraft_core::ascending_range(anchor, idx);
+                    tab.selected_unstaged.clear();
+                    for i in &range {
+                        if let Some(d) = tab.unstaged_changes.get(*i) {
+                            tab.selected_unstaged.insert(d.display_path().to_string());
+                        }
+                    }
+                }
             } else {
-                tab.selected_unstaged.insert(path);
+                // Regular click: toggle single file, set anchor.
+                if tab.selected_unstaged.contains(&path) {
+                    tab.selected_unstaged.remove(&path);
+                } else {
+                    tab.selected_unstaged.insert(path.clone());
+                }
+                if let Some(idx) = clicked_idx {
+                    tab.anchor_unstaged_index = Some(idx);
+                }
+            }
+
+            // Show the clicked file's diff in the diff pane.
+            if let Some(diff) = tab
+                .unstaged_changes
+                .iter()
+                .find(|d| d.display_path() == path)
+                .cloned()
+            {
+                tab.selected_diff = Some(diff);
+                tab.diff_scroll_offset = 0.0;
             }
             Task::none()
         }
 
         Message::ToggleSelectStaged(path) => {
+            let shift_held = state.keyboard_modifiers.shift();
             let tab = state.active_tab_mut();
-            if tab.selected_staged.contains(&path) {
-                tab.selected_staged.remove(&path);
+
+            let clicked_idx = tab
+                .staged_changes
+                .iter()
+                .position(|d| d.display_path() == path);
+
+            if shift_held {
+                if let Some(idx) = clicked_idx {
+                    let anchor = tab.anchor_staged_index.unwrap_or(idx);
+                    let range = gitkraft_core::ascending_range(anchor, idx);
+                    tab.selected_staged.clear();
+                    for i in &range {
+                        if let Some(d) = tab.staged_changes.get(*i) {
+                            tab.selected_staged.insert(d.display_path().to_string());
+                        }
+                    }
+                }
             } else {
-                tab.selected_staged.insert(path);
+                if tab.selected_staged.contains(&path) {
+                    tab.selected_staged.remove(&path);
+                } else {
+                    tab.selected_staged.insert(path.clone());
+                }
+                if let Some(idx) = clicked_idx {
+                    tab.anchor_staged_index = Some(idx);
+                }
+            }
+
+            if let Some(diff) = tab
+                .staged_changes
+                .iter()
+                .find(|d| d.display_path() == path)
+                .cloned()
+            {
+                tab.selected_diff = Some(diff);
+                tab.diff_scroll_offset = 0.0;
             }
             Task::none()
         }

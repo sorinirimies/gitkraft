@@ -73,19 +73,38 @@ impl GitKraft {
         // ── Header toolbar ────────────────────────────────────────────────
         let header = widgets::header::view(self);
 
-        // ── Sidebar (branches + stash + remotes) ──────────────────────────
+        // ── Sidebar (branches + stash + remotes) ──────────────────────
         let sidebar: Element<'_, Message> = if self.sidebar_expanded {
             let branches = features::branches::view::view(self);
             let stash = features::stash::view::view(self);
             let remotes = features::remotes::view::view(self);
 
+            let branches_divider =
+                widgets::divider::horizontal_divider(DragTargetH::SidebarBranchesBottom, &c);
+            let stash_divider =
+                widgets::divider::horizontal_divider(DragTargetH::SidebarStashBottom, &c);
+
+            // Three sections share the sidebar height using ratios.
+            let branches_pct = (self.sidebar_branches_ratio * 100.0) as u16;
+            let stash_pct = (self.sidebar_stash_ratio * 100.0) as u16;
+            let remotes_pct = 100u16
+                .saturating_sub(branches_pct)
+                .saturating_sub(stash_pct)
+                .max(5);
+
             let sidebar_content = container(
                 column![
-                    branches,
-                    iced::widget::rule::horizontal(1),
-                    stash,
-                    iced::widget::rule::horizontal(1),
-                    remotes
+                    container(branches)
+                        .width(Length::Fill)
+                        .height(Length::FillPortion(branches_pct)),
+                    branches_divider,
+                    container(stash)
+                        .width(Length::Fill)
+                        .height(Length::FillPortion(stash_pct)),
+                    stash_divider,
+                    container(remotes)
+                        .width(Length::Fill)
+                        .height(Length::FillPortion(remotes_pct)),
                 ]
                 .width(Length::Fill)
                 .height(Length::Fill),
@@ -559,7 +578,7 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
             for hunk in &diff.hunks {
                 for line in &hunk.lines {
                     let (prefix, content, color) = match line {
-                        gitkraft_core::DiffLine::Context(s) => (" ", s.as_str(), c.text_secondary),
+                        gitkraft_core::DiffLine::Context(s) => (" ", s.as_str(), c.diff_context),
                         gitkraft_core::DiffLine::Addition(s) => ("+", s.as_str(), c.green),
                         gitkraft_core::DiffLine::Deletion(s) => ("-", s.as_str(), c.red),
                         gitkraft_core::DiffLine::HunkHeader(s) => ("@@", s.as_str(), c.accent),
@@ -1084,6 +1103,15 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                 ));
                 col = col.push(view_utils::context_menu_separator::<Message>());
                 col = col.push(menu_item("View diff", Message::SelectDiff(diff)));
+                col = col.push(menu_item(
+                    "Open in editor",
+                    Message::OpenInEditor(path.clone()),
+                ));
+                col = col.push(menu_item(
+                    "Open file",
+                    Message::OpenInDefaultProgram(path.clone()),
+                ));
+                col = col.push(view_utils::context_menu_separator::<Message>());
                 col = col.push(menu_item("Stage file", Message::StageFile(path.clone())));
                 col = col.push(view_utils::context_menu_separator::<Message>());
                 col = col.push(menu_item(
@@ -1098,14 +1126,6 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                 Message::CopyText(path.rsplit('/').next().unwrap_or(path).to_string()),
             ));
             col = col.push(menu_item("Copy file path", Message::CopyText(path.clone())));
-            col = col.push(menu_item(
-                "Open in editor",
-                Message::OpenInEditor(path.clone()),
-            ));
-            col = col.push(menu_item(
-                "Open in default program",
-                Message::OpenInDefaultProgram(path.clone()),
-            ));
             col = col.push(menu_item(
                 "Show in folder",
                 Message::ShowInFolder(path.clone()),
@@ -1164,6 +1184,15 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                 col = col.push(view_utils::context_menu_separator::<Message>());
                 col = col.push(menu_item("View diff", Message::SelectDiff(diff)));
                 col = col.push(menu_item(
+                    "Open in editor",
+                    Message::OpenInEditor(path.clone()),
+                ));
+                col = col.push(menu_item(
+                    "Open file",
+                    Message::OpenInDefaultProgram(path.clone()),
+                ));
+                col = col.push(view_utils::context_menu_separator::<Message>());
+                col = col.push(menu_item(
                     "Unstage file",
                     Message::UnstageFile(path.clone()),
                 ));
@@ -1180,14 +1209,6 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                 Message::CopyText(path.rsplit('/').next().unwrap_or(path).to_string()),
             ));
             col = col.push(menu_item("Copy file path", Message::CopyText(path.clone())));
-            col = col.push(menu_item(
-                "Open in editor",
-                Message::OpenInEditor(path.clone()),
-            ));
-            col = col.push(menu_item(
-                "Open in default program",
-                Message::OpenInDefaultProgram(path.clone()),
-            ));
             col = col.push(menu_item(
                 "Show in folder",
                 Message::ShowInFolder(path.clone()),
