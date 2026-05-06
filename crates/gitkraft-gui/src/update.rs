@@ -1161,6 +1161,95 @@ impl GitKraft {
                 Task::none()
             }
 
+            Message::OpenFilesInEditor(paths) => {
+                self.active_tab_mut().context_menu = None;
+                if matches!(self.editor, gitkraft_core::Editor::None) {
+                    self.active_tab_mut().status_message = Some(
+                        "No editor configured — select one from the editor dropdown in the toolbar"
+                            .into(),
+                    );
+                    return Task::none();
+                }
+                if let Some(repo_path) = self.active_tab().repo_path.clone() {
+                    let mut last_err: Option<String> = None;
+                    for p in paths.iter() {
+                        let full_path = repo_path.join(p);
+                        if let Err(e) = self.editor.open_file(&full_path) {
+                            last_err = Some(format!("{p}: {e}"));
+                        }
+                    }
+                    if let Some(e) = last_err {
+                        self.active_tab_mut().error_message =
+                            Some(format!("Failed to open in editor: {e}"));
+                    } else {
+                        self.active_tab_mut().status_message =
+                            Some(format!("Opened {} file(s) in {}", paths.len(), self.editor));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::OpenFilesInDefaultProgram(paths) => {
+                self.active_tab_mut().context_menu = None;
+                if let Some(repo_path) = self.active_tab().repo_path.clone() {
+                    for p in paths.iter() {
+                        let full_path = repo_path.join(p);
+                        if let Err(e) = gitkraft_core::open_file_default(&full_path) {
+                            self.active_tab_mut().error_message =
+                                Some(format!("Failed to open file: {e}"));
+                            break;
+                        }
+                    }
+                }
+                Task::none()
+            }
+
+            Message::PreviewFile(path) => {
+                self.active_tab_mut().context_menu = None;
+                if let Some(repo_path) = self.active_tab().repo_path.clone() {
+                    let full_path = repo_path.join(&path);
+                    let file_path = path.to_string();
+                    git_task!(
+                        Message::FilePreviewLoaded,
+                        (|| {
+                            std::fs::read_to_string(&full_path)
+                                .map(|content| (file_path, content))
+                                .map_err(|e| e.to_string())
+                        })()
+                    )
+                } else {
+                    Task::none()
+                }
+            }
+
+            Message::FilePreviewLoaded(result) => {
+                match result {
+                    Ok((file_path, content)) => {
+                        let lines: Vec<gitkraft_core::DiffLine> = content
+                            .lines()
+                            .map(|l| gitkraft_core::DiffLine::Context(l.to_string()))
+                            .collect();
+                        let preview_diff = gitkraft_core::DiffInfo {
+                            old_file: String::new(),
+                            new_file: file_path.clone(),
+                            status: gitkraft_core::FileStatus::Modified,
+                            hunks: vec![gitkraft_core::DiffHunk {
+                                header: String::new(),
+                                lines,
+                            }],
+                        };
+                        let tab = self.active_tab_mut();
+                        tab.selected_diff = Some(preview_diff);
+                        tab.diff_scroll_offset = 0.0;
+                    }
+                    Err(e) => {
+                        self.active_tab_mut().error_message =
+                            Some(format!("Cannot preview file: {e}"));
+                    }
+                }
+                Task::none()
+            }
+
             Message::ShowInFolder(path) => {
                 self.active_tab_mut().context_menu = None;
                 if let Some(repo_path) = self.active_tab().repo_path.as_ref() {

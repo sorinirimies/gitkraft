@@ -220,6 +220,23 @@ pub fn empty_list_hint<'a>(
         .into()
 }
 
+// ── Shift-click range selection ───────────────────────────────────────────────
+
+/// Compute a shift-click range selection.
+///
+/// Given an optional anchor index (from the last non-shift click) and the
+/// currently clicked index, returns an ascending `Vec<usize>` covering
+/// `[min(anchor, clicked)..=max(anchor, clicked)]`.  If `anchor` is `None`
+/// the clicked index is used as both endpoints, yielding a single-element vec.
+///
+/// This is the shared logic behind shift-click range selection in the commit
+/// log, diff file list, and staging area — call it instead of duplicating
+/// the anchor + ascending_range pattern.
+pub fn shift_click_range(anchor: Option<usize>, clicked: usize) -> Vec<usize> {
+    let anchor = anchor.unwrap_or(clicked);
+    gitkraft_core::ascending_range(anchor, clicked)
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -359,5 +376,27 @@ mod tests {
         // 25px / 7.5px = 3.33 → floor to 3; string "abcd" (4) → truncate
         let result = truncate_to_fit("abcd", 25.0, 7.5);
         assert_eq!(result, "ab…");
+    }
+
+    // ── shift_click_range ─────────────────────────────────────────────────
+
+    #[test]
+    fn shift_click_range_with_anchor_below() {
+        assert_eq!(super::shift_click_range(Some(1), 4), vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn shift_click_range_with_anchor_above() {
+        assert_eq!(super::shift_click_range(Some(4), 1), vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn shift_click_range_same_index() {
+        assert_eq!(super::shift_click_range(Some(3), 3), vec![3]);
+    }
+
+    #[test]
+    fn shift_click_range_no_anchor() {
+        assert_eq!(super::shift_click_range(None, 5), vec![5]);
     }
 }

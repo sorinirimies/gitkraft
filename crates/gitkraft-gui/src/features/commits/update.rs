@@ -15,14 +15,13 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             let shift_held = state.keyboard_modifiers.shift();
 
             if shift_held {
-                // ── Shift+Click: range selection from anchor to clicked index ──
+                // Shift+Click: range selection from anchor to clicked index.
                 let anchor = state
                     .active_tab()
                     .anchor_commit_index
-                    .or(state.active_tab().selected_commit)
-                    .unwrap_or(index);
+                    .or(state.active_tab().selected_commit);
 
-                let range = gitkraft_core::ascending_range(anchor, index);
+                let range = crate::view_utils::shift_click_range(anchor, index);
 
                 // Determine the oldest and newest commits in the selection.
                 // Commits are stored newest-first, so the highest index is the oldest.

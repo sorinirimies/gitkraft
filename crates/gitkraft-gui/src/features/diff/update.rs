@@ -16,27 +16,13 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             let oid = tab.selected_commit_oid.clone();
 
             if shift_held {
-                // ── Shift+Click: range selection from anchor to clicked index ──
-                //
-                // The anchor is the file that was last clicked WITHOUT Shift.
-                // Every Shift+Click replaces the selection with everything
-                // between the anchor and the clicked index (inclusive), exactly
-                // like standard file-manager range selection.
+                // Shift+Click: range selection from anchor to clicked index.
                 let anchor = state
                     .active_tab()
                     .anchor_file_index
-                    .or(state.active_tab().selected_file_index)
-                    .unwrap_or(index);
+                    .or(state.active_tab().selected_file_index);
 
-                let (start, end) = if anchor <= index {
-                    (anchor, index)
-                } else {
-                    (index, anchor)
-                };
-
-                // Build the range in ascending order so badges are always
-                // numbered top-to-bottom.
-                let range: Vec<usize> = (start..=end).collect();
+                let range = crate::view_utils::shift_click_range(anchor, index);
                 let count = range.len();
 
                 let tab = state.active_tab_mut();
@@ -47,7 +33,7 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                     // Range collapsed to a single file — behave like a normal
                     // single-file selection (no multi-diff panel).
                     tab.multi_file_diffs.clear();
-                    let file_entry = tab.commit_files.get(start).cloned();
+                    let file_entry = tab.commit_files.get(index).cloned();
                     if let (Some(entry), Some(path), Some(oid)) = (file_entry, repo_path, oid) {
                         let file_path = entry.display_path().to_string();
                         let tab = state.active_tab_mut();

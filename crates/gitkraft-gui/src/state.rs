@@ -2483,4 +2483,42 @@ mod tests {
             "commit_range_diffs must survive when commit is preserved"
         );
     }
+
+    // ── PreviewFile / OpenFiles message tests ─────────────────────────
+
+    #[test]
+    fn preview_file_loaded_sets_selected_diff() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+
+        let content = "line 1\nline 2\nline 3".to_string();
+        let _ = state.update(Message::FilePreviewLoaded(Ok((
+            "test.rs".to_string(),
+            content,
+        ))));
+
+        let diff = state.active_tab().selected_diff.as_ref().unwrap();
+        assert_eq!(diff.new_file, "test.rs");
+        assert_eq!(diff.hunks.len(), 1);
+        assert_eq!(diff.hunks[0].lines.len(), 3);
+        assert_eq!(state.active_tab().diff_scroll_offset, 0.0);
+    }
+
+    #[test]
+    fn preview_file_loaded_error_sets_error_message() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+
+        let _ = state.update(Message::FilePreviewLoaded(Err("No such file".to_string())));
+
+        assert!(state.active_tab().error_message.is_some());
+        assert!(state
+            .active_tab()
+            .error_message
+            .as_ref()
+            .unwrap()
+            .contains("No such file"));
+    }
 }

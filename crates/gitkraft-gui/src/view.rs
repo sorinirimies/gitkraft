@@ -1068,10 +1068,33 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
             let mut col = column![header];
 
             if is_multi {
+                // Collect selected file paths
+                let selected_paths: Vec<String> = state
+                    .active_tab()
+                    .unstaged_changes
+                    .iter()
+                    .filter(|d| {
+                        state
+                            .active_tab()
+                            .selected_unstaged
+                            .contains(d.display_path())
+                    })
+                    .map(|d| d.display_path().to_string())
+                    .collect();
+
                 // Batch operations for multi-select
                 col = col.push(menu_item(
                     &format!("Stage {} file(s)", selected_count),
                     Message::StageSelected,
+                ));
+                col = col.push(view_utils::context_menu_separator::<Message>());
+                col = col.push(menu_item(
+                    &format!("Open {} file(s) in editor", selected_count),
+                    Message::OpenFilesInEditor(selected_paths.clone()),
+                ));
+                col = col.push(menu_item(
+                    &format!("Open {} file(s)", selected_count),
+                    Message::OpenFilesInDefaultProgram(selected_paths),
                 ));
                 col = col.push(view_utils::context_menu_separator::<Message>());
                 col = col.push(menu_item(
@@ -1103,6 +1126,10 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                 ));
                 col = col.push(view_utils::context_menu_separator::<Message>());
                 col = col.push(menu_item("View diff", Message::SelectDiff(diff)));
+                col = col.push(menu_item(
+                    "Preview file",
+                    Message::PreviewFile(path.clone()),
+                ));
                 col = col.push(menu_item(
                     "Open in editor",
                     Message::OpenInEditor(path.clone()),
@@ -1150,9 +1177,31 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
             let mut col = column![header];
 
             if is_multi {
+                let selected_paths: Vec<String> = state
+                    .active_tab()
+                    .staged_changes
+                    .iter()
+                    .filter(|d| {
+                        state
+                            .active_tab()
+                            .selected_staged
+                            .contains(d.display_path())
+                    })
+                    .map(|d| d.display_path().to_string())
+                    .collect();
+
                 col = col.push(menu_item(
                     &format!("Unstage {} file(s)", selected_count),
                     Message::UnstageSelected,
+                ));
+                col = col.push(view_utils::context_menu_separator::<Message>());
+                col = col.push(menu_item(
+                    &format!("Open {} file(s) in editor", selected_count),
+                    Message::OpenFilesInEditor(selected_paths.clone()),
+                ));
+                col = col.push(menu_item(
+                    &format!("Open {} file(s)", selected_count),
+                    Message::OpenFilesInDefaultProgram(selected_paths),
                 ));
                 col = col.push(view_utils::context_menu_separator::<Message>());
                 col = col.push(menu_item(
@@ -1183,6 +1232,10 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                 ));
                 col = col.push(view_utils::context_menu_separator::<Message>());
                 col = col.push(menu_item("View diff", Message::SelectDiff(diff)));
+                col = col.push(menu_item(
+                    "Preview file",
+                    Message::PreviewFile(path.clone()),
+                ));
                 col = col.push(menu_item(
                     "Open in editor",
                     Message::OpenInEditor(path.clone()),

@@ -85,17 +85,15 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             let shift_held = state.keyboard_modifiers.shift();
             let tab = state.active_tab_mut();
 
-            // Find the index of the clicked file.
             let clicked_idx = tab
                 .unstaged_changes
                 .iter()
                 .position(|d| d.display_path() == path);
 
             if shift_held {
-                // Shift+Click: range selection from anchor to clicked index.
                 if let Some(idx) = clicked_idx {
-                    let anchor = tab.anchor_unstaged_index.unwrap_or(idx);
-                    let range = gitkraft_core::ascending_range(anchor, idx);
+                    let range =
+                        crate::view_utils::shift_click_range(tab.anchor_unstaged_index, idx);
                     tab.selected_unstaged.clear();
                     for i in &range {
                         if let Some(d) = tab.unstaged_changes.get(*i) {
@@ -104,7 +102,6 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                     }
                 }
             } else {
-                // Regular click: toggle single file, set anchor.
                 if tab.selected_unstaged.contains(&path) {
                     tab.selected_unstaged.remove(&path);
                 } else {
@@ -115,7 +112,6 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                 }
             }
 
-            // Show the clicked file's diff in the diff pane.
             if let Some(diff) = tab
                 .unstaged_changes
                 .iter()
@@ -139,8 +135,7 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
 
             if shift_held {
                 if let Some(idx) = clicked_idx {
-                    let anchor = tab.anchor_staged_index.unwrap_or(idx);
-                    let range = gitkraft_core::ascending_range(anchor, idx);
+                    let range = crate::view_utils::shift_click_range(tab.anchor_staged_index, idx);
                     tab.selected_staged.clear();
                     for i in &range {
                         if let Some(d) = tab.staged_changes.get(*i) {

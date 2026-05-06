@@ -361,8 +361,16 @@ pub enum Message {
 
     /// Open a file in the configured editor.
     OpenInEditor(String),
+    /// Open multiple files in the configured editor.
+    OpenFilesInEditor(Vec<String>),
     /// Open a file in the system's default program.
     OpenInDefaultProgram(String),
+    /// Open multiple files in the system's default program.
+    OpenFilesInDefaultProgram(Vec<String>),
+    /// Preview a file's content in the diff pane (read-only).
+    PreviewFile(String),
+    /// Result of reading a file for preview.
+    FilePreviewLoaded(Result<(String, String), String>),
     /// Show a file in the system file manager.
     ShowInFolder(String),
 
