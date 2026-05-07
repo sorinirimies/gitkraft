@@ -2727,4 +2727,281 @@ mod tests {
             "tab content must be unchanged"
         );
     }
+
+    #[test]
+    fn close_tab_out_of_bounds_index_is_noop() {
+        // Closing a tab index that doesn't exist must be silently ignored.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        assert_eq!(state.tabs.len(), 2);
+
+        let _ = state.update(Message::CloseTab(99));
+
+        assert_eq!(state.tabs.len(), 2, "no tab should be removed");
+    }
+
+    // ── CloseTab — three-tab scenarios ────────────────────────────────────
+
+    #[test]
+    fn close_tab_three_tabs_close_first_active() {
+        // [repo-a*(0), repo-b(1), repo-c(2)] close 0
+        // → [repo-b(0), repo-c(1)], active stays 0 (repo-b).
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[2], "/home/user/repo-c");
+        state.active_tab = 0;
+
+        let _ = state.update(Message::CloseTab(0));
+
+        assert_eq!(state.tabs.len(), 2);
+        assert_eq!(state.active_tab, 0);
+        assert_eq!(
+            state.active_tab().repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-b"))
+        );
+    }
+
+    #[test]
+    fn close_tab_three_tabs_close_active_middle() {
+        // [repo-a(0), repo-b*(1), repo-c(2)] close 1
+        // → [repo-a(0), repo-c(1)], active_tab stays 1 (repo-c slides in).
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[2], "/home/user/repo-c");
+        state.active_tab = 1;
+
+        let _ = state.update(Message::CloseTab(1));
+
+        assert_eq!(state.tabs.len(), 2);
+        assert_eq!(
+            state.active_tab, 1,
+            "active_tab must stay at 1 (repo-c slides in)"
+        );
+        assert_eq!(
+            state.active_tab().repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-c"))
+        );
+    }
+
+    #[test]
+    fn close_tab_three_tabs_close_active_last() {
+        // [repo-a(0), repo-b(1), repo-c*(2)] close 2
+        // → [repo-a(0), repo-b(1)], active_tab becomes 1 (clamped).
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[2], "/home/user/repo-c");
+        state.active_tab = 2;
+
+        let _ = state.update(Message::CloseTab(2));
+
+        assert_eq!(state.tabs.len(), 2);
+        assert_eq!(
+            state.active_tab, 1,
+            "active_tab must be clamped to last index"
+        );
+        assert_eq!(
+            state.active_tab().repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-b"))
+        );
+    }
+
+    #[test]
+    fn close_tab_three_tabs_close_first_when_middle_active() {
+        // [repo-a(0), repo-b*(1), repo-c(2)] close 0
+        // → [repo-b(0), repo-c(1)], active_tab shifts from 1 to 0.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[2], "/home/user/repo-c");
+        state.active_tab = 1;
+
+        let _ = state.update(Message::CloseTab(0));
+
+        assert_eq!(state.tabs.len(), 2);
+        assert_eq!(
+            state.active_tab, 0,
+            "active_tab must decrement when a tab before it is removed"
+        );
+        assert_eq!(
+            state.active_tab().repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-b")),
+            "repo-b must remain active"
+        );
+    }
+
+    #[test]
+    fn close_tab_three_tabs_close_last_when_middle_active() {
+        // [repo-a(0), repo-b*(1), repo-c(2)] close 2
+        // → [repo-a(0), repo-b(1)], active_tab stays at 1.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[2], "/home/user/repo-c");
+        state.active_tab = 1;
+
+        let _ = state.update(Message::CloseTab(2));
+
+        assert_eq!(state.tabs.len(), 2);
+        assert_eq!(
+            state.active_tab, 1,
+            "active_tab must not change when a tab after it is removed"
+        );
+        assert_eq!(
+            state.active_tab().repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-b")),
+            "repo-b must remain active"
+        );
+    }
+
+    // ── CloseRepo — three-tab scenarios ───────────────────────────────────
+
+    #[test]
+    fn close_repo_three_tabs_active_in_middle() {
+        // [repo-a(0), repo-b*(1), repo-c(2)] close active
+        // → [repo-a(0), repo-c(1)], active_tab stays 1 (repo-c slides in).
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[2], "/home/user/repo-c");
+        state.active_tab = 1;
+
+        let _ = state.update(Message::CloseRepo);
+
+        assert_eq!(state.tabs.len(), 2);
+        assert_eq!(state.active_tab, 1);
+        assert_eq!(
+            state.active_tab().repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-c"))
+        );
+    }
+
+    #[test]
+    fn close_repo_three_tabs_active_at_end() {
+        // [repo-a(0), repo-b(1), repo-c*(2)] close active
+        // → [repo-a(0), repo-b(1)], active_tab clamped to 1.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[2], "/home/user/repo-c");
+        state.active_tab = 2;
+
+        let _ = state.update(Message::CloseRepo);
+
+        assert_eq!(state.tabs.len(), 2);
+        assert_eq!(state.active_tab, 1, "active_tab clamped to last index");
+        assert_eq!(
+            state.active_tab().repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-b"))
+        );
+    }
+
+    // ── NewTab ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn new_tab_appends_empty_tab_and_makes_it_active() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        assert_eq!(state.tabs.len(), 1);
+
+        let _ = state.update(Message::NewTab);
+
+        assert_eq!(state.tabs.len(), 2, "a new empty tab must be appended");
+        assert_eq!(state.active_tab, 1, "new tab must become active");
+        assert!(!state.active_tab().has_repo(), "new tab must be empty");
+        // The original repo tab must be unaffected.
+        assert!(state.tabs[0].has_repo());
+    }
+
+    #[test]
+    fn new_tab_with_multiple_existing_tabs() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.active_tab = 0;
+
+        let _ = state.update(Message::NewTab);
+
+        assert_eq!(state.tabs.len(), 3);
+        assert_eq!(state.active_tab, 2);
+        assert!(!state.active_tab().has_repo());
+    }
+
+    // ── SwitchTab ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn switch_tab_to_valid_index() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.active_tab = 0;
+
+        let _ = state.update(Message::SwitchTab(1));
+
+        assert_eq!(state.active_tab, 1);
+        assert_eq!(
+            state.active_tab().repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-b"))
+        );
+    }
+
+    #[test]
+    fn switch_tab_to_same_index_is_noop() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.active_tab = 1;
+
+        let _ = state.update(Message::SwitchTab(1));
+
+        assert_eq!(state.active_tab, 1, "should remain on tab 1");
+    }
+
+    #[test]
+    fn switch_tab_out_of_bounds_is_noop() {
+        // Firing SwitchTab with a too-large index must not panic or change state.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.active_tab = 0;
+
+        let _ = state.update(Message::SwitchTab(99));
+
+        assert_eq!(state.active_tab, 0, "out-of-bounds switch must be ignored");
+    }
 }
