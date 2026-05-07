@@ -2,12 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.0.1 - 2026-05-07
+### ➕ Added
+- Add tests for tab and repo closing and switching scenarios
+### 🐛 Bug Fixes
+- Fix tab closing behavior and add tests for CloseRepo and CloseTab
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.0...v1.0.1
 ## 1.0.0 - 2026-05-06
 ### ♻️ Refactor
 - Refactor staging selection logic and context menu handling
 ### ➕ Added
 - Add draggable dividers for staging and sidebar panels
 - Add multi-file open and preview actions to context menus
+### 🔧 Chores
+- chore: bump version to 1.0.0
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.9.5...v1.0.0
 ## 0.9.5 - 2026-05-04
 ### ➕ Added
