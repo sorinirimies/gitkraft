@@ -120,9 +120,19 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         }
 
         Message::CloseRepo => {
-            // Replace the active tab with a fresh empty one, returning the
-            // user to the welcome screen where the recent-repos list is visible.
-            state.tabs[state.active_tab] = crate::state::RepoTab::new_empty();
+            // When multiple tabs are open, remove the current tab and switch
+            // to the adjacent one so the user lands on their other open repo.
+            // When only one tab is open, replace it with a fresh empty one to
+            // show the welcome screen (we never fully remove the last tab).
+            if state.tabs.len() > 1 {
+                state.tabs.remove(state.active_tab);
+                if state.active_tab >= state.tabs.len() {
+                    state.active_tab = state.tabs.len() - 1;
+                }
+                // active_tab already points to the next tab; no further adjustment.
+            } else {
+                state.tabs[state.active_tab] = crate::state::RepoTab::new_empty();
+            }
 
             // Reset drag state (these fields remain on GitKraft).
             state.dragging = None;

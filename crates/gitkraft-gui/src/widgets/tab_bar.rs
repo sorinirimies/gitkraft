@@ -1,5 +1,21 @@
 //! Tab bar widget — renders a horizontal row of repository tabs at the top of
 //! the window, similar to GitKraken's tab bar.
+//!
+//! ## Layout per tab
+//!
+//! ```text
+//!  ┌──────────────────────────────────────────┐
+//!  │  [tab_btn: icon + label]  │  [close_btn] │
+//!  └──────────────────────────────────────────┘
+//! ```
+//!
+//! **Important:** the close button is a *sibling* of the tab-switch button,
+//! NOT nested inside it.  Nesting a `button` inside another `button` in Iced
+//! can cause the outer button's event handling to shadow the inner one for the
+//! currently-active tab (the outer `SwitchTab` message fires a synchronous
+//! update+view cycle which resets the inner button's `is_pressed` state before
+//! the `ButtonReleased` event arrives, so `CloseTab` never fires).  Keeping
+//! them as siblings at the same row level eliminates the race entirely.
 
 use iced::widget::{button, container, row, scrollable, text, Space};
 use iced::{Alignment, Element, Length};
@@ -20,56 +36,57 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         let is_active = idx == state.active_tab;
         let name = tab.display_name().to_string();
 
-        // Repo icon
+        // ── Icon: accent when this tab is selected ────────────────────────
+        let icon_color = if is_active { c.accent } else { c.muted };
         let icon = if tab.has_repo() {
-            icon!(
-                icons::FOLDER_OPEN,
-                12,
-                if is_active { c.accent } else { c.muted }
-            )
+            icon!(icons::FOLDER_OPEN, 12, icon_color)
         } else {
-            icon!(
-                icons::PERSON_FILL,
-                12,
-                if is_active { c.accent } else { c.muted }
-            )
+            icon!(icons::PERSON_FILL, 12, icon_color)
         };
 
-        // Tab label
-        let label = text(name).size(12).color(if is_active {
-            c.text_primary
+        // ── Label: accent when selected, secondary otherwise ──────────────
+        let label_color = if is_active {
+            c.accent
         } else {
             c.text_secondary
-        });
+        };
+        let label = text(name).size(12).color(label_color);
 
-        // Build the inner row: icon + name + optional close button
-        let mut tab_content = row![icon, Space::new().width(6), label].align_y(Alignment::Center);
+        // ── Tab label button (icon + name only — NO close button inside) ──
+        //
+        // Keeping the close button *outside* this button is the key fix.
+        // If `close_btn` were nested here, clicking × on the active tab
+        // could have its `is_pressed` flag wiped by the intervening
+        // SwitchTab update before ButtonReleased arrives.
+        let tab_content = row![icon, Space::new().width(6), label].align_y(Alignment::Center);
 
-        if state.tabs.len() > 1 {
-            let close_btn = button(icon!(icons::X_CIRCLE, 10, c.muted))
-                .padding([0, 2])
-                .style(theme::ghost_button)
-                .on_press(Message::CloseTab(idx));
-            tab_content = tab_content.push(Space::new().width(6)).push(close_btn);
-        }
-
-        // Wrap in a mouse_area so clicking the label/icon area switches tabs
-        // without interfering with the close button.
         let tab_style = if is_active {
             theme::active_tab_button as fn(&iced::Theme, button::Status) -> button::Style
         } else {
             theme::ghost_button as fn(&iced::Theme, button::Status) -> button::Style
         };
 
-        let tab_widget = button(tab_content)
+        let tab_btn = button(tab_content)
             .padding([6, 10])
             .style(tab_style)
             .on_press(Message::SwitchTab(idx));
 
-        tabs_row = tabs_row.push(tab_widget);
+        // ── Close button — sibling of tab_btn, not a child ───────────────
+        if state.tabs.len() > 1 {
+            // Use accent colour on the active tab's × so it stands out.
+            let close_color = if is_active { c.accent } else { c.muted };
+            let close_btn = button(icon!(icons::X_CIRCLE, 10, close_color))
+                .padding([2, 4])
+                .style(theme::ghost_button)
+                .on_press(Message::CloseTab(idx));
+
+            tabs_row = tabs_row.push(row![tab_btn, close_btn].align_y(Alignment::Center));
+        } else {
+            tabs_row = tabs_row.push(tab_btn);
+        }
     }
 
-    // "+" button to add a new tab
+    // "+" button to open a new empty tab
     let new_tab_btn = button(icon!(icons::PLUS_CIRCLE, 14, c.text_secondary))
         .padding([6, 10])
         .style(theme::ghost_button)

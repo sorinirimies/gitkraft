@@ -2548,4 +2548,183 @@ mod tests {
             .unwrap()
             .contains("No such file"));
     }
+
+    // ── CloseRepo ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn close_repo_single_tab_shows_welcome_screen() {
+        // When only one tab is open, CloseRepo should empty the tab (show
+        // welcome screen) rather than removing it — there must always be at
+        // least one tab.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        assert_eq!(state.tabs.len(), 1);
+
+        let _ = state.update(Message::CloseRepo);
+
+        assert_eq!(state.tabs.len(), 1, "last tab must not be removed");
+        assert_eq!(state.active_tab, 0);
+        assert!(!state.active_tab().has_repo(), "tab should be empty");
+    }
+
+    #[test]
+    fn close_repo_with_multiple_tabs_removes_current_tab() {
+        // The core of the reported bug: when the currently selected repo is
+        // closed and there are other tabs open, the CURRENT tab should be
+        // removed and the user should land on the remaining tab — NOT have the
+        // current tab emptied in place (which left the other repo displaced).
+        //
+        // Before fix: CloseRepo replaced active tab with empty, keeping it
+        //   selected, so the user saw a blank welcome screen while the other
+        //   repo was still in the tab bar but not visible → perceived as
+        //   "removes the other one and keeps the current one selected".
+        // After fix: active tab is removed, user lands on the other repo.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        // Tab 0: repo-a (will be the active/selected tab)
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        // Tab 1: repo-b
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        // repo-a (tab 0) is the currently selected tab
+        state.active_tab = 0;
+
+        let _ = state.update(Message::CloseRepo);
+
+        // The current tab (repo-a) must be gone; repo-b must be the only
+        // remaining tab and must be active.
+        assert_eq!(state.tabs.len(), 1, "current tab must be removed");
+        assert_eq!(state.active_tab, 0);
+        assert_eq!(
+            state.active_tab().repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-b")),
+            "repo-b should be the surviving tab"
+        );
+    }
+
+    #[test]
+    fn close_repo_second_tab_active_removes_it_and_keeps_first() {
+        // Same scenario but with the SECOND tab as the active (selected) one —
+        // the first tab must survive and become the new active tab.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        // Tab 0: repo-a
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        // Tab 1: repo-b (active)
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.active_tab = 1; // repo-b is the currently selected tab
+
+        let _ = state.update(Message::CloseRepo);
+
+        assert_eq!(state.tabs.len(), 1);
+        assert_eq!(state.active_tab, 0);
+        assert_eq!(
+            state.active_tab().repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-a")),
+            "repo-a should be the surviving tab"
+        );
+    }
+
+    // ── CloseTab ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn close_tab_active_tab_first_position() {
+        // active_tab=0, close tab 0 → tab 1 (repo-b) becomes active at index 0.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.active_tab = 0;
+
+        let _ = state.update(Message::CloseTab(0));
+
+        assert_eq!(state.tabs.len(), 1);
+        assert_eq!(state.active_tab, 0);
+        assert_eq!(
+            state.active_tab().repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-b"))
+        );
+    }
+
+    #[test]
+    fn close_tab_active_tab_second_position() {
+        // active_tab=1, close tab 1 → tab 0 (repo-a) becomes active.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.active_tab = 1;
+
+        let _ = state.update(Message::CloseTab(1));
+
+        assert_eq!(state.tabs.len(), 1);
+        assert_eq!(state.active_tab, 0);
+        assert_eq!(
+            state.active_tab().repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-a"))
+        );
+    }
+
+    #[test]
+    fn close_tab_non_active_tab_before_active() {
+        // active_tab=1, close tab 0 → repo-b stays active but shifts to index 0.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.active_tab = 1;
+
+        let _ = state.update(Message::CloseTab(0));
+
+        assert_eq!(state.tabs.len(), 1);
+        assert_eq!(state.active_tab, 0, "active_tab must shift down by 1");
+        assert_eq!(
+            state.active_tab().repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-b")),
+            "repo-b must remain active"
+        );
+    }
+
+    #[test]
+    fn close_tab_non_active_tab_after_active() {
+        // active_tab=0, close tab 1 → repo-a stays active at index 0.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.active_tab = 0;
+
+        let _ = state.update(Message::CloseTab(1));
+
+        assert_eq!(state.tabs.len(), 1);
+        assert_eq!(state.active_tab, 0, "active_tab must remain unchanged");
+        assert_eq!(
+            state.active_tab().repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-a")),
+            "repo-a must remain active"
+        );
+    }
+
+    #[test]
+    fn close_tab_last_remaining_tab_is_noop() {
+        // Can't close the last tab — CloseTab must be a no-op.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        assert_eq!(state.tabs.len(), 1);
+
+        let _ = state.update(Message::CloseTab(0));
+
+        assert_eq!(state.tabs.len(), 1, "last tab must not be removed");
+        assert!(
+            state.active_tab().has_repo(),
+            "tab content must be unchanged"
+        );
+    }
 }
