@@ -2,8 +2,91 @@
 
 use anyhow::{Context, Result};
 use git2::Repository;
+use std::collections::HashMap;
 
-/// Apply the changes introduced by `oid_str` onto the current HEAD using git cherry-pick.
+use super::types::{CommitInfo, RefKind, RefLabel};
+
+// ── ref map ───────────────────────────────────────────────────────────────
+
+/// Build a map of commit OID → ref labels for all refs in the repository.
+///
+/// Used by [`list_commits`] and [`crate::features::log::ops::get_log`] to
+/// attach branch/tag information to each [`CommitInfo`].
+pub(crate) fn build_ref_map(repo: &Repository) -> HashMap<git2::Oid, Vec<RefLabel>> {
+    let mut map: HashMap<git2::Oid, Vec<RefLabel>> = HashMap::new();
+
+    let head_branch: Option<String> = repo
+        .head()
+        .ok()
+        .filter(|h| h.is_branch())
+        .and_then(|h| h.shorthand().map(|s| s.to_string()));
+
+    if let Ok(refs) = repo.references() {
+        for rf in refs.flatten() {
+            let full_name = match rf.name() {
+                Some(n) => n.to_string(),
+                None => continue,
+            };
+            let oid = match rf.peel_to_commit() {
+                Ok(c) => c.id(),
+                Err(_) => continue,
+            };
+            let label = if let Some(branch) = full_name.strip_prefix("refs/heads/") {
+                let kind = if head_branch.as_deref() == Some(branch) {
+                    RefKind::Head
+                } else {
+                    RefKind::LocalBranch
+                };
+                RefLabel {
+                    name: branch.to_string(),
+                    kind,
+                }
+            } else if let Some(rb) = full_name.strip_prefix("refs/remotes/") {
+                if rb.ends_with("/HEAD") {
+                    continue;
+                }
+                RefLabel {
+                    name: rb.to_string(),
+                    kind: RefKind::RemoteBranch,
+                }
+            } else if let Some(tag) = full_name.strip_prefix("refs/tags/") {
+                RefLabel {
+                    name: tag.to_string(),
+                    kind: RefKind::Tag,
+                }
+            } else {
+                continue;
+            };
+            map.entry(oid).or_default().push(label);
+        }
+    }
+
+    // Detached HEAD: synthesise a label for the bare commit.
+    if head_branch.is_none() {
+        if let Ok(head) = repo.head() {
+            if let Ok(commit) = head.peel_to_commit() {
+                map.entry(commit.id()).or_default().push(RefLabel {
+                    name: "HEAD".to_string(),
+                    kind: RefKind::Head,
+                });
+            }
+        }
+    }
+
+    // Sort each bucket: Head first, LocalBranch, RemoteBranch, Tag.
+    for labels in map.values_mut() {
+        labels.sort_by_key(|r| match r.kind {
+            RefKind::Head => 0u8,
+            RefKind::LocalBranch => 1,
+            RefKind::RemoteBranch => 2,
+            RefKind::Tag => 3,
+        });
+    }
+
+    map
+}
+
+// ── cherry-pick ──────────────────────────────────────────────────────────
 pub fn cherry_pick_commit(workdir: &std::path::Path, oid_str: &str) -> anyhow::Result<()> {
     let output = std::process::Command::new("git")
         .args(["cherry-pick", oid_str])
@@ -20,12 +103,14 @@ pub fn cherry_pick_commit(workdir: &std::path::Path, oid_str: &str) -> anyhow::R
     }
 }
 
-use super::types::CommitInfo;
-
 /// Walk the history from HEAD and return up to `max_count` commits.
 ///
 /// Commits are sorted topologically and by time (newest first).
+/// Each commit's [`CommitInfo::refs`] is populated with any branch / tag /
+/// HEAD labels that point directly at it.
 pub fn list_commits(repo: &Repository, max_count: usize) -> Result<Vec<CommitInfo>> {
+    let ref_map = build_ref_map(repo);
+
     let mut revwalk = repo.revwalk().context("failed to create revwalk")?;
     revwalk
         .push_head()
@@ -43,7 +128,11 @@ pub fn list_commits(repo: &Repository, max_count: usize) -> Result<Vec<CommitInf
         let commit = repo
             .find_commit(oid)
             .with_context(|| format!("failed to find commit {oid}"))?;
-        commits.push(CommitInfo::from_git2_commit(&commit));
+        let mut info = CommitInfo::from_git2_commit(&commit);
+        if let Some(refs) = ref_map.get(&oid) {
+            info.refs = refs.clone();
+        }
+        commits.push(info);
     }
 
     Ok(commits)
@@ -202,5 +291,61 @@ mod tests {
 
         let both = list_commits(&repo, 100).unwrap();
         assert_eq!(both.len(), 2);
+    }
+
+    #[test]
+    fn list_commits_attaches_head_ref_to_tip() {
+        let (_dir, repo) = setup_repo_with_commit();
+        let commits = list_commits(&repo, 10).unwrap();
+        // The single commit should carry the HEAD branch label.
+        assert!(!commits[0].refs.is_empty(), "tip commit should have refs");
+        assert!(
+            commits[0]
+                .refs
+                .iter()
+                .any(|r| r.kind == crate::features::commits::types::RefKind::Head),
+            "tip commit should have a Head ref"
+        );
+    }
+
+    #[test]
+    fn list_commits_non_tip_commits_have_no_refs() {
+        let (dir, repo) = setup_repo_with_commit();
+        // Add a second commit — only the tip should have refs.
+        std::fs::write(dir.path().join("second.txt"), "two\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("second.txt")).unwrap();
+        index.write().unwrap();
+        create_commit(&repo, "second commit").unwrap();
+
+        let commits = list_commits(&repo, 100).unwrap();
+        assert_eq!(commits.len(), 2);
+        // Tip (newest) should have refs
+        assert!(!commits[0].refs.is_empty());
+        // Parent (older) should have no refs
+        assert!(
+            commits[1].refs.is_empty(),
+            "non-tip commits should have empty refs"
+        );
+    }
+
+    #[test]
+    fn build_ref_map_includes_tags() {
+        let (_dir, repo) = setup_repo_with_commit();
+        // Create a lightweight tag on HEAD
+        let head_oid = repo.head().unwrap().target().unwrap();
+        let head_commit = repo.find_commit(head_oid).unwrap();
+        repo.tag_lightweight("v1.0.0", head_commit.as_object(), false)
+            .unwrap();
+
+        let ref_map = build_ref_map(&repo);
+        let labels = ref_map.get(&head_oid).expect("HEAD should have refs");
+        assert!(
+            labels
+                .iter()
+                .any(|r| r.name == "v1.0.0"
+                    && r.kind == crate::features::commits::types::RefKind::Tag),
+            "tag should appear in ref map"
+        );
     }
 }

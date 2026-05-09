@@ -2705,6 +2705,7 @@ mod tests {
             author_email: "a@b.com".to_string(),
             time: Default::default(),
             parent_ids: vec![],
+                refs: Vec::new(),
         }];
         app.tab_mut().commit_list_state.select(Some(0));
 
@@ -2731,6 +2732,7 @@ mod tests {
             author_email: "a@b.com".to_string(),
             time: Default::default(),
             parent_ids: vec![],
+                refs: Vec::new(),
         }];
         app.tab_mut().commit_list_state.select(Some(0));
 
@@ -2755,6 +2757,7 @@ mod tests {
             author_email: "a@b.com".to_string(),
             time: Default::default(),
             parent_ids: vec![],
+                refs: Vec::new(),
         }];
         app.tab_mut().commit_list_state.select(Some(0));
         // Pre-set cursor to a non-zero value
@@ -2936,6 +2939,7 @@ mod tests {
             author_email: "a@a.com".into(),
             time: Default::default(),
             parent_ids: Vec::new(),
+                refs: Vec::new(),
         }];
         app.tab_mut().commit_list_state.select(Some(0));
 
@@ -2956,6 +2960,7 @@ mod tests {
             author_email: "a@a.com".into(),
             time: Default::default(),
             parent_ids: Vec::new(),
+                refs: Vec::new(),
         }];
         app.tab_mut().commit_list_state.select(Some(0));
 
@@ -2977,6 +2982,7 @@ mod tests {
             author_email: "a@a.com".into(),
             time: Default::default(),
             parent_ids: Vec::new(),
+                refs: Vec::new(),
         }];
         // No cursor selected — commit_list_state.selected() returns None
 
@@ -3001,6 +3007,7 @@ mod tests {
             author_email: "a@a.com".into(),
             time: Default::default(),
             parent_ids: Vec::new(),
+                refs: Vec::new(),
         }];
         app.tab_mut().commit_list_state.select(Some(0));
 
@@ -3032,6 +3039,7 @@ mod tests {
                 author_email: "a@a.com".into(),
                 time: Default::default(),
                 parent_ids: Vec::new(),
+                refs: Vec::new(),
             },
             gitkraft_core::CommitInfo {
                 oid: "oid_middle".to_string(),
@@ -3042,6 +3050,7 @@ mod tests {
                 author_email: "a@a.com".into(),
                 time: Default::default(),
                 parent_ids: Vec::new(),
+                refs: Vec::new(),
             },
             gitkraft_core::CommitInfo {
                 oid: "oid_oldest".to_string(),
@@ -3052,6 +3061,7 @@ mod tests {
                 author_email: "a@a.com".into(),
                 time: Default::default(),
                 parent_ids: Vec::new(),
+                refs: Vec::new(),
             },
         ];
         // Multi-select all three commits.
@@ -3088,6 +3098,7 @@ mod tests {
                 author_email: "a@a.com".into(),
                 time: Default::default(),
                 parent_ids: Vec::new(),
+                refs: Vec::new(),
             },
             gitkraft_core::CommitInfo {
                 oid: "oid_1_oldest".to_string(),
@@ -3098,6 +3109,7 @@ mod tests {
                 author_email: "a@a.com".into(),
                 time: Default::default(),
                 parent_ids: Vec::new(),
+                refs: Vec::new(),
             },
         ];
         app.tab_mut().selected_commits = vec![0, 1];

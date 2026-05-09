@@ -3,18 +3,20 @@
 use anyhow::{Context, Result};
 use git2::Repository;
 
+use crate::features::commits::ops::build_ref_map;
 use crate::features::commits::CommitInfo;
 
-/// Retrieve the commit log, optionally filtered by author and/or message substring.
-///
-/// Walks from HEAD, returning at most `max_count` commits that match every
-/// supplied filter (filters are AND-ed together).
+/// Retrieve the commit log, optionally filtered by author and/or message
+/// substring. Each commit's [`CommitInfo::refs`] is populated with branch /
+/// tag labels.
 pub fn get_log(
     repo: &Repository,
     max_count: usize,
     filter_author: Option<&str>,
     filter_message: Option<&str>,
 ) -> Result<Vec<CommitInfo>> {
+    let ref_map = build_ref_map(repo);
+
     let mut revwalk = repo.revwalk().context("failed to create revwalk")?;
     revwalk.push_head().context("failed to push HEAD")?;
     revwalk
@@ -36,7 +38,6 @@ pub fn get_log(
             .find_commit(oid)
             .context("failed to find commit during log walk")?;
 
-        // ── Apply author filter ───────────────────────────────────────────
         if let Some(ref needle) = author_lower {
             let author = commit.author();
             let name = author.name().unwrap_or("").to_lowercase();
@@ -46,7 +47,6 @@ pub fn get_log(
             }
         }
 
-        // ── Apply message filter ──────────────────────────────────────────
         if let Some(ref needle) = message_lower {
             let msg = commit.message().unwrap_or("").to_lowercase();
             if !msg.contains(needle.as_str()) {
@@ -54,7 +54,11 @@ pub fn get_log(
             }
         }
 
-        results.push(CommitInfo::from_git2_commit(&commit));
+        let mut info = CommitInfo::from_git2_commit(&commit);
+        if let Some(refs) = ref_map.get(&oid) {
+            info.refs = refs.clone();
+        }
+        results.push(info);
     }
 
     Ok(results)

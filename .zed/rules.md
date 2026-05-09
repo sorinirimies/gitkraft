@@ -11,6 +11,18 @@
 - If you realise tests are missing after the fact, write them immediately — do not move on to the next task without them.
 - **Never respond "done" or summarise a completed feature without mentioning which tests were added.**
 
+### Self-check before responding "done"
+
+Before writing any closing summary, mentally run through this checklist and confirm every item:
+
+1. **Happy-path test** — does at least one test exercise the normal/expected behaviour?
+2. **Edge cases** — are boundary conditions covered (empty input, single item, max item, index 0, last index, out-of-bounds)?
+3. **Error / noop paths** — are invalid or no-op inputs tested (e.g. closing the last tab, switching to an out-of-bounds index)?
+4. **Regression guard** — is the exact bug scenario that was reported covered by a named test with a comment explaining the original failure?
+5. **`cargo test` is green** — all tests pass with no warnings.
+
+If any item is **No**, add the missing tests before finishing. Do not ask the user whether tests are needed — just add them.
+
 
 ## ⚠️ MANDATORY: Check Formatting After Every Change
 

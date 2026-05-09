@@ -20,6 +20,63 @@ use crate::theme::ThemeColors;
 use crate::view_utils;
 use crate::view_utils::truncate_to_fit;
 
+// ── ref-badge helpers ─────────────────────────────────────────────────────
+
+/// Foreground (text + border) colour for a ref badge.
+fn ref_fg(kind: &gitkraft_core::RefKind, c: &ThemeColors) -> iced::Color {
+    match kind {
+        gitkraft_core::RefKind::Head => c.accent,
+        gitkraft_core::RefKind::LocalBranch => c.green,
+        gitkraft_core::RefKind::RemoteBranch => c.yellow,
+        gitkraft_core::RefKind::Tag => c.muted,
+    }
+}
+
+/// Truncate a ref name to at most 22 chars with a trailing ellipsis.
+fn short_ref_name(name: &str) -> String {
+    const MAX: usize = 22;
+    if name.chars().count() <= MAX {
+        name.to_string()
+    } else {
+        let s: String = name.chars().take(MAX - 1).collect();
+        format!("{s}\u{2026}")
+    }
+}
+
+/// Build a row of coloured badge pills for `refs`, capped at `max_badges`.
+/// Returns `None` when the slice is empty so callers can skip the spacing.
+fn ref_badges_row<'a>(
+    refs: &'a [gitkraft_core::RefLabel],
+    c: &ThemeColors,
+    max_badges: usize,
+) -> Option<Element<'a, Message>> {
+    if refs.is_empty() {
+        return None;
+    }
+    let mut items: Vec<Element<'a, Message>> = Vec::new();
+    for (i, rf) in refs.iter().take(max_badges).enumerate() {
+        let fg = ref_fg(&rf.kind, c);
+        let bg = c.surface;
+        let name = short_ref_name(&rf.name);
+        let badge = container(text(name).size(10).color(fg).font(iced::Font::MONOSPACE))
+            .padding([1, 5])
+            .style(move |_: &iced::Theme| iced::widget::container::Style {
+                background: Some(iced::Background::Color(bg)),
+                border: iced::Border {
+                    color: fg,
+                    width: 1.0,
+                    radius: 3.0.into(),
+                },
+                ..Default::default()
+            });
+        if i > 0 {
+            items.push(Space::new().width(3).into());
+        }
+        items.push(badge.into());
+    }
+    Some(Row::with_children(items).align_y(Alignment::Center).into())
+}
+
 /// Estimated height of one commit row in pixels.  Used for virtual scrolling.
 /// A slight over- or under-estimate only affects scrollbar thumb precision,
 /// not correctness of the rendered content.
@@ -219,6 +276,21 @@ fn commit_row_element<'a>(
         .color(c.accent)
         .font(iced::Font::MONOSPACE);
 
+    // Ref badges (branch / tag / HEAD) shown between the OID and the summary.
+    let badges = ref_badges_row(&commit.refs, c, 3);
+    // Rough pixel budget consumed by the badges so summary truncation stays accurate.
+    let badges_overhead: f32 = if commit.refs.is_empty() {
+        0.0
+    } else {
+        commit
+            .refs
+            .iter()
+            .take(3)
+            .map(|r| r.name.len().min(22) as f32 * 6.5 + 18.0)
+            .sum::<f32>()
+            + 8.0
+    };
+
     // Use pre-computed display strings; fall back gracefully if out of sync.
     let (summary_str, time_str, author_str) = tab
         .commit_display
@@ -227,7 +299,8 @@ fn commit_row_element<'a>(
         .unwrap_or((commit.summary.as_str(), "", commit.author_name.as_str()));
 
     // Pre-truncate with "…" so the full row stays on one line.
-    let display_summary = truncate_to_fit(summary_str, available_summary_px, 7.0);
+    let row_available = (available_summary_px - badges_overhead).max(40.0);
+    let display_summary = truncate_to_fit(summary_str, row_available, 7.0);
     let summary_label = container(
         text(display_summary)
             .size(12)
@@ -237,8 +310,6 @@ fn commit_row_element<'a>(
     .width(Length::Fill)
     .clip(true);
 
-    // Fixed-width columns prevent author / time from being squeezed to zero
-    // and wrapping character-by-character.  Text is pre-truncated so it fits.
     let author_label = container(
         text(author_str)
             .size(11)
@@ -257,20 +328,27 @@ fn commit_row_element<'a>(
     .width(72)
     .clip(true);
 
-    let row_content = row![
+    // Build the row: insert badges between OID and summary when present.
+    let mut row_content = row![
         selection_badge,
         Space::new().width(2),
         graph_elem,
         oid_label,
         Space::new().width(6),
-        summary_label,
-        Space::new().width(8),
-        author_label,
-        Space::new().width(8),
-        time_label,
     ]
-    .align_y(Alignment::Center)
-    .padding([3, 8]);
+    .align_y(Alignment::Center);
+
+    if let Some(b) = badges {
+        row_content = row_content.push(b).push(Space::new().width(4));
+    }
+
+    let row_content = row_content
+        .push(summary_label)
+        .push(Space::new().width(8))
+        .push(author_label)
+        .push(Space::new().width(8))
+        .push(time_label)
+        .padding([3, 8]);
 
     let is_in_range = selected_range.contains(&idx);
     let style_fn = if is_selected {

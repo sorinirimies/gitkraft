@@ -6,6 +6,45 @@ use ratatui::Frame;
 
 use crate::app::{ActivePane, App};
 
+// ── ref-badge helpers ─────────────────────────────────────────────────────
+
+/// Map a [`gitkraft_core::RefKind`] to a TUI colour.
+fn ref_color(
+    kind: &gitkraft_core::RefKind,
+    theme: &crate::features::theme::palette::UiTheme,
+) -> Color {
+    match kind {
+        gitkraft_core::RefKind::Head => theme.accent,
+        gitkraft_core::RefKind::LocalBranch => theme.success,
+        gitkraft_core::RefKind::RemoteBranch => theme.warning,
+        gitkraft_core::RefKind::Tag => theme.text_muted,
+    }
+}
+
+/// Truncate a ref name to at most `max` chars with a trailing ellipsis.
+fn short_ref(name: &str, max: usize) -> String {
+    if name.chars().count() <= max {
+        name.to_string()
+    } else {
+        let s: String = name.chars().take(max - 1).collect();
+        format!("{s}\u{2026}")
+    }
+}
+
+/// Append coloured ref-badge spans to `out`, capped at `max_badges`.
+fn push_ref_badges(
+    out: &mut Vec<Span<'static>>,
+    refs: &[gitkraft_core::RefLabel],
+    theme: &crate::features::theme::palette::UiTheme,
+    max_badges: usize,
+) {
+    for rf in refs.iter().take(max_badges) {
+        let fg = ref_color(&rf.kind, theme);
+        let name = short_ref(&rf.name, 20);
+        out.push(Span::styled(format!(" [{name}]"), Style::default().fg(fg)));
+    }
+}
+
 fn graph_color(color_index: usize, graph_colors: &[Color; 8]) -> Color {
     graph_colors[color_index % graph_colors.len()]
 }
@@ -242,6 +281,11 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                 format!("{} ", commit.short_oid),
                 Style::default().fg(theme.warning),
             ));
+            // Ref badges: branch/tag/HEAD labels between OID and summary
+            push_ref_badges(&mut spans, &commit.refs, &theme, 3);
+            if !commit.refs.is_empty() {
+                spans.push(Span::raw(" "));
+            }
             spans.push(Span::styled(
                 summary,
                 Style::default().fg(theme.text_primary),
@@ -355,4 +399,83 @@ fn render_action_popup(app: &mut App, frame: &mut Frame, area: Rect) {
     frame.render_widget(Clear, popup_rect);
     let list = List::new(items).block(block);
     frame.render_widget(list, popup_rect);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn short_ref_fits_unchanged() {
+        assert_eq!(short_ref("main", 20), "main");
+    }
+
+    #[test]
+    fn short_ref_truncates_with_ellipsis() {
+        let long = "mario/MARIO-4327_fix_improve_figma_nightly";
+        let result = short_ref(long, 20);
+        assert_eq!(result.chars().count(), 20);
+        assert!(result.ends_with('\u{2026}'));
+    }
+
+    #[test]
+    fn short_ref_exact_length_no_truncation() {
+        let name = "12345678901234567890"; // exactly 20 chars
+        assert_eq!(short_ref(name, 20), name);
+    }
+
+    #[test]
+    fn push_ref_badges_empty_refs_adds_nothing() {
+        let theme =
+            crate::features::theme::palette::UiTheme::from_core(&gitkraft_core::theme_by_index(0));
+        let mut spans: Vec<Span<'static>> = Vec::new();
+        push_ref_badges(&mut spans, &[], &theme, 3);
+        assert!(spans.is_empty());
+    }
+
+    #[test]
+    fn push_ref_badges_respects_max() {
+        let theme =
+            crate::features::theme::palette::UiTheme::from_core(&gitkraft_core::theme_by_index(0));
+        let refs = vec![
+            gitkraft_core::RefLabel {
+                name: "main".into(),
+                kind: gitkraft_core::RefKind::Head,
+            },
+            gitkraft_core::RefLabel {
+                name: "dev".into(),
+                kind: gitkraft_core::RefKind::LocalBranch,
+            },
+            gitkraft_core::RefLabel {
+                name: "feat".into(),
+                kind: gitkraft_core::RefKind::LocalBranch,
+            },
+            gitkraft_core::RefLabel {
+                name: "origin/main".into(),
+                kind: gitkraft_core::RefKind::RemoteBranch,
+            },
+        ];
+        let mut spans: Vec<Span<'static>> = Vec::new();
+        push_ref_badges(&mut spans, &refs, &theme, 2);
+        // Only 2 badges despite 4 refs
+        assert_eq!(spans.len(), 2);
+    }
+
+    #[test]
+    fn push_ref_badges_contains_ref_name() {
+        let theme =
+            crate::features::theme::palette::UiTheme::from_core(&gitkraft_core::theme_by_index(0));
+        let refs = vec![gitkraft_core::RefLabel {
+            name: "main".into(),
+            kind: gitkraft_core::RefKind::Head,
+        }];
+        let mut spans: Vec<Span<'static>> = Vec::new();
+        push_ref_badges(&mut spans, &refs, &theme, 3);
+        assert_eq!(spans.len(), 1);
+        let content = &spans[0].content;
+        assert!(
+            content.contains("main"),
+            "badge should contain the ref name"
+        );
+    }
 }

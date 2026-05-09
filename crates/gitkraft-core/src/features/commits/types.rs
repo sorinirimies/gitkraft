@@ -1,6 +1,28 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// The kind of Git ref a [`RefLabel`] represents.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RefKind {
+    /// The branch currently checked out (HEAD points to this branch).
+    Head,
+    /// A local branch that is NOT the current HEAD.
+    LocalBranch,
+    /// A remote-tracking branch (e.g. `origin/main`).
+    RemoteBranch,
+    /// A lightweight or annotated tag.
+    Tag,
+}
+
+/// A human-readable Git reference attached to a commit for display.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefLabel {
+    /// Short display name (e.g. `main`, `origin/main`, `v1.0.0`).
+    pub name: String,
+    /// Category that drives the badge colour in the commit log UI.
+    pub kind: RefKind,
+}
+
 /// Full metadata for a single Git commit.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitInfo {
@@ -20,6 +42,11 @@ pub struct CommitInfo {
     pub time: DateTime<Utc>,
     /// Hex-encoded parent object ids.
     pub parent_ids: Vec<String>,
+    /// Branch / tag / HEAD labels that point directly at this commit.
+    /// Populated only when loaded via `list_commits` or `get_log`.
+    /// Most commits have an empty vec here.
+    #[serde(default)]
+    pub refs: Vec<RefLabel>,
 }
 
 impl CommitInfo {
@@ -52,6 +79,7 @@ impl CommitInfo {
             author_email,
             time,
             parent_ids,
+            refs: Vec::new(),
         }
     }
 
@@ -86,6 +114,7 @@ mod tests {
             author_email: "test@test.com".to_string(),
             time: Utc::now(),
             parent_ids: (0..parents).map(|i| format!("parent{i}")).collect(),
+                refs: Vec::new(),
         }
     }
 

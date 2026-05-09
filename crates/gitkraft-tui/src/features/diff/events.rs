@@ -307,6 +307,7 @@ mod tests {
             author_email: "a@b.com".to_string(),
             time: Default::default(),
             parent_ids: vec![],
+            refs: Vec::new(),
         }
     }
 

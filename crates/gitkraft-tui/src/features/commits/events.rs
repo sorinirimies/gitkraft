@@ -309,6 +309,7 @@ mod tests {
                 author_email: "test@test.com".into(),
                 time: Default::default(),
                 parent_ids: Vec::new(),
+                refs: Vec::new(),
             })
             .collect()
     }
@@ -464,6 +465,7 @@ mod tests {
                 author_email: String::new(),
                 time: Default::default(),
                 parent_ids: Vec::new(),
+                refs: Vec::new(),
             })
             .collect()
     }

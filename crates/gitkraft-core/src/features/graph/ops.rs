@@ -162,6 +162,7 @@ mod tests {
             author_email: "test@test.com".to_string(),
             time: Utc::now(),
             parent_ids: parents.iter().map(|s| s.to_string()).collect(),
+            refs: Vec::new(),
         }
     }
 

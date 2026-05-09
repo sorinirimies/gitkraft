@@ -1602,6 +1602,7 @@ mod tests {
                 author_email: String::new(),
                 time: Default::default(),
                 parent_ids: Vec::new(),
+                refs: Vec::new(),
             })
             .collect()
     }
@@ -1782,6 +1783,7 @@ mod tests {
             author_email: "a@b.com".to_string(),
             time: Default::default(),
             parent_ids: vec![],
+                refs: Vec::new(),
         }];
 
         let _ = state.update(Message::CloseFileHistory);
@@ -1822,6 +1824,7 @@ mod tests {
                 author_email: "a@a.com".into(),
                 time: Default::default(),
                 parent_ids: Vec::new(),
+                refs: Vec::new(),
             },
             gitkraft_core::CommitInfo {
                 oid: "abc2".into(),
@@ -1832,6 +1835,7 @@ mod tests {
                 author_email: "a@a.com".into(),
                 time: Default::default(),
                 parent_ids: Vec::new(),
+                refs: Vec::new(),
             },
         ];
         // Blame is currently open for a file from the first commit.
@@ -2401,6 +2405,7 @@ mod tests {
                 author_email: "a@b.c".into(),
                 time: Default::default(),
                 parent_ids: Vec::new(),
+                refs: Vec::new(),
             })
             .collect();
 
@@ -2475,6 +2480,7 @@ mod tests {
                 author_email: String::new(),
                 time: Default::default(),
                 parent_ids: Vec::new(),
+                refs: Vec::new(),
             })
             .collect();
 

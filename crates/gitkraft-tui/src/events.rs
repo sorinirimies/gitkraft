@@ -770,6 +770,7 @@ mod tests {
                 author_email: String::new(),
                 time: Default::default(),
                 parent_ids: Vec::new(),
+                refs: Vec::new(),
             })
             .collect();
         app.tab_mut().commit_list_state.select(Some(1));
@@ -797,6 +798,7 @@ mod tests {
                 author_email: String::new(),
                 time: Default::default(),
                 parent_ids: Vec::new(),
+                refs: Vec::new(),
             })
             .collect();
         app.tab_mut().commit_list_state.select(Some(3));
@@ -824,6 +826,7 @@ mod tests {
                 author_email: String::new(),
                 time: Default::default(),
                 parent_ids: Vec::new(),
+                refs: Vec::new(),
             })
             .collect();
         app.tab_mut().commit_list_state.select(Some(0));
