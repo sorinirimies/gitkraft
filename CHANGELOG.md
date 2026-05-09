@@ -2,11 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.0.2 - 2026-05-09
+### 🐛 Bug Fixes
+- Fix indentation of refs field in test data
+### 📦 Other Changes
+- Show branch/tag/HEAD labels in commit log UI
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.1...v1.0.2
 ## 1.0.1 - 2026-05-07
 ### ➕ Added
 - Add tests for tab and repo closing and switching scenarios
 ### 🐛 Bug Fixes
 - Fix tab closing behavior and add tests for CloseRepo and CloseTab
+### 🔧 Chores
+- chore: bump version to 1.0.1
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.0...v1.0.1
 ## 1.0.0 - 2026-05-06
 ### ♻️ Refactor
