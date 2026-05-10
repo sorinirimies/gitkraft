@@ -16,6 +16,34 @@ pub fn truncate_str(s: &str, max_chars: usize) -> String {
     }
 }
 
+/// Extract the filename (last component) from a `/`-separated path string.
+///
+/// Returns the entire input when there is no `/` separator.
+///
+/// # Examples
+/// ```
+/// assert_eq!(gitkraft_core::path_basename("src/main.rs"), "main.rs");
+/// assert_eq!(gitkraft_core::path_basename("hello.txt"), "hello.txt");
+/// assert_eq!(gitkraft_core::path_basename(""), "");
+/// ```
+pub fn path_basename(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
+}
+
+/// Truncate `s` to fit within `available_px` pixels at the given average
+/// `px_per_char` rate, appending "…" when the string is shortened.
+///
+/// * If `available_px` is zero or negative the string is truncated to `""`.
+/// * If the string already fits it is returned unchanged.
+/// * The "…" counts as one character in the budget.
+pub fn truncate_to_fit(s: &str, available_px: f32, px_per_char: f32) -> String {
+    if available_px <= 0.0 || px_per_char <= 0.0 {
+        return String::new();
+    }
+    let max_chars = (available_px / px_per_char).floor() as usize;
+    truncate_str(s, max_chars)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -54,5 +82,57 @@ mod tests {
     #[test]
     fn empty_string() {
         assert_eq!(truncate_str("", 5), "");
+    }
+
+    #[test]
+    fn path_basename_with_slashes() {
+        assert_eq!(path_basename("src/main.rs"), "main.rs");
+    }
+
+    #[test]
+    fn path_basename_no_slash() {
+        assert_eq!(path_basename("hello.txt"), "hello.txt");
+    }
+
+    #[test]
+    fn path_basename_trailing_slash() {
+        assert_eq!(path_basename("dir/"), "");
+    }
+
+    #[test]
+    fn path_basename_empty() {
+        assert_eq!(path_basename(""), "");
+    }
+
+    #[test]
+    fn path_basename_deep_path() {
+        assert_eq!(path_basename("a/b/c/d/file.rs"), "file.rs");
+    }
+
+    #[test]
+    fn truncate_to_fit_short_string() {
+        assert_eq!(truncate_to_fit("hi", 100.0, 7.0), "hi");
+    }
+
+    #[test]
+    fn truncate_to_fit_long_string() {
+        let result = truncate_to_fit("hello world", 30.0, 7.0);
+        assert!(result.ends_with('…'));
+        assert!(result.chars().count() <= 5);
+    }
+
+    #[test]
+    fn truncate_to_fit_zero_px() {
+        assert_eq!(truncate_to_fit("hello", 0.0, 7.0), "");
+    }
+
+    #[test]
+    fn truncate_to_fit_negative_px() {
+        assert_eq!(truncate_to_fit("hello", -10.0, 7.0), "");
+    }
+
+    #[test]
+    fn truncate_to_fit_zero_px_per_char() {
+        assert_eq!(truncate_to_fit("hello", 100.0, 0.0), "");
     }
 }

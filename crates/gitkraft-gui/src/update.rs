@@ -1251,7 +1251,7 @@ impl GitKraft {
                     tab.context_menu = None;
                     tab.status_message = Some(format!(
                         "Loading history for {}…",
-                        path.rsplit('/').next().unwrap_or(&path)
+                        gitkraft_core::path_basename(&path)
                     ));
                     crate::features::repo::commands::file_history_async(repo_path, path)
                 } else {
@@ -1268,7 +1268,7 @@ impl GitKraft {
                         tab.status_message = Some(format!(
                             "{} commits touch {}",
                             commits.len(),
-                            path.rsplit('/').next().unwrap_or(path)
+                            gitkraft_core::path_basename(path)
                         ));
                     }
                     Err(e) => {
@@ -1324,7 +1324,7 @@ impl GitKraft {
                     tab.context_menu = None;
                     tab.status_message = Some(format!(
                         "Loading blame for {}…",
-                        path.rsplit('/').next().unwrap_or(&path)
+                        gitkraft_core::path_basename(&path)
                     ));
                     crate::features::repo::commands::blame_file_async(repo_path, path)
                 } else {
@@ -1340,7 +1340,7 @@ impl GitKraft {
                         tab.blame_lines = lines.clone();
                         tab.status_message = Some(format!(
                             "Blame: {} ({} lines)",
-                            path.rsplit('/').next().unwrap_or(path),
+                            gitkraft_core::path_basename(path),
                             lines.len()
                         ));
                     }
@@ -1373,7 +1373,7 @@ impl GitKraft {
                 tab.pending_delete_file = Some(path.clone());
                 tab.status_message = Some(format!(
                     "Delete '{}' — press Confirm to delete permanently",
-                    path.rsplit('/').next().unwrap_or(path)
+                    gitkraft_core::path_basename(path)
                 ));
                 Task::none()
             }
@@ -1387,7 +1387,7 @@ impl GitKraft {
                     tab.is_loading = true;
                     tab.status_message = Some(format!(
                         "Deleting '{}'…",
-                        file_path.rsplit('/').next().unwrap_or(&file_path)
+                        gitkraft_core::path_basename(&file_path)
                     ));
                     crate::features::repo::commands::delete_file_async(repo_path, file_path)
                 } else {

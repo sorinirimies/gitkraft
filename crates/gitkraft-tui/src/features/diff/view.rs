@@ -257,7 +257,7 @@ pub fn render_file_history(app: &mut App, frame: &mut Frame, area: Rect) {
     };
 
     let path = app.tab().file_history_path.clone().unwrap_or_default();
-    let file_name = path.rsplit('/').next().unwrap_or(&path).to_string();
+    let file_name = gitkraft_core::path_basename(&path).to_string();
 
     let title = format!(" File History: {file_name}  Esc close  Enter select ");
 
@@ -335,7 +335,7 @@ pub fn render_blame(app: &mut App, frame: &mut Frame, area: Rect) {
     };
 
     let path = app.tab().blame_path.clone().unwrap_or_default();
-    let file_name = path.rsplit('/').next().unwrap_or(&path).to_string();
+    let file_name = gitkraft_core::path_basename(&path).to_string();
     let title = format!(" Blame: {file_name}  Esc close  j/k scroll ");
 
     let block = Block::default()

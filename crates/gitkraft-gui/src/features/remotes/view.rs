@@ -58,7 +58,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .height(Length::Fixed(18.0))
             .clip(true);
 
-            let url_str = remote.url.as_deref().unwrap_or("<no url>");
+            let url_str = remote.display_url();
 
             let url_label = container(
                 text(url_str)

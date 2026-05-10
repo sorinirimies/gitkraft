@@ -503,7 +503,7 @@ pub fn file_history_view(state: &GitKraft) -> Element<'_, Message> {
     let tab = state.active_tab();
     let c = state.colors();
     let path = tab.file_history_path.as_deref().unwrap_or("");
-    let file_name = path.rsplit('/').next().unwrap_or(path);
+    let file_name = gitkraft_core::path_basename(path);
 
     let close_btn = button(text("✕").size(13).color(c.muted))
         .padding([2, 8])
@@ -589,7 +589,7 @@ pub fn blame_view(state: &GitKraft) -> Element<'_, Message> {
     let tab = state.active_tab();
     let c = state.colors();
     let path = tab.blame_path.as_deref().unwrap_or("");
-    let file_name = path.rsplit('/').next().unwrap_or(path);
+    let file_name = gitkraft_core::path_basename(path);
 
     let close_btn = button(
         row![

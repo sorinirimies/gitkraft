@@ -118,7 +118,7 @@ pub fn navigate_file_down(app: &mut App) {
     }
     let len = app.tab().commit_files.len();
     let current = app.tab().commit_diff_file_index;
-    let new_idx = (current + 1) % len;
+    let new_idx = gitkraft_core::wrap_next(current, len);
     apply_single_file_navigation(app, new_idx);
 }
 
@@ -129,7 +129,7 @@ pub fn navigate_file_up(app: &mut App) {
     }
     let len = app.tab().commit_files.len();
     let current = app.tab().commit_diff_file_index;
-    let new_idx = if current == 0 { len - 1 } else { current - 1 };
+    let new_idx = gitkraft_core::wrap_prev(current, len);
     apply_single_file_navigation(app, new_idx);
 }
 

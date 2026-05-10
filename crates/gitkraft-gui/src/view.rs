@@ -172,7 +172,7 @@ impl GitKraft {
         }
 
         if let Some(ref path) = tab.pending_delete_file {
-            let file_name = path.rsplit('/').next().unwrap_or(path.as_str());
+            let file_name = gitkraft_core::path_basename(path);
             main_col = main_col.push(delete_confirmation_banner(file_name, &c));
         }
 
@@ -1061,7 +1061,7 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
             let header_text = if is_multi {
                 format!("{} files selected", selected_count)
             } else {
-                format!("Unstaged: {}", path.rsplit('/').next().unwrap_or(path))
+                format!("Unstaged: {}", gitkraft_core::path_basename(path))
             };
             let header = view_utils::context_menu_header::<Message>(header_text, c.muted);
 
@@ -1150,7 +1150,7 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
             col = col.push(view_utils::context_menu_separator::<Message>());
             col = col.push(menu_item(
                 "Copy filename",
-                Message::CopyText(path.rsplit('/').next().unwrap_or(path).to_string()),
+                Message::CopyText(gitkraft_core::path_basename(path).to_string()),
             ));
             col = col.push(menu_item("Copy file path", Message::CopyText(path.clone())));
             col = col.push(menu_item(
@@ -1170,7 +1170,7 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
             let header_text = if is_multi {
                 format!("{} files selected", selected_count)
             } else {
-                format!("Staged: {}", path.rsplit('/').next().unwrap_or(path))
+                format!("Staged: {}", gitkraft_core::path_basename(path))
             };
             let header = view_utils::context_menu_header::<Message>(header_text, c.muted);
 
@@ -1259,7 +1259,7 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
             col = col.push(view_utils::context_menu_separator::<Message>());
             col = col.push(menu_item(
                 "Copy filename",
-                Message::CopyText(path.rsplit('/').next().unwrap_or(path).to_string()),
+                Message::CopyText(gitkraft_core::path_basename(path).to_string()),
             ));
             col = col.push(menu_item("Copy file path", Message::CopyText(path.clone())));
             col = col.push(menu_item(
@@ -1317,7 +1317,7 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                 col.into()
             } else {
                 // ── Single file ───────────────────────────────────────────────────
-                let file_name = file_path.rsplit('/').next().unwrap_or(file_path);
+                let file_name = gitkraft_core::path_basename(file_path);
                 let header = view_utils::context_menu_header::<Message>(
                     format!("File: {}", file_name),
                     c.muted,

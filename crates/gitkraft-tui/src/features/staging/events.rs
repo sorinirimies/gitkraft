@@ -258,13 +258,7 @@ pub fn navigate_down(app: &mut App) {
                 return;
             }
             let i = match tab.unstaged_list_state.selected() {
-                Some(i) => {
-                    if i >= tab.unstaged_changes.len() - 1 {
-                        0
-                    } else {
-                        i + 1
-                    }
-                }
+                Some(i) => gitkraft_core::wrap_next(i, tab.unstaged_changes.len()),
                 None => 0,
             };
             tab.unstaged_list_state.select(Some(i));
@@ -279,13 +273,7 @@ pub fn navigate_down(app: &mut App) {
                 return;
             }
             let i = match tab.staged_list_state.selected() {
-                Some(i) => {
-                    if i >= tab.staged_changes.len() - 1 {
-                        0
-                    } else {
-                        i + 1
-                    }
-                }
+                Some(i) => gitkraft_core::wrap_next(i, tab.staged_changes.len()),
                 None => 0,
             };
             tab.staged_list_state.select(Some(i));
@@ -306,13 +294,7 @@ pub fn navigate_up(app: &mut App) {
                 return;
             }
             let i = match tab.unstaged_list_state.selected() {
-                Some(i) => {
-                    if i == 0 {
-                        tab.unstaged_changes.len() - 1
-                    } else {
-                        i - 1
-                    }
-                }
+                Some(i) => gitkraft_core::wrap_prev(i, tab.unstaged_changes.len()),
                 None => 0,
             };
             tab.unstaged_list_state.select(Some(i));
@@ -325,13 +307,7 @@ pub fn navigate_up(app: &mut App) {
                 return;
             }
             let i = match tab.staged_list_state.selected() {
-                Some(i) => {
-                    if i == 0 {
-                        tab.staged_changes.len() - 1
-                    } else {
-                        i - 1
-                    }
-                }
+                Some(i) => gitkraft_core::wrap_prev(i, tab.staged_changes.len()),
                 None => 0,
             };
             tab.staged_list_state.select(Some(i));

@@ -24,25 +24,7 @@
 /// assert_eq!(truncate_to_fit("hello world", 30.0, 7.0), "hel…");
 /// ```
 pub fn truncate_to_fit(s: &str, available_px: f32, px_per_char: f32) -> String {
-    if available_px <= 0.0 || px_per_char <= 0.0 {
-        return String::new();
-    }
-
-    let max_chars = (available_px / px_per_char).floor() as usize;
-    let char_count = s.chars().count();
-
-    if char_count <= max_chars {
-        // Fits as-is.
-        s.to_string()
-    } else if max_chars <= 1 {
-        // Only room for the ellipsis itself.
-        "…".to_string()
-    } else {
-        // Take (max_chars - 1) characters then append "…".
-        let mut out: String = s.chars().take(max_chars - 1).collect();
-        out.push('…');
-        out
-    }
+    gitkraft_core::truncate_to_fit(s, available_px, px_per_char)
 }
 
 // ── Scrollbar helper ──────────────────────────────────────────────────────
@@ -224,17 +206,17 @@ pub fn empty_list_hint<'a>(
 
 /// Compute a shift-click range selection.
 ///
+/// Compute a shift-click range selection.
+///
 /// Given an optional anchor index (from the last non-shift click) and the
 /// currently clicked index, returns an ascending `Vec<usize>` covering
 /// `[min(anchor, clicked)..=max(anchor, clicked)]`.  If `anchor` is `None`
 /// the clicked index is used as both endpoints, yielding a single-element vec.
 ///
-/// This is the shared logic behind shift-click range selection in the commit
-/// log, diff file list, and staging area — call it instead of duplicating
-/// the anchor + ascending_range pattern.
+/// This is GUI-only logic — the TUI uses `ascending_range` directly with
+/// its own keyboard-driven anchor handling.
 pub fn shift_click_range(anchor: Option<usize>, clicked: usize) -> Vec<usize> {
-    let anchor = anchor.unwrap_or(clicked);
-    gitkraft_core::ascending_range(anchor, clicked)
+    gitkraft_core::ascending_range(anchor.unwrap_or(clicked), clicked)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

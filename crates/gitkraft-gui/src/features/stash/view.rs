@@ -59,7 +59,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .stashes
         .iter()
         .map(|entry| {
-            let index_label = text(format!("stash@{{{}}}", entry.index))
+            let index_label = text(entry.ref_name())
                 .size(11)
                 .color(c.accent)
                 .font(iced::Font::MONOSPACE);

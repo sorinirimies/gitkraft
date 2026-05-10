@@ -14,6 +14,21 @@ pub enum RefKind {
     Tag,
 }
 
+impl RefKind {
+    /// The semantic colour from [`AppTheme`](crate::AppTheme) for this ref kind.
+    ///
+    /// Both the GUI and TUI convert the returned [`Rgb`](crate::Rgb) into
+    /// their framework-specific colour type, keeping the mapping in one place.
+    pub fn color(&self, theme: &crate::AppTheme) -> crate::Rgb {
+        match self {
+            RefKind::Head => theme.accent,
+            RefKind::LocalBranch => theme.success,
+            RefKind::RemoteBranch => theme.warning,
+            RefKind::Tag => theme.text_muted,
+        }
+    }
+}
+
 /// A human-readable Git reference attached to a commit for display.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefLabel {
@@ -151,5 +166,14 @@ mod tests {
     fn relative_time_returns_nonempty() {
         let c = make_commit(1, "fix", "alice");
         assert!(!c.relative_time().is_empty());
+    }
+
+    #[test]
+    fn ref_kind_color_maps_correctly() {
+        let theme = crate::theme_by_index(0);
+        assert_eq!(RefKind::Head.color(&theme), theme.accent);
+        assert_eq!(RefKind::LocalBranch.color(&theme), theme.success);
+        assert_eq!(RefKind::RemoteBranch.color(&theme), theme.warning);
+        assert_eq!(RefKind::Tag.color(&theme), theme.text_muted);
     }
 }

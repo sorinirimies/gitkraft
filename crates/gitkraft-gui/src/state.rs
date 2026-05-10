@@ -287,12 +287,8 @@ impl RepoTab {
     }
 
     /// Display name for the tab (last path component, or "New Tab").
-    pub fn display_name(&self) -> &str {
-        self.repo_path
-            .as_ref()
-            .and_then(|p| p.file_name())
-            .and_then(|n| n.to_str())
-            .unwrap_or("New Tab")
+    pub fn display_name(&self) -> String {
+        gitkraft_core::repo_display_name(self.repo_path.as_deref())
     }
 
     /// Apply a full repo payload to this tab, resetting transient UI state.
@@ -775,7 +771,7 @@ impl GitKraft {
     }
 
     /// Helper: the display name for the active tab's repo.
-    pub fn repo_display_name(&self) -> &str {
+    pub fn repo_display_name(&self) -> String {
         self.active_tab().display_name()
     }
 

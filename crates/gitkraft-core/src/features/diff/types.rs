@@ -116,8 +116,7 @@ impl DiffInfo {
 
     /// Extract just the filename component from the display path.
     pub fn file_name(&self) -> &str {
-        let path = self.display_path();
-        path.rsplit('/').next().unwrap_or(path)
+        crate::utils::text::path_basename(self.display_path())
     }
 
     /// Extract the parent directory of the display path, or empty string if none.
@@ -132,7 +131,7 @@ impl DiffInfo {
         if parent.is_empty() {
             ""
         } else {
-            parent.rsplit('/').next().unwrap_or(parent)
+            crate::utils::text::path_basename(parent)
         }
     }
 }
@@ -165,8 +164,7 @@ impl DiffFileEntry {
 
     /// Extract just the filename component from the display path.
     pub fn file_name(&self) -> &str {
-        let path = self.display_path();
-        path.rsplit('/').next().unwrap_or(path)
+        crate::utils::text::path_basename(self.display_path())
     }
 
     /// Extract the parent directory of the display path, or empty string if none.
@@ -181,7 +179,7 @@ impl DiffFileEntry {
         if parent.is_empty() {
             ""
         } else {
-            parent.rsplit('/').next().unwrap_or(parent)
+            crate::utils::text::path_basename(parent)
         }
     }
 }

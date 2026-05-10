@@ -34,7 +34,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     for (idx, tab) in state.tabs.iter().enumerate() {
         let is_active = idx == state.active_tab;
-        let name = tab.display_name().to_string();
+        let name = tab.display_name();
 
         // ── Icon: accent when this tab is selected ────────────────────────
         let icon_color = if is_active { c.accent } else { c.muted };

@@ -21,16 +21,6 @@ fn ref_color(
     }
 }
 
-/// Truncate a ref name to at most `max` chars with a trailing ellipsis.
-fn short_ref(name: &str, max: usize) -> String {
-    if name.chars().count() <= max {
-        name.to_string()
-    } else {
-        let s: String = name.chars().take(max - 1).collect();
-        format!("{s}\u{2026}")
-    }
-}
-
 /// Append coloured ref-badge spans to `out`, capped at `max_badges`.
 fn push_ref_badges(
     out: &mut Vec<Span<'static>>,
@@ -40,7 +30,7 @@ fn push_ref_badges(
 ) {
     for rf in refs.iter().take(max_badges) {
         let fg = ref_color(&rf.kind, theme);
-        let name = short_ref(&rf.name, 20);
+        let name = gitkraft_core::truncate_str(&rf.name, 20);
         out.push(Span::styled(format!(" [{name}]"), Style::default().fg(fg)));
     }
 }
@@ -404,25 +394,6 @@ fn render_action_popup(app: &mut App, frame: &mut Frame, area: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn short_ref_fits_unchanged() {
-        assert_eq!(short_ref("main", 20), "main");
-    }
-
-    #[test]
-    fn short_ref_truncates_with_ellipsis() {
-        let long = "mario/MARIO-4327_fix_improve_figma_nightly";
-        let result = short_ref(long, 20);
-        assert_eq!(result.chars().count(), 20);
-        assert!(result.ends_with('\u{2026}'));
-    }
-
-    #[test]
-    fn short_ref_exact_length_no_truncation() {
-        let name = "12345678901234567890"; // exactly 20 chars
-        assert_eq!(short_ref(name, 20), name);
-    }
 
     #[test]
     fn push_ref_badges_empty_refs_adds_nothing() {

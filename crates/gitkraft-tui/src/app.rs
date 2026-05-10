@@ -390,13 +390,7 @@ impl RepoTab {
     /// Return a human-readable display name for this tab.
     /// Uses the last path component of repo_path, or "New Tab" if none.
     pub fn display_name(&self) -> String {
-        match &self.repo_path {
-            Some(p) => p
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "New Tab".into()),
-            None => "New Tab".into(),
-        }
+        gitkraft_core::repo_display_name(self.repo_path.as_deref())
     }
 }
 
@@ -591,7 +585,7 @@ impl App {
     /// Switch to the next tab (wrapping around).
     pub fn next_tab(&mut self) {
         if !self.tabs.is_empty() {
-            self.active_tab_index = (self.active_tab_index + 1) % self.tabs.len();
+            self.active_tab_index = wrap_next(self.active_tab_index, self.tabs.len());
             // Restore the correct screen for the target tab
             if self.tabs[self.active_tab_index].repo_path.is_some() {
                 self.screen = AppScreen::Main;
@@ -604,11 +598,7 @@ impl App {
     /// Switch to the previous tab (wrapping around).
     pub fn prev_tab(&mut self) {
         if !self.tabs.is_empty() {
-            if self.active_tab_index == 0 {
-                self.active_tab_index = self.tabs.len() - 1;
-            } else {
-                self.active_tab_index -= 1;
-            }
+            self.active_tab_index = wrap_prev(self.active_tab_index, self.tabs.len());
             // Restore the correct screen for the target tab
             if self.tabs[self.active_tab_index].repo_path.is_some() {
                 self.screen = AppScreen::Main;
@@ -630,18 +620,14 @@ impl App {
 
     pub fn cycle_theme_next(&mut self) {
         let count = gitkraft_core::THEME_COUNT;
-        self.current_theme_index = (self.current_theme_index + 1) % count;
+        self.current_theme_index = wrap_next(self.current_theme_index, count);
         self.theme_list_state.select(Some(self.current_theme_index));
         self.tab_mut().status_message = Some(format!("Theme: {}", self.current_theme_name()));
     }
 
     pub fn cycle_theme_prev(&mut self) {
         let count = gitkraft_core::THEME_COUNT;
-        if self.current_theme_index == 0 {
-            self.current_theme_index = count - 1;
-        } else {
-            self.current_theme_index -= 1;
-        }
+        self.current_theme_index = wrap_prev(self.current_theme_index, count);
         self.theme_list_state.select(Some(self.current_theme_index));
         self.tab_mut().status_message = Some(format!("Theme: {}", self.current_theme_name()));
     }
@@ -945,7 +931,7 @@ impl App {
 
                 BackgroundResult::FileHistoryLoaded { path, commits } => {
                     let count = commits.len();
-                    let file_name = path.rsplit('/').next().unwrap_or(&path).to_string();
+                    let file_name = path_basename(&path).to_string();
                     let tab = self.tab_mut();
                     tab.file_history_path = Some(path);
                     tab.file_history_commits = commits;
@@ -955,7 +941,7 @@ impl App {
 
                 BackgroundResult::FileBlameLoaded { path, lines } => {
                     let count = lines.len();
-                    let file_name = path.rsplit('/').next().unwrap_or(&path).to_string();
+                    let file_name = path_basename(&path).to_string();
                     let tab = self.tab_mut();
                     tab.blame_path = Some(path);
                     tab.blame_lines = lines;
@@ -1307,7 +1293,10 @@ impl App {
         if self.tab().commit_files.is_empty() {
             return;
         }
-        let new_index = (self.tab().commit_diff_file_index + 1) % self.tab().commit_files.len();
+        let new_index = wrap_next(
+            self.tab().commit_diff_file_index,
+            self.tab().commit_files.len(),
+        );
         self.tab_mut().anchor_file_index = Some(new_index);
         self.tab_mut().commit_diff_file_index = new_index;
         self.tab_mut().selected_file_indices.clear();
@@ -1333,11 +1322,10 @@ impl App {
         if self.tab().commit_files.is_empty() {
             return;
         }
-        let new_index = if self.tab().commit_diff_file_index == 0 {
-            self.tab().commit_files.len() - 1
-        } else {
-            self.tab().commit_diff_file_index - 1
-        };
+        let new_index = wrap_prev(
+            self.tab().commit_diff_file_index,
+            self.tab().commit_files.len(),
+        );
         self.tab_mut().anchor_file_index = Some(new_index);
         self.tab_mut().commit_diff_file_index = new_index;
         self.tab_mut().selected_file_indices.clear();
@@ -1920,7 +1908,7 @@ impl App {
         tab.file_history_cursor = 0;
         tab.status_message = Some(format!(
             "Loading history for {}…",
-            file_path.rsplit('/').next().unwrap_or(&file_path)
+            path_basename(&file_path)
         ));
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
@@ -1966,10 +1954,7 @@ impl App {
         tab.blame_path = Some(file_path.clone());
         tab.blame_lines.clear();
         tab.blame_scroll = 0;
-        tab.status_message = Some(format!(
-            "Loading blame for {}…",
-            file_path.rsplit('/').next().unwrap_or(&file_path)
-        ));
+        tab.status_message = Some(format!("Loading blame for {}…", path_basename(&file_path)));
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let repo = match gitkraft_core::features::repo::open_repo(&repo_path) {
@@ -2028,7 +2013,7 @@ impl App {
         };
         self.tab_mut().confirm_delete_file = None;
         self.tab_mut().is_loading = true;
-        let file_name = path.rsplit('/').next().unwrap_or(&path).to_string();
+        let file_name = path_basename(&path).to_string();
         self.tab_mut().status_message = Some(format!("Deleting '{file_name}'…"));
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {

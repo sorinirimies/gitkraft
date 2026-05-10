@@ -16,6 +16,11 @@ impl StashEntry {
     pub fn short_message(&self, max_chars: usize) -> String {
         crate::utils::truncate_str(&self.message, max_chars)
     }
+
+    /// The canonical Git ref string for this stash entry (e.g. `stash@{0}`).
+    pub fn ref_name(&self) -> String {
+        format!("stash@{{{}}}", self.index)
+    }
 }
 
 #[cfg(test)]
@@ -30,6 +35,16 @@ mod tests {
             oid: "abc1234".to_string(),
         };
         assert_eq!(s.short_message(20), "WIP on main");
+    }
+
+    #[test]
+    fn stash_ref_name_format() {
+        let e = StashEntry {
+            index: 2,
+            message: "WIP".into(),
+            oid: "abc".into(),
+        };
+        assert_eq!(e.ref_name(), "stash@{2}");
     }
 
     #[test]

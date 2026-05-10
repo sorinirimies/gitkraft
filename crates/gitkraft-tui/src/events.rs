@@ -25,7 +25,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                     let len = app.browser_entries.len();
                     if len > 0 {
                         let i = app.browser_list_state.selected().unwrap_or(0);
-                        let new = if i == 0 { len - 1 } else { i - 1 };
+                        let new = gitkraft_core::wrap_prev(i, len);
                         app.browser_list_state.select(Some(new));
                     }
                 }
@@ -33,7 +33,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                     let len = app.browser_entries.len();
                     if len > 0 {
                         let i = app.browser_list_state.selected().unwrap_or(0);
-                        let new = (i + 1) % len;
+                        let new = gitkraft_core::wrap_next(i, len);
                         app.browser_list_state.select(Some(new));
                     }
                 }
@@ -201,7 +201,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                         if !tab.branches.is_empty() {
                             let len = tab.branches.len();
                             let i = tab.branch_list_state.selected().unwrap_or(0);
-                            let new = if i == 0 { len - 1 } else { i - 1 };
+                            let new = gitkraft_core::wrap_prev(i, len);
                             tab.branch_list_state.select(Some(new));
                         }
                     }
@@ -247,7 +247,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                         if !tab.branches.is_empty() {
                             let len = tab.branches.len();
                             let i = tab.branch_list_state.selected().unwrap_or(0);
-                            let new = (i + 1) % len;
+                            let new = gitkraft_core::wrap_next(i, len);
                             tab.branch_list_state.select(Some(new));
                         }
                     }

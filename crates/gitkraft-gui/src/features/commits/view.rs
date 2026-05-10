@@ -32,17 +32,6 @@ fn ref_fg(kind: &gitkraft_core::RefKind, c: &ThemeColors) -> iced::Color {
     }
 }
 
-/// Truncate a ref name to at most 22 chars with a trailing ellipsis.
-fn short_ref_name(name: &str) -> String {
-    const MAX: usize = 22;
-    if name.chars().count() <= MAX {
-        name.to_string()
-    } else {
-        let s: String = name.chars().take(MAX - 1).collect();
-        format!("{s}\u{2026}")
-    }
-}
-
 /// Build a row of coloured badge pills for `refs`, capped at `max_badges`.
 /// Returns `None` when the slice is empty so callers can skip the spacing.
 fn ref_badges_row<'a>(
@@ -57,7 +46,7 @@ fn ref_badges_row<'a>(
     for (i, rf) in refs.iter().take(max_badges).enumerate() {
         let fg = ref_fg(&rf.kind, c);
         let bg = c.surface;
-        let name = short_ref_name(&rf.name);
+        let name = gitkraft_core::truncate_str(&rf.name, 22);
         let badge = container(text(name).size(10).color(fg).font(iced::Font::MONOSPACE))
             .padding([1, 5])
             .style(move |_: &iced::Theme| iced::widget::container::Style {
