@@ -2,11 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.0.3 - 2026-05-10
+### ➕ Added
+- Add utility functions for path, selection, and list navigation
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.2...v1.0.3
 ## 1.0.2 - 2026-05-09
 ### 🐛 Bug Fixes
 - Fix indentation of refs field in test data
 ### 📦 Other Changes
 - Show branch/tag/HEAD labels in commit log UI
+### 🔧 Chores
+- chore: bump version to 1.0.2
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.1...v1.0.2
 ## 1.0.1 - 2026-05-07
 ### ➕ Added
