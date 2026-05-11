@@ -1,7 +1,5 @@
 //! Graph layout computation — lane-based algorithm for commit graph visualisation.
 
-use anyhow::Result;
-use git2::Repository;
 use std::collections::HashMap;
 
 use super::types::{GraphEdge, GraphRow};
@@ -135,16 +133,6 @@ pub fn build_graph(commits: &[CommitInfo]) -> Vec<GraphRow> {
     }
 
     rows
-}
-
-/// Convenience: build graph directly from a repository.
-pub fn build_graph_from_repo(
-    repo: &Repository,
-    max_count: usize,
-) -> Result<(Vec<CommitInfo>, Vec<GraphRow>)> {
-    let commits = crate::features::commits::list_commits(repo, max_count)?;
-    let graph = build_graph(&commits);
-    Ok((commits, graph))
 }
 
 #[cfg(test)]

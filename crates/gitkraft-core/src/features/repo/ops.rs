@@ -22,16 +22,6 @@ pub fn init_repo(path: &Path) -> Result<Repository> {
         .with_context(|| format!("failed to init repository at {}", path.display()))
 }
 
-/// Clone a remote repository from `url` into `path`.
-///
-/// This performs a plain HTTPS/SSH clone.  Authentication is **not** configured
-/// here — it will work for public repos and fail for private ones that require
-/// credentials.
-pub fn clone_repo(url: &str, path: &Path) -> Result<Repository> {
-    Repository::clone(url, path)
-        .with_context(|| format!("failed to clone '{url}' into {}", path.display()))
-}
-
 /// Gather high-level information about an already-opened repository.
 pub fn get_repo_info(repo: &Repository) -> Result<RepoInfo> {
     let path = repo.path().to_path_buf();
@@ -132,35 +122,6 @@ pub fn delete_file(workdir: &std::path::Path, relative_path: &str) -> Result<()>
     let full_path = workdir.join(relative_path);
     std::fs::remove_file(&full_path)
         .with_context(|| format!("failed to delete '{}'", full_path.display()))
-}
-
-/// Retrieve the content of a file at a specific commit.
-///
-/// Returns the file content as a UTF-8 string. Returns an error if the file
-/// doesn't exist at that commit or isn't valid UTF-8.
-pub fn get_file_at_commit(
-    repo: &Repository,
-    oid_str: &str,
-    file_path: &str,
-) -> anyhow::Result<String> {
-    let oid = git2::Oid::from_str(oid_str).with_context(|| format!("invalid OID: {oid_str}"))?;
-    let commit = repo
-        .find_commit(oid)
-        .with_context(|| format!("commit {oid_str} not found"))?;
-    let tree = commit.tree().context("commit has no tree")?;
-
-    let entry = tree
-        .get_path(std::path::Path::new(file_path))
-        .with_context(|| format!("file '{file_path}' not found at commit {oid_str}"))?;
-
-    let blob = repo
-        .find_blob(entry.id())
-        .with_context(|| format!("could not read blob for '{file_path}'"))?;
-
-    let content = std::str::from_utf8(blob.content())
-        .with_context(|| format!("file '{file_path}' is not valid UTF-8"))?;
-
-    Ok(content.to_string())
 }
 
 /// Load a complete repository snapshot in one blocking call.
@@ -271,38 +232,5 @@ mod tests {
         assert!(snapshot.info.workdir.is_some());
         // graph_rows is computed from commits — both should have the same length
         assert_eq!(snapshot.commits.len(), snapshot.graph_rows.len());
-    }
-
-    fn setup_repo_with_commit() -> (TempDir, Repository) {
-        let tmp = TempDir::new().unwrap();
-        let repo = init_repo(tmp.path()).unwrap();
-        let sig = git2::Signature::now("Test", "test@test.com").unwrap();
-        std::fs::write(tmp.path().join("file.txt"), "hello\n").unwrap();
-        {
-            let mut index = repo.index().unwrap();
-            index.add_path(std::path::Path::new("file.txt")).unwrap();
-            index.write().unwrap();
-            let tree_oid = index.write_tree().unwrap();
-            let tree = repo.find_tree(tree_oid).unwrap();
-            repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
-                .unwrap();
-        }
-        (tmp, repo)
-    }
-
-    #[test]
-    fn get_file_at_commit_returns_content() {
-        let (_dir, repo) = setup_repo_with_commit();
-        let head_oid = repo.head().unwrap().target().unwrap().to_string();
-        let content = get_file_at_commit(&repo, &head_oid, "file.txt").unwrap();
-        assert_eq!(content, "hello\n");
-    }
-
-    #[test]
-    fn get_file_at_commit_not_found() {
-        let (_dir, repo) = setup_repo_with_commit();
-        let head_oid = repo.head().unwrap().target().unwrap().to_string();
-        let result = get_file_at_commit(&repo, &head_oid, "nonexistent.txt");
-        assert!(result.is_err());
     }
 }

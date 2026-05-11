@@ -30,20 +30,6 @@ pub fn path_basename(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
-/// Truncate `s` to fit within `available_px` pixels at the given average
-/// `px_per_char` rate, appending "…" when the string is shortened.
-///
-/// * If `available_px` is zero or negative the string is truncated to `""`.
-/// * If the string already fits it is returned unchanged.
-/// * The "…" counts as one character in the budget.
-pub fn truncate_to_fit(s: &str, available_px: f32, px_per_char: f32) -> String {
-    if available_px <= 0.0 || px_per_char <= 0.0 {
-        return String::new();
-    }
-    let max_chars = (available_px / px_per_char).floor() as usize;
-    truncate_str(s, max_chars)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -107,32 +93,5 @@ mod tests {
     #[test]
     fn path_basename_deep_path() {
         assert_eq!(path_basename("a/b/c/d/file.rs"), "file.rs");
-    }
-
-    #[test]
-    fn truncate_to_fit_short_string() {
-        assert_eq!(truncate_to_fit("hi", 100.0, 7.0), "hi");
-    }
-
-    #[test]
-    fn truncate_to_fit_long_string() {
-        let result = truncate_to_fit("hello world", 30.0, 7.0);
-        assert!(result.ends_with('…'));
-        assert!(result.chars().count() <= 5);
-    }
-
-    #[test]
-    fn truncate_to_fit_zero_px() {
-        assert_eq!(truncate_to_fit("hello", 0.0, 7.0), "");
-    }
-
-    #[test]
-    fn truncate_to_fit_negative_px() {
-        assert_eq!(truncate_to_fit("hello", -10.0, 7.0), "");
-    }
-
-    #[test]
-    fn truncate_to_fit_zero_px_per_char() {
-        assert_eq!(truncate_to_fit("hello", 100.0, 0.0), "");
     }
 }

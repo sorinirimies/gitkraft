@@ -24,7 +24,11 @@
 /// assert_eq!(truncate_to_fit("hello world", 30.0, 7.0), "hel…");
 /// ```
 pub fn truncate_to_fit(s: &str, available_px: f32, px_per_char: f32) -> String {
-    gitkraft_core::truncate_to_fit(s, available_px, px_per_char)
+    if available_px <= 0.0 || px_per_char <= 0.0 {
+        return String::new();
+    }
+    let max_chars = (available_px / px_per_char).floor() as usize;
+    gitkraft_core::truncate_str(s, max_chars)
 }
 
 // ── Scrollbar helper ──────────────────────────────────────────────────────

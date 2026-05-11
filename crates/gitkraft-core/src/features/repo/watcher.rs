@@ -30,7 +30,7 @@ where
 /// Like [`spawn_git_watcher`] but with a custom fallback poll `timeout`.
 ///
 /// Useful in tests to keep waiting times short.
-pub fn spawn_git_watcher_with_fallback<F>(
+pub(crate) fn spawn_git_watcher_with_fallback<F>(
     git_dir: PathBuf,
     fallback: Duration,
     on_change: F,

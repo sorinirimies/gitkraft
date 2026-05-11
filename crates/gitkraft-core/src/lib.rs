@@ -33,7 +33,7 @@ pub use features::theme::{
     theme_by_index, theme_index_by_name, AppTheme, Rgb, THEME_COUNT, THEME_NAMES,
 };
 pub use utils::short_oid_str;
-pub use utils::text::{path_basename, truncate_str, truncate_to_fit};
+pub use utils::text::{path_basename, truncate_str};
 pub use utils::{
     ascending_range, clamp_next, clamp_selection, repo_display_name, wrap_next, wrap_prev,
 };

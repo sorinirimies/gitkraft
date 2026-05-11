@@ -858,9 +858,8 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
             }
 
             // Group 6: Tag creation
-            if tip_oid.is_some() {
+            if let Some(oid) = tip_oid {
                 col = col.push(view_utils::context_menu_separator::<Message>());
-                let oid = tip_oid.clone().unwrap();
                 col = col
                     .push(menu_item(
                         "Create tag here",
