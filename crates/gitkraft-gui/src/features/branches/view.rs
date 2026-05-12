@@ -223,6 +223,30 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 .color(name_color)
                 .wrapping(iced::widget::text::Wrapping::None);
 
+            // Upstream ahead/behind badge
+            let upstream_badge: Element<'_, Message> =
+                if let Some(status) = branch.upstream_status() {
+                    let badge_color = if status == "✓" {
+                        c.green
+                    } else if status.contains('↓') && !status.contains('↑') {
+                        c.red
+                    } else if status.contains('↑') && !status.contains('↓') {
+                        c.green
+                    } else {
+                        c.yellow // both ahead and behind
+                    };
+                    container(
+                        text(status)
+                            .size(10)
+                            .color(badge_color)
+                            .font(iced::Font::MONOSPACE),
+                    )
+                    .padding([1, 4])
+                    .into()
+                } else {
+                    Space::new().width(0).into()
+                };
+
             // Always give the button an on_press so Iced keeps it in the
             // Active/Hovered state machine.  For the current branch we use
             // Noop (can't checkout the branch you're already on), but the
@@ -233,7 +257,14 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
                 Message::CheckoutBranch(branch.name.clone())
             };
             let checkout_btn = button(
-                row![indicator, Space::new().width(6), name_label].align_y(Alignment::Center),
+                row![
+                    indicator,
+                    Space::new().width(6),
+                    name_label,
+                    Space::new().width(4),
+                    upstream_badge,
+                ]
+                .align_y(Alignment::Center),
             )
             .padding([4, 8])
             .width(Length::Fill)

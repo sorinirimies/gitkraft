@@ -18,6 +18,14 @@ pub struct BranchInfo {
     pub is_head: bool,
     /// The OID (hex string) the branch tip points to, if resolvable.
     pub target_oid: Option<String>,
+    /// Commits the local branch is ahead of its upstream tracking branch.
+    /// `None` for remote branches or locals with no upstream configured.
+    #[serde(default)]
+    pub upstream_ahead: Option<usize>,
+    /// Commits the local branch is behind its upstream tracking branch.
+    /// `None` for remote branches or locals with no upstream configured.
+    #[serde(default)]
+    pub upstream_behind: Option<usize>,
 }
 
 impl BranchInfo {
@@ -53,6 +61,33 @@ impl BranchInfo {
     pub fn short_oid(&self) -> Option<&str> {
         self.target_oid.as_deref().map(crate::utils::short_oid_str)
     }
+
+    /// Format the ahead/behind counts as a display string.
+    ///
+    /// Returns `None` when there is no upstream tracking info.
+    /// Returns `Some("✓")` when fully in sync (0 ahead, 0 behind).
+    /// Otherwise returns something like `"↑3 ↓2"`, `"↑3"`, or `"↓2"`.
+    pub fn upstream_status(&self) -> Option<String> {
+        match (self.upstream_ahead, self.upstream_behind) {
+            (Some(0), Some(0)) => Some("✓".to_string()),
+            (Some(ahead), Some(behind)) => {
+                let mut s = String::new();
+                if ahead > 0 {
+                    s.push_str(&format!("↑{ahead}"));
+                }
+                if behind > 0 {
+                    if !s.is_empty() {
+                        s.push(' ');
+                    }
+                    s.push_str(&format!("↓{behind}"));
+                }
+                Some(s)
+            }
+            (Some(ahead), None) if ahead > 0 => Some(format!("↑{ahead}")),
+            (None, Some(behind)) if behind > 0 => Some(format!("↓{behind}")),
+            _ => None,
+        }
+    }
 }
 
 impl std::fmt::Display for BranchType {
@@ -74,6 +109,8 @@ mod tests {
             branch_type: BranchType::Local,
             is_head: false,
             target_oid: Some("abcdef1234567890".to_string()),
+            upstream_ahead: None,
+            upstream_behind: None,
         }
     }
 
@@ -83,6 +120,8 @@ mod tests {
             branch_type: BranchType::Remote,
             is_head: false,
             target_oid: Some("1234567890abcdef".to_string()),
+            upstream_ahead: None,
+            upstream_behind: None,
         }
     }
 
@@ -146,5 +185,43 @@ mod tests {
     #[test]
     fn branch_type_display_remote() {
         assert_eq!(format!("{}", BranchType::Remote), "remote");
+    }
+
+    #[test]
+    fn upstream_status_in_sync() {
+        let mut b = local_branch("main");
+        b.upstream_ahead = Some(0);
+        b.upstream_behind = Some(0);
+        assert_eq!(b.upstream_status(), Some("✓".to_string()));
+    }
+
+    #[test]
+    fn upstream_status_ahead_only() {
+        let mut b = local_branch("main");
+        b.upstream_ahead = Some(3);
+        b.upstream_behind = Some(0);
+        assert_eq!(b.upstream_status(), Some("↑3".to_string()));
+    }
+
+    #[test]
+    fn upstream_status_behind_only() {
+        let mut b = local_branch("main");
+        b.upstream_ahead = Some(0);
+        b.upstream_behind = Some(5);
+        assert_eq!(b.upstream_status(), Some("↓5".to_string()));
+    }
+
+    #[test]
+    fn upstream_status_both() {
+        let mut b = local_branch("main");
+        b.upstream_ahead = Some(2);
+        b.upstream_behind = Some(4);
+        assert_eq!(b.upstream_status(), Some("↑2 ↓4".to_string()));
+    }
+
+    #[test]
+    fn upstream_status_no_upstream() {
+        let b = local_branch("main");
+        assert_eq!(b.upstream_status(), None);
     }
 }

@@ -58,11 +58,30 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                 BranchType::Remote => "⇄ ",
             };
 
-            let line = Line::from(vec![
+            let mut spans = vec![
                 Span::styled(prefix, style),
                 Span::styled(icon, style),
                 Span::styled(branch.name.clone(), style),
-            ]);
+            ];
+
+            // Upstream ahead/behind badge for local branches
+            if let Some(status) = branch.upstream_status() {
+                let badge_color = if status == "✓" {
+                    theme.success
+                } else if status.contains('↓') && !status.contains('↑') {
+                    theme.error
+                } else if status.contains('↑') && !status.contains('↓') {
+                    theme.success
+                } else {
+                    theme.warning // both ahead and behind (diverged)
+                };
+                spans.push(Span::styled(
+                    format!(" {status}"),
+                    Style::default().fg(badge_color),
+                ));
+            }
+
+            let line = Line::from(spans);
 
             ListItem::new(line)
         })

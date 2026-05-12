@@ -32,11 +32,34 @@ pub fn list_branches(repo: &Repository) -> Result<Vec<BranchInfo>> {
 
         let target_oid = branch.get().target().map(|oid| oid.to_string());
 
+        // Compute ahead/behind upstream for local branches.
+        let (upstream_ahead, upstream_behind) = if branch_type == BranchType::Local {
+            if let Some(ref local_oid_str) = target_oid {
+                if let Ok(local_oid) = git2::Oid::from_str(local_oid_str) {
+                    branch
+                        .upstream()
+                        .ok()
+                        .and_then(|up| up.get().target())
+                        .and_then(|up_oid| repo.graph_ahead_behind(local_oid, up_oid).ok())
+                        .map(|(a, b)| (Some(a), Some(b)))
+                        .unwrap_or((None, None))
+                } else {
+                    (None, None)
+                }
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+
         branches.push(BranchInfo {
             name,
             branch_type,
             is_head,
             target_oid,
+            upstream_ahead,
+            upstream_behind,
         });
     }
 
@@ -67,6 +90,8 @@ pub fn create_branch(repo: &Repository, name: &str) -> Result<BranchInfo> {
         branch_type: BranchType::Local,
         is_head: false,
         target_oid,
+        upstream_ahead: None,
+        upstream_behind: None,
     })
 }
 
