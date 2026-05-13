@@ -11,10 +11,14 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
-# Cancel in-progress runs on the same branch/PR so we never queue up stale
-# jobs after a force-push.
+# Cancel any in-progress run for the same workflow + branch/PR so a new
+# push immediately supersedes a stale run.
+# - On pull requests: groups by PR number (each PR has its own queue).
+# - On direct pushes (e.g. main, develop): groups by ref so only one run
+#   for that branch is live at a time.  Previously this fell back to
+#   github.run_id (unique per run) which meant pushes never cancelled.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 # ── Shared setup ───────────────────────────────────────────────────────────────
