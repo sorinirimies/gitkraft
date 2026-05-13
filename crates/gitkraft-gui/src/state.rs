@@ -350,11 +350,13 @@ impl RepoTab {
         // Reset transient UI state.
         // NOTE: selected_commit / commit_files / selected_diff are restored
         // below so they survive background auto-refreshes.
+        // NOTE: commit_message is intentionally NOT cleared here — the user
+        // may be mid-typing when a background refresh arrives.  It is only
+        // cleared on successful commit (CommitCreated handler).
         self.selected_commit = None;
         self.anchor_commit_index = None;
         self.selected_commits.clear();
         self.selected_commit_oid = None;
-        self.commit_message.clear();
         self.error_message = None;
         self.status_message = Some("Repository loaded.".into());
         self.commit_scroll_offset = 0.0;
@@ -2513,7 +2515,24 @@ mod tests {
         );
     }
 
-    // ── PreviewFile / OpenFiles message tests ─────────────────────────
+    #[test]
+    fn apply_payload_preserves_commit_message() {
+        // Regression test: the git watcher triggers refreshes while the user
+        // is typing a commit message.  apply_payload must NOT clear it.
+        let mut tab = RepoTab::new_empty();
+        tab.repo_path = Some(std::path::PathBuf::from("/tmp/repo"));
+        tab.commit_message = "WIP: fixing the bug".to_string();
+
+        let payload = fake_payload("/tmp/repo");
+        tab.apply_payload(payload, std::path::PathBuf::from("/tmp/repo"));
+
+        assert_eq!(
+            tab.commit_message, "WIP: fixing the bug",
+            "commit_message must survive background repo refreshes"
+        );
+    }
+
+    // ── PreviewFile / OpenFiles message tests ─────────────────────────────
 
     #[test]
     fn preview_file_loaded_sets_selected_diff() {

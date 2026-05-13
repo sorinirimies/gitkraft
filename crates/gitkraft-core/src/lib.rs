@@ -13,8 +13,9 @@ pub mod features;
 pub mod utils;
 
 // Convenience re-exports
-pub use features::branches::{BranchInfo, BranchType};
+pub use features::branches::{validate_ref_name, BranchInfo, BranchType};
 pub use features::commits::CommitInfo;
+pub use features::commits::{check_commit_message, CommitMsgSeverity, COMMIT_SUBJECT_LIMIT};
 pub use features::commits::{CommitAction, CommitActionKind, COMMIT_MENU_GROUPS};
 pub use features::commits::{RefKind, RefLabel};
 pub use features::diff::{

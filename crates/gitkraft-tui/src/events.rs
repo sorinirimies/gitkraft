@@ -381,6 +381,20 @@ fn submit_input(app: &mut App) {
                 Some(k) => k,
                 None => return,
             };
+            // Validate ref name for actions that create a branch or tag.
+            if matches!(
+                kind,
+                gitkraft_core::CommitActionKind::CreateBranchHere
+                    | gitkraft_core::CommitActionKind::CreateTag
+                    | gitkraft_core::CommitActionKind::CreateAnnotatedTag
+            ) {
+                if let Err(err) = gitkraft_core::validate_ref_name(&value) {
+                    app.tab_mut().status_message = Some(format!("Invalid name: {err}"));
+                    app.tab_mut().pending_action_kind = None;
+                    app.tab_mut().pending_commit_action_oid = None;
+                    return;
+                }
+            }
             if kind.needs_second_input() {
                 // Store first input, ask for second
                 app.tab_mut().action_input1 = value;

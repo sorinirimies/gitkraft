@@ -90,6 +90,65 @@ impl BranchInfo {
     }
 }
 
+/// Validate a proposed Git ref name (branch or tag).
+///
+/// Returns `Ok(())` if the name is valid, or `Err` with a human-readable
+/// error message explaining why it's invalid.
+///
+/// This mirrors the rules of `git check-ref-format` and provides friendlier
+/// messages than libgit2's generic "failed to create reference" errors.
+pub fn validate_ref_name(name: &str) -> Result<(), &'static str> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("name cannot be empty");
+    }
+    if trimmed.starts_with('.') {
+        return Err("name cannot start with '.'");
+    }
+    if trimmed.starts_with('-') {
+        return Err("name cannot start with '-'");
+    }
+    if trimmed.ends_with('.') {
+        return Err("name cannot end with '.'");
+    }
+    if trimmed.ends_with(".lock") {
+        return Err("name cannot end with '.lock'");
+    }
+    if trimmed == "@" {
+        return Err("name cannot be '@'");
+    }
+    if trimmed.contains("..") {
+        return Err("name cannot contain '..'");
+    }
+    if trimmed.contains("//") {
+        return Err("name cannot contain '//'");
+    }
+    if trimmed.contains("@{") {
+        return Err("name cannot contain '@{'");
+    }
+    const INVALID_CHARS: &[char] = &[' ', '~', '^', ':', '?', '*', '[', '\\'];
+    for ch in INVALID_CHARS {
+        if trimmed.contains(*ch) {
+            return Err(match ch {
+                ' ' => "name cannot contain spaces",
+                '~' => "name cannot contain '~'",
+                '^' => "name cannot contain '^'",
+                ':' => "name cannot contain ':'",
+                '?' => "name cannot contain '?'",
+                '*' => "name cannot contain '*'",
+                '[' => "name cannot contain '['",
+                '\\' => "name cannot contain '\\'",
+                _ => "name contains invalid characters",
+            });
+        }
+    }
+    // Check for ASCII control characters
+    if trimmed.bytes().any(|b| b < 0x20 || b == 0x7f) {
+        return Err("name cannot contain control characters");
+    }
+    Ok(())
+}
+
 impl std::fmt::Display for BranchType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -223,5 +282,102 @@ mod tests {
     fn upstream_status_no_upstream() {
         let b = local_branch("main");
         assert_eq!(b.upstream_status(), None);
+    }
+
+    // ── validate_ref_name ─────────────────────────────────────────────────
+
+    #[test]
+    fn validate_ref_name_valid_simple() {
+        assert!(validate_ref_name("main").is_ok());
+    }
+
+    #[test]
+    fn validate_ref_name_valid_with_slash() {
+        assert!(validate_ref_name("feature/my-branch").is_ok());
+    }
+
+    #[test]
+    fn validate_ref_name_valid_with_dots() {
+        assert!(validate_ref_name("v1.0.0").is_ok());
+    }
+
+    #[test]
+    fn validate_ref_name_empty() {
+        assert!(validate_ref_name("").is_err());
+    }
+
+    #[test]
+    fn validate_ref_name_whitespace_only() {
+        assert!(validate_ref_name("   ").is_err());
+    }
+
+    #[test]
+    fn validate_ref_name_starts_with_dot() {
+        assert!(validate_ref_name(".hidden").is_err());
+    }
+
+    #[test]
+    fn validate_ref_name_starts_with_dash() {
+        assert!(validate_ref_name("-flag").is_err());
+    }
+
+    #[test]
+    fn validate_ref_name_ends_with_dot() {
+        assert!(validate_ref_name("branch.").is_err());
+    }
+
+    #[test]
+    fn validate_ref_name_ends_with_lock() {
+        assert!(validate_ref_name("branch.lock").is_err());
+    }
+
+    #[test]
+    fn validate_ref_name_contains_space() {
+        assert!(validate_ref_name("my branch").is_err());
+    }
+
+    #[test]
+    fn validate_ref_name_contains_tilde() {
+        assert!(validate_ref_name("branch~1").is_err());
+    }
+
+    #[test]
+    fn validate_ref_name_contains_caret() {
+        assert!(validate_ref_name("branch^2").is_err());
+    }
+
+    #[test]
+    fn validate_ref_name_contains_colon() {
+        assert!(validate_ref_name("branch:name").is_err());
+    }
+
+    #[test]
+    fn validate_ref_name_double_dot() {
+        assert!(validate_ref_name("branch..other").is_err());
+    }
+
+    #[test]
+    fn validate_ref_name_at_sign() {
+        assert!(validate_ref_name("@").is_err());
+    }
+
+    #[test]
+    fn validate_ref_name_at_brace() {
+        assert!(validate_ref_name("branch@{0}").is_err());
+    }
+
+    #[test]
+    fn validate_ref_name_question_mark() {
+        assert!(validate_ref_name("branch?").is_err());
+    }
+
+    #[test]
+    fn validate_ref_name_asterisk() {
+        assert!(validate_ref_name("branch*").is_err());
+    }
+
+    #[test]
+    fn validate_ref_name_backslash() {
+        assert!(validate_ref_name("branch\\name").is_err());
     }
 }

@@ -114,6 +114,39 @@ impl CommitInfo {
     }
 }
 
+/// Severity level for the commit message first-line length.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitMsgSeverity {
+    /// Within the conventional subject-line budget (≤ 50 chars).
+    Good,
+    /// Approaching the hard limit (51–82 chars) — acceptable but verbose.
+    Warning,
+    /// Exceeds the recommended limit (> 82 chars).
+    TooLong,
+}
+
+/// Maximum recommended first-line length for a commit message.
+pub const COMMIT_SUBJECT_LIMIT: usize = 82;
+
+/// Threshold below which the first-line length is considered "good".
+pub const COMMIT_SUBJECT_SOFT_LIMIT: usize = 50;
+
+/// Analyse the first line of a commit message and return its length + severity.
+///
+/// Both the GUI and TUI use this to show a character counter with colour feedback.
+pub fn check_commit_message(message: &str) -> (usize, CommitMsgSeverity) {
+    let first_line = message.lines().next().unwrap_or("");
+    let len = first_line.chars().count();
+    let severity = if len > COMMIT_SUBJECT_LIMIT {
+        CommitMsgSeverity::TooLong
+    } else if len > COMMIT_SUBJECT_SOFT_LIMIT {
+        CommitMsgSeverity::Warning
+    } else {
+        CommitMsgSeverity::Good
+    };
+    (len, severity)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,5 +208,59 @@ mod tests {
         assert_eq!(RefKind::LocalBranch.color(&theme), theme.success);
         assert_eq!(RefKind::RemoteBranch.color(&theme), theme.warning);
         assert_eq!(RefKind::Tag.color(&theme), theme.text_muted);
+    }
+
+    // ── check_commit_message ──────────────────────────────────────────────
+
+    #[test]
+    fn commit_msg_empty_is_good() {
+        let (len, sev) = check_commit_message("");
+        assert_eq!(len, 0);
+        assert_eq!(sev, CommitMsgSeverity::Good);
+    }
+
+    #[test]
+    fn commit_msg_short_is_good() {
+        let (len, sev) = check_commit_message("fix typo");
+        assert_eq!(len, 8);
+        assert_eq!(sev, CommitMsgSeverity::Good);
+    }
+
+    #[test]
+    fn commit_msg_at_soft_limit_is_good() {
+        let msg = "a".repeat(COMMIT_SUBJECT_SOFT_LIMIT);
+        let (len, sev) = check_commit_message(&msg);
+        assert_eq!(len, 50);
+        assert_eq!(sev, CommitMsgSeverity::Good);
+    }
+
+    #[test]
+    fn commit_msg_above_soft_limit_is_warning() {
+        let msg = "a".repeat(COMMIT_SUBJECT_SOFT_LIMIT + 1);
+        let (_, sev) = check_commit_message(&msg);
+        assert_eq!(sev, CommitMsgSeverity::Warning);
+    }
+
+    #[test]
+    fn commit_msg_at_hard_limit_is_warning() {
+        let msg = "a".repeat(COMMIT_SUBJECT_LIMIT);
+        let (len, sev) = check_commit_message(&msg);
+        assert_eq!(len, 82);
+        assert_eq!(sev, CommitMsgSeverity::Warning);
+    }
+
+    #[test]
+    fn commit_msg_above_hard_limit_is_too_long() {
+        let msg = "a".repeat(COMMIT_SUBJECT_LIMIT + 1);
+        let (_, sev) = check_commit_message(&msg);
+        assert_eq!(sev, CommitMsgSeverity::TooLong);
+    }
+
+    #[test]
+    fn commit_msg_multiline_only_checks_first_line() {
+        let msg = "short subject\n\nthis is a very long body line that goes way beyond any limit and should not affect the severity at all";
+        let (len, sev) = check_commit_message(msg);
+        assert_eq!(len, 13); // "short subject"
+        assert_eq!(sev, CommitMsgSeverity::Good);
     }
 }

@@ -312,10 +312,30 @@ fn commit_view(state: &GitKraft) -> Element<'_, Message> {
         .align_y(Alignment::Center)
         .padding([6, 8]);
 
-    let input = text_input("Commit message…", &tab.commit_message)
+    let input = text_input("Commit message\u{2026}", &tab.commit_message)
+        .id(iced::widget::Id::new("commit_message_input"))
         .on_input(Message::CommitMessageChanged)
         .padding(8)
         .size(13);
+
+    // First-line length hint
+    let (first_line_len, severity) = gitkraft_core::check_commit_message(&tab.commit_message);
+    let char_hint: Element<'_, Message> = if !tab.commit_message.is_empty() {
+        let hint_color = match severity {
+            gitkraft_core::CommitMsgSeverity::TooLong => c.red,
+            gitkraft_core::CommitMsgSeverity::Warning => c.yellow,
+            gitkraft_core::CommitMsgSeverity::Good => c.muted,
+        };
+        text(format!(
+            "{first_line_len}/{}",
+            gitkraft_core::COMMIT_SUBJECT_LIMIT
+        ))
+        .size(10)
+        .color(hint_color)
+        .into()
+    } else {
+        Space::new().height(0).into()
+    };
 
     let can_commit = !tab.commit_message.trim().is_empty() && !tab.staged_changes.is_empty();
 
@@ -352,7 +372,8 @@ fn commit_view(state: &GitKraft) -> Element<'_, Message> {
         container(
             column![
                 input,
-                Space::new().height(6),
+                char_hint,
+                Space::new().height(4),
                 commit_btn,
                 Space::new().height(4),
                 staged_hint,

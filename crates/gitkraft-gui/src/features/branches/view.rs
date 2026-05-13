@@ -53,7 +53,10 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .padding(6)
             .size(13);
 
-        let create_msg = (!tab.new_branch_name.trim().is_empty()).then_some(Message::CreateBranch);
+        let validation = gitkraft_core::validate_ref_name(&tab.new_branch_name);
+        let can_create = validation.is_ok() && !tab.new_branch_name.trim().is_empty();
+
+        let create_msg = can_create.then_some(Message::CreateBranch);
         let create_btn = view_utils::on_press_maybe(
             button(text("Create").size(13))
                 .padding([4, 10])
@@ -61,9 +64,24 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             create_msg,
         );
 
-        container(column![input, create_btn,].spacing(4).width(Length::Fill))
-            .padding([4, 10])
-            .into()
+        // Show validation error inline
+        let error_hint: Element<'_, Message> = if !tab.new_branch_name.is_empty() {
+            if let Err(err) = validation {
+                text(err).size(10).color(c.red).into()
+            } else {
+                Space::new().height(0).into()
+            }
+        } else {
+            Space::new().height(0).into()
+        };
+
+        container(
+            column![input, create_btn, error_hint]
+                .spacing(4)
+                .width(Length::Fill),
+        )
+        .padding([4, 10])
+        .into()
     } else {
         Space::new().into()
     };
@@ -76,7 +94,9 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .padding(6)
             .size(13);
 
-        let rename_enabled = !tab.rename_branch_input.trim().is_empty()
+        let rename_validation = gitkraft_core::validate_ref_name(&tab.rename_branch_input);
+        let rename_enabled = rename_validation.is_ok()
+            && !tab.rename_branch_input.trim().is_empty()
             && tab.rename_branch_input.trim() != orig.as_str();
         let confirm_btn = view_utils::on_press_maybe(
             button(text("Rename").size(13))
@@ -92,11 +112,22 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
         let hint = text(format!("Renaming '{orig}'")).size(11).color(c.muted);
 
+        let rename_error_hint: Element<'_, Message> = if !tab.rename_branch_input.is_empty() {
+            if let Err(err) = rename_validation {
+                text(err).size(10).color(c.red).into()
+            } else {
+                Space::new().height(0).into()
+            }
+        } else {
+            Space::new().height(0).into()
+        };
+
         container(
             column![
                 hint,
                 input,
                 row![confirm_btn, Space::new().width(4), cancel_btn],
+                rename_error_hint,
             ]
             .spacing(4)
             .width(Length::Fill),
@@ -123,7 +154,9 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .padding(6)
             .size(13);
 
-        let tag_msg = (!tab.create_tag_name.trim().is_empty()).then_some(Message::ConfirmCreateTag);
+        let tag_validation = gitkraft_core::validate_ref_name(&tab.create_tag_name);
+        let can_create_tag = tag_validation.is_ok() && !tab.create_tag_name.trim().is_empty();
+        let tag_msg = can_create_tag.then_some(Message::ConfirmCreateTag);
         let confirm_btn = view_utils::on_press_maybe(
             button(text("Create tag").size(13))
                 .padding([4, 10])
@@ -136,6 +169,16 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             .style(theme::toolbar_button)
             .on_press(Message::CancelCreateTag);
 
+        let tag_error_hint: Element<'_, Message> = if !tab.create_tag_name.is_empty() {
+            if let Err(err) = tag_validation {
+                text(err).size(10).color(c.red).into()
+            } else {
+                Space::new().height(0).into()
+            }
+        } else {
+            Space::new().height(0).into()
+        };
+
         let mut form_col = column![hint, name_input].spacing(4).width(Length::Fill);
 
         if tab.create_tag_annotated {
@@ -147,6 +190,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         }
 
         form_col = form_col.push(row![confirm_btn, Space::new().width(4), cancel_btn]);
+        form_col = form_col.push(tag_error_hint);
 
         container(form_col).padding([4, 10]).into()
     } else {
@@ -154,47 +198,60 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     };
 
     // ── Create branch at commit form ──────────────────────────────────────
-    let create_branch_at_form: Element<'_, Message> =
-        if let Some(ref oid) = tab.create_branch_at_oid {
-            let short_oid = gitkraft_core::utils::short_oid_str(oid);
-            let hint = text(format!("Creating branch at {short_oid}"))
-                .size(11)
-                .color(c.muted);
+    let create_branch_at_form: Element<'_, Message> = if let Some(ref oid) =
+        tab.create_branch_at_oid
+    {
+        let short_oid = gitkraft_core::utils::short_oid_str(oid);
+        let hint = text(format!("Creating branch at {short_oid}"))
+            .size(11)
+            .color(c.muted);
 
-            let name_input = iced::widget::text_input("branch-name", &tab.new_branch_name)
-                .on_input(Message::NewBranchNameChanged)
-                .on_submit(Message::ConfirmCreateBranchAtCommit)
-                .padding(6)
-                .size(13);
+        let name_input = iced::widget::text_input("branch-name", &tab.new_branch_name)
+            .on_input(Message::NewBranchNameChanged)
+            .on_submit(Message::ConfirmCreateBranchAtCommit)
+            .padding(6)
+            .size(13);
 
-            let confirm_msg = (!tab.new_branch_name.trim().is_empty())
-                .then_some(Message::ConfirmCreateBranchAtCommit);
-            let confirm_btn = view_utils::on_press_maybe(
-                button(text("Create").size(13))
-                    .padding([4, 10])
-                    .style(theme::toolbar_button),
-                confirm_msg,
-            );
-
-            let cancel_btn = button(text("Cancel").size(13))
+        let branch_at_validation = gitkraft_core::validate_ref_name(&tab.new_branch_name);
+        let can_create_at = branch_at_validation.is_ok() && !tab.new_branch_name.trim().is_empty();
+        let confirm_msg = can_create_at.then_some(Message::ConfirmCreateBranchAtCommit);
+        let confirm_btn = view_utils::on_press_maybe(
+            button(text("Create").size(13))
                 .padding([4, 10])
-                .style(theme::toolbar_button)
-                .on_press(Message::CancelCreateBranchAtCommit);
+                .style(theme::toolbar_button),
+            confirm_msg,
+        );
 
-            container(
-                column![
-                    hint,
-                    name_input,
-                    row![confirm_btn, Space::new().width(4), cancel_btn],
-                ]
-                .spacing(4)
-                .width(Length::Fill),
-            )
+        let cancel_btn = button(text("Cancel").size(13))
             .padding([4, 10])
-            .into()
+            .style(theme::toolbar_button)
+            .on_press(Message::CancelCreateBranchAtCommit);
+
+        let branch_at_error_hint: Element<'_, Message> = if !tab.new_branch_name.is_empty() {
+            if let Err(err) = branch_at_validation {
+                text(err).size(10).color(c.red).into()
+            } else {
+                Space::new().height(0).into()
+            }
         } else {
-            Space::new().into()
+            Space::new().height(0).into()
         };
+
+        container(
+            column![
+                hint,
+                name_input,
+                row![confirm_btn, Space::new().width(4), cancel_btn],
+                branch_at_error_hint,
+            ]
+            .spacing(4)
+            .width(Length::Fill),
+        )
+        .padding([4, 10])
+        .into()
+    } else {
+        Space::new().into()
+    };
 
     // ── Branch list ───────────────────────────────────────────────────────
     let local_branches: Vec<Element<'_, Message>> = tab

@@ -1168,6 +1168,10 @@ impl App {
             self.tab_mut().error_message = Some("Branch name cannot be empty".into());
             return;
         }
+        if let Err(err) = gitkraft_core::validate_ref_name(&name) {
+            self.tab_mut().error_message = Some(format!("Invalid branch name: {err}"));
+            return;
+        }
         self.input_buffer.clear();
         bg_op!(self, "Creating branch…", refresh, |repo_path| {
             let repo = open_repo_str(&repo_path)?;

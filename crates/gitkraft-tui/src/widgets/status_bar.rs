@@ -85,6 +85,32 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                 .fg(theme.warning)
                 .add_modifier(Modifier::BOLD),
         ));
+
+        // Character counter for commit messages and ref-name validation for branches/tags
+        match app.input_purpose {
+            InputPurpose::CommitMessage | InputPurpose::StashMessage => {
+                let (len, severity) = gitkraft_core::check_commit_message(&app.input_buffer);
+                let counter_color = match severity {
+                    gitkraft_core::CommitMsgSeverity::TooLong => theme.error,
+                    gitkraft_core::CommitMsgSeverity::Warning => theme.warning,
+                    gitkraft_core::CommitMsgSeverity::Good => theme.text_muted,
+                };
+                spans.push(Span::styled(
+                    format!("  {len}/{}", gitkraft_core::COMMIT_SUBJECT_LIMIT),
+                    Style::default().fg(counter_color),
+                ));
+            }
+            InputPurpose::BranchName | InputPurpose::CommitActionInput1 => {
+                if let Err(err) = gitkraft_core::validate_ref_name(&app.input_buffer) {
+                    spans.push(Span::styled(
+                        format!("  ⚠ {err}"),
+                        Style::default().fg(theme.error),
+                    ));
+                }
+            }
+            _ => {}
+        }
+
         spans.push(Span::styled(
             "  (Enter: confirm │ Esc: cancel)",
             Style::default().fg(theme.text_muted),
