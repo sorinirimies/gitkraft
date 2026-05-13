@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.0.6 - 2026-05-13
+### ➕ Added
+- Add stash apply, force-push, and branch rename features stash apply
+### 🐛 Bug Fixes
+- Fix workspace section header in Cargo.toml
+- Fix CI concurrency to properly cancel stale runs
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.5...v1.0.6
 ## 1.0.5 - 2026-05-13
 ### ➕ Added
 - Add commit message and ref name validation with inline hints
@@ -9,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - Show branch ahead/behind status in GUI and TUI
 ### 🔧 Chores
 - chore(deps): nightly dependency upgrade 2026-05-12
+- chore: bump version to 1.0.5
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.4...v1.0.5
 ## 1.0.4 - 2026-05-11
 ### 📦 Other Changes
