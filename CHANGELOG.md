@@ -2,9 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.0.5 - 2026-05-13
+### ➕ Added
+- Add commit message and ref name validation with inline hints
+### 📦 Other Changes
+- Show branch ahead/behind status in GUI and TUI
+### 🔧 Chores
+- chore(deps): nightly dependency upgrade 2026-05-12
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.4...v1.0.5
 ## 1.0.4 - 2026-05-11
 ### 📦 Other Changes
 - Remove unused functions and exports from core crate
+### 🔧 Chores
+- chore: bump version to 1.0.4
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.3...v1.0.4
 ## 1.0.3 - 2026-05-10
 ### ➕ Added
