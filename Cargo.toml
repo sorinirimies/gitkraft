@@ -1,4 +1,4 @@
-a[workspace]
+[workspace]
 members = [
     "crates/gitkraft-core",
     "crates/gitkraft-gui",
