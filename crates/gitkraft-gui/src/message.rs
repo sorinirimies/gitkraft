@@ -145,6 +145,8 @@ pub enum Message {
     StashPop(usize),
     /// Drop (delete) a stash by index without applying.
     StashDrop(usize),
+    /// Pop (apply + drop) the most recent stash — shortcut from the staging area.
+    StashPopFirst,
     /// Async stash operation completed.
     StashUpdated(Result<Vec<StashEntry>, String>),
     /// User is typing in the stash-message input.
@@ -236,6 +238,9 @@ pub enum Message {
     // ── Branch actions ────────────────────────────────────────────────────────────
     /// Push the named branch to its default remote.
     PushBranch(String),
+
+    /// Force-push the current branch to its remote (with --force-with-lease).
+    ForcePushBranch,
 
     /// Pull the current branch from its remote, rebasing local commits on top.
     PullBranch(String),
@@ -439,6 +444,14 @@ pub enum Message {
     ShiftArrowDown,
     /// Shift+Up arrow — same as above but upward.
     ShiftArrowUp,
+
+    /// Jump to the first (newest) commit in the log.
+    JumpToFirstCommit,
+    /// Jump to the last (oldest) commit in the log.
+    JumpToLastCommit,
+
+    /// Toggle whether the currently selected commit is in the multi-selection set.
+    ToggleCommitSelection,
 
     /// Fired ~10× per second to advance loading-spinner animation frames.
     /// Only emitted while at least one tab is loading.

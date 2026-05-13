@@ -39,6 +39,18 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             |repo_path| commands::stash_pop(repo_path, index)
         ),
 
+        Message::StashPopFirst => {
+            if !state.active_tab().stashes.is_empty() {
+                let first_index = state.active_tab().stashes[0].index;
+                with_repo!(state, loading, "Popping stash…".into(), |path| {
+                    commands::stash_pop(path, first_index)
+                })
+            } else {
+                state.active_tab_mut().status_message = Some("No stashes to pop".into());
+                Task::none()
+            }
+        }
+
         Message::StashDrop(index) => with_repo!(
             state,
             loading,

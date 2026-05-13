@@ -114,9 +114,9 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             app.reset_to_selected_commit("mixed");
         }
 
-        // Revert selected commit
+        // Revert selected commit(s) — multi-selection aware
         KeyCode::Char('e') => {
-            app.revert_selected_commit();
+            app.revert_selected_commits();
         }
 
         // Reset soft to selected commit
@@ -132,6 +132,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         // Force push current branch
         KeyCode::Char('F') => {
             app.force_push_branch();
+        }
+
+        // Copy the selected commit OID to the clipboard
+        KeyCode::Char('y') => {
+            app.yank_commit_oid();
         }
 
         KeyCode::Esc => {

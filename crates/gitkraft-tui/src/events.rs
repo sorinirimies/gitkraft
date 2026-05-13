@@ -123,8 +123,20 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 KeyCode::Char(',') => app.open_settings_in_editor(),
                 KeyCode::Char('r') => app.refresh(),
                 KeyCode::Char('f') => app.fetch_remote(),
-                KeyCode::Char('p') => app.pull_rebase(),
-                KeyCode::Char('P') => app.push_branch(),
+                KeyCode::Char('p') => {
+                    if app.active_pane == ActivePane::Branches {
+                        app.pull_selected_branch();
+                    } else {
+                        app.pull_rebase();
+                    }
+                }
+                KeyCode::Char('P') => {
+                    if app.active_pane == ActivePane::Branches {
+                        app.push_selected_branch();
+                    } else {
+                        app.push_branch();
+                    }
+                }
                 KeyCode::Char('t') => {
                     app.cycle_theme_next();
                     app.save_theme();
@@ -419,6 +431,9 @@ fn submit_input(app: &mut App) {
             let action = kind.into_action(input1, value2);
             app.execute_commit_action(action);
         }
+        InputPurpose::RenameBranch => {
+            app.do_rename_branch();
+        }
         InputPurpose::None => {
             app.input_buffer.clear();
         }
@@ -611,6 +626,7 @@ mod tests {
     fn p_triggers_pull() {
         let mut app = App::new();
         app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::CommitLog; // non-Branches pane → global pull
         app.tabs[0].repo_path = Some(std::path::PathBuf::from("/tmp/fake"));
         handle_key(&mut app, key(KeyCode::Char('p')));
         // pull_rebase sets loading
@@ -621,10 +637,37 @@ mod tests {
     fn shift_p_triggers_push() {
         let mut app = App::new();
         app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::CommitLog; // non-Branches pane → global push
         app.tabs[0].repo_path = Some(std::path::PathBuf::from("/tmp/fake"));
         // No head_branch → should set error
         handle_key(&mut app, key(KeyCode::Char('P')));
         assert!(app.tab().error_message.is_some());
+    }
+
+    #[test]
+    fn p_in_branches_pane_with_no_selection_sets_status() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::Branches;
+        app.tabs[0].repo_path = Some(std::path::PathBuf::from("/tmp/fake"));
+        handle_key(&mut app, key(KeyCode::Char('p')));
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("No branch selected")
+        );
+    }
+
+    #[test]
+    fn shift_p_in_branches_pane_with_no_selection_sets_status() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.active_pane = ActivePane::Branches;
+        app.tabs[0].repo_path = Some(std::path::PathBuf::from("/tmp/fake"));
+        handle_key(&mut app, key(KeyCode::Char('P')));
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("No branch selected")
+        );
     }
 
     // ── DiffView sub-pane helpers ─────────────────────────────────────────

@@ -150,9 +150,10 @@ impl GitKraft {
                 crate::features::staging::update::update(self, message)
             }
 
-            // ── Stash ─────────────────────────────────────────────────────
+            // ── Stash ───────────────────────────────────────────────
             Message::StashSave
             | Message::StashPop(_)
+            | Message::StashPopFirst
             | Message::StashDrop(_)
             | Message::StashUpdated(_)
             | Message::StashMessageChanged(_)
@@ -282,6 +283,53 @@ impl GitKraft {
                             Message::SelectCommit(new_idx),
                         );
                     }
+                }
+                Task::none()
+            }
+
+            Message::JumpToFirstCommit => {
+                let tab = self.active_tab_mut();
+                if !tab.commits.is_empty() {
+                    tab.selected_commit = Some(0);
+                    tab.anchor_commit_index = Some(0);
+                    tab.selected_commits.clear();
+                    tab.commit_scroll_offset = 0.0;
+                }
+                iced::widget::operation::scroll_to(
+                    crate::features::commits::view::commit_log_scroll_id(self.active_tab),
+                    iced::widget::operation::AbsoluteOffset { x: 0.0, y: 0.0 },
+                )
+            }
+
+            Message::JumpToLastCommit => {
+                let last = self.active_tab().commits.len().saturating_sub(1);
+                if !self.active_tab().commits.is_empty() {
+                    let tab = self.active_tab_mut();
+                    tab.selected_commit = Some(last);
+                    tab.anchor_commit_index = Some(last);
+                    tab.selected_commits.clear();
+                    tab.commit_scroll_offset = f32::MAX;
+                }
+                iced::widget::operation::scroll_to(
+                    crate::features::commits::view::commit_log_scroll_id(self.active_tab),
+                    iced::widget::operation::AbsoluteOffset {
+                        x: 0.0,
+                        y: f32::MAX,
+                    },
+                )
+            }
+
+            Message::ToggleCommitSelection => {
+                let index = match self.active_tab().selected_commit {
+                    Some(i) => i,
+                    None => return Task::none(),
+                };
+                let tab = self.active_tab_mut();
+                if tab.selected_commits.contains(&index) {
+                    tab.selected_commits.retain(|&i| i != index);
+                } else {
+                    tab.selected_commits.push(index);
+                    tab.selected_commits.sort_unstable();
                 }
                 Task::none()
             }
@@ -597,7 +645,7 @@ impl GitKraft {
                 Task::none()
             }
 
-            // ── Branch context menu actions ───────────────────────────────────────────
+            // ── Branch context menu actions ───────────────────────────────────────────────
             Message::PushBranch(name) => {
                 let name = name.clone();
                 let remote = self
@@ -612,6 +660,24 @@ impl GitKraft {
                     loading,
                     format!("Pushing '{name}' to {remote}…"),
                     |path| crate::features::repo::commands::push_branch_async(path, name, remote)
+                )
+            }
+
+            Message::ForcePushBranch => {
+                let branch = self.active_tab().current_branch.clone().unwrap_or_default();
+                let remote = self
+                    .active_tab()
+                    .remotes
+                    .first()
+                    .map(|r| r.name.clone())
+                    .unwrap_or_else(|| "origin".to_string());
+                with_repo!(
+                    self,
+                    loading,
+                    format!("Force pushing '{branch}' to {remote}…"),
+                    |path| crate::features::repo::commands::force_push_branch_async(
+                        path, branch, remote
+                    )
                 )
             }
 

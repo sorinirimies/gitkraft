@@ -32,6 +32,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Enter | KeyCode::Char('p') => {
             app.stash_pop_selected();
         }
+        // Apply selected stash (keep in list)
+        KeyCode::Char('a') => {
+            app.stash_apply_selected();
+        }
         // Drop selected stash (delete without applying)
         KeyCode::Char('d') => {
             app.stash_drop_selected();

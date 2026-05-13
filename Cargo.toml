@@ -1,4 +1,4 @@
-[workspace]
+a[workspace]
 members = [
     "crates/gitkraft-core",
     "crates/gitkraft-gui",
@@ -40,6 +40,7 @@ iced_fonts   = { version = "0.3", features = ["bootstrap"] }
 rfd          = "0.17"
 
 # TUI (Ratatui)
+arboard              = "3"
 ratatui              = "0.30"
 crossterm            = "0.29"
 tui-file-explorer    = "1.1.5"

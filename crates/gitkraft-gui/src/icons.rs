@@ -12,6 +12,7 @@ pub const PLUS_CIRCLE: char = '\u{f4fa}';
 pub const DASH_CIRCLE: char = '\u{f2e6}';
 pub const ARROW_REPEAT: char = '\u{f130}';
 pub const CLOUD_ARROW_DOWN: char = '\u{f295}';
+pub const CLOUD_ARROW_UP: char = '\u{f296}';
 pub const EXCLAMATION_TRIANGLE: char = '\u{f33b}';
 
 // -- Git objects -----------------------------------------------------------
@@ -24,6 +25,7 @@ pub const FILE_DIFF: char = '\u{f354}';
 
 // -- Actions ---------------------------------------------------------------
 pub const TRASH: char = '\u{f5de}';
+pub const INBOX: char = '\u{f40c}';
 pub const CLOUD_UPLOAD: char = '\u{f2c0}';
 pub const BOX_ARROW_UP: char = '\u{f1c6}';
 

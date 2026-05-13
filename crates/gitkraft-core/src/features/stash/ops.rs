@@ -60,6 +60,15 @@ pub fn stash_pop(repo: &mut Repository, index: usize) -> Result<()> {
     Ok(())
 }
 
+/// Apply a stash entry by its zero-based index without removing it from the stash list.
+pub fn stash_apply(repo: &mut Repository, index: usize) -> Result<()> {
+    repo.stash_apply(index, None)
+        .with_context(|| format!("Failed to apply stash at index {index}"))?;
+
+    debug!("Stash at index {} applied (kept in list)", index);
+    Ok(())
+}
+
 /// Drop (delete) a stash entry by its zero-based index without applying it.
 pub fn stash_drop(repo: &mut Repository, index: usize) -> Result<()> {
     repo.stash_drop(index)
@@ -147,5 +156,28 @@ mod tests {
 
         let stashes = list_stashes(&mut repo).unwrap();
         assert!(stashes.is_empty());
+    }
+
+    #[test]
+    fn stash_apply_restores_changes_and_keeps_entry() {
+        // Apply (not pop) must leave the stash entry in place.
+        let (_dir, mut repo) = setup_repo_with_stash();
+        // Apply stash at index 0
+        stash_apply(&mut repo, 0).unwrap();
+        // The entry must still be in the list
+        let stashes = list_stashes(&mut repo).unwrap();
+        assert_eq!(
+            stashes.len(),
+            1,
+            "stash_apply must not remove the stash entry"
+        );
+    }
+
+    #[test]
+    fn stash_apply_out_of_bounds_returns_error() {
+        // Applying a non-existent stash index must return an error, not panic.
+        let (_dir, mut repo) = setup_repo_with_stash();
+        let result = stash_apply(&mut repo, 99);
+        assert!(result.is_err(), "invalid stash index must return an error");
     }
 }

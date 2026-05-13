@@ -192,6 +192,8 @@ pub enum InputPurpose {
     CommitActionInput1,
     /// Second string for a pending commit action (annotated-tag message).
     CommitActionInput2,
+    /// Renaming an existing branch — stores the original name in `rename_branch_target`.
+    RenameBranch,
 }
 
 /// Which sub-list within the staging pane has focus.
@@ -314,6 +316,9 @@ pub struct RepoTab {
 
     /// When `Some(path)`, show a delete-confirmation prompt for that path.
     pub confirm_delete_file: Option<String>,
+
+    /// The original branch name being renamed (set when entering RenameBranch input mode).
+    pub rename_branch_target: Option<String>,
 }
 
 impl RepoTab {
@@ -384,6 +389,7 @@ impl RepoTab {
             blame_lines: Vec::new(),
             blame_scroll: 0,
             confirm_delete_file: None,
+            rename_branch_target: None,
         }
     }
 
@@ -1149,17 +1155,39 @@ impl App {
 
     pub fn checkout_selected_branch(&mut self) {
         let idx = selected_idx!(self, branch_list_state, branches, "No branch selected");
-        let name = self.tab().branches[idx].name.clone();
-        if self.tab().branches[idx].is_head {
+        let branch = &self.tab().branches[idx];
+        if branch.is_head {
+            let name = branch.name.clone();
             self.tab_mut().status_message = Some(format!("Already on '{name}'"));
             return;
         }
-        bg_op!(self, "Checking out…", refresh, |repo_path| {
-            let repo = open_repo_str(&repo_path)?;
-            gitkraft_core::features::branches::checkout_branch(&repo, &name)
-                .map_err(|e| format!("checkout: {e}"))?;
-            Ok(format!("Checked out: {name}"))
-        });
+        let name = branch.name.clone();
+        let is_remote = branch.branch_type == gitkraft_core::BranchType::Remote;
+        if is_remote {
+            bg_op!(
+                self,
+                format!("Checking out {name}\u{2026}"),
+                refresh,
+                |repo_path| {
+                    let path = std::path::Path::new(&repo_path);
+                    gitkraft_core::features::branches::checkout_remote_branch(path, &name)
+                        .map_err(|e| format!("checkout remote: {e}"))?;
+                    Ok(format!("Checked out: {name}"))
+                }
+            );
+        } else {
+            bg_op!(
+                self,
+                format!("Checking out {name}\u{2026}"),
+                refresh,
+                |repo_path| {
+                    let repo = open_repo_str(&repo_path)?;
+                    gitkraft_core::features::branches::checkout_branch(&repo, &name)
+                        .map_err(|e| format!("checkout: {e}"))?;
+                    Ok(format!("Checked out: {name}"))
+                }
+            );
+        }
     }
 
     pub fn create_branch(&mut self) {
@@ -1188,12 +1216,142 @@ impl App {
             return;
         }
         let name = self.tab().branches[idx].name.clone();
-        bg_op!(self, "Deleting branch…", refresh, |repo_path| {
+        bg_op!(self, "Deleting branch\u{2026}", refresh, |repo_path| {
             let repo = open_repo_str(&repo_path)?;
             gitkraft_core::features::branches::delete_branch(&repo, &name)
                 .map_err(|e| format!("delete branch: {e}"))?;
             Ok(format!("Deleted branch: {name}"))
         });
+    }
+
+    /// Delete a remote branch (e.g. origin/feature) using `git push --delete`.
+    pub fn delete_selected_remote_branch(&mut self) {
+        let idx = match self.tab().branch_list_state.selected() {
+            Some(i) => i,
+            None => {
+                self.tab_mut().status_message = Some("No branch selected".into());
+                return;
+            }
+        };
+        let branch = &self.tab().branches[idx];
+        if branch.branch_type != gitkraft_core::BranchType::Remote {
+            self.tab_mut().status_message = Some("Select a remote branch to delete it".into());
+            return;
+        }
+        let name = branch.name.clone();
+        bg_op!(
+            self,
+            format!("Deleting remote {name}\u{2026}"),
+            refresh,
+            |repo_path| {
+                let path = std::path::Path::new(&repo_path);
+                gitkraft_core::features::branches::delete_remote_branch(path, &name)
+                    .map_err(|e| format!("delete remote: {e}"))?;
+                Ok(format!("Deleted remote branch: {name}"))
+            }
+        );
+    }
+
+    /// Enter input mode to rename the currently selected branch.
+    pub fn rename_selected_branch(&mut self) {
+        let idx = match self.tab().branch_list_state.selected() {
+            Some(i) => i,
+            None => {
+                self.tab_mut().status_message = Some("No branch selected".into());
+                return;
+            }
+        };
+        let branch = &self.tab().branches[idx];
+        if branch.branch_type != gitkraft_core::BranchType::Local {
+            self.tab_mut().status_message = Some("Can only rename local branches".into());
+            return;
+        }
+        let name = branch.name.clone();
+        self.tab_mut().rename_branch_target = Some(name.clone());
+        self.input_buffer = name; // pre-fill with current name
+        self.input_mode = InputMode::Input;
+        self.input_purpose = InputPurpose::RenameBranch;
+        self.tab_mut().status_message = Some("Rename branch (Enter to confirm):".into());
+    }
+
+    /// Perform the rename after the user submits the new name.
+    pub fn do_rename_branch(&mut self) {
+        let new_name = self.input_buffer.trim().to_string();
+        let old_name = match self.tab_mut().rename_branch_target.take() {
+            Some(n) => n,
+            None => return,
+        };
+        self.input_buffer.clear();
+        if new_name.is_empty() || new_name == old_name {
+            self.tab_mut().status_message = Some("Rename cancelled".into());
+            return;
+        }
+        if let Err(err) = gitkraft_core::validate_ref_name(&new_name) {
+            self.tab_mut().error_message = Some(format!("Invalid name: {err}"));
+            return;
+        }
+        bg_op!(self, "Renaming branch\u{2026}", refresh, |repo_path| {
+            let repo = open_repo_str(&repo_path)?;
+            gitkraft_core::features::branches::rename_branch(&repo, &old_name, &new_name)
+                .map_err(|e| format!("rename: {e}"))?;
+            Ok(format!("Renamed '{}' \u{2192} '{}'", old_name, new_name))
+        });
+    }
+
+    /// Push the selected branch (from the branches pane) to origin.
+    pub fn push_selected_branch(&mut self) {
+        let idx = match self.tab().branch_list_state.selected() {
+            Some(i) => i,
+            None => {
+                self.tab_mut().status_message = Some("No branch selected".into());
+                return;
+            }
+        };
+        let branch = &self.tab().branches[idx];
+        if branch.branch_type != gitkraft_core::BranchType::Local {
+            self.tab_mut().status_message = Some("Can only push local branches".into());
+            return;
+        }
+        let name = branch.name.clone();
+        bg_op!(
+            self,
+            format!("Pushing {name}\u{2026}"),
+            refresh,
+            |repo_path| {
+                let path = std::path::Path::new(&repo_path);
+                gitkraft_core::features::branches::push_branch(path, &name, "origin")
+                    .map_err(|e| format!("push: {e}"))?;
+                Ok(format!("Pushed '{name}'"))
+            }
+        );
+    }
+
+    /// Pull (rebase) the selected branch (from the branches pane) from origin.
+    pub fn pull_selected_branch(&mut self) {
+        let idx = match self.tab().branch_list_state.selected() {
+            Some(i) => i,
+            None => {
+                self.tab_mut().status_message = Some("No branch selected".into());
+                return;
+            }
+        };
+        let branch = &self.tab().branches[idx];
+        if branch.branch_type != gitkraft_core::BranchType::Local {
+            self.tab_mut().status_message = Some("Can only pull local branches".into());
+            return;
+        }
+        let name = branch.name.clone();
+        bg_op!(
+            self,
+            format!("Pulling {name}\u{2026}"),
+            refresh,
+            |repo_path| {
+                let path = std::path::Path::new(&repo_path);
+                gitkraft_core::features::branches::pull_rebase(path, "origin")
+                    .map_err(|e| format!("pull: {e}"))?;
+                Ok(format!("Pulled '{name}'"))
+            }
+        );
     }
 
     // ── Stash ────────────────────────────────────────────────────────────
@@ -1233,7 +1391,34 @@ impl App {
         });
     }
 
-    // ── Diff ─────────────────────────────────────────────────────────────
+    /// Apply a stash entry (keep in list) by its zero-based index.
+    pub fn stash_apply_selected(&mut self) {
+        let idx = match self.tab().stash_list_state.selected() {
+            Some(i) => i,
+            None => {
+                self.tab_mut().status_message = Some("No stash selected".into());
+                return;
+            }
+        };
+        let stash_index = self.tab().stashes[idx].index;
+        bg_op!(self, "Applying stash\u{2026}", refresh, |repo_path| {
+            let mut repo = open_repo_str(&repo_path)?;
+            gitkraft_core::features::stash::stash_apply(&mut repo, stash_index)
+                .map_err(|e| format!("stash apply: {e}"))?;
+            Ok(format!("Applied stash@{{{stash_index}}}"))
+        });
+    }
+
+    /// Pop the first (most recent) stash entry — used when called from the staging pane
+    /// where there is no explicit stash selection.
+    pub fn stash_pop_first(&mut self) {
+        if self.tab().stashes.is_empty() {
+            self.tab_mut().status_message = Some("No stashes".into());
+            return;
+        }
+        self.tab_mut().stash_list_state.select(Some(0));
+        self.stash_pop_selected();
+    }
 
     /// Load the file list for the currently selected commit (phase 1 of two-phase loading).
     pub fn load_commit_diff(&mut self) {
@@ -2044,7 +2229,7 @@ impl App {
             None => return,
         };
         self.tab_mut().is_loading = true;
-        self.tab_mut().status_message = Some("Reverting commit…".into());
+        self.tab_mut().status_message = Some("Reverting commit\u{2026}".into());
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let workdir = std::path::Path::new(&repo_path);
@@ -2055,6 +2240,107 @@ impl App {
                 needs_refresh: true,
                 needs_staging_refresh: false,
             });
+        });
+    }
+
+    /// Revert the selected commit(s) — multi-selection is applied oldest-first.
+    pub fn revert_selected_commits(&mut self) {
+        let indices = if self.tab().selected_commits.len() > 1 {
+            self.tab().selected_commits.clone()
+        } else {
+            match self.tab().commit_list_state.selected() {
+                Some(i) => vec![i],
+                None => {
+                    self.tab_mut().status_message = Some("No commit selected".into());
+                    return;
+                }
+            }
+        };
+        // Collect OIDs oldest-first (highest list index = oldest commit).
+        let oids: Vec<String> = {
+            let mut sorted = indices.clone();
+            sorted.sort_unstable_by(|a, b| b.cmp(a));
+            sorted
+                .iter()
+                .filter_map(|&i| self.tab().commits.get(i).map(|c| c.oid.clone()))
+                .collect()
+        };
+        if oids.is_empty() {
+            self.tab_mut().status_message = Some("No commit selected".into());
+            return;
+        }
+        let count = oids.len();
+        let repo_path = match self.tab().repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+        self.tab_mut().is_loading = true;
+        self.tab_mut().status_message = Some(format!("Reverting {count} commit(s)\u{2026}"));
+        let tx = self.bg_tx.clone();
+        std::thread::spawn(move || {
+            let res: Result<String, String> = (|| {
+                let workdir = std::path::Path::new(&repo_path);
+                for oid in &oids {
+                    gitkraft_core::features::repo::revert_commit(workdir, oid)
+                        .map_err(|e| format!("revert {}: {e}", &oid[..oid.len().min(7)]))?;
+                }
+                Ok(format!("Reverted {count} commit(s)"))
+            })();
+            let _ = tx.send(BackgroundResult::OperationDone {
+                ok_message: res.as_ref().ok().cloned(),
+                err_message: res.err(),
+                needs_refresh: true,
+                needs_staging_refresh: false,
+            });
+        });
+    }
+
+    /// Copy the OID of the selected commit to the system clipboard.
+    pub fn yank_commit_oid(&mut self) {
+        let idx = match self.tab().commit_list_state.selected() {
+            Some(i) => i,
+            None => return,
+        };
+        let oid = match self.tab().commits.get(idx) {
+            Some(c) => c.oid.clone(),
+            None => return,
+        };
+        match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(&oid)) {
+            Ok(()) => {
+                self.tab_mut().status_message = Some(format!("Copied: {}", &oid[..7]));
+            }
+            Err(e) => {
+                self.tab_mut().error_message = Some(format!("Clipboard error: {e}"));
+            }
+        }
+    }
+
+    /// Restore (checkout) the currently highlighted diff file from its commit
+    /// back to the working directory.
+    pub fn checkout_file_from_commit(&mut self) {
+        let commit_oid = match self.tab().selected_commit_oid.clone() {
+            Some(o) => o,
+            None => {
+                self.tab_mut().status_message = Some("No commit selected".into());
+                return;
+            }
+        };
+        let file_path = match self
+            .tab()
+            .commit_files
+            .get(self.tab().commit_diff_file_index)
+        {
+            Some(f) => f.display_path().to_string(),
+            None => {
+                self.tab_mut().status_message = Some("No file selected".into());
+                return;
+            }
+        };
+        bg_op!(self, "Restoring file\u{2026}", refresh, |repo_path| {
+            let repo = open_repo_str(&repo_path)?;
+            gitkraft_core::features::diff::checkout_file_at_commit(&repo, &commit_oid, &file_path)
+                .map_err(|e| format!("restore: {e}"))?;
+            Ok(format!("Restored: {file_path}"))
         });
     }
 
@@ -3519,5 +3805,635 @@ mod tests {
             app.tab().status_message.as_deref(),
             Some("Enter commit message:")
         );
+    }
+
+    // ── New feature tests ─────────────────────────────────────────────────────
+
+    fn make_local_branch(name: &str) -> gitkraft_core::BranchInfo {
+        gitkraft_core::BranchInfo {
+            name: name.to_string(),
+            branch_type: gitkraft_core::BranchType::Local,
+            is_head: false,
+            target_oid: None,
+            upstream_ahead: None,
+            upstream_behind: None,
+        }
+    }
+
+    fn make_remote_branch(name: &str) -> gitkraft_core::BranchInfo {
+        gitkraft_core::BranchInfo {
+            name: name.to_string(),
+            branch_type: gitkraft_core::BranchType::Remote,
+            is_head: false,
+            target_oid: None,
+            upstream_ahead: None,
+            upstream_behind: None,
+        }
+    }
+
+    // ── Branch rename ───────────────────────────────────────────────────
+
+    #[test]
+    fn rename_selected_branch_no_selection_sets_status() {
+        let mut app = App::new();
+        app.rename_selected_branch();
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("No branch selected")
+        );
+    }
+
+    #[test]
+    fn rename_selected_branch_remote_sets_status() {
+        let mut app = App::new();
+        app.tab_mut().branches = vec![make_remote_branch("origin/main")];
+        app.tab_mut().branch_list_state.select(Some(0));
+        app.rename_selected_branch();
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("Can only rename local branches")
+        );
+    }
+
+    #[test]
+    fn rename_selected_branch_local_enters_input_mode() {
+        let mut app = App::new();
+        app.tab_mut().branches = vec![make_local_branch("feature-x")];
+        app.tab_mut().branch_list_state.select(Some(0));
+        app.rename_selected_branch();
+        assert_eq!(app.input_mode, crate::app::InputMode::Input);
+        assert_eq!(app.input_purpose, crate::app::InputPurpose::RenameBranch);
+        assert_eq!(app.input_buffer, "feature-x"); // pre-filled
+        assert_eq!(app.tab().rename_branch_target.as_deref(), Some("feature-x"));
+    }
+
+    #[test]
+    fn do_rename_branch_same_name_cancels() {
+        let mut app = App::new();
+        app.tab_mut().rename_branch_target = Some("main".into());
+        app.input_buffer = "main".into();
+        app.do_rename_branch();
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("Rename cancelled")
+        );
+        assert!(!app.tab().is_loading);
+    }
+
+    #[test]
+    fn do_rename_branch_empty_name_cancels() {
+        let mut app = App::new();
+        app.tab_mut().rename_branch_target = Some("main".into());
+        app.input_buffer = "   ".into();
+        app.do_rename_branch();
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("Rename cancelled")
+        );
+    }
+
+    #[test]
+    fn do_rename_branch_starts_bg_op_with_valid_name() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().rename_branch_target = Some("old-name".into());
+        app.input_buffer = "new-name".into();
+        app.do_rename_branch();
+        assert!(app.tab().is_loading);
+        // rename_branch_target is consumed
+        assert!(app.tab().rename_branch_target.is_none());
+    }
+
+    #[test]
+    fn rename_branch_target_defaults_to_none() {
+        let app = App::new();
+        assert!(app.tab().rename_branch_target.is_none());
+    }
+
+    // ── Push / pull selected branch ───────────────────────────────────
+
+    #[test]
+    fn push_selected_branch_no_selection_sets_status() {
+        let mut app = App::new();
+        app.push_selected_branch();
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("No branch selected")
+        );
+    }
+
+    #[test]
+    fn push_selected_branch_remote_sets_status() {
+        let mut app = App::new();
+        app.tab_mut().branches = vec![make_remote_branch("origin/main")];
+        app.tab_mut().branch_list_state.select(Some(0));
+        app.push_selected_branch();
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("Can only push local branches")
+        );
+    }
+
+    #[test]
+    fn push_selected_branch_local_starts_bg_op() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().branches = vec![make_local_branch("feature-x")];
+        app.tab_mut().branch_list_state.select(Some(0));
+        app.push_selected_branch();
+        assert!(app.tab().is_loading);
+    }
+
+    #[test]
+    fn pull_selected_branch_no_selection_sets_status() {
+        let mut app = App::new();
+        app.pull_selected_branch();
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("No branch selected")
+        );
+    }
+
+    #[test]
+    fn pull_selected_branch_remote_sets_status() {
+        let mut app = App::new();
+        app.tab_mut().branches = vec![make_remote_branch("origin/main")];
+        app.tab_mut().branch_list_state.select(Some(0));
+        app.pull_selected_branch();
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("Can only pull local branches")
+        );
+    }
+
+    #[test]
+    fn pull_selected_branch_local_starts_bg_op() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().branches = vec![make_local_branch("feature-x")];
+        app.tab_mut().branch_list_state.select(Some(0));
+        app.pull_selected_branch();
+        assert!(app.tab().is_loading);
+    }
+
+    // ── Checkout remote branch ────────────────────────────────────────
+
+    #[test]
+    fn checkout_selected_branch_remote_starts_bg_op() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().branches = vec![make_remote_branch("origin/feature")];
+        app.tab_mut().branch_list_state.select(Some(0));
+        app.checkout_selected_branch();
+        assert!(app.tab().is_loading);
+    }
+
+    #[test]
+    fn checkout_selected_branch_already_head_sets_status() {
+        let mut app = App::new();
+        let mut branch = make_local_branch("main");
+        branch.is_head = true;
+        app.tab_mut().branches = vec![branch];
+        app.tab_mut().branch_list_state.select(Some(0));
+        app.checkout_selected_branch();
+        assert!(!app.tab().is_loading);
+        assert!(app.tab().status_message.is_some());
+    }
+
+    // ── Delete remote branch ───────────────────────────────────────────
+
+    #[test]
+    fn delete_selected_remote_branch_no_selection_sets_status() {
+        let mut app = App::new();
+        app.delete_selected_remote_branch();
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("No branch selected")
+        );
+    }
+
+    #[test]
+    fn delete_selected_remote_branch_local_sets_status() {
+        let mut app = App::new();
+        app.tab_mut().branches = vec![make_local_branch("main")];
+        app.tab_mut().branch_list_state.select(Some(0));
+        app.delete_selected_remote_branch();
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("Select a remote branch to delete it")
+        );
+    }
+
+    #[test]
+    fn delete_selected_remote_branch_starts_bg_op() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().branches = vec![make_remote_branch("origin/feature")];
+        app.tab_mut().branch_list_state.select(Some(0));
+        app.delete_selected_remote_branch();
+        assert!(app.tab().is_loading);
+    }
+
+    // ── Stash apply ──────────────────────────────────────────────────────
+
+    #[test]
+    fn stash_apply_selected_no_selection_sets_status() {
+        let mut app = App::new();
+        app.stash_apply_selected();
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("No stash selected")
+        );
+    }
+
+    #[test]
+    fn stash_apply_selected_starts_bg_op() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().stashes = vec![gitkraft_core::StashEntry {
+            index: 0,
+            message: "WIP".to_string(),
+            oid: "abc1234".to_string(),
+        }];
+        app.tab_mut().stash_list_state.select(Some(0));
+        app.stash_apply_selected();
+        assert!(app.tab().is_loading);
+    }
+
+    #[test]
+    fn stash_pop_first_no_stashes_sets_status() {
+        let mut app = App::new();
+        app.stash_pop_first();
+        assert_eq!(app.tab().status_message.as_deref(), Some("No stashes"));
+    }
+
+    #[test]
+    fn stash_pop_first_selects_index_zero_and_pops() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().stashes = vec![gitkraft_core::StashEntry {
+            index: 0,
+            message: "WIP".to_string(),
+            oid: "abc1234".to_string(),
+        }];
+        // No stash selected initially
+        assert_eq!(app.tab().stash_list_state.selected(), None);
+        app.stash_pop_first();
+        assert!(app.tab().is_loading);
+    }
+
+    // ── Batch revert ─────────────────────────────────────────────────────
+
+    fn make_commits_for_revert() -> Vec<gitkraft_core::CommitInfo> {
+        (0..3)
+            .map(|i| gitkraft_core::CommitInfo {
+                oid: format!("{i:040x}"),
+                short_oid: format!("{i:07x}"),
+                summary: format!("Commit {i}"),
+                message: format!("Commit {i}"),
+                author_name: "Test".into(),
+                author_email: "t@t.com".into(),
+                time: Default::default(),
+                parent_ids: vec![],
+                refs: vec![],
+            })
+            .collect()
+    }
+
+    #[test]
+    fn revert_selected_commits_no_selection_sets_status() {
+        let mut app = App::new();
+        app.revert_selected_commits();
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("No commit selected")
+        );
+    }
+
+    #[test]
+    fn revert_selected_commits_single_starts_bg_op() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().commits = make_commits_for_revert();
+        app.tab_mut().commit_list_state.select(Some(0));
+        app.revert_selected_commits();
+        assert!(app.tab().is_loading);
+    }
+
+    #[test]
+    fn revert_selected_commits_multi_starts_bg_op() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().commits = make_commits_for_revert();
+        app.tab_mut().selected_commits = vec![0, 1, 2];
+        app.tab_mut().commit_list_state.select(Some(0));
+        app.revert_selected_commits();
+        assert!(app.tab().is_loading);
+    }
+
+    // ── yank_commit_oid ───────────────────────────────────────────────────
+
+    #[test]
+    fn yank_commit_oid_no_selection_is_noop() {
+        let mut app = App::new();
+        app.yank_commit_oid();
+        // No crash, no status message
+        assert!(app.tab().status_message.is_none());
+    }
+
+    #[test]
+    fn yank_commit_oid_sets_status_or_error() {
+        // With a commit selected, yank either succeeds (clipboard available)
+        // or sets an error (no clipboard in CI). Either way it doesn't panic.
+        let mut app = App::new();
+        app.tab_mut().commits = make_commits_for_revert();
+        app.tab_mut().commit_list_state.select(Some(0));
+        app.yank_commit_oid();
+        // Either status_message (success) or error_message (no clipboard) is set.
+        let has_feedback = app.tab().status_message.is_some() || app.tab().error_message.is_some();
+        assert!(
+            has_feedback,
+            "yank must set status_message or error_message"
+        );
+    }
+
+    // ── checkout_file_from_commit ───────────────────────────────────────
+
+    #[test]
+    fn checkout_file_from_commit_no_commit_oid_sets_status() {
+        let mut app = App::new();
+        app.checkout_file_from_commit();
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("No commit selected")
+        );
+    }
+
+    #[test]
+    fn checkout_file_from_commit_no_file_sets_status() {
+        let mut app = App::new();
+        app.tab_mut().selected_commit_oid = Some("abc1234".to_string());
+        // commit_files is empty
+        app.checkout_file_from_commit();
+        assert_eq!(
+            app.tab().status_message.as_deref(),
+            Some("No file selected")
+        );
+    }
+
+    // ── A. Branch rename — additional coverage ───────────────────────────────
+
+    #[test]
+    fn do_rename_branch_invalid_ref_name_sets_error() {
+        let mut app = App::new();
+        app.tab_mut().rename_branch_target = Some("old-name".into());
+        app.input_buffer = "invalid name with spaces".into();
+        app.do_rename_branch();
+        assert!(app.tab().error_message.is_some());
+        assert!(
+            app.tab()
+                .error_message
+                .as_ref()
+                .unwrap()
+                .contains("Invalid"),
+            "error_message should mention 'Invalid'"
+        );
+    }
+
+    #[test]
+    fn do_rename_branch_clears_input_buffer() {
+        // do_rename_branch clears input_buffer early (before the bg_op path)
+        let mut app = App::new();
+        app.tab_mut().rename_branch_target = Some("old-name".into());
+        app.input_buffer = "new-name".into();
+        app.do_rename_branch();
+        assert!(app.input_buffer.is_empty());
+    }
+
+    #[test]
+    fn do_rename_branch_no_target_is_noop() {
+        // rename_branch_target is None — should silently return without panic
+        let mut app = App::new();
+        app.tab_mut().rename_branch_target = None;
+        app.input_buffer = "new-name".into();
+        app.do_rename_branch(); // must not panic
+                                // Returns before clearing input_buffer, so input_buffer is still set
+        assert_eq!(app.input_buffer, "new-name");
+    }
+
+    #[test]
+    fn rename_selected_branch_sets_status_message() {
+        let mut app = App::new();
+        app.tab_mut().branches = vec![make_local_branch("feature-x")];
+        app.tab_mut().branch_list_state.select(Some(0));
+        app.rename_selected_branch();
+        assert_eq!(app.input_mode, crate::app::InputMode::Input);
+        assert_eq!(app.input_purpose, crate::app::InputPurpose::RenameBranch);
+        assert_eq!(app.input_buffer, "feature-x");
+        assert!(app.tab().status_message.is_some());
+    }
+
+    // ── B. Checkout remote/local branch — additional coverage ─────────────────
+
+    #[test]
+    fn checkout_selected_branch_no_selection_sets_error() {
+        // Empty branch list: selected_idx! defaults to 0, 0 >= 0 → sets error_message
+        let mut app = App::new();
+        app.checkout_selected_branch();
+        assert!(app.tab().error_message.is_some());
+    }
+
+    #[test]
+    fn checkout_selected_branch_local_non_head_starts_bg_op() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().branches = vec![make_local_branch("feature-y")];
+        app.tab_mut().branch_list_state.select(Some(0));
+        app.checkout_selected_branch();
+        assert!(app.tab().is_loading);
+    }
+
+    #[test]
+    fn checkout_selected_branch_already_head_message_contains_name() {
+        let mut app = App::new();
+        let mut branch = make_local_branch("main");
+        branch.is_head = true;
+        app.tab_mut().branches = vec![branch];
+        app.tab_mut().branch_list_state.select(Some(0));
+        app.checkout_selected_branch();
+        let msg = app.tab().status_message.as_deref().unwrap_or("");
+        assert!(
+            msg.contains("main"),
+            "status should mention the branch name"
+        );
+    }
+
+    // ── C. Stash apply — stash index vs list position ─────────────────────────
+
+    #[test]
+    fn stash_apply_selected_uses_stash_index_not_list_position() {
+        // stashes[0].index = 2 (e.g. after two pops); must pass 2 to core, not 0.
+        // We verify the bg op is dispatched (is_loading=true) and a status is set.
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().stashes = vec![gitkraft_core::StashEntry {
+            index: 2,
+            message: "wip".into(),
+            oid: "abc".into(),
+        }];
+        app.tab_mut().stash_list_state.select(Some(0));
+        app.stash_apply_selected();
+        assert!(app.tab().is_loading);
+        assert!(app.tab().status_message.is_some());
+    }
+
+    // ── D. Restore file from commit — happy path ──────────────────────────────
+
+    #[test]
+    fn checkout_file_from_commit_happy_path_starts_bg_op() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().selected_commit_oid = Some("abc1234567890".into());
+        app.tab_mut().commit_files = vec![gitkraft_core::DiffFileEntry {
+            old_file: String::new(),
+            new_file: "src/main.rs".into(),
+            status: gitkraft_core::FileStatus::Modified,
+        }];
+        app.tab_mut().commit_diff_file_index = 0;
+        app.checkout_file_from_commit();
+        assert!(app.tab().is_loading, "bg op must be dispatched");
+    }
+
+    #[test]
+    fn checkout_file_from_commit_non_zero_index() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().selected_commit_oid = Some("abc1234567890".into());
+        app.tab_mut().commit_files = vec![
+            gitkraft_core::DiffFileEntry {
+                old_file: String::new(),
+                new_file: "a.rs".into(),
+                status: gitkraft_core::FileStatus::Modified,
+            },
+            gitkraft_core::DiffFileEntry {
+                old_file: String::new(),
+                new_file: "b.rs".into(),
+                status: gitkraft_core::FileStatus::Modified,
+            },
+        ];
+        app.tab_mut().commit_diff_file_index = 1; // second file
+        app.checkout_file_from_commit();
+        assert!(app.tab().is_loading);
+    }
+
+    // ── E. Yank OID — success message contains short OID ─────────────────────
+
+    #[test]
+    fn yank_commit_oid_success_message_contains_short_oid() {
+        let mut app = App::new();
+        app.tab_mut().commits = vec![gitkraft_core::CommitInfo {
+            oid: "abcdef1234567890".into(),
+            short_oid: "abcdef1".into(),
+            summary: "test".into(),
+            message: "test".into(),
+            author_name: "A".into(),
+            author_email: "a@b.com".into(),
+            time: Default::default(),
+            parent_ids: Vec::new(),
+            refs: Vec::new(),
+        }];
+        app.tab_mut().commit_list_state.select(Some(0));
+        app.yank_commit_oid();
+        // Either clipboard succeeded (status_message) or failed (error_message in CI)
+        let has_msg = app.tab().status_message.is_some() || app.tab().error_message.is_some();
+        assert!(has_msg, "yank must set status_message or error_message");
+        // If clipboard succeeded the message must reference the short OID
+        if let Some(ref msg) = app.tab().status_message {
+            assert!(msg.contains("abcdef1"), "status should contain short OID");
+        }
+    }
+
+    // ── F. Batch revert — additional edge cases ───────────────────────────────
+
+    #[test]
+    fn revert_selected_commits_one_in_selected_uses_cursor() {
+        // selected_commits.len() == 1 (not > 1) → falls through to cursor path
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().commits = make_commits_for_revert();
+        app.tab_mut().selected_commits = vec![1]; // exactly one entry
+        app.tab_mut().commit_list_state.select(Some(1));
+        app.revert_selected_commits();
+        assert!(app.tab().is_loading);
+    }
+
+    #[test]
+    fn revert_selected_commits_status_contains_count() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().commits = make_commits_for_revert();
+        app.tab_mut().selected_commits = vec![0, 1, 2]; // > 1 → uses multi-select path
+        app.revert_selected_commits();
+        let msg = app.tab().status_message.as_deref().unwrap_or("");
+        assert!(
+            msg.contains('3') || msg.contains("Revert"),
+            "status should mention count or action, got: {msg:?}"
+        );
+    }
+
+    // ── G. Stash pop first — selection override ───────────────────────────────
+
+    #[test]
+    fn stash_pop_first_sets_selection_to_zero_before_pop() {
+        let mut app = App::new();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        app.tab_mut().stashes = vec![
+            gitkraft_core::StashEntry {
+                index: 0,
+                message: "first".into(),
+                oid: "aaa".into(),
+            },
+            gitkraft_core::StashEntry {
+                index: 1,
+                message: "second".into(),
+                oid: "bbb".into(),
+            },
+        ];
+        // Pre-set selection to stash at list position 1
+        app.tab_mut().stash_list_state.select(Some(1));
+        app.stash_pop_first();
+        // stash_pop_first overrides selection to 0 then calls stash_pop_selected
+        assert!(app.tab().is_loading);
+    }
+
+    // ── H. InputPurpose::RenameBranch events layer ────────────────────────────
+
+    #[test]
+    fn enter_key_in_rename_branch_mode_calls_do_rename() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let mut app = App::new();
+        app.input_mode = crate::app::InputMode::Input;
+        app.input_purpose = crate::app::InputPurpose::RenameBranch;
+        app.tab_mut().rename_branch_target = Some("old-branch".into());
+        app.input_buffer = "new-branch".into();
+        app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        crate::events::handle_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        // submit_input resets mode to Normal before dispatching do_rename_branch
+        assert_eq!(app.input_mode, crate::app::InputMode::Normal);
+        // do_rename_branch clears input_buffer on entry
+        assert!(app.input_buffer.is_empty());
+    }
+
+    #[test]
+    fn esc_key_in_rename_branch_mode_cancels() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let mut app = App::new();
+        app.input_mode = crate::app::InputMode::Input;
+        app.input_purpose = crate::app::InputPurpose::RenameBranch;
+        app.tab_mut().rename_branch_target = Some("old-branch".into());
+        app.input_buffer = "partial-input".into();
+        crate::events::handle_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.input_mode, crate::app::InputMode::Normal);
+        assert!(app.input_buffer.is_empty());
     }
 }

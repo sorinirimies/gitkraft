@@ -169,10 +169,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             app.tab_mut().status_message = Some("Enter stash message (or leave empty):".into());
         }
 
-        // Stash pop
+        // Stash pop (most recent stash — no stash selection required from staging pane)
         KeyCode::Char('Z') => {
             app.tab_mut().confirm_discard = false;
-            app.stash_pop_selected();
+            app.stash_pop_first();
         }
 
         // File history for the currently selected staging file

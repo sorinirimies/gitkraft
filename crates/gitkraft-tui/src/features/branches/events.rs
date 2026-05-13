@@ -63,6 +63,16 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             app.rebase_onto_selected_branch();
         }
 
+        // Rename selected branch
+        KeyCode::Char('e') => {
+            app.rename_selected_branch();
+        }
+
+        // Delete a remote branch (push --delete)
+        KeyCode::Char('X') => {
+            app.delete_selected_remote_branch();
+        }
+
         // Deselect
         KeyCode::Esc => {
             app.tab_mut().branch_list_state.select(None);

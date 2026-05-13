@@ -110,6 +110,19 @@ pub fn push_branch_async(path: PathBuf, branch: String, remote: String) -> Task<
     )
 }
 
+/// Force-push `branch` to `remote` (with --force-with-lease) then reload.
+pub fn force_push_branch_async(path: PathBuf, branch: String, remote: String) -> Task<Message> {
+    git_task!(
+        Message::GitOperationResult,
+        (|| {
+            let wd = workdir(&path)?;
+            gitkraft_core::features::branches::force_push_branch(&wd, &branch, &remote)
+                .map_err(|e| e.to_string())?;
+            load_repo_blocking(&path)
+        })()
+    )
+}
+
 /// Pull the current branch from `remote` with `--rebase` then reload.
 pub fn pull_rebase_async(path: PathBuf, remote: String) -> Task<Message> {
     git_task!(

@@ -66,6 +66,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
             InputPurpose::StashMessage => "Stash message",
             InputPurpose::CommitActionInput1 => "Input",
             InputPurpose::CommitActionInput2 => "Input (2)",
+            InputPurpose::RenameBranch => "Rename branch",
             InputPurpose::None => "Input",
         };
         spans.push(Span::styled(

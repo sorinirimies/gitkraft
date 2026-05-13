@@ -52,6 +52,10 @@ fn handle_file_list_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('e') => {
             app.open_commit_files_in_editor();
         }
+        // Restore the focused file from the selected commit to the working directory.
+        KeyCode::Char('o') => {
+            app.checkout_file_from_commit();
+        }
         _ => {}
     }
 }
