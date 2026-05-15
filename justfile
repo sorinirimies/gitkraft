@@ -343,7 +343,7 @@ push-gitea:
 
 # Push the current branch to Gitea Starscream
 push-gitea-starscream:
-    git push gitea_starscream main
+    git push gitea-starscream main
 
 # Push the current branch to all remotes (continues on failure)
 push-all:
@@ -351,7 +351,7 @@ push-all:
     failed=""
     git push origin main             || failed="$failed origin"
     git push gitea main              || failed="$failed gitea"
-    git push gitea_starscream main   || failed="$failed gitea_starscream"
+    git push gitea-starscream main   || failed="$failed gitea-starscream"
     if [ -n "$failed" ]; then
         echo "⚠️  Failed to push to:$failed"
     else
@@ -364,7 +364,7 @@ push-all-force:
     failed=""
     git push --force origin main             || failed="$failed origin"
     git push --force gitea main              || failed="$failed gitea"
-    git push --force gitea_starscream main   || failed="$failed gitea_starscream"
+    git push --force gitea-starscream main   || failed="$failed gitea-starscream"
     if [ -n "$failed" ]; then
         echo "⚠️  Failed to force-push to:$failed"
     else
@@ -381,7 +381,7 @@ pull-gitea:
 
 # Pull the current branch from Gitea Starscream
 pull-gitea-starscream:
-    git pull gitea_starscream main
+    git pull gitea-starscream main
 
 # Pull the current branch from all remotes (continues on failure)
 pull-all:
@@ -389,7 +389,7 @@ pull-all:
     failed=""
     git pull origin main             || failed="$failed origin"
     git pull gitea main              || failed="$failed gitea"
-    git pull gitea_starscream main   || failed="$failed gitea_starscream"
+    git pull gitea-starscream main   || failed="$failed gitea-starscream"
     if [ -n "$failed" ]; then
         echo "⚠️  Failed to pull from:$failed"
     else
@@ -406,7 +406,7 @@ push-tags-all:
     failed=""
     git push origin --tags             || failed="$failed origin"
     git push gitea --tags              || failed="$failed gitea"
-    git push gitea_starscream --tags   || failed="$failed gitea_starscream"
+    git push gitea-starscream --tags   || failed="$failed gitea-starscream"
     if [ -n "$failed" ]; then
         echo "⚠️  Failed to push tags to:$failed"
     else
@@ -431,7 +431,7 @@ release-gitea version: (bump version)
 # Bump, commit, tag, then push to Gitea Starscream only.
 release-gitea-starscream version: (bump version)
     @echo "Pushing release v{{ version }} to Gitea Starscream…"
-    git push --follow-tags gitea_starscream main
+    git push --follow-tags gitea-starscream main
     @echo "✅ Release v{{ version }} live on Gitea Starscream."
 
 # Bump, commit, tag, then push to all remotes (continues on failure).
@@ -441,7 +441,7 @@ release-all version: (bump version)
     failed=""
     git push --follow-tags origin main             || failed="$failed origin"
     git push --follow-tags gitea main              || failed="$failed gitea"
-    git push --follow-tags gitea_starscream main   || failed="$failed gitea_starscream"
+    git push --follow-tags gitea-starscream main   || failed="$failed gitea-starscream"
     if [ -n "$failed" ]; then
         echo "⚠️  Release v{{ version }} failed to push to:$failed"
     else
@@ -454,7 +454,7 @@ push-release-all: check-all
     failed=""
     git push --follow-tags origin main             || failed="$failed origin"
     git push --follow-tags gitea main              || failed="$failed gitea"
-    git push --follow-tags gitea_starscream main   || failed="$failed gitea_starscream"
+    git push --follow-tags gitea-starscream main   || failed="$failed gitea-starscream"
     if [ -n "$failed" ]; then
         echo "⚠️  Failed to push to:$failed"
     else
@@ -478,8 +478,8 @@ sync-gitea:
 
 # Force-sync Gitea Starscream with GitHub
 sync-gitea-starscream:
-    git push gitea_starscream main --force
-    git push gitea_starscream --tags --force
+    git push gitea-starscream main --force
+    git push gitea-starscream --tags --force
     @echo "✅ Gitea Starscream force-synced with GitHub."
 
 # Force-sync all Gitea instances with GitHub (continues on failure)
@@ -488,8 +488,8 @@ sync-all-gitea:
     failed=""
     git push gitea main --force                  || failed="$failed gitea"
     git push gitea --tags --force                || failed="$failed gitea-tags"
-    git push gitea_starscream main --force       || failed="$failed gitea_starscream"
-    git push gitea_starscream --tags --force     || failed="$failed gitea_starscream-tags"
+    git push gitea-starscream main --force       || failed="$failed gitea-starscream"
+    git push gitea-starscream --tags --force     || failed="$failed gitea-starscream-tags"
     if [ -n "$failed" ]; then
         echo "⚠️  Failed to sync:$failed"
     else
