@@ -281,11 +281,13 @@ fn commit_row_element<'a>(
     };
 
     // Use pre-computed display strings; fall back gracefully if out of sync.
-    let (summary_str, time_str, author_str) = tab
+    // Summary is read directly from the commit to avoid duplicating it.
+    let summary_str = commit.summary.as_str();
+    let (time_str, author_str) = tab
         .commit_display
         .get(idx)
-        .map(|(s, t, a)| (s.as_str(), t.as_str(), a.as_str()))
-        .unwrap_or((commit.summary.as_str(), "", commit.author_name.as_str()));
+        .map(|(t, a)| (t.as_str(), a.as_str()))
+        .unwrap_or(("", commit.author_name.as_str()));
 
     // Pre-truncate with "…" so the full row stays on one line.
     let row_available = (available_summary_px - badges_overhead).max(40.0);

@@ -1502,7 +1502,7 @@ dependencies = [
 
 [[package]]
 name = "gitkraft"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "dirs",
  "futures",
@@ -1519,7 +1519,7 @@ dependencies = [
 
 [[package]]
 name = "gitkraft-core"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1534,7 +1534,7 @@ dependencies = [
 
 [[package]]
 name = "gitkraft-tui"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "anyhow",
  "arboard",

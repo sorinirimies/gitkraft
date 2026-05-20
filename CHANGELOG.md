@@ -2,12 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.0.7 - 2026-05-20
+### 📦 Other Changes
+- Rename gitea_starscream remote to gitea-starscream
+- Canonicalize repo paths and fix tab deduplication logic
+### 🔄 Updated
+- Update dependencies in Cargo.lock
+### 🔧 Chores
+- chore(deps): nightly dependency upgrade 2026-05-14
+- chore(deps): nightly dependency upgrade 2026-05-16
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.6...v1.0.7
 ## 1.0.6 - 2026-05-13
 ### ➕ Added
 - Add stash apply, force-push, and branch rename features stash apply
 ### 🐛 Bug Fixes
 - Fix workspace section header in Cargo.toml
 - Fix CI concurrency to properly cancel stale runs
+### 🔧 Chores
+- chore: bump version to 1.0.6
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.5...v1.0.6
 ## 1.0.5 - 2026-05-13
 ### ➕ Added
