@@ -42,8 +42,7 @@ impl GitKraft {
                         self.active_tab -= 1;
                     }
                 }
-                let open_tabs = self.open_tab_paths();
-                let active = self.active_tab;
+                let (open_tabs, active) = self.session_state();
                 crate::features::repo::commands::save_session_async(open_tabs, active)
             }
 

@@ -744,6 +744,34 @@ impl GitKraft {
             .collect()
     }
 
+    /// Return the session-persistable (open_tab_paths, active_tab_index) pair.
+    ///
+    /// `open_tab_paths()` filters out empty tabs, so the raw `self.active_tab`
+    /// index does not map 1-to-1.  This helper computes the correct position
+    /// of the active tab within the filtered list.
+    pub fn session_state(&self) -> (Vec<PathBuf>, usize) {
+        let mut paths = Vec::new();
+        let mut session_active: usize = 0;
+        let mut found_active = false;
+        for (i, tab) in self.tabs.iter().enumerate() {
+            if tab.repo_info.is_some() {
+                if let Some(ref p) = tab.repo_path {
+                    if i == self.active_tab {
+                        session_active = paths.len();
+                        found_active = true;
+                    }
+                    paths.push(p.clone());
+                }
+            }
+        }
+        // If the active tab wasn't in the saved set (e.g. it's an empty tab),
+        // default to 0.
+        if !found_active {
+            session_active = 0;
+        }
+        (paths, session_active)
+    }
+
     /// Get a reference to the currently active tab.
     pub fn active_tab(&self) -> &RepoTab {
         &self.tabs[self.active_tab]
@@ -2130,16 +2158,22 @@ mod tests {
         let mut state = GitKraft::new();
         // Tab 0: fully loaded repo-a
         setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
-        // Tab 1: empty tab
+        // Tab 1: empty tab (simulates user clicking "+")
         state.tabs.push(RepoTab::new_empty());
         state.active_tab = 1;
 
-        // Opening a recent repo that's already open should switch to it.
+        // Opening a recent repo that's already open should switch to it
+        // AND remove the empty tab the user was on.
         let _task = state.update(Message::OpenRecentRepo(std::path::PathBuf::from(
             "/home/user/repo-a",
         )));
 
+        assert_eq!(state.tabs.len(), 1, "empty tab must be removed");
         assert_eq!(state.active_tab, 0);
+        assert_eq!(
+            state.active_tab().repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-a")),
+        );
     }
 
     #[test]
@@ -2174,6 +2208,33 @@ mod tests {
         assert_eq!(state.tabs.len(), 1);
         assert_eq!(state.active_tab, 0);
         assert!(state.tabs[0].is_loading);
+    }
+
+    #[test]
+    fn open_recent_repo_dedup_removes_empty_tab_with_multiple_loaded() {
+        // Reproduces: user has [A, B*, C], clicks "+" to get [A, B, C, Empty*],
+        // then clicks recent repo B → should end up with [A, B*, C] (no empty tab).
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[2], "/home/user/repo-c");
+        // Simulate clicking "+" to add an empty tab
+        state.tabs.push(RepoTab::new_empty());
+        state.active_tab = 3;
+
+        let _task = state.update(Message::OpenRecentRepo(std::path::PathBuf::from(
+            "/home/user/repo-b",
+        )));
+
+        assert_eq!(state.tabs.len(), 3, "empty tab must be cleaned up");
+        assert_eq!(state.active_tab, 1);
+        assert_eq!(
+            state.active_tab().repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-b")),
+        );
     }
 
     // ── Refresh race-condition tests ──────────────────────────────────────
@@ -3024,5 +3085,130 @@ mod tests {
         let _ = state.update(Message::SwitchTab(99));
 
         assert_eq!(state.active_tab, 0, "out-of-bounds switch must be ignored");
+    }
+
+    // ── session_state ─────────────────────────────────────────────────────
+
+    #[test]
+    fn session_state_matches_open_tab_paths_when_no_empty_tabs() {
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.active_tab = 1;
+
+        let (paths, active) = state.session_state();
+        assert_eq!(paths.len(), 2);
+        assert_eq!(active, 1);
+    }
+
+    #[test]
+    fn session_state_adjusts_index_when_empty_tab_before_active() {
+        // tabs: [Empty(0), repo-a(1), repo-b(2)], active = 2
+        // session paths: [repo-a, repo-b] → session active should be 1
+        let mut state = GitKraft::new();
+        // Tab 0 is already an empty tab from new()
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[2], "/home/user/repo-b");
+        state.active_tab = 2;
+
+        let (paths, active) = state.session_state();
+        assert_eq!(paths.len(), 2);
+        assert_eq!(active, 1, "session index must skip the empty tab at 0");
+    }
+
+    #[test]
+    fn session_state_defaults_to_zero_when_active_is_empty_tab() {
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.tabs.push(RepoTab::new_empty()); // empty tab at index 1
+        state.active_tab = 1; // active is the empty tab
+
+        let (paths, active) = state.session_state();
+        assert_eq!(paths.len(), 1);
+        assert_eq!(active, 0, "empty active tab should default to 0");
+    }
+
+    // ── Race condition: repo_path set before load ─────────────────────────
+
+    #[test]
+    fn repo_selected_sets_repo_path_before_load() {
+        // After RepoSelected, the empty tab must have repo_path set so that
+        // handle_repo_loaded can target it by path even if the user switches
+        // tabs during loading.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        // Simulate OpenRepo creating a new empty tab
+        state.tabs.push(RepoTab::new_empty());
+        state.active_tab = 1;
+
+        let _task = state.update(Message::RepoSelected(Some(std::path::PathBuf::from(
+            "/home/user/repo-b",
+        ))));
+
+        // The active tab should now have repo_path set
+        assert_eq!(
+            state.tabs[1].repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-b")),
+            "repo_path must be set before async load starts"
+        );
+    }
+
+    #[test]
+    fn open_recent_repo_sets_repo_path_before_load() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        // Active tab is empty (no repo open)
+        assert!(!state.active_tab().has_repo());
+
+        let _task = state.update(Message::OpenRecentRepo(std::path::PathBuf::from(
+            "/home/user/repo-a",
+        )));
+
+        assert_eq!(
+            state.active_tab().repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-a")),
+            "repo_path must be set before async load starts"
+        );
+    }
+
+    #[test]
+    fn handle_repo_loaded_targets_correct_tab_after_switch() {
+        // Regression test: user opens repo-b in a new tab, then switches
+        // back to tab 0 before the load completes.  The loaded data must
+        // still go to the correct tab (the one with repo_path = repo-b).
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        // Tab 0: repo-a loaded
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        // Tab 1: empty, has repo_path set (simulates RepoSelected having set it)
+        state.tabs.push(RepoTab::new_empty());
+        state.tabs[1].repo_path = Some(std::path::PathBuf::from("/home/user/repo-b"));
+        state.tabs[1].is_loading = true;
+
+        // User switches back to tab 0
+        state.active_tab = 0;
+
+        // Repo-b load completes
+        let payload = fake_payload("/home/user/repo-b");
+        let _ = state.update(Message::RepoOpened(Ok(payload)));
+
+        // The payload must have gone to tab 1, NOT tab 0
+        assert!(
+            state.tabs[1].repo_info.is_some(),
+            "repo-b payload must be written to tab 1"
+        );
+        assert_eq!(
+            state.tabs[1].repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-b")),
+        );
+        // Tab 0 must still be repo-a, untouched
+        assert_eq!(
+            state.tabs[0].repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-a")),
+        );
     }
 }

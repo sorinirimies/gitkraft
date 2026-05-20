@@ -33,6 +33,10 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
 
         Message::RepoSelected(maybe_path) => {
             if let Some(path) = maybe_path {
+                // Canonicalize so the picker path matches stored repo_path
+                // (git2's workdir is always canonical / symlink-resolved).
+                let path = path.canonicalize().unwrap_or(path);
+
                 // If this repo is already open in another tab, switch to it
                 // instead of opening a duplicate.
                 if let Some(existing_idx) = state.tabs.iter().position(|t| {
@@ -60,6 +64,7 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                     return Task::none();
                 }
                 let tab = state.active_tab_mut();
+                tab.repo_path = Some(path.clone());
                 tab.status_message = Some(format!("Opening {}…", path.display()));
                 commands::load_repo(path)
             } else {
@@ -101,11 +106,29 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         Message::RepoRefreshed(result) => handle_repo_loaded(state, result),
 
         Message::OpenRecentRepo(path) => {
+            // Canonicalize for consistent comparison with stored paths.
+            let path = path.canonicalize().unwrap_or(path);
+
             // If this repo is already open in another tab, switch to it.
             if let Some(existing_idx) = state.tabs.iter().position(|t| {
                 t.repo_path.as_deref() == Some(path.as_path()) && t.repo_info.is_some()
             }) {
-                state.active_tab = existing_idx;
+                // Remove the current tab if it's an empty "New Tab" so it
+                // doesn't linger in the tab bar after we switch away.
+                if !state.active_tab().has_repo()
+                    && state.active_tab != existing_idx
+                    && state.tabs.len() > 1
+                {
+                    state.tabs.remove(state.active_tab);
+                    let adjusted = if existing_idx > state.active_tab {
+                        existing_idx - 1
+                    } else {
+                        existing_idx
+                    };
+                    state.active_tab = adjusted;
+                } else {
+                    state.active_tab = existing_idx;
+                }
                 return Task::none();
             }
             // If the active tab already has a repo open, create a new tab.
@@ -114,6 +137,7 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                 state.active_tab = state.tabs.len() - 1;
             }
             let tab = state.active_tab_mut();
+            tab.repo_path = Some(path.clone());
             tab.is_loading = true;
             tab.status_message = Some(format!("Opening {}…", path.display()));
             commands::load_repo(path)
@@ -141,8 +165,7 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             state.drag_initialized_h = false;
 
             // Persist the updated session and refresh recent repos from disk.
-            let open_tabs = state.open_tab_paths();
-            let active = state.active_tab;
+            let (open_tabs, active) = state.session_state();
             Task::batch([
                 commands::load_recent_repos_async(),
                 commands::save_session_async(open_tabs, active),
@@ -191,12 +214,14 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
 fn handle_repo_loaded(state: &mut GitKraft, result: Result<RepoPayload, String>) -> Task<Message> {
     match result {
         Ok(payload) => {
-            // Derive the workdir path (preferred) or fall back to the .git path.
+            // Derive the workdir path (preferred) or fall back to the .git path,
+            // then canonicalize for consistent comparison with stored paths.
             let path = payload
                 .info
                 .workdir
                 .clone()
                 .unwrap_or_else(|| payload.info.path.clone());
+            let path = path.canonicalize().unwrap_or(path);
 
             // Find the tab that owns this repo path. If none match (brand-new
             // open), fall back to the active tab.
@@ -213,8 +238,7 @@ fn handle_repo_loaded(state: &mut GitKraft, result: Result<RepoPayload, String>)
 
             // Record the repo open AND persist the full session in one atomic
             // write, on a background thread so settings file I/O doesn't block the UI.
-            let open_tabs = state.open_tab_paths();
-            let active = state.active_tab;
+            let (open_tabs, active) = state.session_state();
             Task::batch([
                 commands::record_repo_and_save_session_async(path, open_tabs, active),
                 iced::widget::operation::scroll_to(
