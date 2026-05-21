@@ -1208,11 +1208,11 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
         }
 
         Some(crate::state::ContextMenu::UnstagedFile { path }) => {
-            file_context_menu_items(state, c, path, false, &menu_item).into()
+            file_context_menu_items(state, c, path, false, menu_item).into()
         }
 
         Some(crate::state::ContextMenu::StagedFile { path }) => {
-            file_context_menu_items(state, c, path, true, &menu_item).into()
+            file_context_menu_items(state, c, path, true, menu_item).into()
         }
 
         Some(crate::state::ContextMenu::CommitFile { oid, file_path }) => {
