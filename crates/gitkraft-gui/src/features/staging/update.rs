@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use gitkraft_core::DiffInfo;
+use gitkraft_core::DiffFileEntry;
 use iced::Task;
 
 use crate::message::Message;
@@ -11,15 +11,15 @@ use crate::state::GitKraft;
 use super::commands;
 
 /// Shared logic for shift-click / regular-click file selection in the staging area.
-/// Updates `selection` and `anchor` based on click type, then returns the diff
-/// for the clicked file (if found) so the caller can set `selected_diff`.
+/// Updates `selection` and `anchor` based on click type.
+/// Returns `true` if the clicked file is now selected (caller should load its diff).
 fn toggle_staging_file(
-    changes: &[DiffInfo],
+    changes: &[DiffFileEntry],
     selection: &mut HashSet<String>,
     anchor: &mut Option<usize>,
     path: &str,
     shift_held: bool,
-) -> Option<DiffInfo> {
+) -> bool {
     let clicked_idx = changes.iter().position(|d| d.display_path() == path);
 
     if shift_held {
@@ -43,7 +43,8 @@ fn toggle_staging_file(
         }
     }
 
-    changes.iter().find(|d| d.display_path() == path).cloned()
+    // Return true if the file is now selected (so the caller can load its diff)
+    selection.contains(path)
 }
 
 /// Handle all staging-related messages, returning a [`Task`] for any follow-up
@@ -123,16 +124,19 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         Message::ToggleSelectUnstaged(path) => {
             let shift_held = state.keyboard_modifiers.shift();
             let tab = state.active_tab_mut();
-            let diff = toggle_staging_file(
+            let is_selected = toggle_staging_file(
                 &tab.unstaged_changes,
                 &mut tab.selected_unstaged,
                 &mut tab.anchor_unstaged_index,
                 &path,
                 shift_held,
             );
-            if let Some(diff) = diff {
-                tab.selected_diff = Some(diff);
-                tab.diff_scroll_offset = 0.0;
+            if is_selected {
+                // Load the diff on demand
+                if let Some(repo_path) = tab.repo_path.clone() {
+                    let file_path = path.to_string();
+                    return commands::load_staging_file_diff(repo_path, file_path, false);
+                }
             }
             Task::none()
         }
@@ -140,16 +144,19 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         Message::ToggleSelectStaged(path) => {
             let shift_held = state.keyboard_modifiers.shift();
             let tab = state.active_tab_mut();
-            let diff = toggle_staging_file(
+            let is_selected = toggle_staging_file(
                 &tab.staged_changes,
                 &mut tab.selected_staged,
                 &mut tab.anchor_staged_index,
                 &path,
                 shift_held,
             );
-            if let Some(diff) = diff {
-                tab.selected_diff = Some(diff);
-                tab.diff_scroll_offset = 0.0;
+            if is_selected {
+                // Load the diff on demand
+                if let Some(repo_path) = tab.repo_path.clone() {
+                    let file_path = path.to_string();
+                    return commands::load_staging_file_diff(repo_path, file_path, true);
+                }
             }
             Task::none()
         }

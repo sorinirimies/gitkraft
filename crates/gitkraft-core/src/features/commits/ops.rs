@@ -129,6 +129,10 @@ pub fn list_commits(repo: &Repository, max_count: usize) -> Result<Vec<CommitInf
             .find_commit(oid)
             .with_context(|| format!("failed to find commit {oid}"))?;
         let mut info = CommitInfo::from_git2_commit(&commit);
+        // Don't store full multi-line commit bodies in the batch list —
+        // only the summary (first line) is shown in the log view.
+        // The full message is re-loaded on demand via get_commit_details().
+        info.message = String::new();
         if let Some(refs) = ref_map.get(&oid) {
             info.refs = refs.clone();
         }

@@ -609,11 +609,10 @@ mod tests {
         app.active_pane = ActivePane::Staging;
         app.tab_mut()
             .unstaged_changes
-            .push(gitkraft_core::DiffInfo {
+            .push(gitkraft_core::DiffFileEntry {
                 old_file: String::new(),
                 new_file: "test.rs".to_string(),
                 status: gitkraft_core::FileStatus::Modified,
-                hunks: Vec::new(),
             });
         app.tab_mut().unstaged_list_state.select(Some(0));
         app.tab_mut().staging_focus = crate::app::StagingFocus::Unstaged;

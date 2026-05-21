@@ -7,7 +7,7 @@ pub mod watcher;
 
 pub use ops::{
     checkout_commit_detached, cherry_pick_commit, delete_file, get_repo_info, init_repo,
-    load_repo_snapshot, open_repo, reset_to_commit, revert_commit,
+    load_repo_snapshot, load_repo_snapshot_with_depth, open_repo, reset_to_commit, revert_commit,
 };
 pub use types::{RepoInfo, RepoSnapshot, RepoState};
 pub use watcher::spawn_git_watcher;

@@ -90,11 +90,26 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             }
         }
 
-        Message::SelectDiff(diff_info) => {
+        Message::LoadStagingFileDiff(path, staged) => {
             state.active_tab_mut().context_menu = None;
+            if let Some(repo_path) = state.active_tab().repo_path.clone() {
+                crate::features::staging::commands::load_staging_file_diff(repo_path, path, staged)
+            } else {
+                Task::none()
+            }
+        }
+
+        Message::StagingFileDiffLoaded(result) => {
             let tab = state.active_tab_mut();
-            tab.selected_diff = Some(diff_info);
-            tab.diff_scroll_offset = 0.0;
+            match result {
+                Ok(diff) => {
+                    tab.selected_diff = Some(diff);
+                    tab.diff_scroll_offset = 0.0;
+                }
+                Err(e) => {
+                    tab.error_message = Some(format!("Failed to load staging diff: {e}"));
+                }
+            }
             Task::none()
         }
 

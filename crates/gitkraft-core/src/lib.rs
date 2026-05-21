@@ -28,7 +28,10 @@ pub use features::log::file_history;
 pub use features::persistence::{AppSettings, LayoutSettings, RepoHistoryEntry};
 pub use features::remotes::RemoteInfo;
 pub use features::repo::spawn_git_watcher;
-pub use features::repo::{delete_file, load_repo_snapshot, RepoInfo, RepoSnapshot, RepoState};
+pub use features::repo::{
+    delete_file, load_repo_snapshot, load_repo_snapshot_with_depth, RepoInfo, RepoSnapshot,
+    RepoState,
+};
 pub use features::stash::StashEntry;
 pub use features::theme::{
     theme_by_index, theme_index_by_name, AppTheme, Rgb, THEME_COUNT, THEME_NAMES,

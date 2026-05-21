@@ -56,150 +56,67 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .into()
 }
 
+/// Whether we're rendering the unstaged or staged file list.
+enum StagingKind {
+    Unstaged,
+    Staged,
+}
+
 /// Render the "Unstaged Changes" file list.
 fn unstaged_view(state: &GitKraft) -> Element<'_, Message> {
-    let tab = state.active_tab();
-    let c = state.colors();
-
-    let header_icon = icon!(icons::FILE_DIFF, 13, c.yellow);
-
-    let header_label = text("Unstaged").size(13).color(c.text_primary);
-
-    let count_label = text(format!("({})", tab.unstaged_changes.len()))
-        .size(11)
-        .color(c.muted);
-
-    let stage_msg = (!tab.unstaged_changes.is_empty()).then_some(Message::StageAll);
-    let stage_all_btn = view_utils::on_press_maybe(
-        button(text("Stage All").size(11))
-            .padding([2, 8])
-            .style(theme::toolbar_button),
-        stage_msg,
-    );
-
-    let header_row = row![
-        header_icon,
-        Space::new().width(4),
-        header_label,
-        Space::new().width(4),
-        count_label,
-        Space::new().width(Length::Fill),
-        stage_all_btn,
-    ]
-    .align_y(Alignment::Center)
-    .padding([6, 8]);
-
-    let file_rows: Vec<Element<'_, Message>> = tab
-        .unstaged_changes
-        .iter()
-        .map(|diff| {
-            let file_path_display = diff.display_path();
-
-            let status_color = theme::status_color(&diff.status, &c);
-
-            let status_badge = text(format!("{}", diff.status))
-                .size(11)
-                .font(Font::MONOSPACE)
-                .color(status_color);
-
-            let is_selected = tab.selected_unstaged.contains(file_path_display);
-
-            let name_color = if is_selected {
-                c.accent
-            } else {
-                c.text_primary
-            };
-            let file_label = text(file_path_display)
-                .size(12)
-                .color(name_color)
-                .wrapping(iced::widget::text::Wrapping::None);
-
-            let view_btn = button(icon!(icons::CLOUD_UPLOAD, 11, c.accent))
-                .padding([2, 4])
-                .style(theme::icon_button)
-                .on_press(Message::SelectDiff(diff.clone()));
-
-            let stage_btn = button(icon!(icons::PLUS_CIRCLE, 11, c.green))
-                .padding([2, 4])
-                .style(theme::icon_button)
-                .on_press(Message::StageFile(file_path_display.to_string()));
-
-            let discard_btn = button(icon!(icons::TRASH, 11, c.red))
-                .padding([2, 4])
-                .style(theme::icon_button)
-                .on_press(Message::DiscardFile(file_path_display.to_string()));
-
-            let file_row = row![
-                status_badge,
-                Space::new().width(6),
-                container(file_label).width(Length::Fill).clip(true),
-                Space::new().width(4),
-                view_btn,
-                Space::new().width(2),
-                stage_btn,
-                Space::new().width(2),
-                discard_btn,
-            ]
-            .align_y(Alignment::Center)
-            .padding([2, 8]);
-
-            let row_style = if is_selected {
-                theme::selected_row_style as fn(&iced::Theme) -> iced::widget::container::Style
-            } else {
-                theme::surface_style as fn(&iced::Theme) -> iced::widget::container::Style
-            };
-
-            mouse_area(container(file_row).width(Length::Fill).style(row_style))
-                .on_press(Message::ToggleSelectUnstaged(file_path_display.to_string()))
-                .on_right_press(Message::OpenUnstagedFileContextMenu(
-                    file_path_display.to_string(),
-                ))
-                .into()
-        })
-        .collect();
-
-    let mut list_col = column![].spacing(1).width(Length::Fill);
-
-    if file_rows.is_empty() {
-        list_col = list_col.push(view_utils::empty_list_hint("No unstaged changes", c.muted));
-    } else {
-        for row_el in file_rows {
-            list_col = list_col.push(row_el);
-        }
-    }
-
-    let content = column![
-        header_row,
-        scrollable(list_col)
-            .height(Length::Fill)
-            .direction(view_utils::thin_scrollbar())
-            .style(crate::theme::overlay_scrollbar)
-    ]
-    .width(Length::Fill)
-    .height(Length::Fill);
-
-    view_utils::surface_panel(content, Length::FillPortion(3))
+    staging_file_list_view(state, StagingKind::Unstaged)
 }
 
 /// Render the "Staged Changes" file list.
 fn staged_view(state: &GitKraft) -> Element<'_, Message> {
+    staging_file_list_view(state, StagingKind::Staged)
+}
+
+/// Shared implementation for both unstaged and staged file list panels.
+fn staging_file_list_view(state: &GitKraft, kind: StagingKind) -> Element<'_, Message> {
     let tab = state.active_tab();
     let c = state.colors();
 
-    let header_icon = icon!(icons::CHECK_CIRCLE_FILL, 13, c.green);
+    let is_unstaged = matches!(kind, StagingKind::Unstaged);
 
-    let header_label = text("Staged").size(13).color(c.text_primary);
+    // ── Header ────────────────────────────────────────────────────────────
+    let header_icon = if is_unstaged {
+        icon!(icons::FILE_DIFF, 13, c.yellow)
+    } else {
+        icon!(icons::CHECK_CIRCLE_FILL, 13, c.green)
+    };
 
-    let count_label = text(format!("({})", tab.staged_changes.len()))
-        .size(11)
-        .color(c.muted);
+    let label_text = if is_unstaged { "Unstaged" } else { "Staged" };
+    let header_label = text(label_text).size(13).color(c.text_primary);
 
-    let unstage_msg = (!tab.staged_changes.is_empty()).then_some(Message::UnstageAll);
-    let unstage_all_btn = view_utils::on_press_maybe(
-        button(text("Unstage All").size(11))
+    let changes: &[gitkraft_core::DiffFileEntry] = if is_unstaged {
+        &tab.unstaged_changes
+    } else {
+        &tab.staged_changes
+    };
+    let selected: &std::collections::HashSet<String> = if is_unstaged {
+        &tab.selected_unstaged
+    } else {
+        &tab.selected_staged
+    };
+
+    let count_label = text(format!("({})", changes.len())).size(11).color(c.muted);
+
+    let action_all_msg = if is_unstaged {
+        (!changes.is_empty()).then_some(Message::StageAll)
+    } else {
+        (!changes.is_empty()).then_some(Message::UnstageAll)
+    };
+    let action_all_label = if is_unstaged {
+        "Stage All"
+    } else {
+        "Unstage All"
+    };
+    let action_all_btn = view_utils::on_press_maybe(
+        button(text(action_all_label).size(11))
             .padding([2, 8])
             .style(theme::toolbar_button),
-        unstage_msg,
+        action_all_msg,
     );
 
     let header_row = row![
@@ -209,13 +126,13 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
         Space::new().width(4),
         count_label,
         Space::new().width(Length::Fill),
-        unstage_all_btn,
+        action_all_btn,
     ]
     .align_y(Alignment::Center)
     .padding([6, 8]);
 
-    let file_rows: Vec<Element<'_, Message>> = tab
-        .staged_changes
+    // ── File rows ─────────────────────────────────────────────────────────
+    let file_rows: Vec<Element<'_, Message>> = changes
         .iter()
         .map(|diff| {
             let file_path_display = diff.display_path();
@@ -227,7 +144,7 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
                 .font(Font::MONOSPACE)
                 .color(status_color);
 
-            let is_selected = tab.selected_staged.contains(file_path_display);
+            let is_selected = selected.contains(file_path_display);
 
             let name_color = if is_selected {
                 c.accent
@@ -242,24 +159,44 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
             let view_btn = button(icon!(icons::CLOUD_UPLOAD, 11, c.accent))
                 .padding([2, 4])
                 .style(theme::icon_button)
-                .on_press(Message::SelectDiff(diff.clone()));
+                .on_press(Message::LoadStagingFileDiff(
+                    file_path_display.to_string(),
+                    !is_unstaged,
+                ));
 
-            let unstage_btn = button(icon!(icons::DASH_CIRCLE, 11, c.yellow))
-                .padding([2, 4])
-                .style(theme::icon_button)
-                .on_press(Message::UnstageFile(file_path_display.to_string()));
-
-            let file_row = row![
+            // Build the action buttons portion of the row.
+            let mut file_row = row![
                 status_badge,
                 Space::new().width(6),
                 container(file_label).width(Length::Fill).clip(true),
                 Space::new().width(4),
                 view_btn,
-                Space::new().width(2),
-                unstage_btn,
             ]
-            .align_y(Alignment::Center)
-            .padding([2, 8]);
+            .align_y(Alignment::Center);
+
+            if is_unstaged {
+                let stage_btn = button(icon!(icons::PLUS_CIRCLE, 11, c.green))
+                    .padding([2, 4])
+                    .style(theme::icon_button)
+                    .on_press(Message::StageFile(file_path_display.to_string()));
+                let discard_btn = button(icon!(icons::TRASH, 11, c.red))
+                    .padding([2, 4])
+                    .style(theme::icon_button)
+                    .on_press(Message::DiscardFile(file_path_display.to_string()));
+                file_row = file_row
+                    .push(Space::new().width(2))
+                    .push(stage_btn)
+                    .push(Space::new().width(2))
+                    .push(discard_btn);
+            } else {
+                let unstage_btn = button(icon!(icons::DASH_CIRCLE, 11, c.yellow))
+                    .padding([2, 4])
+                    .style(theme::icon_button)
+                    .on_press(Message::UnstageFile(file_path_display.to_string()));
+                file_row = file_row.push(Space::new().width(2)).push(unstage_btn);
+            }
+
+            let file_row = file_row.padding([2, 8]);
 
             let row_style = if is_selected {
                 theme::selected_row_style as fn(&iced::Theme) -> iced::widget::container::Style
@@ -267,19 +204,35 @@ fn staged_view(state: &GitKraft) -> Element<'_, Message> {
                 theme::surface_style as fn(&iced::Theme) -> iced::widget::container::Style
             };
 
+            let toggle_msg = if is_unstaged {
+                Message::ToggleSelectUnstaged(file_path_display.to_string())
+            } else {
+                Message::ToggleSelectStaged(file_path_display.to_string())
+            };
+            let right_click_msg = if is_unstaged {
+                Message::OpenUnstagedFileContextMenu(file_path_display.to_string())
+            } else {
+                Message::OpenStagedFileContextMenu(file_path_display.to_string())
+            };
+
             mouse_area(container(file_row).width(Length::Fill).style(row_style))
-                .on_press(Message::ToggleSelectStaged(file_path_display.to_string()))
-                .on_right_press(Message::OpenStagedFileContextMenu(
-                    file_path_display.to_string(),
-                ))
+                .on_press(toggle_msg)
+                .on_right_press(right_click_msg)
                 .into()
         })
         .collect();
 
+    // ── List column ───────────────────────────────────────────────────────
     let mut list_col = column![].spacing(1).width(Length::Fill);
 
+    let empty_hint = if is_unstaged {
+        "No unstaged changes"
+    } else {
+        "No staged changes"
+    };
+
     if file_rows.is_empty() {
-        list_col = list_col.push(view_utils::empty_list_hint("No staged changes", c.muted));
+        list_col = list_col.push(view_utils::empty_list_hint(empty_hint, c.muted));
     } else {
         for row_el in file_rows {
             list_col = list_col.push(row_el);

@@ -19,8 +19,8 @@ pub type RepoPayload = gitkraft_core::RepoSnapshot;
 /// Payload returned after a staging operation (stage / unstage / discard).
 #[derive(Debug, Clone)]
 pub struct StagingPayload {
-    pub unstaged: Vec<DiffInfo>,
-    pub staged: Vec<DiffInfo>,
+    pub unstaged: Vec<DiffFileEntry>,
+    pub staged: Vec<DiffFileEntry>,
 }
 
 /// Payload returned by a lazy-load page request.
@@ -175,8 +175,11 @@ pub enum Message {
     // ── UI ────────────────────────────────────────────────────────────────
     /// User clicked a file in the commit-diff file list (by index into `commit_files`).
     SelectDiffByIndex(usize),
-    /// User clicked a file in the staging area to view its diff.
-    SelectDiff(DiffInfo),
+    /// User clicked a file in the staging area to view its diff (triggers on-demand load).
+    /// The `bool` is `true` for staged, `false` for unstaged.
+    LoadStagingFileDiff(String, bool),
+    /// On-demand staging file diff loaded.
+    StagingFileDiffLoaded(Result<DiffInfo, String>),
     /// Dismiss the current error banner.
     DismissError,
     /// Zoom in (increase UI scale).

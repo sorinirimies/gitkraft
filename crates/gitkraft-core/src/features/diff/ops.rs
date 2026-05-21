@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use git2::{Diff, DiffFormat, DiffOptions, Repository};
 
-use super::types::{DiffHunk, DiffInfo, DiffLine, FileStatus};
+use super::types::{DiffFileEntry, DiffHunk, DiffInfo, DiffLine, FileStatus};
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -40,6 +40,66 @@ pub fn get_staged_diff(repo: &Repository) -> Result<Vec<DiffInfo>> {
         .diff_tree_to_index(head_tree.as_ref(), None, None)
         .context("failed to diff index against HEAD tree")?;
     parse_diff(&diff)
+}
+
+/// Lightweight working-directory file list (no diff content).
+///
+/// Returns only paths and status for each changed file — no hunks or lines.
+/// Much cheaper than [`get_working_dir_diff`] for populating file lists.
+pub fn get_working_dir_file_list(repo: &Repository) -> Result<Vec<DiffFileEntry>> {
+    let mut opts = DiffOptions::new();
+    opts.include_untracked(true).recurse_untracked_dirs(true);
+    let diff = repo
+        .diff_index_to_workdir(None, Some(&mut opts))
+        .context("failed to diff index to workdir")?;
+    Ok(diff_file_entries(&diff))
+}
+
+/// Return the full diff (with hunks/lines) for a **single unstaged file**.
+///
+/// Uses pathspec filtering so only the requested file is parsed.
+pub fn get_working_dir_single_file_diff(repo: &Repository, file_path: &str) -> Result<DiffInfo> {
+    let mut opts = DiffOptions::new();
+    opts.include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .pathspec(file_path);
+    let diff = repo
+        .diff_index_to_workdir(None, Some(&mut opts))
+        .context("failed to diff index to workdir for single file")?;
+    let infos = parse_diff(&diff)?;
+    infos
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("file '{}' not found in working-dir diff", file_path))
+}
+
+/// Return the full diff (with hunks/lines) for a **single staged file**.
+///
+/// Uses pathspec filtering so only the requested file is parsed.
+pub fn get_staged_single_file_diff(repo: &Repository, file_path: &str) -> Result<DiffInfo> {
+    let head_tree = repo.head().ok().and_then(|r| r.peel_to_tree().ok());
+    let mut opts = DiffOptions::new();
+    opts.pathspec(file_path);
+    let diff = repo
+        .diff_tree_to_index(head_tree.as_ref(), None, Some(&mut opts))
+        .context("failed to diff HEAD to index for single file")?;
+    let infos = parse_diff(&diff)?;
+    infos
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("file '{}' not found in staged diff", file_path))
+}
+
+/// Lightweight staged file list (no diff content).
+///
+/// Returns only paths and status for each staged file — no hunks or lines.
+/// Much cheaper than [`get_staged_diff`] for populating file lists.
+pub fn get_staged_file_list(repo: &Repository) -> Result<Vec<DiffFileEntry>> {
+    let head_tree = repo.head().ok().and_then(|r| r.peel_to_tree().ok());
+    let diff = repo
+        .diff_tree_to_index(head_tree.as_ref(), None, None)
+        .context("failed to diff HEAD to index")?;
+    Ok(diff_file_entries(&diff))
 }
 
 /// Return the diff introduced by a specific commit (compared to its first parent).
@@ -152,22 +212,7 @@ pub fn get_commit_file_list(
         .diff_tree_to_tree(parent_tree.as_ref(), Some(&commit_tree), None)
         .context("failed to diff commit against parent")?;
 
-    Ok(diff
-        .deltas()
-        .map(|delta| super::types::DiffFileEntry {
-            old_file: delta
-                .old_file()
-                .path()
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            new_file: delta
-                .new_file()
-                .path()
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            status: FileStatus::from_delta(delta.status()),
-        })
-        .collect())
+    Ok(diff_file_entries(&diff))
 }
 
 /// Return the diff for a **single file** within a commit.
@@ -322,9 +367,15 @@ pub fn file_list_commit_vs_workdir(
         .diff_tree_to_workdir_with_index(Some(&commit_tree), None)
         .context("failed to diff commit tree against working directory")?;
 
-    Ok(diff
-        .deltas()
-        .map(|delta| super::types::DiffFileEntry {
+    Ok(diff_file_entries(&diff))
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Extract lightweight `DiffFileEntry` values from a `git2::Diff` (paths + status only).
+fn diff_file_entries(diff: &Diff<'_>) -> Vec<DiffFileEntry> {
+    diff.deltas()
+        .map(|delta| DiffFileEntry {
             old_file: delta
                 .old_file()
                 .path()
@@ -337,10 +388,8 @@ pub fn file_list_commit_vs_workdir(
                 .unwrap_or_default(),
             status: FileStatus::from_delta(delta.status()),
         })
-        .collect())
+        .collect()
 }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Walk every delta / hunk / line in a `git2::Diff` and produce our domain
 /// `Vec<DiffInfo>`.

@@ -39,25 +39,7 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
 
                 // If this repo is already open in another tab, switch to it
                 // instead of opening a duplicate.
-                if let Some(existing_idx) = state.tabs.iter().position(|t| {
-                    t.repo_path.as_deref() == Some(path.as_path()) && t.repo_info.is_some()
-                }) {
-                    // Remove the newly created empty tab if it has no repo
-                    if !state.active_tab().has_repo()
-                        && state.active_tab != existing_idx
-                        && state.tabs.len() > 1
-                    {
-                        state.tabs.remove(state.active_tab);
-                        // Adjust existing_idx if it shifted
-                        let adjusted = if existing_idx > state.active_tab {
-                            existing_idx - 1
-                        } else {
-                            existing_idx
-                        };
-                        state.active_tab = adjusted;
-                    } else {
-                        state.active_tab = existing_idx;
-                    }
+                if state.switch_to_existing_tab(path.as_path()) {
                     let tab = state.active_tab_mut();
                     tab.is_loading = false;
                     tab.status_message = None;
@@ -100,7 +82,8 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         Message::RepoOpened(result) => handle_repo_loaded(state, result),
 
         Message::RefreshRepo => with_repo!(state, loading, "Refreshing…".into(), |path| {
-            commands::refresh_repo(path)
+            let depth = state.active_tab().commits.len();
+            commands::refresh_repo(path, depth)
         }),
 
         Message::RepoRefreshed(result) => handle_repo_loaded(state, result),
@@ -110,25 +93,7 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             let path = path.canonicalize().unwrap_or(path);
 
             // If this repo is already open in another tab, switch to it.
-            if let Some(existing_idx) = state.tabs.iter().position(|t| {
-                t.repo_path.as_deref() == Some(path.as_path()) && t.repo_info.is_some()
-            }) {
-                // Remove the current tab if it's an empty "New Tab" so it
-                // doesn't linger in the tab bar after we switch away.
-                if !state.active_tab().has_repo()
-                    && state.active_tab != existing_idx
-                    && state.tabs.len() > 1
-                {
-                    state.tabs.remove(state.active_tab);
-                    let adjusted = if existing_idx > state.active_tab {
-                        existing_idx - 1
-                    } else {
-                        existing_idx
-                    };
-                    state.active_tab = adjusted;
-                } else {
-                    state.active_tab = existing_idx;
-                }
+            if state.switch_to_existing_tab(path.as_path()) {
                 return Task::none();
             }
             // If the active tab already has a repo open, create a new tab.
@@ -232,20 +197,35 @@ fn handle_repo_loaded(state: &mut GitKraft, result: Result<RepoPayload, String>)
                 .unwrap_or(state.active_tab);
 
             let tab = &mut state.tabs[target_idx];
+            // Detect whether this is a refresh (tab already had a repo) or a
+            // brand-new open so we can decide whether to reset the scroll.
+            let is_new_open = tab.repo_info.is_none();
+            let prev_commit_count = tab.commits.len();
             tab.is_loading = false;
             tab.apply_payload(payload, path.clone());
-            tab.commit_display = compute_commit_display(&tab.commits);
+            // Only rebuild commit_display when the commit list actually changed.
+            // apply_payload skips replacing commits when a refresh would shrink
+            // the list (pagination race), so this avoids redundant work.
+            if tab.commits.len() != prev_commit_count || is_new_open {
+                tab.commit_display = compute_commit_display(&tab.commits);
+            }
 
             // Record the repo open AND persist the full session in one atomic
-            // write, on a background thread so settings file I/O doesn't block the UI.
+            // write, on a background thread so settings file I/O never blocks the UI.
             let (open_tabs, active) = state.session_state();
-            Task::batch([
-                commands::record_repo_and_save_session_async(path, open_tabs, active),
-                iced::widget::operation::scroll_to(
+            let mut tasks = vec![commands::record_repo_and_save_session_async(
+                path, open_tabs, active,
+            )];
+
+            // Only scroll to the top for brand-new opens; background refreshes
+            // must preserve the user's current scroll position.
+            if is_new_open {
+                tasks.push(iced::widget::operation::scroll_to(
                     crate::features::commits::view::commit_log_scroll_id(target_idx),
                     iced::widget::operation::AbsoluteOffset { x: 0.0, y: 0.0 },
-                ),
-            ])
+                ));
+            }
+            Task::batch(tasks)
         }
         Err(e) => {
             let tab = state.active_tab_mut();

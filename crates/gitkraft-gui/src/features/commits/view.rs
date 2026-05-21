@@ -3,11 +3,11 @@
 //! Commit summaries are pre-truncated with "…" based on the actual available
 //! pixel width so that each row stays on exactly one line — matching
 //! GitKraken's behaviour.
-
-//
-// Renders only the rows currently visible in the viewport plus a small
-// overscan buffer.  Space widgets above and below maintain the correct
-// total scroll height so the scrollbar behaves naturally.
+//!
+//! All loaded commits are rendered as direct children of the scrollable’s
+//! column.  Iced’s scrollable clips the viewport and only draws the visible
+//! portion, keeping rendering efficient.  Pagination is triggered via the
+//! `on_scroll` callback when the user nears the bottom.
 
 use iced::widget::{button, column, container, mouse_area, row, scrollable, text, Row, Space};
 use iced::{Alignment, Color, Element, Length};
@@ -66,18 +66,8 @@ fn ref_badges_row<'a>(
     Some(Row::with_children(items).align_y(Alignment::Center).into())
 }
 
-/// Estimated height of one commit row in pixels.  Used for virtual scrolling.
-/// A slight over- or under-estimate only affects scrollbar thumb precision,
-/// not correctness of the rendered content.
+/// Estimated height of one commit row in pixels.
 const ROW_HEIGHT: f32 = 26.0;
-
-/// Rows rendered above and below the visible window (avoids pop-in during
-/// fast scrolling).
-const OVERSCAN: usize = 8;
-
-/// Assumed visible rows (covers a 1300 px tall viewport at ROW_HEIGHT).
-/// Making this generous costs almost nothing — we cap at `total` anyway.
-const VISIBLE_ROWS: usize = 50;
 
 /// Per-tab stable scroll id — Iced maintains a separate scroll position for
 /// each open tab so no programmatic `scroll_to` is needed on tab switches.
@@ -415,27 +405,16 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         return view_utils::surface_panel(content, Length::Fill);
     }
 
-    // ── Virtual scroll window ─────────────────────────────────────────────
+    // ── Commit rows ───────────────────────────────────────────────────────
     //
-    // Only the rows visible in the viewport (plus OVERSCAN above/below) are
-    // constructed as widgets.  The remaining space is filled with two Space
-    // widgets so the scrollable keeps the correct total height and the
-    // scrollbar thumb stays proportional.
+    // All loaded commits are rendered as direct children of the column.
+    // Iced's scrollable handles viewport clipping and only draws the
+    // visible portion, so this is efficient even for large lists.
+    // Using Space-based virtual scrolling caused feedback loops between
+    // the stored scroll offset and Iced's internal scroll state, resulting
+    // in thumb jitter and scroll jumps.
 
     let total = tab.commits.len();
-    let scroll_y = tab.commit_scroll_offset;
-
-    let first = ((scroll_y / ROW_HEIGHT) as usize).saturating_sub(OVERSCAN);
-    let last = (first + VISIBLE_ROWS + 2 * OVERSCAN).min(total);
-
-    let top_space = first as f32 * ROW_HEIGHT;
-    let bottom_space = (total - last) as f32 * ROW_HEIGHT;
-
-    let mut list_col = column![].width(Length::Fill);
-
-    if top_space > 0.0 {
-        list_col = list_col.push(Space::new().height(top_space));
-    }
 
     // Author column scales with commit log width: ~15% of log width, clamped to [90, 180].
     let author_width = (state.commit_log_width * 0.15).clamp(90.0, 180.0);
@@ -447,7 +426,9 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     let selected_range = tab.selected_commits.as_slice();
 
-    for idx in first..last {
+    let mut list_col = column![].width(Length::Fill);
+
+    for idx in 0..total {
         list_col = list_col.push(commit_row_element(
             tab,
             idx,
@@ -456,10 +437,6 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             author_width,
             selected_range,
         ));
-    }
-
-    if bottom_space > 0.0 {
-        list_col = list_col.push(Space::new().height(bottom_space));
     }
 
     // Loading spinner shown while a background fetch is in progress.

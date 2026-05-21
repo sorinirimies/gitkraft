@@ -6,6 +6,7 @@
 
 use iced::Task;
 
+use crate::macros::StringErr;
 use crate::message::Message;
 use crate::state::GitKraft;
 
@@ -97,16 +98,10 @@ impl GitKraft {
             | Message::CreateCommit
             | Message::CommitCreated(_) => crate::features::commits::update::update(self, message),
 
-            Message::CommitLogScrolled(abs_y, rel_y) => {
-                // relative_y is 0.0 at the top and 1.0 at the very bottom of
-                // the scrollable content.  Using it (rather than absolute_y)
-                // avoids needing to know the viewport height.
+            Message::CommitLogScrolled(_abs_y, rel_y) => {
+                // Pagination: load more commits when the user nears the bottom.
                 const COMMITS_PAGE_SIZE: usize = 200;
-                // Trigger a load when the user is in the last 15 % of the
-                // scrollable area — roughly 2–3 screen-heights from the end.
                 const LOAD_TRIGGER_RELATIVE: f32 = 0.85;
-
-                self.active_tab_mut().commit_scroll_offset = *abs_y;
 
                 let tab = self.active_tab();
                 if *rel_y >= LOAD_TRIGGER_RELATIVE
@@ -166,7 +161,8 @@ impl GitKraft {
             }
 
             // ── UI / misc ─────────────────────────────────────────────────
-            Message::SelectDiff(_)
+            Message::LoadStagingFileDiff(_, _)
+            | Message::StagingFileDiffLoaded(_)
             | Message::SelectDiffByIndex(_)
             | Message::CommitMultiDiffLoaded(_) => {
                 crate::features::diff::update::update(self, message)
@@ -292,7 +288,7 @@ impl GitKraft {
                     tab.selected_commit = Some(0);
                     tab.anchor_commit_index = Some(0);
                     tab.selected_commits.clear();
-                    tab.commit_scroll_offset = 0.0;
+                    tab.commit_scroll_offset = 0.0; // legacy, unused by view
                 }
                 iced::widget::operation::scroll_to(
                     crate::features::commits::view::commit_log_scroll_id(self.active_tab),
@@ -307,7 +303,7 @@ impl GitKraft {
                     tab.selected_commit = Some(last);
                     tab.anchor_commit_index = Some(last);
                     tab.selected_commits.clear();
-                    tab.commit_scroll_offset = f32::MAX;
+                    tab.commit_scroll_offset = f32::MAX; // legacy, unused by view
                 }
                 iced::widget::operation::scroll_to(
                     crate::features::commits::view::commit_log_scroll_id(self.active_tab),
@@ -647,12 +643,7 @@ impl GitKraft {
             // ── Branch context menu actions ───────────────────────────────────────────────
             Message::PushBranch(name) => {
                 let name = name.clone();
-                let remote = self
-                    .active_tab()
-                    .remotes
-                    .first()
-                    .map(|r| r.name.clone())
-                    .unwrap_or_else(|| "origin".to_string());
+                let remote = self.active_tab().default_remote();
                 self.dismiss_menu();
                 with_repo!(
                     self,
@@ -664,12 +655,7 @@ impl GitKraft {
 
             Message::ForcePushBranch => {
                 let branch = self.active_tab().current_branch.clone().unwrap_or_default();
-                let remote = self
-                    .active_tab()
-                    .remotes
-                    .first()
-                    .map(|r| r.name.clone())
-                    .unwrap_or_else(|| "origin".to_string());
+                let remote = self.active_tab().default_remote();
                 with_repo!(
                     self,
                     loading,
@@ -681,12 +667,7 @@ impl GitKraft {
             }
 
             Message::PullBranch(_name) => {
-                let remote = self
-                    .active_tab()
-                    .remotes
-                    .first()
-                    .map(|r| r.name.clone())
-                    .unwrap_or_else(|| "origin".to_string());
+                let remote = self.active_tab().default_remote();
                 self.dismiss_menu();
                 with_repo!(
                     self,
@@ -929,10 +910,10 @@ impl GitKraft {
                 crate::features::repo::commands::save_theme_async(name.to_string())
             }
 
-            Message::ThemeSaved(_result) => {
-                // Fire-and-forget — errors are silently ignored.
-                Task::none()
-            }
+            Message::ThemeSaved(_)
+            | Message::EditorSaved(_)
+            | Message::LayoutSaved(_)
+            | Message::SessionSaved(_) => Task::none(),
 
             Message::EditorChanged(editor) => {
                 self.editor = editor.clone();
@@ -941,21 +922,6 @@ impl GitKraft {
                 // Persist the editor choice
                 let name = self.editor.display_name().to_string();
                 crate::features::repo::commands::save_editor_async(name)
-            }
-
-            Message::EditorSaved(_result) => {
-                // Fire-and-forget — errors are silently ignored.
-                Task::none()
-            }
-
-            Message::LayoutSaved(_result) => {
-                // Fire-and-forget — errors are silently ignored.
-                Task::none()
-            }
-
-            Message::SessionSaved(_) => {
-                // Fire-and-forget — errors are silently ignored.
-                Task::none()
             }
 
             Message::LayoutLoaded(result) => {
@@ -1162,7 +1128,12 @@ impl GitKraft {
             }
 
             Message::FileSystemChanged => {
-                if self.has_repo() && !self.active_tab().is_loading {
+                // Don't refresh while the active tab is loading or while
+                // pagination is in flight — the refresh result could race
+                // with MoreCommitsLoaded and overwrite a larger commit list
+                // with a smaller one, causing a scroll loop.
+                let tab = self.active_tab();
+                if self.has_repo() && !tab.is_loading && !tab.is_loading_more_commits {
                     return self.refresh_active_tab();
                 }
                 Task::none()
@@ -1257,7 +1228,7 @@ impl GitKraft {
                         Message::FilePreviewLoaded,
                         std::fs::read_to_string(&full_path)
                             .map(|content| (file_path, content))
-                            .map_err(|e| e.to_string())
+                            .str_err()
                     )
                 } else {
                     Task::none()

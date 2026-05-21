@@ -398,11 +398,10 @@ mod tests {
 
     fn make_unstaged(app: &mut App, count: usize) {
         app.tab_mut().unstaged_changes = (0..count)
-            .map(|i| gitkraft_core::DiffInfo {
+            .map(|i| gitkraft_core::DiffFileEntry {
                 old_file: String::new(),
                 new_file: format!("file{i}.rs"),
                 status: gitkraft_core::FileStatus::Modified,
-                hunks: vec![],
             })
             .collect();
         app.tab_mut().unstaged_list_state.select(Some(0));
@@ -410,11 +409,10 @@ mod tests {
 
     fn make_staged(app: &mut App, count: usize) {
         app.tab_mut().staged_changes = (0..count)
-            .map(|i| gitkraft_core::DiffInfo {
+            .map(|i| gitkraft_core::DiffFileEntry {
                 old_file: String::new(),
                 new_file: format!("staged{i}.rs"),
                 status: gitkraft_core::FileStatus::New,
-                hunks: vec![],
             })
             .collect();
         app.tab_mut().staged_list_state.select(Some(0));

@@ -130,15 +130,29 @@ pub fn delete_file(workdir: &std::path::Path, relative_path: &str) -> Result<()>
 /// sequence, and returns a [`RepoSnapshot`] containing every field needed to
 /// render the UI.  Both the GUI and TUI call this from their background
 /// threads rather than duplicating the load sequence locally.
+/// Default number of commits to load for a brand-new repo open.
+const DEFAULT_COMMIT_COUNT: usize = 500;
+
 pub fn load_repo_snapshot(path: &std::path::Path) -> anyhow::Result<super::types::RepoSnapshot> {
+    load_repo_snapshot_with_depth(path, DEFAULT_COMMIT_COUNT)
+}
+
+/// Like [`load_repo_snapshot`] but loads at least `min_commits` commits.
+///
+/// Used for background refreshes so the existing scroll depth is preserved.
+pub fn load_repo_snapshot_with_depth(
+    path: &std::path::Path,
+    min_commits: usize,
+) -> anyhow::Result<super::types::RepoSnapshot> {
     let mut repo = open_repo(path)?;
 
     let info = get_repo_info(&repo)?;
     let branches = crate::features::branches::list_branches(&repo)?;
-    let commits = crate::features::commits::list_commits(&repo, 500)?;
+    let count = min_commits.max(DEFAULT_COMMIT_COUNT);
+    let commits = crate::features::commits::list_commits(&repo, count)?;
     let graph_rows = crate::features::graph::build_graph(&commits);
-    let unstaged = crate::features::diff::get_working_dir_diff(&repo)?;
-    let staged = crate::features::diff::get_staged_diff(&repo)?;
+    let unstaged = crate::features::diff::get_working_dir_file_list(&repo)?;
+    let staged = crate::features::diff::get_staged_file_list(&repo)?;
     let remotes = crate::features::remotes::list_remotes(&repo)?;
     let stashes = crate::features::stash::list_stashes(&mut repo)?;
 

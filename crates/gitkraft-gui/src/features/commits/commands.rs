@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 use iced::Task;
 
+use crate::macros::StringErr;
 use crate::message::Message;
 
 /// Load just the file list (paths + statuses) for a commit — no line parsing.
@@ -16,8 +17,7 @@ pub fn load_commit_file_list(path: PathBuf, oid: String) -> Task<Message> {
         Message::CommitFileListLoaded,
         (|| {
             let repo = open_repo!(&path);
-            gitkraft_core::features::diff::get_commit_file_list(&repo, &oid)
-                .map_err(|e| e.to_string())
+            gitkraft_core::features::diff::get_commit_file_list(&repo, &oid).str_err()
         })()
     )
 }
@@ -28,21 +28,18 @@ pub fn load_single_file_diff(path: PathBuf, oid: String, file_path: String) -> T
         Message::SingleFileDiffLoaded,
         (|| {
             let repo = open_repo!(&path);
-            gitkraft_core::features::diff::get_single_file_diff(&repo, &oid, &file_path)
-                .map_err(|e| e.to_string())
+            gitkraft_core::features::diff::get_single_file_diff(&repo, &oid, &file_path).str_err()
         })()
     )
 }
 
-/// Create a new commit with the currently staged changes.
 /// Search commits by query string (searches message, author, SHA).
 pub fn search_commits(path: PathBuf, query: String) -> Task<Message> {
     git_task!(
         Message::SearchResultsLoaded,
         (|| {
             let repo = open_repo!(&path);
-            gitkraft_core::features::log::search_commits(&repo, &query, 100)
-                .map_err(|e| e.to_string())
+            gitkraft_core::features::log::search_commits(&repo, &query, 100).str_err()
         })()
     )
 }
@@ -53,8 +50,7 @@ pub fn search_diff_file_list(path: PathBuf, oid: String) -> Task<Message> {
         Message::SearchDiffFilesLoaded,
         (|| {
             let repo = open_repo!(&path);
-            gitkraft_core::features::diff::file_list_commit_vs_workdir(&repo, &oid)
-                .map_err(|e| e.to_string())
+            gitkraft_core::features::diff::file_list_commit_vs_workdir(&repo, &oid).str_err()
         })()
     )
 }
@@ -66,7 +62,7 @@ pub fn search_diff_file(path: PathBuf, oid: String, file_path: String) -> Task<M
         (|| {
             let repo = open_repo!(&path);
             gitkraft_core::features::diff::diff_file_commit_vs_workdir(&repo, &oid, &file_path)
-                .map_err(|e| e.to_string())
+                .str_err()
         })()
     )
 }
@@ -102,7 +98,7 @@ pub fn diff_file_with_working_tree(path: PathBuf, oid: String, file_path: String
         (|| {
             let repo = open_repo!(&path);
             gitkraft_core::features::diff::diff_file_commit_vs_workdir(&repo, &oid, &file_path)
-                .map_err(|e| e.to_string())
+                .str_err()
         })()
     )
 }
@@ -151,6 +147,7 @@ pub fn load_multi_file_commit_vs_workdir(
     )
 }
 
+/// Create a new commit with the currently staged changes.
 pub fn create_commit(path: PathBuf, message: String) -> Task<Message> {
     git_task!(
         Message::CommitCreated,
@@ -158,25 +155,18 @@ pub fn create_commit(path: PathBuf, message: String) -> Task<Message> {
             let repo = open_repo!(&path);
             gitkraft_core::features::commits::create_commit(&repo, &message)
                 .map(|_| ())
-                .map_err(|e| e.to_string())
+                .str_err()
         })()
     )
 }
 
 /// Restore a single file from a commit to the working directory.
 pub fn checkout_file_at_commit(path: PathBuf, oid: String, file_path: String) -> Task<Message> {
-    git_task!(
-        Message::GitOperationResult,
-        (|| {
-            let repo = open_repo!(&path);
-            gitkraft_core::features::diff::checkout_file_at_commit(&repo, &oid, &file_path)
-                .map_err(|e| e.to_string())?;
-            crate::features::repo::commands::load_repo_blocking(&path)
-        })()
-    )
+    git_repo_then_reload!(path, |repo| {
+        gitkraft_core::features::diff::checkout_file_at_commit(&repo, &oid, &file_path)
+    })
 }
 
-/// Restore multiple files from a commit to the working directory.
 /// Cherry-pick a sequence of commits onto the current branch.
 pub fn cherry_pick_commits(path: PathBuf, oids: Vec<String>) -> Task<Message> {
     git_task!(
@@ -216,11 +206,12 @@ pub fn load_commit_range_diff(
         (|| {
             let repo = open_repo!(&path);
             gitkraft_core::features::diff::get_commit_range_diff(&repo, &oldest_oid, &newest_oid)
-                .map_err(|e| e.to_string())
+                .str_err()
         })()
     )
 }
 
+/// Restore multiple files from a commit to the working directory.
 pub fn checkout_multi_files_at_commit(
     path: PathBuf,
     oid: String,

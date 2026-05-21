@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use iced::Task;
 
+use crate::macros::StringErr;
 use crate::message::Message;
 
 /// Checkout an existing local branch by name.
@@ -15,8 +16,7 @@ pub fn checkout_branch(path: PathBuf, branch_name: String) -> Task<Message> {
         Message::BranchCheckedOut,
         (|| {
             let repo = open_repo!(&path);
-            gitkraft_core::features::branches::checkout_branch(&repo, &branch_name)
-                .map_err(|e| e.to_string())
+            gitkraft_core::features::branches::checkout_branch(&repo, &branch_name).str_err()
         })()
     )
 }
@@ -29,7 +29,7 @@ pub fn create_branch(path: PathBuf, branch_name: String) -> Task<Message> {
             let repo = open_repo!(&path);
             gitkraft_core::features::branches::create_branch(&repo, &branch_name)
                 .map(|_| ())
-                .map_err(|e| e.to_string())
+                .str_err()
         })()
     )
 }
@@ -40,8 +40,7 @@ pub fn delete_branch(path: PathBuf, branch_name: String) -> Task<Message> {
         Message::BranchDeleted,
         (|| {
             let repo = open_repo!(&path);
-            gitkraft_core::features::branches::delete_branch(&repo, &branch_name)
-                .map_err(|e| e.to_string())
+            gitkraft_core::features::branches::delete_branch(&repo, &branch_name).str_err()
         })()
     )
 }

@@ -91,9 +91,9 @@ pub struct RepoTab {
 
     // ── Diff / Staging ────────────────────────────────────────────────────
     /// Unstaged (working-directory) changes.
-    pub unstaged_changes: Vec<DiffInfo>,
+    pub unstaged_changes: Vec<gitkraft_core::DiffFileEntry>,
     /// Staged (index) changes.
-    pub staged_changes: Vec<DiffInfo>,
+    pub staged_changes: Vec<gitkraft_core::DiffFileEntry>,
     /// Lightweight file list for the currently selected commit (path + status only).
     pub commit_files: Vec<gitkraft_core::DiffFileEntry>,
     /// OID of the currently selected commit (needed for on-demand file diff loading).
@@ -287,6 +287,14 @@ impl RepoTab {
         self.repo_path.is_some()
     }
 
+    /// Name of the first remote, or "origin" as a fallback.
+    pub fn default_remote(&self) -> String {
+        self.remotes
+            .first()
+            .map(|r| r.name.clone())
+            .unwrap_or_else(|| "origin".to_string())
+    }
+
     /// Display name for the tab (last path component, or "New Tab").
     pub fn display_name(&self) -> String {
         gitkraft_core::repo_display_name(self.repo_path.as_deref())
@@ -302,7 +310,8 @@ impl RepoTab {
         payload: crate::message::RepoPayload,
         path: std::path::PathBuf,
     ) {
-        // ── Save selection so we can restore it after the data refresh ────
+        // ── Save state so we can restore it after the data refresh ────
+        let is_refresh = self.repo_info.is_some();
         let prev_oid = self.selected_commit_oid.clone();
 
         // Save multi-selection OIDs so we can re-map them after the commit
@@ -341,8 +350,16 @@ impl RepoTab {
         self.repo_path = Some(path);
         self.repo_info = Some(payload.info);
         self.branches = payload.branches;
-        self.commits = payload.commits;
-        self.graph_rows = payload.graph_rows;
+
+        // Never shrink the commit list during a background refresh — a
+        // concurrent pagination (MoreCommitsLoaded) may have extended the
+        // list between the refresh start and its completion.  Shrinking
+        // would snap the user back and trigger an infinite load/shrink loop.
+        if !is_refresh || payload.commits.len() >= self.commits.len() {
+            self.commits = payload.commits;
+            self.graph_rows = payload.graph_rows;
+        }
+
         self.unstaged_changes = payload.unstaged;
         self.staged_changes = payload.staged;
         self.stashes = payload.stashes;
@@ -360,9 +377,19 @@ impl RepoTab {
         self.selected_commit_oid = None;
         self.error_message = None;
         self.status_message = Some("Repository loaded.".into());
-        self.commit_scroll_offset = 0.0;
-        self.has_more_commits = true;
-        self.is_loading_more_commits = false;
+        // Scroll position is managed entirely by Iced's scrollable widget;
+        // we do NOT reset it here so background refreshes never snap the
+        // user back to the top.  Brand-new opens use a scroll_to(0,0) task
+        // in handle_repo_loaded instead.
+        if !is_refresh {
+            self.has_more_commits = true;
+        }
+        // NOTE: is_loading_more_commits is intentionally NOT reset here.
+        // It is owned by the pagination flow (CommitLogScrolled sets it true,
+        // handle_more_commits_loaded sets it false).  Resetting it during a
+        // background refresh would trick the scroll handler into firing a
+        // duplicate pagination, whose identical result then falsely sets
+        // has_more_commits = false ("end of history").
         self.anchor_unstaged_index = None;
         self.anchor_staged_index = None;
         self.anchor_file_index = None;
@@ -840,6 +867,34 @@ impl GitKraft {
         iced::Theme::custom(name, palette)
     }
 
+    /// If a tab with `path` is already open, switch to it.
+    /// If the current tab is empty, remove it first.
+    /// Returns `true` if an existing tab was found and switched to.
+    pub fn switch_to_existing_tab(&mut self, path: &std::path::Path) -> bool {
+        let existing_idx = match self
+            .tabs
+            .iter()
+            .position(|t| t.repo_path.as_deref() == Some(path) && t.repo_info.is_some())
+        {
+            Some(idx) => idx,
+            None => return false,
+        };
+        // Remove the current tab if it's an empty "New Tab" so it
+        // doesn't linger in the tab bar after we switch away.
+        if !self.active_tab().has_repo() && self.active_tab != existing_idx && self.tabs.len() > 1 {
+            self.tabs.remove(self.active_tab);
+            let adjusted = if existing_idx > self.active_tab {
+                existing_idx - 1
+            } else {
+                existing_idx
+            };
+            self.active_tab = adjusted;
+        } else {
+            self.active_tab = existing_idx;
+        }
+        true
+    }
+
     /// The display name of the currently active theme.
     pub fn current_theme_name(&self) -> &'static str {
         gitkraft_core::THEME_NAMES
@@ -852,8 +907,12 @@ impl GitKraft {
     ///
     /// Returns [`Task::none()`] if no repository is open in the active tab.
     pub fn refresh_active_tab(&mut self) -> Task<Message> {
-        match self.active_tab().repo_path.clone() {
-            Some(path) => crate::features::repo::commands::refresh_repo(path),
+        let tab = self.active_tab();
+        match tab.repo_path.clone() {
+            Some(path) => {
+                let depth = tab.commits.len();
+                crate::features::repo::commands::refresh_repo(path, depth)
+            }
             None => Task::none(),
         }
     }
@@ -3210,6 +3269,197 @@ mod tests {
         assert_eq!(
             state.tabs[0].repo_path.as_deref(),
             Some(std::path::Path::new("/home/user/repo-a")),
+        );
+    }
+
+    // ── Scroll & pagination fix tests ─────────────────────────────────────
+
+    #[test]
+    fn apply_payload_does_not_reset_is_loading_more_commits() {
+        // A background refresh must not clear is_loading_more_commits — that
+        // flag is owned by the pagination flow.  Clearing it would let the
+        // scroll handler fire a duplicate pagination whose identical result
+        // falsely sets has_more_commits = false ("end of history").
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+
+        // Simulate pagination in flight
+        state.active_tab_mut().is_loading_more_commits = true;
+
+        // Background refresh arrives
+        let payload = fake_payload("/home/user/repo-a");
+        let _ = state.update(Message::RepoRefreshed(Ok(payload)));
+
+        // is_loading_more_commits must still be true
+        assert!(
+            state.active_tab().is_loading_more_commits,
+            "refresh must not reset is_loading_more_commits"
+        );
+    }
+
+    #[test]
+    fn apply_payload_resets_is_loading_more_commits_for_new_open() {
+        // For a brand-new repo open (not a refresh), the flag doesn't matter
+        // because no pagination can be in flight.  But is_loading_more_commits
+        // is initialized to false in new_empty(), and apply_payload should not
+        // set it to true.
+        let mut state = GitKraft::new();
+        assert!(!state.active_tab().is_loading_more_commits);
+
+        let payload = fake_payload("/home/user/repo-a");
+        let _ = state.update(crate::message::Message::RepoOpened(Ok(payload)));
+
+        assert!(!state.active_tab().is_loading_more_commits);
+    }
+
+    #[test]
+    fn refresh_does_not_shrink_commit_list() {
+        // If pagination extended commits to 700 and then a stale refresh
+        // arrives with only 500, the commit list must not shrink.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+
+        // Give the tab some initial commits, then extend via simulated pagination
+        let tab = state.active_tab_mut();
+        tab.commits = make_test_commits(500);
+        for i in 0..200 {
+            let mut c = tab.commits[0].clone();
+            c.oid = format!("extra_{i:04}");
+            c.short_oid = format!("x{i:03}");
+            tab.commits.push(c);
+        }
+        let extended_len = tab.commits.len();
+        tab.has_more_commits = true;
+
+        // Stale refresh arrives with only the original commits (fewer)
+        let mut payload = fake_payload("/home/user/repo-a");
+        payload.commits = make_test_commits(500);
+        payload.graph_rows = gitkraft_core::features::graph::build_graph(&payload.commits);
+        let payload_len = payload.commits.len();
+        assert!(
+            payload_len < extended_len,
+            "payload must be shorter for this test"
+        );
+
+        let _ = state.update(Message::RepoRefreshed(Ok(payload)));
+
+        assert_eq!(
+            state.active_tab().commits.len(),
+            extended_len,
+            "refresh must not shrink the commit list"
+        );
+    }
+
+    #[test]
+    fn refresh_replaces_commits_when_count_equal_or_greater() {
+        // When a refresh loads the same or more commits, they should replace
+        // the existing list (to pick up new commits from pushes/rebases).
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.active_tab_mut().commits = make_test_commits(5);
+
+        let original_oid = state.active_tab().commits[0].oid.clone();
+
+        // Refresh with same count but different content
+        let mut payload = fake_payload("/home/user/repo-a");
+        let mut new_commits = make_test_commits(5);
+        new_commits[0].oid = "refreshed_oid_0000".to_string();
+        payload.commits = new_commits;
+        payload.graph_rows = gitkraft_core::features::graph::build_graph(&payload.commits);
+        let _ = state.update(Message::RepoRefreshed(Ok(payload)));
+
+        assert_eq!(
+            state.active_tab().commits[0].oid,
+            "refreshed_oid_0000",
+            "refresh with same count must replace commits"
+        );
+        assert_ne!(state.active_tab().commits[0].oid, original_oid);
+    }
+
+    #[test]
+    fn duplicate_more_commits_loaded_sets_has_more_false() {
+        // Documents the scenario that caused "end of history" too early:
+        // two identical MoreCommitsLoaded results arriving back-to-back.
+        // The second sees prev_count == new_total and sets has_more = false.
+        // This test verifies the SYMPTOM; the fix is that apply_payload no
+        // longer creates the duplicate by resetting is_loading_more_commits.
+        use crate::message::{CommitPage, Message};
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        let tab = state.active_tab_mut();
+        tab.commits = make_test_commits(10);
+        tab.has_more_commits = true;
+
+        // First result: grows from 10 to 15
+        let _initial_count = tab.commits.len();
+        let mut bigger_commits = tab.commits.clone();
+        for i in 0..5 {
+            let mut c = bigger_commits[0].clone();
+            c.oid = format!("new_{i:04}");
+            bigger_commits.push(c);
+        }
+        let bigger_count = bigger_commits.len();
+        let graph_rows = gitkraft_core::features::graph::build_graph(&bigger_commits);
+        let _ = state.update(Message::MoreCommitsLoaded(Ok(CommitPage {
+            commits: bigger_commits.clone(),
+            graph_rows: graph_rows.clone(),
+        })));
+        assert!(
+            state.active_tab().has_more_commits,
+            "first result should keep has_more true"
+        );
+        assert_eq!(state.active_tab().commits.len(), bigger_count);
+
+        // Second identical result: prev_count == new_total → has_more = false
+        let _ = state.update(Message::MoreCommitsLoaded(Ok(CommitPage {
+            commits: bigger_commits,
+            graph_rows,
+        })));
+        assert!(
+            !state.active_tab().has_more_commits,
+            "identical second result must set has_more_commits false"
+        );
+    }
+
+    #[test]
+    fn file_system_changed_blocked_during_pagination() {
+        // When is_loading_more_commits is true, FileSystemChanged must NOT
+        // trigger a refresh — that would race with the pagination result.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.active_tab_mut().is_loading_more_commits = true;
+
+        let _task = state.update(Message::FileSystemChanged);
+
+        // The returned task should be none (no refresh started).
+        // We can't directly inspect a Task, but we can verify the tab's
+        // state didn't change to loading.
+        assert!(
+            !state.active_tab().is_loading,
+            "FileSystemChanged must not start a refresh during pagination"
+        );
+        // is_loading_more_commits must still be true
+        assert!(state.active_tab().is_loading_more_commits);
+    }
+
+    #[test]
+    fn has_more_commits_preserved_across_refresh() {
+        // A background refresh must not reset has_more_commits.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        state.active_tab_mut().has_more_commits = true;
+
+        let payload = fake_payload("/home/user/repo-a");
+        let _ = state.update(Message::RepoRefreshed(Ok(payload)));
+
+        assert!(
+            state.active_tab().has_more_commits,
+            "refresh must preserve has_more_commits"
         );
     }
 }

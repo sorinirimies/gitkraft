@@ -1,5 +1,16 @@
 //! Internal macros shared across all GUI feature modules.
 
+/// Convenience extension for mapping any `Display` error to `String`.
+pub(crate) trait StringErr<T> {
+    fn str_err(self) -> Result<T, String>;
+}
+
+impl<T, E: std::fmt::Display> StringErr<T> for Result<T, E> {
+    fn str_err(self) -> Result<T, String> {
+        self.map_err(|e| e.to_string())
+    }
+}
+
 /// Build an `iced::Task<Message>` that runs blocking git work on a background
 /// thread via a `futures` oneshot channel.
 ///
@@ -17,7 +28,7 @@
 /// ```ignore
 /// git_task!(Message::BranchCheckedOut, (|| {
 ///     let repo = open_repo(&path)?;
-///     checkout_branch(&repo, &name).map_err(|e| e.to_string())
+///     checkout_branch(&repo, &name).str_err()
 /// })())
 /// ```
 macro_rules! git_task {
@@ -109,10 +120,53 @@ macro_rules! icon {
 
 /// Open a git repository at the given path, mapping the error to `String`.
 ///
-/// Shorthand for `gitkraft_core::features::repo::open_repo($path).map_err(|e| e.to_string())?`.
+/// Shorthand for `gitkraft_core::features::repo::open_repo($path).str_err()?`.
 /// Used inside `git_task!` closures where the `?` operator is available.
 macro_rules! open_repo {
     ($path:expr) => {
-        gitkraft_core::features::repo::open_repo($path).map_err(|e| e.to_string())?
+        gitkraft_core::features::repo::open_repo($path).str_err()?
+    };
+}
+
+/// Run a git mutation that requires a `Repository` handle, then reload
+/// the full repo snapshot.  Returns `Task<Message::GitOperationResult>`.
+macro_rules! git_repo_then_reload {
+    ($path:expr, |$repo:ident| $op:expr) => {
+        git_task!(
+            Message::GitOperationResult,
+            (|| {
+                let $repo = open_repo!(&$path);
+                { $op }.str_err()?;
+                crate::features::repo::commands::load_repo_blocking(&$path)
+            })()
+        )
+    };
+}
+
+/// Same as `git_repo_then_reload!` but extracts the workdir first.
+macro_rules! git_wd_then_reload {
+    ($path:expr, |$wd:ident| $op:expr) => {
+        git_task!(
+            Message::GitOperationResult,
+            (|| {
+                let $wd = crate::features::repo::commands::workdir(&$path)?;
+                { $op }.str_err()?;
+                crate::features::repo::commands::load_repo_blocking(&$path)
+            })()
+        )
+    };
+}
+
+/// Run a staging operation then refresh the staging state.
+macro_rules! staging_op {
+    ($path:expr, |$repo:ident| $op:expr) => {
+        git_task!(
+            Message::StagingUpdated,
+            (|| {
+                let $repo = open_repo!(&$path);
+                { $op }.str_err()?;
+                crate::features::staging::commands::refresh_staging_state(&$path)
+            })()
+        )
     };
 }

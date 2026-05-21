@@ -147,13 +147,15 @@ pub enum BackgroundResult {
     },
     /// The `.git` directory changed from outside the TUI — trigger a full refresh.
     GitStateChanged,
+    /// A single staging file's diff was loaded on demand.
+    StagingDiffLoaded(Result<gitkraft_core::DiffInfo, String>),
 }
 
 /// Payload returned by an async staging refresh.
 #[derive(Debug)]
 pub struct StagingPayload {
-    pub unstaged: Vec<DiffInfo>,
-    pub staged: Vec<DiffInfo>,
+    pub unstaged: Vec<DiffFileEntry>,
+    pub staged: Vec<DiffFileEntry>,
 }
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
@@ -226,8 +228,8 @@ pub struct RepoTab {
     pub graph_rows: Vec<gitkraft_core::GraphRow>,
     pub commit_list_state: ListState,
 
-    pub unstaged_changes: Vec<DiffInfo>,
-    pub staged_changes: Vec<DiffInfo>,
+    pub unstaged_changes: Vec<DiffFileEntry>,
+    pub staged_changes: Vec<DiffFileEntry>,
     pub unstaged_list_state: ListState,
     pub staged_list_state: ListState,
     pub staging_focus: StagingFocus,
@@ -966,6 +968,18 @@ impl App {
                         self.refresh_silent();
                     }
                 }
+
+                BackgroundResult::StagingDiffLoaded(result) => match result {
+                    Ok(diff) => {
+                        let tab = self.tab_mut();
+                        tab.selected_diff = Some(diff);
+                        tab.diff_scroll = 0;
+                    }
+                    Err(e) => {
+                        self.tab_mut().error_message =
+                            Some(format!("Failed to load staging diff: {e}"));
+                    }
+                },
             }
         }
     }
@@ -987,9 +1001,9 @@ impl App {
         std::thread::spawn(move || {
             let res = (|| {
                 let repo = open_repo_str(&repo_path)?;
-                let unstaged = gitkraft_core::features::diff::get_working_dir_diff(&repo)
+                let unstaged = gitkraft_core::features::diff::get_working_dir_file_list(&repo)
                     .map_err(|e| e.to_string())?;
-                let staged = gitkraft_core::features::diff::get_staged_diff(&repo)
+                let staged = gitkraft_core::features::diff::get_staged_file_list(&repo)
                     .map_err(|e| e.to_string())?;
                 Ok::<_, String>(StagingPayload { unstaged, staged })
             })();
@@ -1835,28 +1849,59 @@ impl App {
     }
 
     pub fn load_staging_diff(&mut self) {
-        match self.tab().staging_focus {
+        let (file_path, staged) = match self.tab().staging_focus {
             StagingFocus::Unstaged => {
                 if let Some(idx) = self.tab().unstaged_list_state.selected() {
                     if idx < self.tab().unstaged_changes.len() {
-                        let diff = self.tab().unstaged_changes[idx].clone();
-                        let tab = self.tab_mut();
-                        tab.selected_diff = Some(diff);
-                        tab.diff_scroll = 0;
+                        (
+                            self.tab().unstaged_changes[idx].display_path().to_string(),
+                            false,
+                        )
+                    } else {
+                        return;
                     }
+                } else {
+                    return;
                 }
             }
             StagingFocus::Staged => {
                 if let Some(idx) = self.tab().staged_list_state.selected() {
                     if idx < self.tab().staged_changes.len() {
-                        let diff = self.tab().staged_changes[idx].clone();
-                        let tab = self.tab_mut();
-                        tab.selected_diff = Some(diff);
-                        tab.diff_scroll = 0;
+                        (
+                            self.tab().staged_changes[idx].display_path().to_string(),
+                            true,
+                        )
+                    } else {
+                        return;
                     }
+                } else {
+                    return;
                 }
             }
-        }
+        };
+
+        let repo_path = match self.tab().repo_path.clone() {
+            Some(p) => p,
+            None => return,
+        };
+
+        let tx = self.bg_tx.clone();
+        std::thread::spawn(move || {
+            let result = (|| {
+                let repo = open_repo_str(&repo_path)?;
+                let diff = if staged {
+                    gitkraft_core::features::diff::get_staged_single_file_diff(&repo, &file_path)
+                        .map_err(|e| e.to_string())?
+                } else {
+                    gitkraft_core::features::diff::get_working_dir_single_file_diff(
+                        &repo, &file_path,
+                    )
+                    .map_err(|e| e.to_string())?
+                };
+                Ok::<_, String>(diff)
+            })();
+            let _ = tx.send(BackgroundResult::StagingDiffLoaded(result));
+        });
     }
 
     // ── Remote ───────────────────────────────────────────────────────────
@@ -3676,11 +3721,10 @@ mod tests {
     fn require_selection_proceeds_when_selection_exists() {
         let mut app = App::new();
         app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
-        app.tab_mut().unstaged_changes = vec![gitkraft_core::DiffInfo {
+        app.tab_mut().unstaged_changes = vec![gitkraft_core::DiffFileEntry {
             old_file: String::new(),
             new_file: "src/main.rs".to_string(),
             status: gitkraft_core::FileStatus::Modified,
-            hunks: vec![],
         }];
         app.tab_mut().unstaged_list_state.select(Some(0));
         app.stage_selected();

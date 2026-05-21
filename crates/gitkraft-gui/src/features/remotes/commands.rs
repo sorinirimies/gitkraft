@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use iced::Task;
 
+use crate::macros::StringErr;
 use crate::message::Message;
 
 /// Fetch from a named remote.
@@ -18,8 +19,7 @@ pub fn fetch_remote(path: PathBuf, remote_name: String) -> Task<Message> {
         Message::FetchCompleted,
         (|| {
             let repo = open_repo!(&path);
-            gitkraft_core::features::remotes::fetch_remote(&repo, &remote_name)
-                .map_err(|e| e.to_string())
+            gitkraft_core::features::remotes::fetch_remote(&repo, &remote_name).str_err()
         })()
     )
 }

@@ -66,7 +66,7 @@ pub struct RepoInfo {
 }
 
 use crate::features::{
-    branches::BranchInfo, commits::CommitInfo, diff::DiffInfo, graph::GraphRow,
+    branches::BranchInfo, commits::CommitInfo, diff::DiffFileEntry, graph::GraphRow,
     remotes::RemoteInfo, stash::StashEntry,
 };
 
@@ -80,8 +80,8 @@ pub struct RepoSnapshot {
     pub branches: Vec<BranchInfo>,
     pub commits: Vec<CommitInfo>,
     pub graph_rows: Vec<GraphRow>,
-    pub unstaged: Vec<DiffInfo>,
-    pub staged: Vec<DiffInfo>,
+    pub unstaged: Vec<DiffFileEntry>,
+    pub staged: Vec<DiffFileEntry>,
     pub stashes: Vec<StashEntry>,
     pub remotes: Vec<RemoteInfo>,
 }

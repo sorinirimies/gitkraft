@@ -769,6 +769,160 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
     iced::widget::stack![backdrop, centered].into()
 }
 
+/// Build context menu items for an unstaged or staged file.
+///
+/// `staged` controls whether this is for a staged file (`true`) or unstaged
+/// file (`false`), which determines the labels, messages, and available actions.
+fn file_context_menu_items<'a>(
+    state: &'a GitKraft,
+    c: &ThemeColors,
+    path: &str,
+    staged: bool,
+    menu_item: impl Fn(&str, Message) -> iced::widget::Button<'a, Message>,
+) -> iced::widget::Column<'a, Message> {
+    use iced::widget::column;
+
+    let tab = state.active_tab();
+
+    let (selected_count, changes, selected) = if staged {
+        (
+            tab.selected_staged.len(),
+            &tab.staged_changes,
+            &tab.selected_staged,
+        )
+    } else {
+        (
+            tab.selected_unstaged.len(),
+            &tab.unstaged_changes,
+            &tab.selected_unstaged,
+        )
+    };
+
+    let is_multi = selected_count > 1;
+
+    let header_text = if is_multi {
+        format!("{} files selected", selected_count)
+    } else {
+        let prefix = if staged { "Staged" } else { "Unstaged" };
+        format!("{}: {}", prefix, gitkraft_core::path_basename(path))
+    };
+    let header = view_utils::context_menu_header::<Message>(header_text, c.muted);
+
+    let mut col = column![header];
+
+    if is_multi {
+        // Collect selected file paths
+        let selected_paths: Vec<String> = changes
+            .iter()
+            .filter(|d| selected.contains(d.display_path()))
+            .map(|d| d.display_path().to_string())
+            .collect();
+
+        let action_label = if staged { "Unstage" } else { "Stage" };
+        let action_msg = if staged {
+            Message::UnstageSelected
+        } else {
+            Message::StageSelected
+        };
+
+        // Batch operations for multi-select
+        col = col.push(menu_item(
+            &format!("{} {} file(s)", action_label, selected_count),
+            action_msg,
+        ));
+        col = col.push(view_utils::context_menu_separator::<Message>());
+        col = col.push(menu_item(
+            &format!("Open {} file(s) in editor", selected_count),
+            Message::OpenFilesInEditor(selected_paths.clone()),
+        ));
+        col = col.push(menu_item(
+            &format!("Open {} file(s)", selected_count),
+            Message::OpenFilesInDefaultProgram(selected_paths),
+        ));
+        col = col.push(view_utils::context_menu_separator::<Message>());
+        col = col.push(menu_item(
+            &format!("Discard {} file(s)", selected_count),
+            Message::DiscardSelected,
+        ));
+    } else {
+        // Single file operations
+        col = col.push(menu_item(
+            "File History",
+            Message::ViewFileHistory(path.to_string()),
+        ));
+        col = col.push(menu_item(
+            "File Blame",
+            Message::ViewFileBlame(path.to_string()),
+        ));
+        col = col.push(view_utils::context_menu_separator::<Message>());
+        col = col.push(menu_item(
+            "View diff",
+            Message::LoadStagingFileDiff(path.to_string(), staged),
+        ));
+        col = col.push(menu_item(
+            "Preview file",
+            Message::PreviewFile(path.to_string()),
+        ));
+        col = col.push(menu_item(
+            "Open in editor",
+            Message::OpenInEditor(path.to_string()),
+        ));
+        col = col.push(menu_item(
+            "Open file",
+            Message::OpenInDefaultProgram(path.to_string()),
+        ));
+        col = col.push(view_utils::context_menu_separator::<Message>());
+
+        if staged {
+            col = col.push(menu_item(
+                "Unstage file",
+                Message::UnstageFile(path.to_string()),
+            ));
+            col = col.push(view_utils::context_menu_separator::<Message>());
+            col = col.push(menu_item(
+                "Discard changes",
+                Message::DiscardStagedFile(path.to_string()),
+            ));
+        } else {
+            col = col.push(menu_item(
+                "Stage file",
+                Message::StageFile(path.to_string()),
+            ));
+            col = col.push(view_utils::context_menu_separator::<Message>());
+            col = col.push(menu_item(
+                "Discard changes",
+                Message::DiscardFile(path.to_string()),
+            ));
+        }
+    }
+
+    // Footer: copy info & show in folder
+    col = col.push(view_utils::context_menu_separator::<Message>());
+    col = col.push(menu_item(
+        "Copy filename",
+        Message::CopyText(gitkraft_core::path_basename(path).to_string()),
+    ));
+    col = col.push(menu_item(
+        "Copy file path",
+        Message::CopyText(path.to_string()),
+    ));
+    col = col.push(menu_item(
+        "Show in folder",
+        Message::ShowInFolder(path.to_string()),
+    ));
+
+    // Delete file is only available for unstaged files
+    if !staged {
+        col = col.push(view_utils::context_menu_separator::<Message>());
+        col = col.push(menu_item(
+            "Delete file",
+            Message::DeleteFile(path.to_string()),
+        ));
+    }
+
+    col
+}
+
 /// Build the context menu panel widget for the currently active menu.
 fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Message> {
     use iced::widget::{button, column, container, row, text, Space};
@@ -961,7 +1115,7 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                 let messages_joined = oids
                     .iter()
                     .filter_map(|o| tab.commits.iter().find(|c| c.oid == *o))
-                    .map(|c| c.message.trim().to_string())
+                    .map(|c| c.summary.trim().to_string())
                     .collect::<Vec<_>>()
                     .join("\n\n");
 
@@ -990,7 +1144,7 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                 let msg_text = tab
                     .commits
                     .get(*index)
-                    .map(|c| c.message.clone())
+                    .map(|c| c.summary.clone())
                     .unwrap_or_default();
 
                 let header =
@@ -1054,219 +1208,11 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
         }
 
         Some(crate::state::ContextMenu::UnstagedFile { path }) => {
-            let selected_count = state.active_tab().selected_unstaged.len();
-            let is_multi = selected_count > 1;
-
-            let header_text = if is_multi {
-                format!("{} files selected", selected_count)
-            } else {
-                format!("Unstaged: {}", gitkraft_core::path_basename(path))
-            };
-            let header = view_utils::context_menu_header::<Message>(header_text, c.muted);
-
-            let mut col = column![header];
-
-            if is_multi {
-                // Collect selected file paths
-                let selected_paths: Vec<String> = state
-                    .active_tab()
-                    .unstaged_changes
-                    .iter()
-                    .filter(|d| {
-                        state
-                            .active_tab()
-                            .selected_unstaged
-                            .contains(d.display_path())
-                    })
-                    .map(|d| d.display_path().to_string())
-                    .collect();
-
-                // Batch operations for multi-select
-                col = col.push(menu_item(
-                    &format!("Stage {} file(s)", selected_count),
-                    Message::StageSelected,
-                ));
-                col = col.push(view_utils::context_menu_separator::<Message>());
-                col = col.push(menu_item(
-                    &format!("Open {} file(s) in editor", selected_count),
-                    Message::OpenFilesInEditor(selected_paths.clone()),
-                ));
-                col = col.push(menu_item(
-                    &format!("Open {} file(s)", selected_count),
-                    Message::OpenFilesInDefaultProgram(selected_paths),
-                ));
-                col = col.push(view_utils::context_menu_separator::<Message>());
-                col = col.push(menu_item(
-                    &format!("Discard {} file(s)", selected_count),
-                    Message::DiscardSelected,
-                ));
-            } else {
-                // Single file operations
-                let diff = state
-                    .active_tab()
-                    .unstaged_changes
-                    .iter()
-                    .find(|d| d.display_path() == path.as_str())
-                    .cloned()
-                    .unwrap_or_else(|| gitkraft_core::DiffInfo {
-                        old_file: String::new(),
-                        new_file: path.clone(),
-                        status: gitkraft_core::FileStatus::Modified,
-                        hunks: Vec::new(),
-                    });
-
-                col = col.push(menu_item(
-                    "File History",
-                    Message::ViewFileHistory(path.clone()),
-                ));
-                col = col.push(menu_item(
-                    "File Blame",
-                    Message::ViewFileBlame(path.clone()),
-                ));
-                col = col.push(view_utils::context_menu_separator::<Message>());
-                col = col.push(menu_item("View diff", Message::SelectDiff(diff)));
-                col = col.push(menu_item(
-                    "Preview file",
-                    Message::PreviewFile(path.clone()),
-                ));
-                col = col.push(menu_item(
-                    "Open in editor",
-                    Message::OpenInEditor(path.clone()),
-                ));
-                col = col.push(menu_item(
-                    "Open file",
-                    Message::OpenInDefaultProgram(path.clone()),
-                ));
-                col = col.push(view_utils::context_menu_separator::<Message>());
-                col = col.push(menu_item("Stage file", Message::StageFile(path.clone())));
-                col = col.push(view_utils::context_menu_separator::<Message>());
-                col = col.push(menu_item(
-                    "Discard changes",
-                    Message::DiscardFile(path.clone()),
-                ));
-            }
-
-            col = col.push(view_utils::context_menu_separator::<Message>());
-            col = col.push(menu_item(
-                "Copy filename",
-                Message::CopyText(gitkraft_core::path_basename(path).to_string()),
-            ));
-            col = col.push(menu_item("Copy file path", Message::CopyText(path.clone())));
-            col = col.push(menu_item(
-                "Show in folder",
-                Message::ShowInFolder(path.clone()),
-            ));
-            col = col.push(view_utils::context_menu_separator::<Message>());
-            col = col.push(menu_item("Delete file", Message::DeleteFile(path.clone())));
-
-            col.into()
+            file_context_menu_items(state, c, path, false, &menu_item).into()
         }
 
         Some(crate::state::ContextMenu::StagedFile { path }) => {
-            let selected_count = state.active_tab().selected_staged.len();
-            let is_multi = selected_count > 1;
-
-            let header_text = if is_multi {
-                format!("{} files selected", selected_count)
-            } else {
-                format!("Staged: {}", gitkraft_core::path_basename(path))
-            };
-            let header = view_utils::context_menu_header::<Message>(header_text, c.muted);
-
-            let mut col = column![header];
-
-            if is_multi {
-                let selected_paths: Vec<String> = state
-                    .active_tab()
-                    .staged_changes
-                    .iter()
-                    .filter(|d| {
-                        state
-                            .active_tab()
-                            .selected_staged
-                            .contains(d.display_path())
-                    })
-                    .map(|d| d.display_path().to_string())
-                    .collect();
-
-                col = col.push(menu_item(
-                    &format!("Unstage {} file(s)", selected_count),
-                    Message::UnstageSelected,
-                ));
-                col = col.push(view_utils::context_menu_separator::<Message>());
-                col = col.push(menu_item(
-                    &format!("Open {} file(s) in editor", selected_count),
-                    Message::OpenFilesInEditor(selected_paths.clone()),
-                ));
-                col = col.push(menu_item(
-                    &format!("Open {} file(s)", selected_count),
-                    Message::OpenFilesInDefaultProgram(selected_paths),
-                ));
-                col = col.push(view_utils::context_menu_separator::<Message>());
-                col = col.push(menu_item(
-                    &format!("Discard {} file(s)", selected_count),
-                    Message::DiscardSelected,
-                ));
-            } else {
-                let diff = state
-                    .active_tab()
-                    .staged_changes
-                    .iter()
-                    .find(|d| d.display_path() == path.as_str())
-                    .cloned()
-                    .unwrap_or_else(|| gitkraft_core::DiffInfo {
-                        old_file: String::new(),
-                        new_file: path.clone(),
-                        status: gitkraft_core::FileStatus::Modified,
-                        hunks: Vec::new(),
-                    });
-
-                col = col.push(menu_item(
-                    "File History",
-                    Message::ViewFileHistory(path.clone()),
-                ));
-                col = col.push(menu_item(
-                    "File Blame",
-                    Message::ViewFileBlame(path.clone()),
-                ));
-                col = col.push(view_utils::context_menu_separator::<Message>());
-                col = col.push(menu_item("View diff", Message::SelectDiff(diff)));
-                col = col.push(menu_item(
-                    "Preview file",
-                    Message::PreviewFile(path.clone()),
-                ));
-                col = col.push(menu_item(
-                    "Open in editor",
-                    Message::OpenInEditor(path.clone()),
-                ));
-                col = col.push(menu_item(
-                    "Open file",
-                    Message::OpenInDefaultProgram(path.clone()),
-                ));
-                col = col.push(view_utils::context_menu_separator::<Message>());
-                col = col.push(menu_item(
-                    "Unstage file",
-                    Message::UnstageFile(path.clone()),
-                ));
-                col = col.push(view_utils::context_menu_separator::<Message>());
-                col = col.push(menu_item(
-                    "Discard changes",
-                    Message::DiscardStagedFile(path.clone()),
-                ));
-            }
-
-            col = col.push(view_utils::context_menu_separator::<Message>());
-            col = col.push(menu_item(
-                "Copy filename",
-                Message::CopyText(gitkraft_core::path_basename(path).to_string()),
-            ));
-            col = col.push(menu_item("Copy file path", Message::CopyText(path.clone())));
-            col = col.push(menu_item(
-                "Show in folder",
-                Message::ShowInFolder(path.clone()),
-            ));
-
-            col.into()
+            file_context_menu_items(state, c, path, true, &menu_item).into()
         }
 
         Some(crate::state::ContextMenu::CommitFile { oid, file_path }) => {
