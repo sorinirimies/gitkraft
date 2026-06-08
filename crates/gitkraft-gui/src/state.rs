@@ -23,6 +23,10 @@ pub enum DragTarget {
     StagingUnstagedRight,
     /// The divider between the staged and commit panels in the staging area.
     StagingStagedRight,
+    /// Divider between the BRANCH/TAG column and the GRAPH column in the commit log.
+    CommitRefColumnRight,
+    /// Divider between the GRAPH column and the COMMIT MESSAGE column in the commit log.
+    CommitGraphColumnRight,
 }
 
 /// Which horizontal divider the user is currently dragging (if any).
@@ -503,6 +507,10 @@ pub struct GitKraft {
     pub staging_height: f32,
     /// Width of the diff file-list sidebar in pixels.
     pub diff_file_list_width: f32,
+    /// Width of the BRANCH/TAG column in the commit log (pixels).
+    pub commit_ref_width: f32,
+    /// Width of the GRAPH column in the commit log (pixels).
+    pub commit_graph_width: f32,
     /// Fraction of sidebar height allocated to the branches section (0.0–1.0).
     pub sidebar_branches_ratio: f32,
     /// Fraction of sidebar height allocated to the stashes section (0.0–1.0).
@@ -615,6 +623,8 @@ impl GitKraft {
             diff_file_list_width,
             sidebar_expanded,
             ui_scale,
+            commit_ref_width,
+            commit_graph_width,
         ) = if let Some(ref layout) = settings.layout {
             (
                 layout.sidebar_width.unwrap_or(220.0),
@@ -623,9 +633,11 @@ impl GitKraft {
                 layout.diff_file_list_width.unwrap_or(180.0),
                 layout.sidebar_expanded.unwrap_or(true),
                 layout.ui_scale.unwrap_or(1.0),
+                layout.commit_ref_width.unwrap_or(120.0),
+                layout.commit_graph_width.unwrap_or(80.0),
             )
         } else {
-            (220.0, 500.0, 200.0, 180.0, true, 1.0)
+            (220.0, 500.0, 200.0, 180.0, true, 1.0, 120.0, 80.0)
         };
 
         Self {
@@ -638,6 +650,8 @@ impl GitKraft {
             commit_log_width,
             staging_height,
             diff_file_list_width,
+            commit_ref_width,
+            commit_graph_width,
             sidebar_branches_ratio: 0.6,
             sidebar_stash_ratio: 0.25,
             staging_unstaged_ratio: 0.4,
@@ -962,6 +976,8 @@ impl GitKraft {
             window_x: Some(self.window_x),
             window_y: Some(self.window_y),
             window_maximized: None, // not tracked
+            commit_ref_width: Some(self.commit_ref_width),
+            commit_graph_width: Some(self.commit_graph_width),
         }
     }
 }
@@ -3425,9 +3441,11 @@ mod tests {
     }
 
     #[test]
-    fn file_system_changed_blocked_during_pagination() {
-        // When is_loading_more_commits is true, FileSystemChanged must NOT
-        // trigger a refresh — that would race with the pagination result.
+    fn file_system_changed_allowed_during_pagination() {
+        // FileSystemChanged is NOT blocked by is_loading_more_commits.
+        // The "don't shrink" guard in apply_payload handles the race.
+        // Blocking here would permanently freeze auto-refresh if
+        // is_loading_more_commits got stuck (e.g. tab switch mid-pagination).
         use crate::message::Message;
         let mut state = GitKraft::new();
         setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
@@ -3435,15 +3453,10 @@ mod tests {
 
         let _task = state.update(Message::FileSystemChanged);
 
-        // The returned task should be none (no refresh started).
-        // We can't directly inspect a Task, but we can verify the tab's
-        // state didn't change to loading.
-        assert!(
-            !state.active_tab().is_loading,
-            "FileSystemChanged must not start a refresh during pagination"
-        );
-        // is_loading_more_commits must still be true
+        // is_loading_more_commits stays true (owned by pagination flow)
         assert!(state.active_tab().is_loading_more_commits);
+        // The refresh IS allowed — we can't inspect the Task directly,
+        // but at minimum the state should not have been corrupted.
     }
 
     #[test]

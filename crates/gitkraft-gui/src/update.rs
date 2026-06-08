@@ -98,7 +98,10 @@ impl GitKraft {
             | Message::CreateCommit
             | Message::CommitCreated(_) => crate::features::commits::update::update(self, message),
 
-            Message::CommitLogScrolled(_abs_y, rel_y) => {
+            Message::CommitLogScrolled(abs_y, rel_y) => {
+                // Store the scroll offset so the view can virtualise rows.
+                self.active_tab_mut().commit_scroll_offset = *abs_y;
+
                 // Pagination: load more commits when the user nears the bottom.
                 const COMMITS_PAGE_SIZE: usize = 200;
                 const LOAD_TRIGGER_RELATIVE: f32 = 0.85;
@@ -461,6 +464,14 @@ impl GitKraft {
                                         + ratio_delta)
                                         .clamp(0.1, max_staged);
                                 }
+                            }
+                            DragTarget::CommitRefColumnRight => {
+                                self.commit_ref_width =
+                                    (self.commit_ref_width + dx).clamp(60.0, 250.0);
+                            }
+                            DragTarget::CommitGraphColumnRight => {
+                                self.commit_graph_width =
+                                    (self.commit_graph_width + dx).clamp(24.0, 300.0);
                             }
                         }
                     }
@@ -1128,12 +1139,15 @@ impl GitKraft {
             }
 
             Message::FileSystemChanged => {
-                // Don't refresh while the active tab is loading or while
-                // pagination is in flight — the refresh result could race
-                // with MoreCommitsLoaded and overwrite a larger commit list
-                // with a smaller one, causing a scroll loop.
-                let tab = self.active_tab();
-                if self.has_repo() && !tab.is_loading && !tab.is_loading_more_commits {
+                // Don't refresh while the active tab is performing a full
+                // load (e.g. opening a new repo).  Background pagination
+                // (is_loading_more_commits) is NOT checked here — the
+                // "don't shrink" guard in apply_payload already prevents
+                // a stale refresh from overwriting a larger paginated list.
+                // Checking is_loading_more_commits here would permanently
+                // block refreshes if the flag got stuck (e.g. user switched
+                // tabs while pagination was in flight).
+                if self.has_repo() && !self.active_tab().is_loading {
                     return self.refresh_active_tab();
                 }
                 Task::none()

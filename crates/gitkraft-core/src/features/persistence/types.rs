@@ -35,6 +35,12 @@ pub struct LayoutSettings {
     /// Whether the window was maximized when last closed.
     #[serde(default)]
     pub window_maximized: Option<bool>,
+    /// Width of the BRANCH/TAG column in the commit log (pixels).
+    #[serde(default)]
+    pub commit_ref_width: Option<f32>,
+    /// Width of the GRAPH column in the commit log (pixels).
+    #[serde(default)]
+    pub commit_graph_width: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,4 +1,8 @@
 //! Graph layout computation — lane-based algorithm for commit graph visualisation.
+//!
+//! The algorithm assigns colours **per lane** (not per OID) so that a linear
+//! branch keeps a single consistent colour.  New colours are only introduced
+//! when a new lane is created for a branch or merge.
 
 use std::collections::HashMap;
 
@@ -9,116 +13,146 @@ use crate::features::commits::CommitInfo;
 ///
 /// The algorithm maintains a set of "active lanes" — columns that carry a
 /// branch line downward through the graph.  Each lane tracks the OID of the
-/// next commit it expects to encounter.  When a commit is found, its lane
-/// becomes the *node column*, and the commit's parents are assigned to lanes
-/// (using the current lane for the first parent and allocating new lanes for
-/// any additional parents).
+/// next commit it expects to encounter and its colour.
+///
+/// Colours are assigned per-lane:
+/// - When a lane is created (new branch / new root), it gets a fresh colour.
+/// - When a commit takes over a lane, it inherits that lane's colour.
+/// - First-parent edges continue the lane colour.
+/// - Additional-parent edges get the colour of their target lane.
 pub fn build_graph(commits: &[CommitInfo]) -> Vec<GraphRow> {
     if commits.is_empty() {
         return Vec::new();
     }
 
-    let mut lanes: Vec<Option<String>> = Vec::new();
-    let mut color_map: HashMap<String, usize> = HashMap::new();
+    /// An active lane: the OID it's waiting for, and its colour index.
+    struct Lane {
+        target_oid: String,
+        color: usize,
+    }
+
+    let mut lanes: Vec<Option<Lane>> = Vec::new();
     let mut next_color: usize = 0;
     let mut rows: Vec<GraphRow> = Vec::with_capacity(commits.len());
+
+    // Pre-build a set of OIDs in this commit list so we can detect when a
+    // parent is NOT in the loaded window (and thus its lane will never resolve).
+    let oid_set: HashMap<&str, usize> = commits
+        .iter()
+        .enumerate()
+        .map(|(i, c)| (c.oid.as_str(), i))
+        .collect();
 
     for commit in commits {
         let oid = &commit.oid;
 
-        // Find or allocate the lane for this commit
+        // Find the lane expecting this commit, or allocate a new one.
         let node_col = lanes
             .iter()
-            .position(|l| l.as_deref() == Some(oid))
+            .position(|l| l.as_ref().is_some_and(|ln| ln.target_oid == *oid))
             .unwrap_or_else(|| {
-                lanes.push(Some(oid.clone()));
-                lanes.len() - 1
+                let color = next_color;
+                next_color += 1;
+                let idx = lanes.iter().position(|l| l.is_none()).unwrap_or_else(|| {
+                    lanes.push(None);
+                    lanes.len() - 1
+                });
+                lanes[idx] = Some(Lane {
+                    target_oid: oid.clone(),
+                    color,
+                });
+                idx
             });
 
-        // Assign a colour
-        let node_color = *color_map.entry(oid.clone()).or_insert_with(|| {
-            let c = next_color;
-            next_color += 1;
-            c
-        });
+        // The node inherits its lane's colour.
+        let node_color = lanes[node_col].as_ref().map(|l| l.color).unwrap_or(0);
 
-        // Build edges
+        // Build edges.
         let mut edges: Vec<GraphEdge> = Vec::new();
 
-        // Pass-through edges for lanes that are not the node lane
-        for (col, lane) in lanes.iter().enumerate() {
+        // Pass-through edges for lanes that are not the node lane.
+        for (col, lane_opt) in lanes.iter().enumerate() {
             if col == node_col {
                 continue;
             }
-            if let Some(ref target_oid) = lane {
-                let lane_color = *color_map.entry(target_oid.clone()).or_insert_with(|| {
-                    let c = next_color;
-                    next_color += 1;
-                    c
-                });
+            if let Some(lane) = lane_opt {
                 edges.push(GraphEdge {
                     from_column: col,
                     to_column: col,
-                    color_index: lane_color,
+                    color_index: lane.color,
                 });
             }
         }
 
-        // Handle the commit's parents
+        // Handle the commit's parents.
         let parents = &commit.parent_ids;
 
         if parents.is_empty() {
-            // Root commit — the lane simply ends.
+            // Root commit — the lane ends.
             lanes[node_col] = None;
         } else {
-            // First parent takes over the node's lane.
+            // First parent takes over the node's lane (same colour).
             let first_parent = &parents[0];
-            lanes[node_col] = Some(first_parent.clone());
+            let lane_color = node_color;
 
-            let first_parent_color = *color_map.entry(first_parent.clone()).or_insert_with(|| {
-                let c = next_color;
-                next_color += 1;
-                c
+            lanes[node_col] = Some(Lane {
+                target_oid: first_parent.clone(),
+                color: lane_color,
             });
 
             edges.push(GraphEdge {
                 from_column: node_col,
                 to_column: node_col,
-                color_index: first_parent_color,
+                color_index: lane_color,
             });
 
             // Additional parents get new lanes (or reuse existing ones).
             for parent_oid in &parents[1..] {
                 let existing = lanes
                     .iter()
-                    .position(|l| l.as_deref() == Some(parent_oid.as_str()));
+                    .position(|l| l.as_ref().is_some_and(|ln| ln.target_oid == *parent_oid));
 
-                let target_col = if let Some(col) = existing {
-                    col
-                } else if let Some(free) = lanes.iter().position(|l| l.is_none()) {
-                    lanes[free] = Some(parent_oid.clone());
-                    free
+                let (target_col, target_color) = if let Some(col) = existing {
+                    let color = lanes[col].as_ref().unwrap().color;
+                    (col, color)
                 } else {
-                    lanes.push(Some(parent_oid.clone()));
-                    lanes.len() - 1
-                };
-
-                let parent_color = *color_map.entry(parent_oid.clone()).or_insert_with(|| {
-                    let c = next_color;
+                    let color = next_color;
                     next_color += 1;
-                    c
-                });
+                    let idx = lanes.iter().position(|l| l.is_none()).unwrap_or_else(|| {
+                        lanes.push(None);
+                        lanes.len() - 1
+                    });
+                    lanes[idx] = Some(Lane {
+                        target_oid: parent_oid.clone(),
+                        color,
+                    });
+                    (idx, color)
+                };
 
                 edges.push(GraphEdge {
                     from_column: node_col,
                     to_column: target_col,
-                    color_index: parent_color,
+                    color_index: target_color,
                 });
             }
         }
 
-        // Compact: remove trailing None lanes
-        while lanes.last() == Some(&None) {
+        // Clean up lanes whose target is NOT in our commit list — they'll
+        // never resolve, so keeping them wastes columns.  But only clean
+        // lanes that are NOT the node's lane (we just set that above).
+        for (col, lane_opt) in lanes.iter_mut().enumerate() {
+            if col == node_col {
+                continue;
+            }
+            if let Some(lane) = lane_opt {
+                if !oid_set.contains_key(lane.target_oid.as_str()) {
+                    *lane_opt = None;
+                }
+            }
+        }
+
+        // Compact: remove trailing empty lanes.
+        while lanes.last().is_some_and(|l| l.is_none()) {
             lanes.pop();
         }
 
@@ -170,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn linear_history() {
+    fn linear_history_same_colour() {
         let commits = vec![
             make_commit("ccc0000", &["bbb0000"]),
             make_commit("bbb0000", &["aaa0000"]),
@@ -181,6 +215,9 @@ mod tests {
         for row in &rows {
             assert_eq!(row.node_column, 0);
         }
+        // All nodes should share the same colour (lane-based colouring).
+        assert_eq!(rows[0].node_color, rows[1].node_color);
+        assert_eq!(rows[1].node_color, rows[2].node_color);
     }
 
     #[test]
@@ -195,6 +232,24 @@ mod tests {
         assert_eq!(rows.len(), 4);
         let merge_row = &rows[0];
         assert!(merge_row.edges.len() >= 2);
+    }
+
+    #[test]
+    fn merge_creates_different_colour_for_second_parent() {
+        let commits = vec![
+            make_commit("merge00", &["parent1", "parent2"]),
+            make_commit("parent2", &["base000"]),
+            make_commit("parent1", &["base000"]),
+            make_commit("base000", &[]),
+        ];
+        let rows = build_graph(&commits);
+        let merge_edges = &rows[0].edges;
+        let cross_edges: Vec<_> = merge_edges
+            .iter()
+            .filter(|e| e.from_column != e.to_column)
+            .collect();
+        assert!(!cross_edges.is_empty(), "merge must have a cross-edge");
+        assert_ne!(cross_edges[0].color_index, rows[0].node_color);
     }
 
     #[test]

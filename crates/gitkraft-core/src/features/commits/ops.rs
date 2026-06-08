@@ -112,9 +112,18 @@ pub fn list_commits(repo: &Repository, max_count: usize) -> Result<Vec<CommitInf
     let ref_map = build_ref_map(repo);
 
     let mut revwalk = repo.revwalk().context("failed to create revwalk")?;
+    // Push ALL refs so branches, tags, and remotes appear in the graph
+    // (not just commits reachable from HEAD).
     revwalk
         .push_head()
         .context("failed to push HEAD to revwalk")?;
+    if let Ok(refs) = repo.references() {
+        for r in refs.flatten() {
+            if let Some(oid) = r.target() {
+                let _ = revwalk.push(oid);
+            }
+        }
+    }
     revwalk
         .set_sorting(git2::Sort::TIME | git2::Sort::TOPOLOGICAL)
         .context("failed to set revwalk sorting")?;
