@@ -2,11 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.1.0 - 2026-06-09
+### ➕ Added
+- Add pannable canvas commit graph and all-ref revwalk
+- Add tests and GUI helpers for preview and popups
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.9...v1.1.0
 ## 1.0.9 - 2026-05-21
 ### ♻️ Refactor
 - Refactor staging file lists to use DiffFileEntry type
 ### 📦 Other Changes
 - Remove unnecessary reference to menu_item in context_menu_panel
+### 🔧 Chores
+- chore: bump version to 1.0.9
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.7...v1.0.9
 ## 1.0.7 - 2026-05-20
 ### 📦 Other Changes

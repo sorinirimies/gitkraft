@@ -23,7 +23,11 @@ pub(crate) fn load_commit_file_list(path: PathBuf, oid: String) -> Task<Message>
 }
 
 /// Load the full diff for a single file in a commit.
-pub(crate) fn load_single_file_diff(path: PathBuf, oid: String, file_path: String) -> Task<Message> {
+pub(crate) fn load_single_file_diff(
+    path: PathBuf,
+    oid: String,
+    file_path: String,
+) -> Task<Message> {
     git_task!(
         Message::SingleFileDiffLoaded,
         (|| {
@@ -92,7 +96,11 @@ pub(crate) fn search_diff_multi_files(
 }
 
 /// Diff a file from a specific commit against the current working tree.
-pub(crate) fn diff_file_with_working_tree(path: PathBuf, oid: String, file_path: String) -> Task<Message> {
+pub(crate) fn diff_file_with_working_tree(
+    path: PathBuf,
+    oid: String,
+    file_path: String,
+) -> Task<Message> {
     git_task!(
         Message::DiffWithWorkingTreeLoaded,
         (|| {
@@ -161,7 +169,11 @@ pub(crate) fn create_commit(path: PathBuf, message: String) -> Task<Message> {
 }
 
 /// Restore a single file from a commit to the working directory.
-pub(crate) fn checkout_file_at_commit(path: PathBuf, oid: String, file_path: String) -> Task<Message> {
+pub(crate) fn checkout_file_at_commit(
+    path: PathBuf,
+    oid: String,
+    file_path: String,
+) -> Task<Message> {
     git_repo_then_reload!(path, |repo| {
         gitkraft_core::features::diff::checkout_file_at_commit(&repo, &oid, &file_path)
     })
