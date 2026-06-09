@@ -29,9 +29,47 @@ const DIFF_VISIBLE_LINES: usize = 60;
 
 /// Render the diff viewer panel. If a diff is selected, render its hunks with
 /// colored lines; otherwise show a placeholder message.
-pub fn view(state: &GitKraft) -> Element<'_, Message> {
+pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
     let c = state.colors();
     let tab = state.active_tab();
+
+    // ── Priority 0: file preview editor ───────────────────────────────────────
+    if let (Some(content), Some(path)) = (&state.preview_editor, &state.preview_path) {
+        let file_name = gitkraft_core::path_basename(path);
+
+        let close_btn = button(text("\u{2715}").size(13).color(c.muted))
+            .padding([2, 8])
+            .style(theme::ghost_button)
+            .on_press(Message::ClosePreview);
+
+        let header = row![
+            icon!(icons::FILE_TEXT, 14, c.accent),
+            Space::new().width(6),
+            text(format!("Preview: {file_name}"))
+                .size(14)
+                .color(c.text_primary),
+            Space::new().width(Length::Fill),
+            close_btn,
+        ]
+        .align_y(Alignment::Center)
+        .padding([8, 10]);
+
+        let editor = iced::widget::text_editor(content)
+            .on_action(Message::PreviewEditorAction)
+            .font(Font::MONOSPACE)
+            .size(13)
+            .height(Length::Fill);
+
+        let panel = column![header, editor]
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        return container(panel)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(theme::surface_style)
+            .into();
+    }
 
     // ── Priority 1: commit range diff (multiple commits selected) ─────────
     if !tab.commit_range_diffs.is_empty() {
@@ -499,7 +537,7 @@ fn render_line<'a>(line: &DiffLine, c: &ThemeColors) -> Element<'a, Message> {
 // ── File history overlay ──────────────────────────────────────────────────────
 
 /// Render the file-history overlay in the diff panel area.
-pub fn file_history_view(state: &GitKraft) -> Element<'_, Message> {
+pub(crate) fn file_history_view(state: &GitKraft) -> Element<'_, Message> {
     let tab = state.active_tab();
     let c = state.colors();
     let path = tab.file_history_path.as_deref().unwrap_or("");
@@ -585,7 +623,7 @@ pub fn file_history_view(state: &GitKraft) -> Element<'_, Message> {
 // ── Blame overlay ─────────────────────────────────────────────────────────────
 
 /// Render the blame overlay in the diff panel area.
-pub fn blame_view(state: &GitKraft) -> Element<'_, Message> {
+pub(crate) fn blame_view(state: &GitKraft) -> Element<'_, Message> {
     let tab = state.active_tab();
     let c = state.colors();
     let path = tab.blame_path.as_deref().unwrap_or("");

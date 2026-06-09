@@ -22,6 +22,7 @@ pub const CLOCK: char = '\u{f293}';
 pub const CLOCK_HISTORY: char = '\u{f292}';
 pub const COMMIT: char = '\u{f6c0}'; // Send icon -- resembles a commit arrow
 pub const FILE_DIFF: char = '\u{f354}';
+pub const FILE_TEXT: char = '\u{f39a}';
 
 // -- Actions ---------------------------------------------------------------
 pub const TRASH: char = '\u{f5de}';

@@ -14,7 +14,7 @@ use crate::theme;
 use crate::view_utils;
 
 /// Render the welcome / landing view (no repo open yet).
-pub fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
+pub(crate) fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
     let c = state.colors();
     let tab = state.active_tab();
 

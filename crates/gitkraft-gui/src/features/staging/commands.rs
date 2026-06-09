@@ -12,28 +12,28 @@ use crate::macros::StringErr;
 use crate::message::{Message, StagingPayload};
 
 /// Stage a single file, then return the refreshed staging state.
-pub fn stage_file(path: PathBuf, file_path: String) -> Task<Message> {
+pub(crate) fn stage_file(path: PathBuf, file_path: String) -> Task<Message> {
     staging_op!(path, |repo| gitkraft_core::features::staging::stage_file(
         &repo, &file_path
     ))
 }
 
 /// Unstage a single file, then return the refreshed staging state.
-pub fn unstage_file(path: PathBuf, file_path: String) -> Task<Message> {
+pub(crate) fn unstage_file(path: PathBuf, file_path: String) -> Task<Message> {
     staging_op!(path, |repo| gitkraft_core::features::staging::unstage_file(
         &repo, &file_path
     ))
 }
 
 /// Stage all unstaged files, then return the refreshed staging state.
-pub fn stage_all(path: PathBuf) -> Task<Message> {
+pub(crate) fn stage_all(path: PathBuf) -> Task<Message> {
     staging_op!(path, |repo| gitkraft_core::features::staging::stage_all(
         &repo
     ))
 }
 
 /// Unstage all staged files, then return the refreshed staging state.
-pub fn unstage_all(path: PathBuf) -> Task<Message> {
+pub(crate) fn unstage_all(path: PathBuf) -> Task<Message> {
     staging_op!(path, |repo| gitkraft_core::features::staging::unstage_all(
         &repo
     ))
@@ -41,14 +41,14 @@ pub fn unstage_all(path: PathBuf) -> Task<Message> {
 
 /// Discard working-directory changes for a single file, then return the
 /// refreshed staging state.
-pub fn discard_file(path: PathBuf, file_path: String) -> Task<Message> {
+pub(crate) fn discard_file(path: PathBuf, file_path: String) -> Task<Message> {
     staging_op!(path, |repo| {
         gitkraft_core::features::staging::discard_file_changes(&repo, &file_path)
     })
 }
 
 /// Stage multiple files at once.
-pub fn stage_files(path: PathBuf, file_paths: Vec<String>) -> Task<Message> {
+pub(crate) fn stage_files(path: PathBuf, file_paths: Vec<String>) -> Task<Message> {
     git_task!(
         Message::StagingUpdated,
         (|| {
@@ -62,7 +62,7 @@ pub fn stage_files(path: PathBuf, file_paths: Vec<String>) -> Task<Message> {
 }
 
 /// Unstage multiple files at once.
-pub fn unstage_files(path: PathBuf, file_paths: Vec<String>) -> Task<Message> {
+pub(crate) fn unstage_files(path: PathBuf, file_paths: Vec<String>) -> Task<Message> {
     git_task!(
         Message::StagingUpdated,
         (|| {
@@ -75,23 +75,9 @@ pub fn unstage_files(path: PathBuf, file_paths: Vec<String>) -> Task<Message> {
     )
 }
 
-/// Discard changes for multiple files at once.
-pub fn discard_files(path: PathBuf, file_paths: Vec<String>) -> Task<Message> {
-    git_task!(
-        Message::StagingUpdated,
-        (|| {
-            let repo = open_repo!(&path);
-            for fp in &file_paths {
-                gitkraft_core::features::staging::discard_file_changes(&repo, fp).str_err()?;
-            }
-            refresh_staging_state(&path)
-        })()
-    )
-}
-
 /// Discard changes for both unstaged and staged files.
 /// Staged files are first unstaged, then discarded.
-pub fn discard_all_selected(
+pub(crate) fn discard_all_selected(
     path: PathBuf,
     unstaged_paths: Vec<String>,
     staged_paths: Vec<String>,
@@ -113,7 +99,7 @@ pub fn discard_all_selected(
 }
 
 /// Discard a staged file by first unstaging, then discarding working dir changes.
-pub fn discard_staged_file(path: PathBuf, file_path: String) -> Task<Message> {
+pub(crate) fn discard_staged_file(path: PathBuf, file_path: String) -> Task<Message> {
     git_task!(
         Message::StagingUpdated,
         (|| {
@@ -137,7 +123,11 @@ pub(crate) fn refresh_staging_state(path: &std::path::Path) -> Result<StagingPay
 }
 
 /// Load a single file's diff from the working directory or staging area.
-pub fn load_staging_file_diff(path: PathBuf, file_path: String, staged: bool) -> Task<Message> {
+pub(crate) fn load_staging_file_diff(
+    path: PathBuf,
+    file_path: String,
+    staged: bool,
+) -> Task<Message> {
     git_task!(
         Message::StagingFileDiffLoaded,
         (|| {

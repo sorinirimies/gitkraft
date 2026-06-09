@@ -9,7 +9,7 @@ use super::commands;
 
 /// Handle all remote-related messages, returning a [`Task`] for any follow-up
 /// async work.
-pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
+pub(crate) fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
     match message {
         Message::Fetch => {
             // Resolve the remote name before entering the macro so it can be

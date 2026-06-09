@@ -23,7 +23,7 @@ impl std::fmt::Display for ThemeChoice {
 
 /// All available themes as [`ThemeChoice`] values, derived from the canonical
 /// core definitions.
-pub fn all_themes() -> Vec<ThemeChoice> {
+pub(crate) fn all_themes() -> Vec<ThemeChoice> {
     gitkraft_core::THEME_NAMES
         .iter()
         .enumerate()
@@ -36,7 +36,7 @@ pub fn all_themes() -> Vec<ThemeChoice> {
 /// The widget displays the name of the current theme and, when opened, lists
 /// every theme returned by [`all_themes`]. Selecting a new entry emits
 /// [`Message::ThemeChanged`] with the chosen theme index.
-pub fn theme_selector(current_theme_index: usize) -> Element<'static, Message> {
+pub(crate) fn theme_selector(current_theme_index: usize) -> Element<'static, Message> {
     let choices = all_themes();
     let selected = choices.get(current_theme_index).cloned();
 

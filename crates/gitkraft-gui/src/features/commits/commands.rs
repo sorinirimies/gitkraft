@@ -12,7 +12,7 @@ use crate::macros::StringErr;
 use crate::message::Message;
 
 /// Load just the file list (paths + statuses) for a commit — no line parsing.
-pub fn load_commit_file_list(path: PathBuf, oid: String) -> Task<Message> {
+pub(crate) fn load_commit_file_list(path: PathBuf, oid: String) -> Task<Message> {
     git_task!(
         Message::CommitFileListLoaded,
         (|| {
@@ -23,7 +23,7 @@ pub fn load_commit_file_list(path: PathBuf, oid: String) -> Task<Message> {
 }
 
 /// Load the full diff for a single file in a commit.
-pub fn load_single_file_diff(path: PathBuf, oid: String, file_path: String) -> Task<Message> {
+pub(crate) fn load_single_file_diff(path: PathBuf, oid: String, file_path: String) -> Task<Message> {
     git_task!(
         Message::SingleFileDiffLoaded,
         (|| {
@@ -34,7 +34,7 @@ pub fn load_single_file_diff(path: PathBuf, oid: String, file_path: String) -> T
 }
 
 /// Search commits by query string (searches message, author, SHA).
-pub fn search_commits(path: PathBuf, query: String) -> Task<Message> {
+pub(crate) fn search_commits(path: PathBuf, query: String) -> Task<Message> {
     git_task!(
         Message::SearchResultsLoaded,
         (|| {
@@ -45,7 +45,7 @@ pub fn search_commits(path: PathBuf, query: String) -> Task<Message> {
 }
 
 /// Load the file list of changes between a commit and the current working tree.
-pub fn search_diff_file_list(path: PathBuf, oid: String) -> Task<Message> {
+pub(crate) fn search_diff_file_list(path: PathBuf, oid: String) -> Task<Message> {
     git_task!(
         Message::SearchDiffFilesLoaded,
         (|| {
@@ -56,7 +56,7 @@ pub fn search_diff_file_list(path: PathBuf, oid: String) -> Task<Message> {
 }
 
 /// Diff a single file from a specific commit against the current working tree (for search overlay).
-pub fn search_diff_file(path: PathBuf, oid: String, file_path: String) -> Task<Message> {
+pub(crate) fn search_diff_file(path: PathBuf, oid: String, file_path: String) -> Task<Message> {
     git_task!(
         Message::SearchFileDiffLoaded,
         (|| {
@@ -68,7 +68,7 @@ pub fn search_diff_file(path: PathBuf, oid: String, file_path: String) -> Task<M
 }
 
 /// Diff multiple files from a specific commit against the current working tree.
-pub fn search_diff_multi_files(
+pub(crate) fn search_diff_multi_files(
     path: PathBuf,
     oid: String,
     file_paths: Vec<String>,
@@ -92,7 +92,7 @@ pub fn search_diff_multi_files(
 }
 
 /// Diff a file from a specific commit against the current working tree.
-pub fn diff_file_with_working_tree(path: PathBuf, oid: String, file_path: String) -> Task<Message> {
+pub(crate) fn diff_file_with_working_tree(path: PathBuf, oid: String, file_path: String) -> Task<Message> {
     git_task!(
         Message::DiffWithWorkingTreeLoaded,
         (|| {
@@ -104,7 +104,7 @@ pub fn diff_file_with_working_tree(path: PathBuf, oid: String, file_path: String
 }
 
 /// Load diffs for multiple files in a commit and return them all together.
-pub fn load_commit_multi_diffs(
+pub(crate) fn load_commit_multi_diffs(
     path: PathBuf,
     oid: String,
     file_paths: Vec<String>,
@@ -126,7 +126,7 @@ pub fn load_commit_multi_diffs(
 }
 
 /// Diff multiple files from a specific commit against the current working tree.
-pub fn load_multi_file_commit_vs_workdir(
+pub(crate) fn load_multi_file_commit_vs_workdir(
     path: PathBuf,
     oid: String,
     file_paths: Vec<String>,
@@ -148,7 +148,7 @@ pub fn load_multi_file_commit_vs_workdir(
 }
 
 /// Create a new commit with the currently staged changes.
-pub fn create_commit(path: PathBuf, message: String) -> Task<Message> {
+pub(crate) fn create_commit(path: PathBuf, message: String) -> Task<Message> {
     git_task!(
         Message::CommitCreated,
         (|| {
@@ -161,14 +161,14 @@ pub fn create_commit(path: PathBuf, message: String) -> Task<Message> {
 }
 
 /// Restore a single file from a commit to the working directory.
-pub fn checkout_file_at_commit(path: PathBuf, oid: String, file_path: String) -> Task<Message> {
+pub(crate) fn checkout_file_at_commit(path: PathBuf, oid: String, file_path: String) -> Task<Message> {
     git_repo_then_reload!(path, |repo| {
         gitkraft_core::features::diff::checkout_file_at_commit(&repo, &oid, &file_path)
     })
 }
 
 /// Cherry-pick a sequence of commits onto the current branch.
-pub fn cherry_pick_commits(path: PathBuf, oids: Vec<String>) -> Task<Message> {
+pub(crate) fn cherry_pick_commits(path: PathBuf, oids: Vec<String>) -> Task<Message> {
     git_task!(
         Message::GitOperationResult,
         (|| {
@@ -182,7 +182,7 @@ pub fn cherry_pick_commits(path: PathBuf, oids: Vec<String>) -> Task<Message> {
 }
 
 /// Revert a sequence of commits in order.
-pub fn revert_commits(path: PathBuf, oids: Vec<String>) -> Task<Message> {
+pub(crate) fn revert_commits(path: PathBuf, oids: Vec<String>) -> Task<Message> {
     git_task!(
         Message::GitOperationResult,
         (|| {
@@ -196,7 +196,7 @@ pub fn revert_commits(path: PathBuf, oids: Vec<String>) -> Task<Message> {
 }
 
 /// Load the combined diff across a range of commits.
-pub fn load_commit_range_diff(
+pub(crate) fn load_commit_range_diff(
     path: PathBuf,
     oldest_oid: String,
     newest_oid: String,
@@ -212,7 +212,7 @@ pub fn load_commit_range_diff(
 }
 
 /// Restore multiple files from a commit to the working directory.
-pub fn checkout_multi_files_at_commit(
+pub(crate) fn checkout_multi_files_at_commit(
     path: PathBuf,
     oid: String,
     file_paths: Vec<String>,

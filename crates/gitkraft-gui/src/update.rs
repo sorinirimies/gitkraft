@@ -291,7 +291,6 @@ impl GitKraft {
                     tab.selected_commit = Some(0);
                     tab.anchor_commit_index = Some(0);
                     tab.selected_commits.clear();
-                    tab.commit_scroll_offset = 0.0; // legacy, unused by view
                 }
                 iced::widget::operation::scroll_to(
                     crate::features::commits::view::commit_log_scroll_id(self.active_tab),
@@ -306,7 +305,6 @@ impl GitKraft {
                     tab.selected_commit = Some(last);
                     tab.anchor_commit_index = Some(last);
                     tab.selected_commits.clear();
-                    tab.commit_scroll_offset = f32::MAX; // legacy, unused by view
                 }
                 iced::widget::operation::scroll_to(
                     crate::features::commits::view::commit_log_scroll_id(self.active_tab),
@@ -865,19 +863,25 @@ impl GitKraft {
             Message::RebaseOntoCommit(oid) => {
                 let oid = oid.clone();
                 let short = gitkraft_core::utils::short_oid_str(&oid).to_string();
-                self.active_tab_mut().context_menu = None;
-                with_repo!(self, loading, format!("Rebasing onto {short}…"), |path| {
-                    crate::features::repo::commands::rebase_onto_async(path, oid)
-                })
+                with_repo!(
+                    self,
+                    dismiss,
+                    loading,
+                    format!("Rebasing onto {short}…"),
+                    |path| crate::features::repo::commands::rebase_onto_async(path, oid)
+                )
             }
 
             Message::RevertCommit(oid) => {
                 let oid = oid.clone();
                 let short = gitkraft_core::utils::short_oid_str(&oid).to_string();
-                self.active_tab_mut().context_menu = None;
-                with_repo!(self, loading, format!("Reverting {short}…"), |path| {
-                    crate::features::repo::commands::revert_commit_async(path, oid)
-                })
+                with_repo!(
+                    self,
+                    dismiss,
+                    loading,
+                    format!("Reverting {short}…"),
+                    |path| crate::features::repo::commands::revert_commit_async(path, oid)
+                )
             }
 
             Message::ResetSoft(ref oid)
@@ -891,9 +895,9 @@ impl GitKraft {
                 };
                 let oid = oid.clone();
                 let short = gitkraft_core::utils::short_oid_str(&oid).to_string();
-                self.active_tab_mut().context_menu = None;
                 with_repo!(
                     self,
+                    dismiss,
                     loading,
                     format!("Resetting ({mode}) to {short}…"),
                     |path| crate::features::repo::commands::reset_to_commit_async(
@@ -1252,22 +1256,11 @@ impl GitKraft {
             Message::FilePreviewLoaded(result) => {
                 match result {
                     Ok((file_path, content)) => {
-                        let lines: Vec<gitkraft_core::DiffLine> = content
-                            .lines()
-                            .map(|l| gitkraft_core::DiffLine::Context(l.to_string()))
-                            .collect();
-                        let preview_diff = gitkraft_core::DiffInfo {
-                            old_file: String::new(),
-                            new_file: file_path.clone(),
-                            status: gitkraft_core::FileStatus::Modified,
-                            hunks: vec![gitkraft_core::DiffHunk {
-                                header: String::new(),
-                                lines,
-                            }],
-                        };
-                        let tab = self.active_tab_mut();
-                        tab.selected_diff = Some(preview_diff);
-                        tab.diff_scroll_offset = 0.0;
+                        self.preview_editor =
+                            Some(iced::widget::text_editor::Content::with_text(content));
+                        self.preview_path = Some(file_path.clone());
+                        // Clear the diff view so the preview takes over
+                        self.active_tab_mut().selected_diff = None;
                     }
                     Err(e) => {
                         self.active_tab_mut().error_message =
@@ -1408,6 +1401,18 @@ impl GitKraft {
                 tab.blame_path = None;
                 tab.blame_lines.clear();
                 tab.blame_scroll = 0.0;
+                // Also dismiss context menu and search overlay on Escape.
+                tab.context_menu = None;
+                if self.search_visible {
+                    self.search_visible = false;
+                    self.search_query.clear();
+                    self.search_results.clear();
+                    self.search_selected = None;
+                    self.search_diff_files.clear();
+                    self.search_diff_selected.clear();
+                    self.search_diff_content.clear();
+                    self.search_diff_oid = None;
+                }
                 Task::none()
             }
 
@@ -1452,13 +1457,25 @@ impl GitKraft {
                 Task::none()
             }
 
+            Message::PreviewEditorAction(action) => {
+                if let Some(ref mut content) = self.preview_editor {
+                    content.perform(action.clone());
+                }
+                Task::none()
+            }
+
+            Message::ClosePreview => {
+                clear_preview!(self);
+                Task::none()
+            }
+
             Message::Noop => Task::none(),
 
             Message::CherryPickCommits(oids) => {
                 let oids = oids.clone();
-                self.active_tab_mut().context_menu = None;
                 with_repo!(
                     self,
+                    dismiss,
                     loading,
                     format!("Cherry-picking {} commit(s)…", oids.len()),
                     |path| crate::features::repo::commands::cherry_pick_commits_async(path, oids)
@@ -1467,9 +1484,9 @@ impl GitKraft {
 
             Message::RevertCommits(oids) => {
                 let oids = oids.clone();
-                self.active_tab_mut().context_menu = None;
                 with_repo!(
                     self,
+                    dismiss,
                     loading,
                     format!("Reverting {} commit(s)…", oids.len()),
                     |path| crate::features::repo::commands::revert_commits_async(path, oids)

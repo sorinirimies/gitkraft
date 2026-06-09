@@ -1,5 +1,6 @@
 //! Shared widget helpers used across multiple views.
 
+pub mod bounded_popup;
 pub mod commit_graph;
 pub mod divider;
 pub mod header;

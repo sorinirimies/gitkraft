@@ -13,7 +13,7 @@ use crate::theme;
 use crate::view_utils;
 
 /// Render the remotes section for the sidebar.
-pub fn view(state: &GitKraft) -> Element<'_, Message> {
+pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
     let tab = state.active_tab();
     let c = state.colors();
 

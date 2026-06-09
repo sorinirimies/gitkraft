@@ -14,7 +14,7 @@ use crate::theme;
 use crate::view_utils;
 
 /// Render the full staging area panel (unstaged | staged | commit input).
-pub fn view(state: &GitKraft) -> Element<'_, Message> {
+pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
     let c = state.colors();
     let unstaged_panel = unstaged_view(state);
     let staged_panel = staged_view(state);

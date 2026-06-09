@@ -204,7 +204,7 @@ impl GitKraft {
             ma
         };
 
-        // ── Context menu overlay ──────────────────────────────────────────
+        // ── Context menu overlay ──────────────────────────────────
         if self.active_tab().context_menu.is_some() {
             // Transparent full-screen backdrop — clicking it dismisses the menu.
             let backdrop = mouse_area(
@@ -214,15 +214,20 @@ impl GitKraft {
             .on_press(Message::CloseContextMenu)
             .on_right_press(Message::CloseContextMenu);
 
-            let (menu_x, menu_y) = context_menu_position(self);
-            let menu_panel = context_menu_panel(self, &c);
+            let (cx, cy) = self.active_tab().context_menu_pos;
+            let menu_content = context_menu_panel(self, &c);
 
-            let positioned = column![
-                Space::new().height(menu_y),
-                row![Space::new().width(menu_x), menu_panel,],
-            ]
-            .width(Length::Fill)
-            .height(Length::Fill);
+            let positioned = crate::widgets::bounded_popup::bounded_popup(
+                menu_content,
+                cx,
+                cy,
+                self.window_width,
+                self.window_height,
+            )
+            .width(280.0)
+            .max_height(500.0)
+            .style(theme::context_menu_style)
+            .build();
 
             iced::widget::stack![ma, backdrop, positioned].into()
         } else {
@@ -384,15 +389,6 @@ fn error_banner<'a>(message: &str, c: &ThemeColors) -> Element<'a, Message> {
         .width(Length::Fill)
         .style(theme::error_banner_style)
         .into()
-}
-
-/// Approximate pixel position of the context menu based on what was right-clicked.
-fn context_menu_position(state: &GitKraft) -> (f32, f32) {
-    // Use the position that was frozen when the menu opened, not the live
-    // cursor_pos — otherwise the panel would follow the mouse.
-    // Nudge right/down by 2 px so the pointer tip sits just inside the panel.
-    let (x, y) = state.active_tab().context_menu_pos;
-    ((x + 2.0).max(2.0), (y + 2.0).max(2.0))
 }
 
 /// Render the search overlay — a centered panel with an input and results list.
@@ -925,7 +921,7 @@ fn file_context_menu_items<'a>(
 
 /// Build the context menu panel widget for the currently active menu.
 fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Message> {
-    use iced::widget::{button, column, container, row, text, Space};
+    use iced::widget::{button, column, row, text, Space};
     use iced::{Alignment, Length};
 
     let text_primary = c.text_primary;
@@ -943,7 +939,7 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
         .on_press(msg)
     };
 
-    let content: Element<'a, Message> = match &state.active_tab().context_menu {
+    match &state.active_tab().context_menu {
         Some(crate::state::ContextMenu::Branch {
             name, is_current, ..
         }) => {
@@ -1289,6 +1285,10 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                     "Checkout file from this commit",
                     Message::CheckoutFileAtCommit(oid.clone(), file_path.clone()),
                 ));
+                col = col.push(menu_item(
+                    "Preview file",
+                    Message::PreviewFile(file_path.clone()),
+                ));
 
                 // Group 2: copy info
                 col = col.push(view_utils::context_menu_separator::<Message>());
@@ -1322,10 +1322,5 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
         }
 
         None => Space::new().into(),
-    };
-
-    container(content)
-        .width(280)
-        .style(theme::context_menu_style)
-        .into()
+    }
 }

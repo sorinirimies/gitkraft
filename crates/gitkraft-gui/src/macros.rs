@@ -74,6 +74,18 @@ macro_rules! git_task {
 /// Extra tab mutations can be performed inside a block `$cmd`; the
 /// `is_loading` / `status_message` mutable borrow has already been dropped.
 macro_rules! with_repo {
+    // ── dismiss + plain variant ────────────────────────────────────────
+    ($state:expr, dismiss, $status:expr, |$rp:ident| $cmd:expr) => {{
+        $state.active_tab_mut().context_menu = None;
+        with_repo!($state, $status, |$rp| $cmd)
+    }};
+
+    // ── dismiss + loading variant ─────────────────────────────────────
+    ($state:expr, dismiss, loading, $status:expr, |$rp:ident| $cmd:expr) => {{
+        $state.active_tab_mut().context_menu = None;
+        with_repo!($state, loading, $status, |$rp| $cmd)
+    }};
+
     // ── plain variant (status only) ────────────────────────────────────────
     ($state:expr, $status:expr, |$rp:ident| $cmd:expr) => {{
         let $rp = $state.active_tab().repo_path.clone();
@@ -115,6 +127,29 @@ macro_rules! icon {
         text($char)
             .font(iced::Font::with_name("bootstrap-icons"))
             .size($size)
+    };
+}
+
+/// Set a field on the active tab and return `Task::none()`.
+///
+/// ```ignore
+/// set_field!(state, commit_message, msg)
+/// // Expands to:
+/// // state.active_tab_mut().commit_message = msg;
+/// // Task::none()
+/// ```
+macro_rules! set_field {
+    ($state:expr, $field:ident, $value:expr) => {{
+        $state.active_tab_mut().$field = $value;
+        Task::none()
+    }};
+}
+
+/// Clear the file preview editor state.
+macro_rules! clear_preview {
+    ($state:expr) => {
+        $state.preview_editor = None;
+        $state.preview_path = None;
     };
 }
 

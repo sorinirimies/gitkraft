@@ -9,7 +9,7 @@ use super::commands;
 
 /// Handle all repository-related messages, returning a [`Task`] for any
 /// follow-up async work.
-pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
+pub(crate) fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
     match message {
         Message::OpenRepo => {
             // If the active tab already has a repo open, create a new tab

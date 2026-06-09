@@ -49,42 +49,46 @@ fn toggle_staging_file(
 
 /// Handle all staging-related messages, returning a [`Task`] for any follow-up
 /// async work.
-pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
+pub(crate) fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
     match message {
         Message::StageFile(path) => {
-            state.active_tab_mut().context_menu = None;
-            with_repo!(state, format!("Staging '{path}'…"), |repo_path| {
+            with_repo!(state, dismiss, format!("Staging '{path}'…"), |repo_path| {
                 commands::stage_file(repo_path, path)
             })
         }
 
         Message::UnstageFile(path) => {
-            state.active_tab_mut().context_menu = None;
-            with_repo!(state, format!("Unstaging '{path}'…"), |repo_path| {
-                commands::unstage_file(repo_path, path)
-            })
+            with_repo!(
+                state,
+                dismiss,
+                format!("Unstaging '{path}'…"),
+                |repo_path| commands::unstage_file(repo_path, path)
+            )
         }
 
         Message::StageAll => {
-            state.active_tab_mut().context_menu = None;
-            with_repo!(state, "Staging all files…".into(), |repo_path| {
+            with_repo!(state, dismiss, "Staging all files…".into(), |repo_path| {
                 commands::stage_all(repo_path)
             })
         }
 
         Message::UnstageAll => {
-            state.active_tab_mut().context_menu = None;
-            with_repo!(state, "Unstaging all files…".into(), |repo_path| {
-                commands::unstage_all(repo_path)
-            })
+            with_repo!(
+                state,
+                dismiss,
+                "Unstaging all files…".into(),
+                |repo_path| commands::unstage_all(repo_path)
+            )
         }
 
         Message::DiscardFile(path) => {
-            state.active_tab_mut().context_menu = None;
             state.active_tab_mut().pending_discard = None;
-            with_repo!(state, format!("Discarding '{path}'…"), |repo_path| {
-                commands::discard_file(repo_path, path)
-            })
+            with_repo!(
+                state,
+                dismiss,
+                format!("Discarding '{path}'…"),
+                |repo_path| commands::discard_file(repo_path, path)
+            )
         }
 
         Message::ConfirmDiscard(path) => {
@@ -172,9 +176,9 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                 return Task::none();
             }
             state.active_tab_mut().selected_unstaged.clear();
-            state.active_tab_mut().context_menu = None;
             with_repo!(
                 state,
+                dismiss,
                 format!("Staging {} file(s)…", paths.len()),
                 |repo_path| commands::stage_files(repo_path, paths)
             )
@@ -186,9 +190,9 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                 return Task::none();
             }
             state.active_tab_mut().selected_staged.clear();
-            state.active_tab_mut().context_menu = None;
             with_repo!(
                 state,
+                dismiss,
                 format!("Unstaging {} file(s)…", paths.len()),
                 |repo_path| commands::unstage_files(repo_path, paths)
             )
@@ -211,19 +215,21 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             let total = unstaged_paths.len() + staged_paths.len();
             state.active_tab_mut().selected_unstaged.clear();
             state.active_tab_mut().selected_staged.clear();
-            state.active_tab_mut().context_menu = None;
             with_repo!(
                 state,
+                dismiss,
                 format!("Discarding {} file(s)…", total),
                 |repo_path| commands::discard_all_selected(repo_path, unstaged_paths, staged_paths)
             )
         }
 
         Message::DiscardStagedFile(path) => {
-            state.active_tab_mut().context_menu = None;
-            with_repo!(state, format!("Discarding '{path}'…"), |repo_path| {
-                commands::discard_staged_file(repo_path, path)
-            })
+            with_repo!(
+                state,
+                dismiss,
+                format!("Discarding '{path}'…"),
+                |repo_path| commands::discard_staged_file(repo_path, path)
+            )
         }
 
         _ => Task::none(),

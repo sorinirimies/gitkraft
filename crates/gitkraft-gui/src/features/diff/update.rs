@@ -7,7 +7,7 @@ use crate::state::GitKraft;
 
 /// Handle diff-related messages, returning a [`Task`] for any follow-up
 /// async work.
-pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
+pub(crate) fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
     match message {
         Message::SelectDiffByIndex(index) => {
             let shift_held = state.keyboard_modifiers.shift();
@@ -110,6 +110,8 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                     tab.error_message = Some(format!("Failed to load staging diff: {e}"));
                 }
             }
+            // Close any open file preview.
+            clear_preview!(state);
             Task::none()
         }
 

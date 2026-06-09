@@ -460,6 +460,11 @@ pub enum Message {
     /// Only emitted while at least one tab is loading.
     AnimationTick,
 
+    /// User interacted with the file preview editor (selection, edit, etc.).
+    PreviewEditorAction(iced::widget::text_editor::Action),
+    /// Close the file preview editor.
+    ClosePreview,
+
     /// No-op (used for disabled buttons, etc.).
     Noop,
 }

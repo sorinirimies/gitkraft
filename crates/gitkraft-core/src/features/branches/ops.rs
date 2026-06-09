@@ -425,4 +425,112 @@ mod tests {
         let result = delete_branch(&repo, &head.name);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn rename_branch_works() {
+        let (_dir, repo) = setup_repo_with_commit();
+        create_branch(&repo, "test-branch").unwrap();
+        rename_branch(&repo, "test-branch", "renamed-branch").unwrap();
+        let branches = list_branches(&repo).unwrap();
+        let names: Vec<&str> = branches.iter().map(|b| b.name.as_str()).collect();
+        assert!(names.contains(&"renamed-branch"));
+        assert!(!names.contains(&"test-branch"));
+    }
+
+    #[test]
+    fn rename_nonexistent_branch_fails() {
+        let (_dir, repo) = setup_repo_with_commit();
+        let result = rename_branch(&repo, "no-such-branch", "new-name");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn create_branch_at_commit_works() {
+        let (_dir, repo) = setup_repo_with_commit();
+        let head_oid = repo.head().unwrap().target().unwrap().to_string();
+        create_branch_at_commit(&repo, "feature-x", &head_oid).unwrap();
+        let branches = list_branches(&repo).unwrap();
+        let names: Vec<&str> = branches.iter().map(|b| b.name.as_str()).collect();
+        assert!(names.contains(&"feature-x"));
+    }
+
+    #[test]
+    fn create_branch_at_commit_invalid_oid_fails() {
+        let (_dir, repo) = setup_repo_with_commit();
+        let result = create_branch_at_commit(&repo, "bad", "not-a-valid-oid");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn create_tag_works() {
+        let (_dir, repo) = setup_repo_with_commit();
+        let head_oid = repo.head().unwrap().target().unwrap().to_string();
+        create_tag(&repo, "v1.0.0", &head_oid).unwrap();
+        let tag = repo.find_reference("refs/tags/v1.0.0");
+        assert!(tag.is_ok());
+    }
+
+    #[test]
+    fn create_annotated_tag_works() {
+        let (_dir, repo) = setup_repo_with_commit();
+        let head_oid = repo.head().unwrap().target().unwrap().to_string();
+        create_annotated_tag(&repo, "v2.0.0", "Release 2.0", &head_oid).unwrap();
+        let tag = repo.find_reference("refs/tags/v2.0.0");
+        assert!(tag.is_ok());
+    }
+
+    #[test]
+    fn create_tag_duplicate_fails() {
+        let (_dir, repo) = setup_repo_with_commit();
+        let head_oid = repo.head().unwrap().target().unwrap().to_string();
+        create_tag(&repo, "v1.0.0", &head_oid).unwrap();
+        let result = create_tag(&repo, "v1.0.0", &head_oid);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn merge_branch_fast_forward() {
+        let (dir, repo) = setup_repo_with_commit();
+        // Create a feature branch, switch to it, add a commit
+        create_branch(&repo, "feature").unwrap();
+        checkout_branch(&repo, "feature").unwrap();
+
+        // Add a second commit on the feature branch
+        std::fs::write(dir.path().join("feature.txt"), "feature work\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("feature.txt")).unwrap();
+        index.write().unwrap();
+        let tree_oid = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_oid).unwrap();
+        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        let sig = repo.signature().unwrap();
+        repo.commit(
+            Some("HEAD"),
+            &sig,
+            &sig,
+            "feature commit",
+            &tree,
+            &[&head_commit],
+        )
+        .unwrap();
+
+        let feature_oid = repo.head().unwrap().target().unwrap();
+
+        // Switch back to master and merge — should fast-forward
+        checkout_branch(&repo, "master").unwrap();
+        merge_branch(&repo, "feature").unwrap();
+
+        // master should now point at the same commit as feature
+        let master_oid = repo.head().unwrap().target().unwrap();
+        assert_eq!(master_oid, feature_oid);
+    }
+
+    #[test]
+    fn merge_branch_already_up_to_date() {
+        let (_dir, repo) = setup_repo_with_commit();
+        create_branch(&repo, "same").unwrap();
+        // Merging a branch that points at the same commit should be a no-op
+        let result = merge_branch(&repo, "same");
+        assert!(result.is_ok());
+    }
 }

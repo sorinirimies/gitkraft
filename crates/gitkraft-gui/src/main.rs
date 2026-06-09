@@ -230,6 +230,14 @@ fn handle_key_press(
             Key::Character(ref c) if c.as_str() == "," => {
                 Some(gitkraft_gui::Message::OpenSettingsFile)
             }
+            // Ctrl/Cmd + T or N — new tab
+            Key::Character(ref c) if c.as_str() == "t" || c.as_str() == "n" => {
+                Some(gitkraft_gui::Message::NewTab)
+            }
+            // Ctrl/Cmd + W — close current tab / repo
+            Key::Character(ref c) if c.as_str() == "w" => Some(gitkraft_gui::Message::CloseRepo),
+            // Ctrl/Cmd + R — refresh
+            Key::Character(ref c) if c.as_str() == "r" => Some(gitkraft_gui::Message::RefreshRepo),
             _ => None,
         }
     } else if modifiers.shift() {
@@ -246,6 +254,8 @@ fn handle_key_press(
                 // Esc closes the blame overlay, context menu, or other overlays.
                 Some(gitkraft_gui::Message::CloseFileBlame)
             }
+            // F5 — refresh
+            Key::Named(iced::keyboard::key::Named::F5) => Some(gitkraft_gui::Message::RefreshRepo),
             _ => None,
         }
     }

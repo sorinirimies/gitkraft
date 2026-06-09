@@ -11,7 +11,7 @@ use crate::macros::StringErr;
 use crate::message::Message;
 
 /// Checkout an existing local branch by name.
-pub fn checkout_branch(path: PathBuf, branch_name: String) -> Task<Message> {
+pub(crate) fn checkout_branch(path: PathBuf, branch_name: String) -> Task<Message> {
     git_task!(
         Message::BranchCheckedOut,
         (|| {
@@ -22,7 +22,7 @@ pub fn checkout_branch(path: PathBuf, branch_name: String) -> Task<Message> {
 }
 
 /// Create a new local branch at HEAD with the given name.
-pub fn create_branch(path: PathBuf, branch_name: String) -> Task<Message> {
+pub(crate) fn create_branch(path: PathBuf, branch_name: String) -> Task<Message> {
     git_task!(
         Message::BranchCreated,
         (|| {
@@ -35,7 +35,7 @@ pub fn create_branch(path: PathBuf, branch_name: String) -> Task<Message> {
 }
 
 /// Delete a local branch by name.
-pub fn delete_branch(path: PathBuf, branch_name: String) -> Task<Message> {
+pub(crate) fn delete_branch(path: PathBuf, branch_name: String) -> Task<Message> {
     git_task!(
         Message::BranchDeleted,
         (|| {

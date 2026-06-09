@@ -729,4 +729,101 @@ mod tests {
         let result = get_single_file_diff(&repo, &head_oid, "nonexistent.txt");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn working_dir_file_list_returns_modified_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = init_repo_with_commit(tmp.path());
+
+        // Modify the file in the working directory
+        fs::write(tmp.path().join("hello.txt"), "Hello, modified!\n").unwrap();
+
+        let files = get_working_dir_file_list(&repo).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].new_file, "hello.txt");
+    }
+
+    #[test]
+    fn working_dir_file_list_empty_for_clean_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = init_repo_with_commit(tmp.path());
+
+        // No modifications
+        let files = get_working_dir_file_list(&repo).unwrap();
+        assert!(
+            files.is_empty(),
+            "clean repo should have no working dir changes"
+        );
+    }
+
+    #[test]
+    fn staged_file_list_returns_staged_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = init_repo_with_commit(tmp.path());
+
+        // Modify and stage the file
+        fs::write(tmp.path().join("hello.txt"), "Hello, staged!\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("hello.txt")).unwrap();
+        index.write().unwrap();
+
+        let files = get_staged_file_list(&repo).unwrap();
+        assert_eq!(files.len(), 1);
+    }
+
+    #[test]
+    fn staged_file_list_empty_when_nothing_staged() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = init_repo_with_commit(tmp.path());
+
+        // Modify the file but don't stage it
+        fs::write(tmp.path().join("hello.txt"), "Hello, unstaged!\n").unwrap();
+
+        let files = get_staged_file_list(&repo).unwrap();
+        assert!(
+            files.is_empty(),
+            "unstaged changes should not appear in staged file list"
+        );
+    }
+
+    #[test]
+    fn working_dir_single_file_diff_returns_diff_for_specific_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = init_repo_with_commit(tmp.path());
+
+        // Add a second file and commit it
+        fs::write(tmp.path().join("other.txt"), "Other content\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("other.txt")).unwrap();
+        index.write().unwrap();
+        let tree_oid = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_oid).unwrap();
+        let sig = git2::Signature::now("Test", "test@test.com").unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "add other.txt", &tree, &[&parent])
+            .unwrap();
+
+        // Modify both files in the working directory
+        fs::write(tmp.path().join("hello.txt"), "Hello, changed!\n").unwrap();
+        fs::write(tmp.path().join("other.txt"), "Other changed!\n").unwrap();
+
+        let diff = get_working_dir_single_file_diff(&repo, "hello.txt").unwrap();
+        assert_eq!(diff.new_file, "hello.txt");
+        assert!(!diff.hunks.is_empty());
+    }
+
+    #[test]
+    fn staged_single_file_diff_returns_diff_for_staged_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = init_repo_with_commit(tmp.path());
+
+        // Modify and stage the file
+        fs::write(tmp.path().join("hello.txt"), "Hello, staged diff!\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("hello.txt")).unwrap();
+        index.write().unwrap();
+
+        let diff = get_staged_single_file_diff(&repo, "hello.txt").unwrap();
+        assert!(!diff.hunks.is_empty());
+    }
 }

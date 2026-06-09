@@ -161,3 +161,75 @@ pub fn push(repo: &Repository, remote_name: &str, branch: &str) -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn setup_repo() -> (TempDir, Repository) {
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        // Create initial commit so HEAD exists
+        let sig = git2::Signature::now("Test", "test@test.com").unwrap();
+        let tree_id = repo.index().unwrap().write_tree().unwrap();
+        {
+            let tree = repo.find_tree(tree_id).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[])
+                .unwrap();
+        }
+        (dir, repo)
+    }
+
+    #[test]
+    fn list_remotes_empty_repo() {
+        let (_dir, repo) = setup_repo();
+        let remotes = list_remotes(&repo).unwrap();
+        assert!(remotes.is_empty());
+    }
+
+    #[test]
+    fn list_remotes_with_remote() {
+        let (_dir, repo) = setup_repo();
+        repo.remote("origin", "https://example.com/repo.git")
+            .unwrap();
+        let remotes = list_remotes(&repo).unwrap();
+        assert_eq!(remotes.len(), 1);
+        assert_eq!(remotes[0].name, "origin");
+        assert_eq!(
+            remotes[0].url.as_deref(),
+            Some("https://example.com/repo.git")
+        );
+        assert_eq!(
+            remotes[0].fetch_refspecs,
+            vec!["+refs/heads/*:refs/remotes/origin/*"]
+        );
+    }
+
+    #[test]
+    fn list_remotes_multiple() {
+        let (_dir, repo) = setup_repo();
+        repo.remote("origin", "https://example.com/repo.git")
+            .unwrap();
+        repo.remote("upstream", "https://example.com/upstream.git")
+            .unwrap();
+        let remotes = list_remotes(&repo).unwrap();
+        assert_eq!(remotes.len(), 2);
+        let names: Vec<&str> = remotes.iter().map(|r| r.name.as_str()).collect();
+        assert!(names.contains(&"origin"));
+        assert!(names.contains(&"upstream"));
+    }
+
+    #[test]
+    fn list_remotes_url_and_refspecs() {
+        let (_dir, repo) = setup_repo();
+        repo.remote("origin", "git@github.com:user/repo.git")
+            .unwrap();
+        let remotes = list_remotes(&repo).unwrap();
+        assert_eq!(remotes.len(), 1);
+        let r = &remotes[0];
+        assert_eq!(r.name, "origin");
+        assert_eq!(r.url.as_deref(), Some("git@github.com:user/repo.git"));
+        assert!(!r.fetch_refspecs.is_empty());
+    }
+}

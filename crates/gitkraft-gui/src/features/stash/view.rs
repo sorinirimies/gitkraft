@@ -14,7 +14,7 @@ use crate::view_utils;
 use crate::view_utils::truncate_to_fit;
 
 /// Render the stash panel (typically shown in the sidebar beneath branches).
-pub fn view(state: &GitKraft) -> Element<'_, Message> {
+pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
     let tab = state.active_tab();
     let c = state.colors();
     let sidebar_width = state.sidebar_width;

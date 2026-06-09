@@ -12,7 +12,7 @@ use crate::message::Message;
 
 /// Save the current working state as a new stash entry, then return the
 /// refreshed stash list.
-pub fn stash_save(path: PathBuf, stash_message: Option<String>) -> Task<Message> {
+pub(crate) fn stash_save(path: PathBuf, stash_message: Option<String>) -> Task<Message> {
     git_task!(
         Message::StashUpdated,
         (|| {
@@ -26,7 +26,7 @@ pub fn stash_save(path: PathBuf, stash_message: Option<String>) -> Task<Message>
 
 /// Pop (apply + drop) a stash entry by index, then return the refreshed stash
 /// list.
-pub fn stash_pop(path: PathBuf, index: usize) -> Task<Message> {
+pub(crate) fn stash_pop(path: PathBuf, index: usize) -> Task<Message> {
     git_task!(
         Message::StashUpdated,
         (|| {
@@ -39,7 +39,7 @@ pub fn stash_pop(path: PathBuf, index: usize) -> Task<Message> {
 
 /// Drop (delete without applying) a stash entry by index, then return the
 /// refreshed stash list.
-pub fn stash_drop(path: PathBuf, index: usize) -> Task<Message> {
+pub(crate) fn stash_drop(path: PathBuf, index: usize) -> Task<Message> {
     git_task!(
         Message::StashUpdated,
         (|| {
@@ -51,7 +51,7 @@ pub fn stash_drop(path: PathBuf, index: usize) -> Task<Message> {
 }
 
 /// Load the diff for a stash entry.
-pub fn load_stash_diff(path: PathBuf, index: usize) -> Task<Message> {
+pub(crate) fn load_stash_diff(path: PathBuf, index: usize) -> Task<Message> {
     git_task!(
         Message::StashDiffLoaded,
         (|| {
@@ -76,7 +76,7 @@ pub fn load_stash_diff(path: PathBuf, index: usize) -> Task<Message> {
 }
 
 /// Apply a stash entry (like pop but keeps it in the stash list).
-pub fn stash_apply(path: PathBuf, index: usize) -> Task<Message> {
+pub(crate) fn stash_apply(path: PathBuf, index: usize) -> Task<Message> {
     git_task!(
         Message::StashUpdated,
         (|| {

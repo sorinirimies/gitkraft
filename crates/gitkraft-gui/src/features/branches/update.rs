@@ -9,12 +9,12 @@ use super::commands;
 
 /// Handle all branch-related messages, returning a [`Task`] for any follow-up
 /// async work.
-pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
+pub(crate) fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
     match message {
         Message::CheckoutBranch(name) => {
-            state.active_tab_mut().context_menu = None;
             with_repo!(
                 state,
+                dismiss,
                 loading,
                 format!("Checking out '{name}'…"),
                 |repo_path| commands::checkout_branch(repo_path, name)
@@ -26,15 +26,13 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         }
 
         Message::ToggleLocalBranches => {
-            let tab = state.active_tab_mut();
-            tab.local_branches_expanded = !tab.local_branches_expanded;
-            Task::none()
+            let val = !state.active_tab().local_branches_expanded;
+            set_field!(state, local_branches_expanded, val)
         }
 
         Message::ToggleRemoteBranches => {
-            let tab = state.active_tab_mut();
-            tab.remote_branches_expanded = !tab.remote_branches_expanded;
-            Task::none()
+            let val = !state.active_tab().remote_branches_expanded;
+            set_field!(state, remote_branches_expanded, val)
         }
 
         Message::ToggleBranchCreate => {
@@ -46,10 +44,7 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        Message::NewBranchNameChanged(name) => {
-            state.active_tab_mut().new_branch_name = name;
-            Task::none()
-        }
+        Message::NewBranchNameChanged(name) => set_field!(state, new_branch_name, name),
 
         Message::CreateBranch => {
             let name = state.active_tab().new_branch_name.trim().to_string();
@@ -74,9 +69,9 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         }
 
         Message::DeleteBranch(name) => {
-            state.active_tab_mut().context_menu = None;
             with_repo!(
                 state,
+                dismiss,
                 loading,
                 format!("Deleting branch '{name}'…"),
                 |repo_path| commands::delete_branch(repo_path, name)

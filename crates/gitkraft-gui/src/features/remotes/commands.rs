@@ -14,7 +14,7 @@ use crate::message::Message;
 ///
 /// If the remote doesn't exist or authentication is required, the task resolves
 /// to an error message.
-pub fn fetch_remote(path: PathBuf, remote_name: String) -> Task<Message> {
+pub(crate) fn fetch_remote(path: PathBuf, remote_name: String) -> Task<Message> {
     git_task!(
         Message::FetchCompleted,
         (|| {

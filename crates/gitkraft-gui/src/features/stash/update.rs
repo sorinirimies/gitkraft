@@ -9,12 +9,9 @@ use super::commands;
 
 /// Handle all stash-related messages, returning a [`Task`] for any follow-up
 /// async work.
-pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
+pub(crate) fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
     match message {
-        Message::StashMessageChanged(msg) => {
-            state.active_tab_mut().stash_message = msg;
-            Task::none()
-        }
+        Message::StashMessageChanged(msg) => set_field!(state, stash_message, msg),
 
         Message::StashSave => {
             // Derive the optional stash message before the macro borrows state.
@@ -66,8 +63,7 @@ pub fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
         ),
 
         Message::ViewStashDiff(index) => {
-            state.active_tab_mut().context_menu = None;
-            with_repo!(state, "Loading stash diff…".into(), |repo_path| {
+            with_repo!(state, dismiss, "Loading stash diff…".into(), |repo_path| {
                 commands::load_stash_diff(repo_path, index)
             })
         }

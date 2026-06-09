@@ -40,7 +40,7 @@ const TIME_COLUMN_PX: f32 = 72.0;
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 /// Per-tab stable scroll id.
-pub fn commit_log_scroll_id(tab_index: usize) -> iced::widget::Id {
+pub(crate) fn commit_log_scroll_id(tab_index: usize) -> iced::widget::Id {
     iced::widget::Id::from(format!("commit_log_{tab_index}"))
 }
 
@@ -189,7 +189,7 @@ fn message_row<'a>(
 // ── main view ─────────────────────────────────────────────────────────────────
 
 /// Render the commit log panel.
-pub fn view(state: &GitKraft) -> Element<'_, Message> {
+pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
     let tab = state.active_tab();
     let c = state.colors();
 

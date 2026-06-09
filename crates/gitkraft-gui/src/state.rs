@@ -593,6 +593,11 @@ pub struct GitKraft {
     pub window_x: f32,
     /// Last known window Y position (updated on WindowMoved).
     pub window_y: f32,
+
+    /// File preview editor content — shown in the diff pane when a file preview is active.
+    pub preview_editor: Option<iced::widget::text_editor::Content>,
+    /// Path of the file being previewed (for the header display).
+    pub preview_path: Option<String>,
 }
 
 impl Default for GitKraft {
@@ -722,6 +727,9 @@ impl GitKraft {
                         })
                 })
                 .unwrap_or_else(detect_system_editor),
+
+            preview_editor: None,
+            preview_path: None,
         }
     }
 
@@ -2672,7 +2680,7 @@ mod tests {
     // ── PreviewFile / OpenFiles message tests ─────────────────────────────
 
     #[test]
-    fn preview_file_loaded_sets_selected_diff() {
+    fn preview_file_loaded_sets_preview_editor() {
         use crate::message::Message;
         let mut state = GitKraft::new();
         state.active_tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
@@ -2683,11 +2691,10 @@ mod tests {
             content,
         ))));
 
-        let diff = state.active_tab().selected_diff.as_ref().unwrap();
-        assert_eq!(diff.new_file, "test.rs");
-        assert_eq!(diff.hunks.len(), 1);
-        assert_eq!(diff.hunks[0].lines.len(), 3);
-        assert_eq!(state.active_tab().diff_scroll_offset, 0.0);
+        assert!(state.preview_editor.is_some());
+        assert_eq!(state.preview_path.as_deref(), Some("test.rs"));
+        // The diff view should be cleared so the preview takes over.
+        assert!(state.active_tab().selected_diff.is_none());
     }
 
     #[test]
@@ -2707,7 +2714,20 @@ mod tests {
             .contains("No such file"));
     }
 
-    // ── CloseRepo ─────────────────────────────────────────────────────────
+    #[test]
+    fn close_preview_clears_editor_state() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.preview_editor = Some(iced::widget::text_editor::Content::with_text("hello"));
+        state.preview_path = Some("/test/file.txt".to_string());
+
+        let _ = state.update(Message::ClosePreview);
+
+        assert!(state.preview_editor.is_none());
+        assert!(state.preview_path.is_none());
+    }
+
+    // ── CloseRepo ─────────────────────────────────────────────────────────────
 
     #[test]
     fn close_repo_single_tab_shows_welcome_screen() {
@@ -3474,5 +3494,77 @@ mod tests {
             state.active_tab().has_more_commits,
             "refresh must preserve has_more_commits"
         );
+    }
+
+    #[test]
+    fn switch_to_existing_tab_removes_empty_tab() {
+        let mut state = GitKraft::new();
+        // Tab 0: loaded repo-a
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        // Tab 1: empty tab (user clicked "+")
+        state.tabs.push(RepoTab::new_empty());
+        state.active_tab = 1;
+
+        let found = state.switch_to_existing_tab(std::path::Path::new("/home/user/repo-a"));
+
+        assert!(found, "should find existing tab");
+        assert_eq!(state.tabs.len(), 1, "empty tab should be removed");
+        assert_eq!(state.active_tab, 0);
+        assert_eq!(
+            state.active_tab().repo_path.as_deref(),
+            Some(std::path::Path::new("/home/user/repo-a")),
+        );
+    }
+
+    #[test]
+    fn switch_to_existing_tab_returns_false_when_not_found() {
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+
+        let found = state.switch_to_existing_tab(std::path::Path::new("/home/user/repo-b"));
+
+        assert!(!found, "should not find nonexistent tab");
+        assert_eq!(state.tabs.len(), 1);
+    }
+
+    #[test]
+    fn switch_to_existing_tab_keeps_loaded_current_tab() {
+        let mut state = GitKraft::new();
+        // Tab 0: repo-a
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        // Tab 1: repo-b (active)
+        state.tabs.push(RepoTab::new_empty());
+        setup_loaded_tab(&mut state.tabs[1], "/home/user/repo-b");
+        state.active_tab = 1;
+
+        let found = state.switch_to_existing_tab(std::path::Path::new("/home/user/repo-a"));
+
+        assert!(found);
+        assert_eq!(state.tabs.len(), 2, "loaded tab should not be removed");
+        assert_eq!(state.active_tab, 0);
+    }
+
+    #[test]
+    fn default_remote_returns_first_remote() {
+        let mut tab = RepoTab::new_empty();
+        tab.remotes = vec![
+            gitkraft_core::RemoteInfo {
+                name: "upstream".to_string(),
+                url: Some("https://example.com/upstream.git".to_string()),
+                fetch_refspecs: vec![],
+            },
+            gitkraft_core::RemoteInfo {
+                name: "origin".to_string(),
+                url: Some("https://example.com/origin.git".to_string()),
+                fetch_refspecs: vec![],
+            },
+        ];
+        assert_eq!(tab.default_remote(), "upstream");
+    }
+
+    #[test]
+    fn default_remote_fallback_to_origin() {
+        let tab = RepoTab::new_empty();
+        assert_eq!(tab.default_remote(), "origin");
     }
 }
