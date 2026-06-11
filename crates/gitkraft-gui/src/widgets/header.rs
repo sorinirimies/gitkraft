@@ -97,7 +97,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let loading_indicator: Element<'_, Message> = if tab.is_loading {
         row![
             text(spinner_frame)
-                .size(15)
+                .size(14)
                 .color(c.accent)
                 .font(iced::Font::MONOSPACE),
             iced::widget::Space::new().width(4),

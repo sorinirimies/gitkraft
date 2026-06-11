@@ -182,12 +182,14 @@ impl GitKraft {
             }
 
             Message::ZoomIn => {
-                self.ui_scale = (self.ui_scale + 0.1).min(2.0);
+                self.ui_scale = ((self.ui_scale + 0.1) * 10.0).round() / 10.0;
+                self.ui_scale = self.ui_scale.min(2.0);
                 crate::features::repo::commands::save_layout_async(self.current_layout())
             }
 
             Message::ZoomOut => {
-                self.ui_scale = (self.ui_scale - 0.1).max(0.5);
+                self.ui_scale = ((self.ui_scale - 0.1) * 10.0).round() / 10.0;
+                self.ui_scale = self.ui_scale.max(0.5);
                 crate::features::repo::commands::save_layout_async(self.current_layout())
             }
 
@@ -957,7 +959,8 @@ impl GitKraft {
                         self.sidebar_expanded = expanded;
                     }
                     if let Some(scale) = layout.ui_scale {
-                        self.ui_scale = scale.clamp(0.5, 2.0);
+                        self.ui_scale = (scale * 10.0).round() / 10.0;
+                        self.ui_scale = self.ui_scale.clamp(0.5, 2.0);
                     }
                 }
                 Task::none()

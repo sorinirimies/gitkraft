@@ -3,6 +3,22 @@
 //! Helpers in this module are used by multiple feature views and are kept here
 //! to avoid duplication and make them easy to test in isolation.
 
+// ── Standardised font sizes ──────────────────────────────────────────────────
+// Keeping the number of distinct sizes low reduces pressure on Iced's glyph
+// atlas and prevents text rendering artifacts on macOS HiDPI displays.
+// When adding UI text, prefer one of these constants over a bare literal.
+
+/// Extra-small — badges, hints, validation errors, column headers.
+pub const FONT_XS: f32 = 10.0;
+/// Small — secondary text, button labels, list items.
+pub const FONT_SM: f32 = 12.0;
+/// Medium — primary body text, inputs. Matches the app's `default_text_size`.
+pub const FONT_MD: f32 = 13.0;
+/// Large — section headers, panel titles.
+pub const FONT_LG: f32 = 14.0;
+/// Extra-large — toolbar titles, emphasis.
+pub const FONT_XL: f32 = 16.0;
+
 // ── Text truncation ───────────────────────────────────────────────────────────
 
 /// Truncate `s` to fit within `available_px` pixels at the given average

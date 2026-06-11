@@ -930,6 +930,11 @@ impl GitKraft {
     /// Returns [`Task::none()`] if no repository is open in the active tab.
     pub fn refresh_active_tab(&mut self) -> Task<Message> {
         let tab = self.active_tab();
+        // Don't spawn a duplicate refresh when one is already in flight
+        // (is_loading is also set by the manual RefreshRepo handler).
+        if tab.is_loading {
+            return Task::none();
+        }
         match tab.repo_path.clone() {
             Some(path) => {
                 let depth = tab.commits.len();
@@ -2077,6 +2082,22 @@ mod tests {
             state.active_tab().error_message.is_none(),
             "FileSystemChanged must not set an error message"
         );
+    }
+
+    #[test]
+    fn refresh_active_tab_skips_when_already_loading() {
+        // When is_loading is true (e.g. a manual Ctrl+R refresh is in flight),
+        // refresh_active_tab must return Task::none() to avoid spawning a
+        // duplicate concurrent refresh.
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path =
+            Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
+        state.active_tab_mut().is_loading = true;
+
+        // With is_loading set, refresh_active_tab should be a no-op.
+        let _task = state.refresh_active_tab();
+        // The tab must still be loading (unchanged).
+        assert!(state.active_tab().is_loading);
     }
 
     // ── Tab duplication prevention tests ───────────────────────────────────
@@ -3413,6 +3434,43 @@ mod tests {
             "refresh with same count must replace commits"
         );
         assert_ne!(state.active_tab().commits[0].oid, original_oid);
+    }
+
+    #[test]
+    fn refresh_rebuilds_commit_display_when_content_changes_at_same_count() {
+        // When a refresh replaces commits with different content at the same
+        // count (e.g. after amend/rebase), commit_display must be rebuilt.
+        // Previously only a count change triggered the rebuild, leaving stale
+        // author names and timestamps in the display.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        setup_loaded_tab(state.active_tab_mut(), "/home/user/repo-a");
+        let mut initial_commits = make_test_commits(5);
+        initial_commits[0].author_name = "Alice".to_string();
+        state.active_tab_mut().commits = initial_commits;
+        // Simulate a prior load that built commit_display.
+        state.active_tab_mut().commit_display = state
+            .active_tab()
+            .commits
+            .iter()
+            .map(|c| ("1 day ago".to_string(), c.author_name.clone()))
+            .collect();
+        assert_eq!(state.active_tab().commit_display[0].1, "Alice");
+
+        // Refresh with same count but different author on the first commit
+        let mut payload = fake_payload("/home/user/repo-a");
+        let mut new_commits = make_test_commits(5);
+        new_commits[0].author_name = "Bob".to_string();
+        payload.commits = new_commits;
+        payload.graph_rows = gitkraft_core::features::graph::build_graph(&payload.commits);
+        let _ = state.update(Message::RepoRefreshed(Ok(payload)));
+
+        // commit_display must reflect the new author, not the stale one.
+        assert_eq!(
+            state.active_tab().commit_display[0].1,
+            "Bob",
+            "commit_display must be rebuilt when content changes at same count"
+        );
     }
 
     #[test]

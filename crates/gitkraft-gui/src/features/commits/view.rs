@@ -64,7 +64,7 @@ fn ref_badges<'a>(refs: &'a [gitkraft_core::RefLabel], c: &ThemeColors) -> Eleme
         let fg = ref_fg(&rf.kind, c);
         let bg = c.surface;
         let name = gitkraft_core::truncate_str(&rf.name, 14);
-        let badge = container(text(name).size(9).color(fg).font(iced::Font::MONOSPACE))
+        let badge = container(text(name).size(10).color(fg).font(iced::Font::MONOSPACE))
             .padding([1, 4])
             .style(move |_: &Theme| iced::widget::container::Style {
                 background: Some(iced::Background::Color(bg)),

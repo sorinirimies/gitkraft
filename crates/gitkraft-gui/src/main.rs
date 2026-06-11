@@ -92,6 +92,7 @@ fn main() -> iced::Result {
         .scale_factor(|state: &GitKraft| state.ui_scale)
         .settings(Settings {
             fonts: vec![iced_fonts::BOOTSTRAP_FONT_BYTES.into()],
+            default_text_size: iced::Pixels(13.0),
             ..Default::default()
         })
         .window(iced::window::Settings {
@@ -139,8 +140,8 @@ fn boot() -> (GitKraft, iced::Task<gitkraft_gui::Message>) {
 /// Spawns a background OS thread that uses `notify` to watch the repo's `.git`
 /// directory for any file change.  Changes are debounced (300 ms) so that a
 /// single git operation (which writes several files) triggers only one refresh.
-/// A 5-second fallback poll is included so the UI stays current on network
-/// file systems or environments where inotify events are not delivered.
+/// A 60-second fallback poll is included so the UI stays current on network
+/// file systems or environments where inotify/FSEvents are not delivered.
 ///
 /// Returns `Subscription::none()` when no repository is open.
 fn git_watch_subscription(

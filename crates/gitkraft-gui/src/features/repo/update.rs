@@ -200,15 +200,16 @@ fn handle_repo_loaded(state: &mut GitKraft, result: Result<RepoPayload, String>)
             // Detect whether this is a refresh (tab already had a repo) or a
             // brand-new open so we can decide whether to reset the scroll.
             let is_new_open = tab.repo_info.is_none();
-            let prev_commit_count = tab.commits.len();
             tab.is_loading = false;
             tab.apply_payload(payload, path.clone());
-            // Only rebuild commit_display when the commit list actually changed.
-            // apply_payload skips replacing commits when a refresh would shrink
-            // the list (pagination race), so this avoids redundant work.
-            if tab.commits.len() != prev_commit_count || is_new_open {
-                tab.commit_display = compute_commit_display(&tab.commits);
-            }
+            // Always rebuild commit_display after apply_payload.
+            // The previous "only rebuild when count changes" optimisation
+            // skipped the rebuild after amend/rebase/force-push where the
+            // commit count stays the same but the content changes, leaving
+            // stale author names and timestamps in the display.
+            // compute_commit_display is O(n) string formatting — fast enough
+            // to run unconditionally even for large histories.
+            tab.commit_display = compute_commit_display(&tab.commits);
 
             // Record the repo open AND persist the full session in one atomic
             // write, on a background thread so settings file I/O never blocks the UI.
