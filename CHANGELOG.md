@@ -79,6 +79,7 @@ All notable changes to this project will be documented in this file.
 - chore: bump version to 1.0.7
 - chore: bump version to 1.0.9
 - chore: bump version to 1.1.0
+- chore: bump version to 1.1.1
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.8.2...v1.1.1
 ## 0.8.2 - 2026-04-27
 ### ♻️ Refactor
