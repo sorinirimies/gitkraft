@@ -2,250 +2,132 @@
 
 All notable changes to this project will be documented in this file.
 
-## 1.1.0 - 2026-06-09
-### ➕ Added
-- Add pannable canvas commit graph and all-ref revwalk
-- Add tests and GUI helpers for preview and popups
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.9...v1.1.0
-## 1.0.9 - 2026-05-21
-### ♻️ Refactor
-- Refactor staging file lists to use DiffFileEntry type
-### 📦 Other Changes
-- Remove unnecessary reference to menu_item in context_menu_panel
-### 🔧 Chores
-- chore: bump version to 1.0.9
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.7...v1.0.9
-## 1.0.7 - 2026-05-20
-### 📦 Other Changes
-- Rename gitea_starscream remote to gitea-starscream
-- Canonicalize repo paths and fix tab deduplication logic
-### 🔄 Updated
-- Update dependencies in Cargo.lock
-### 🔧 Chores
-- chore(deps): nightly dependency upgrade 2026-05-14
-- chore(deps): nightly dependency upgrade 2026-05-16
-- chore: bump version to 1.0.7
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.6...v1.0.7
-## 1.0.6 - 2026-05-13
-### ➕ Added
-- Add stash apply, force-push, and branch rename features stash apply
-### 🐛 Bug Fixes
-- Fix workspace section header in Cargo.toml
-- Fix CI concurrency to properly cancel stale runs
-### 🔧 Chores
-- chore: bump version to 1.0.6
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.5...v1.0.6
-## 1.0.5 - 2026-05-13
-### ➕ Added
-- Add commit message and ref name validation with inline hints
-### 📦 Other Changes
-- Show branch ahead/behind status in GUI and TUI
-### 🔧 Chores
-- chore(deps): nightly dependency upgrade 2026-05-12
-- chore: bump version to 1.0.5
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.4...v1.0.5
-## 1.0.4 - 2026-05-11
-### 📦 Other Changes
-- Remove unused functions and exports from core crate
-### 🔧 Chores
-- chore: bump version to 1.0.4
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.3...v1.0.4
-## 1.0.3 - 2026-05-10
-### ➕ Added
-- Add utility functions for path, selection, and list navigation
-### 🔧 Chores
-- chore: bump version to 1.0.3
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.2...v1.0.3
-## 1.0.2 - 2026-05-09
-### 🐛 Bug Fixes
-- Fix indentation of refs field in test data
-### 📦 Other Changes
-- Show branch/tag/HEAD labels in commit log UI
-### 🔧 Chores
-- chore: bump version to 1.0.2
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.1...v1.0.2
-## 1.0.1 - 2026-05-07
-### ➕ Added
-- Add tests for tab and repo closing and switching scenarios
-### 🐛 Bug Fixes
-- Fix tab closing behavior and add tests for CloseRepo and CloseTab
-### 🔧 Chores
-- chore: bump version to 1.0.1
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.0.0...v1.0.1
-## 1.0.0 - 2026-05-06
+## 1.1.1 - 2026-06-11
 ### ♻️ Refactor
 - Refactor staging selection logic and context menu handling
+- Refactor staging file lists to use DiffFileEntry type
 ### ➕ Added
-- Add draggable dividers for staging and sidebar panels
-- Add multi-file open and preview actions to context menus
-### 🔧 Chores
-- chore: bump version to 1.0.0
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.9.5...v1.0.0
-## 0.9.5 - 2026-05-04
-### ➕ Added
-- Add 15 new themes and update theme picker to 43 total
-### 🔧 Chores
-- chore: bump version to 0.9.5
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.9.4...v0.9.5
-## 0.9.4 - 2026-05-04
-### 🔧 Chores
-- chore: bump version to 0.9.4
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.9.3...v0.9.4
-## 0.9.3 - 2026-05-03
-### 🔧 Chores
-- chore: bump version to 0.9.3
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.9.2...v0.9.3
-## 0.9.2 - 2026-05-03
-### 📦 Other Changes
-- Defer clearing multi-file diff state until diff load completes
-- Preserve file selection and diffs across refresh if commit survives
-### 🔧 Chores
-- chore: bump version to 0.9.2
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.9.1...v0.9.2
-## 0.9.1 - 2026-05-02
-### 📦 Other Changes
-- Preserve multi-selection across commit list refreshes
-### 🔄 Updated
-- Update badges and theme count in README
-- Update download badges in README with clearer labels
-- Update VHS demo GIFs and theme tape for new theme
-### 🔧 Chores
-- chore: bump version to 0.9.1
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.9.0...v0.9.1
-## 0.9.0 - 2026-05-02
-### 🐛 Bug Fixes
-- fix: broken rustdoc link to private render_main function
-### 🔄 Updated
-- Update dependencies in Cargo.lock
-- Update dependencies in Cargo.lock
-### 🔧 Chores
-- chore(deps): nightly dependency upgrade 2026-05-01
-- chore(deps): nightly dependency upgrade 2026-05-02
-- chore: bump version to 0.9.0
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.8.8...v0.9.0
-## 0.8.8 - 2026-04-30
-### ➕ Added
+- Add reactive git-state watcher using notify crate
+- Add animated loading spinner to GUI and TUI using tui-spinner
 - Add skeleton loading screen using tui-skeleton
 - Add theme background to all panes and update theme switching
 - Add Cyberpunk theme and update theme count references
+- Add 15 new themes and update theme picker to 43 total
+- Add draggable dividers for staging and sidebar panels
+- Add multi-file open and preview actions to context menus
+- Add tests for tab and repo closing and switching scenarios
+- Add utility functions for path, selection, and list navigation
+- Add commit message and ref name validation with inline hints
+- Add stash apply, force-push, and branch rename features stash apply
+- Add pannable canvas commit graph and all-ref revwalk
+- Add tests and GUI helpers for preview and popups
 ### 🐛 Bug Fixes
+- Fix branch button highlight and hide delete for current branch
 - Fix tab targeting for repo refresh and deduplication
-### 🔧 Chores
-- chore(deps): nightly dependency upgrade 2026-04-30
-- chore: bump version to 0.8.7
-- chore: bump version to 0.8.8
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.8.6...v0.8.8
-## 0.8.6 - 2026-04-29
-### ➕ Added
-- Add animated loading spinner to GUI and TUI using tui-spinner
+- fix: broken rustdoc link to private render_main function
+- Fix tab closing behavior and add tests for CloseRepo and CloseTab
+- Fix indentation of refs field in test data
+- Fix workspace section header in Cargo.toml
+- Fix CI concurrency to properly cancel stale runs
+- Fix stale commit display and refresh race
 ### 📈 Improvements
 - Improve git watcher efficiency and add stash list tests
 ### 📦 Other Changes
 - Release 0.8.5 with improved git watcher and UI features
-### 🔧 Chores
-- chore: bump version to 0.8.6
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.8.4...v0.8.6
-## 0.8.4 - 2026-04-28
-### ➕ Added
-- Add tests for cherry-pick and commit event handling
-- Add reactive git-state watcher using notify crate
-### 🐛 Bug Fixes
-- Fix branch button highlight and hide delete for current branch
-### 📦 Other Changes
-- Release v0.8.1
+- Preserve multi-selection across commit list refreshes
+- Defer clearing multi-file diff state until diff load completes
+- Preserve file selection and diffs across refresh if commit survives
+- Show branch/tag/HEAD labels in commit log UI
+- Remove unused functions and exports from core crate
+- Show branch ahead/behind status in GUI and TUI
+- Rename gitea_starscream remote to gitea-starscream
+- Canonicalize repo paths and fix tab deduplication logic
+- Remove unnecessary reference to menu_item in context_menu_panel
 ### 🔄 Updated
-- Update tui-themes.gif
+- Update dependencies in Cargo.lock
+- Update dependencies in Cargo.lock
+- Update badges and theme count in README
+- Update download badges in README with clearer labels
+- Update VHS demo GIFs and theme tape for new theme
+- Update dependencies in Cargo.lock
 ### 🔧 Chores
-- chore: bump version to 0.8.2
 - chore(deps): nightly dependency upgrade 2026-04-28
 - chore: bump version to 0.8.3
 - chore: bump version to 0.8.4
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.7.7...v0.8.4
-## 0.7.7 - 2026-04-24
-### ➕ Added
-- Add split diff sub-pane navigation and multi-file select
-- Add multi-file diff selection and viewing to GUI
-- Add multi-commit selection and range diff support
-### 🔧 Chores
-- chore(deps): nightly dependency upgrade 2026-04-24
-- chore: bump version to 0.7.7
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.7.4...v0.7.7
-## 0.7.4 - 2026-04-23
+- chore: bump version to 0.8.6
+- chore(deps): nightly dependency upgrade 2026-04-30
+- chore: bump version to 0.8.7
+- chore: bump version to 0.8.8
+- chore(deps): nightly dependency upgrade 2026-05-01
+- chore(deps): nightly dependency upgrade 2026-05-02
+- chore: bump version to 0.9.0
+- chore: bump version to 0.9.1
+- chore: bump version to 0.9.2
+- chore: bump version to 0.9.3
+- chore: bump version to 0.9.4
+- chore: bump version to 0.9.5
+- chore: bump version to 1.0.0
+- chore: bump version to 1.0.1
+- chore: bump version to 1.0.2
+- chore: bump version to 1.0.3
+- chore: bump version to 1.0.4
+- chore(deps): nightly dependency upgrade 2026-05-12
+- chore: bump version to 1.0.5
+- chore: bump version to 1.0.6
+- chore(deps): nightly dependency upgrade 2026-05-14
+- chore(deps): nightly dependency upgrade 2026-05-16
+- chore: bump version to 1.0.7
+- chore: bump version to 1.0.9
+- chore: bump version to 1.1.0
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.8.2...v1.1.1
+## 0.8.2 - 2026-04-27
+### ♻️ Refactor
+- Refactor key event handlers to reduce nesting and improve clarity
+- Refactor GUI view helpers and TUI commit diff loading
+- Refactor row! macro usage for consistency and readability
+- Refactor header toolbar into left and right item rows
 ### ✨ Features
 - feat(gui): diff search results against working tree
 - feat(gui): 'Diff Selected' button for multi-file diff in search
 - feat: auto-focus search input, add tests for new features
-### 🐛 Bug Fixes
-- fix(tui): open repo in new tab when current tab already has one
-- fix(gui): prevent search dialog from dismissing when clicking diff content
-### 📚 Documentation
-- docs: regenerate all TUI VHS GIFs with updated layout
-### 📦 Other Changes
-- ui(tui): full-height overlay panels and expanded staging Actions
-- ui(gui): add close button to right panel headers in search overlay
-### 🔧 Chores
-- chore: bump version to 0.7.4
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.7.3...v0.7.4
-## 0.7.3 - 2026-04-23
+### ➕ Added
+- Add collapsible branch sections and overlay scrollbars to GUI
+- Add loading spinner to login button
+- Add tag creation actions and truncate-to-fit utility
+- Add remote branch delete/checkout, icons module, and file list diff
+- Add UI zoom support with keyboard shortcuts and status bar indicator
+- Add tests for core types and refactor repo open logic
+- Add VHS demo GIF tasks to justfile and improve musl build
+- Add step to install Rust stable in release workflow
+- Add support for Gitea Starscream remote in justfile
+- Add loading spinner to login button
+- Add push-all-force recipe to force-push main to all remotes
+- Add commit search feature to GUI and TUI
+- Add editor selection support to GUI and TUI
+- Add split diff sub-pane navigation and multi-file select
+- Add multi-file diff selection and viewing to GUI
+- Add multi-commit selection and range diff support
+- Add tests for cherry-pick and commit event handling
 ### 🐛 Bug Fixes
 - fix doc comments
-### 🔧 Chores
-- chore: bump version to 0.7.3
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.7.2...v0.7.3
-## 0.7.2 - 2026-04-23
-### ➕ Added
-- Add editor selection support to GUI and TUI
-### 🔧 Chores
-- chore: bump version to 0.7.2
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.7.1...v0.7.2
-## 0.7.1 - 2026-04-23
-### ➕ Added
-- Add commit search feature to GUI and TUI
+- fix(tui): open repo in new tab when current tab already has one
+- fix(gui): prevent search dialog from dismissing when clicking diff content
 ### 📚 Documentation
 - docs: add VHS-generated preview GIFs tracked with Git LFS
 - docs: remove non-UI GIFs from Preview section
 - docs: hide cargo run from TUI tapes and remove tui-build GIF
 - docs: add TUI theme selector and multi-repo tabs VHS tapes
 - docs: rewrite tui-tabs tape to open a real second repo
+- docs: regenerate all TUI VHS GIFs with updated layout
 ### 📦 Other Changes
-- Remove tui-build.tape example from vhs directory
-### 🔄 Updated
-- Update dependencies in Cargo.lock for rfd and iced_fonts
-### 🔧 Chores
-- chore(deps): nightly dependency upgrade 2026-04-22
-- chore: add .zed/rules.md with project conventions for agents
-- chore(deps): nightly dependency upgrade 2026-04-23
-- chore: bump version to 0.7.0
-- chore: bump version to 0.7.1
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.6...v0.7.1
-## 0.6.6 - 2026-04-21
-### 🔧 Chores
-- chore: bump version to 0.6.6
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.5...v0.6.6
-## 0.6.5 - 2026-04-21
-### ♻️ Refactor
-- Refactor header toolbar into left and right item rows
-### 🔧 Chores
-- chore: bump version to 0.6.5
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.4...v0.6.5
-## 0.6.4 - 2026-04-21
-### 📦 Other Changes
-- Simplify and update README features and layout sections
-- Close context menu when checking out or deleting branch
-### 🔄 Updated
-- Update Iced to 0.14 and refactor for new widget APIs
-### 🔧 Chores
-- chore: bump version to 0.6.4
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.3...v0.6.4
-## 0.6.3 - 2026-04-20
-### 🔧 Chores
-- chore: bump version to 0.6.3
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.2...v0.6.3
-## 0.6.2 - 2026-04-20
-### ➕ Added
-- Add loading spinner to login button
-- Add push-all-force recipe to force-push main to all remotes
-### 📦 Other Changes
+- Reformat codebase with rustfmt and improve formatting checks
+- Sort recent repos using sort_by_key with Reverse
+- Remove Tokio and futures dependencies from TUI and switch to std::mpsc
+- Simplify README to remove toolkit mentions and dependency tables
+- Remove musl and aarch64 targets from release workflow
+- Fail bump if version is unchanged
+- Move release notes generation to scripts/ci and update workflow
+- Replace Space::with_width/with_height with Space::new throughout GUI
 - Replace dtolnay/rust-toolchain with manual rustup install in CI
 - Make all multi-remote tasks continue on failure
 - Bump version to 0.6.0 and update changelog
@@ -255,95 +137,48 @@ All notable changes to this project will be documented in this file.
 - Move repo state to per-tab struct and update all usages
 - Hide context menu when copying text
 - Replace GitHub release action with Gitea API script
-### 🔧 Chores
-- chore: bump version to 0.6.2
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.7...v0.6.2
-## 0.5.7 - 2026-04-19
-### 🔧 Chores
-- chore: bump version to 0.5.7
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.6...v0.5.7
-## 0.5.6 - 2026-04-19
-### 🔧 Chores
-- chore: bump version to 0.5.6
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.5...v0.5.6
-## 0.5.5 - 2026-04-19
-### ♻️ Refactor
-- Refactor row! macro usage for consistency and readability
-### ➕ Added
-- Add support for Gitea Starscream remote in justfile
-### 📦 Other Changes
-- Move release notes generation to scripts/ci and update workflow
-- Replace Space::with_width/with_height with Space::new throughout GUI
-### 🔧 Chores
-- chore: bump version to 0.5.5
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.4...v0.5.5
-## 0.5.4 - 2026-04-17
-### ♻️ Refactor
-- Refactor GUI view helpers and TUI commit diff loading
-### 📦 Other Changes
-- Fail bump if version is unchanged
-### 🔧 Chores
-- chore: bump version to 0.5.4
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.3...v0.5.4
-## 0.5.3 - 2026-04-17
-### ➕ Added
-- Add step to install Rust stable in release workflow
-### 🔧 Chores
-- chore: bump version to 0.5.3
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.2...v0.5.3
-## 0.5.2 - 2026-04-17
-### 📦 Other Changes
-- Simplify README to remove toolkit mentions and dependency tables
-- Remove musl and aarch64 targets from release workflow
-### 🔧 Chores
-- chore: bump version to 0.5.2
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.1...v0.5.2
-## 0.5.1 - 2026-04-17
-### ➕ Added
-- Add VHS demo GIF tasks to justfile and improve musl build
-### 🔧 Chores
-- chore: bump version to 0.5.1
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.5.0...v0.5.1
-## 0.5.0 - 2026-04-17
-### 📦 Other Changes
-- Remove Tokio and futures dependencies from TUI and switch to std::mpsc
-### 🔄 Updated
-- Update release workflow to fix artifact handling and tool installs
-### 🔧 Chores
-- chore: bump version to 0.5.0
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.4.3...v0.5.0
-## 0.4.3 - 2026-04-17
-### ♻️ Refactor
-- Refactor key event handlers to reduce nesting and improve clarity
-### 🔧 Chores
-- chore: bump version to 0.4.3
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.4.2...v0.4.3
-## 0.4.2 - 2026-04-17
-### 📦 Other Changes
-- Sort recent repos using sort_by_key with Reverse
+- Simplify and update README features and layout sections
+- Close context menu when checking out or deleting branch
+- Remove tui-build.tape example from vhs directory
+- ui(tui): full-height overlay panels and expanded staging Actions
+- ui(gui): add close button to right panel headers in search overlay
+- Release v0.8.1
 ### 🔄 Updated
 - Update install-tools to install nu if missing
-### 🔧 Chores
-- chore: bump version to 0.4.2
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.4.1...v0.4.2
-## 0.4.1 - 2026-04-17
-### ➕ Added
-- Add remote branch delete/checkout, icons module, and file list diff
-- Add UI zoom support with keyboard shortcuts and status bar indicator
-- Add tests for core types and refactor repo open logic
-### 📦 Other Changes
-- Reformat codebase with rustfmt and improve formatting checks
-### 🔧 Chores
-- chore: bump version to 0.4.1
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.4.0...v0.4.1
-## 0.4.0 - 2026-04-16
-### ➕ Added
-- Add collapsible branch sections and overlay scrollbars to GUI
-- Add loading spinner to login button
-- Add tag creation actions and truncate-to-fit utility
+- Update release workflow to fix artifact handling and tool installs
+- Update Iced to 0.14 and refactor for new widget APIs
+- Update dependencies in Cargo.lock for rfd and iced_fonts
+- Update tui-themes.gif
 ### 🔧 Chores
 - chore: bump version to 0.4.0
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.9...v0.4.0
+- chore: bump version to 0.4.1
+- chore: bump version to 0.4.2
+- chore: bump version to 0.4.3
+- chore: bump version to 0.5.0
+- chore: bump version to 0.5.1
+- chore: bump version to 0.5.2
+- chore: bump version to 0.5.3
+- chore: bump version to 0.5.4
+- chore: bump version to 0.5.5
+- chore: bump version to 0.5.6
+- chore: bump version to 0.5.7
+- chore: bump version to 0.6.2
+- chore: bump version to 0.6.3
+- chore: bump version to 0.6.4
+- chore: bump version to 0.6.5
+- chore: bump version to 0.6.6
+- chore(deps): nightly dependency upgrade 2026-04-22
+- chore: add .zed/rules.md with project conventions for agents
+- chore(deps): nightly dependency upgrade 2026-04-23
+- chore: bump version to 0.7.0
+- chore: bump version to 0.7.1
+- chore: bump version to 0.7.2
+- chore: bump version to 0.7.3
+- chore: bump version to 0.7.4
+- chore(deps): nightly dependency upgrade 2026-04-24
+- chore: bump version to 0.7.7
+- chore: bump version to 0.8.2
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.9...v0.8.2
 ## 0.3.9 - 2026-04-14
 ### 📦 Other Changes
 - Make branches sidebar width responsive
