@@ -4,12 +4,10 @@ on:
   push:
     tags:
       - "v*"
-  # Manual fallback — trigger from the Gitea Actions UI if the tag push
-  # ever silently skips or a re-run is needed without re-pushing the tag.
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v0.5.0) — must already exist on the repo"
+        description: "Tag to release (e.g. v0.7.7)"
         required: true
         default: ""
 
@@ -17,8 +15,6 @@ permissions:
   contents: write
   packages: write
 
-# Only one release at a time.  Pushing a new tag cancels any in-flight
-# release — regardless of which tag started it.
 concurrency:
   group: release
   cancel-in-progress: true
@@ -28,8 +24,6 @@ env:
 
 jobs:
   # ── 0. Validate tag ──────────────────────────────────────────────────────────
-  # Resolve the effective tag from either a tag push or a manual dispatch, then
-  # validate it matches vX.Y.Z before spending time on any build work.
   validate:
     name: Validate tag
     runs-on: ubuntu-latest
@@ -45,20 +39,15 @@ jobs:
           else
             TAG="${{ github.ref_name }}"
           fi
-
-          echo "Resolved tag: ${TAG}"
-
           if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "❌ Tag '${TAG}' does not match vX.Y.Z — aborting."
             exit 1
           fi
-
           VERSION="${TAG#v}"
           echo "tag=${TAG}"         >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "✅ Tag ${TAG} (version ${VERSION}) is valid."
 
-  # ── 1. Quality gate ──────────────────────────────────────────────────────────
+  # ── 1. Quality gate ───────────────────────────────────────────────────────────
   test:
     name: Test & lint
     needs: validate
@@ -67,78 +56,50 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.validate.outputs.tag }}
-
-      - name: Install Linux GUI system libraries
+      - name: Install Linux GUI libraries
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            pkg-config \
-            libxkbcommon-dev \
-            libx11-dev \
-            libxrandr-dev \
-            libxinerama-dev \
-            libxcursor-dev \
-            libxi-dev \
-            libwayland-dev \
-            libgl1-mesa-dev \
-            libfontconfig1-dev \
-            libssl-dev
-
-      - name: Install Rust stable (rustfmt + clippy)
+            pkg-config libxkbcommon-dev libx11-dev libxrandr-dev \
+            libxinerama-dev libxcursor-dev libxi-dev libwayland-dev \
+            libgl1-mesa-dev libfontconfig1-dev libssl-dev
+      - name: Install Rust stable
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-          . "$HOME/.cargo/env"
-          rustup component add rustfmt
-          rustup component add clippy
-
-      - name: Cache Cargo dependencies
+      - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
-
       - name: Install Nushell
         run: cargo install nu --locked
-
-      - name: Run quality gate (fmt + clippy + test)
+      - name: Quality gate
         run: nu scripts/ci/quality_gate.nu
 
-  # ── 2. Binary builds ─────────────────────────────────────────────────────────
-  build:
-    name: Build — ${{ matrix.target }}
+  # ── 2. Linux builds (native + aarch64 cross) ──────────────────────────────────
+  build-linux:
+    name: Build Linux — ${{ matrix.target }}
     needs: [validate, test]
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          # ── Linux x86_64 (dynamic) ───────────────────────────────────────────
           - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-latest
-            gui_binary: gitkraft
-            tui_binary: gitkraft-tui
-            suffix: ""
-            install_gui_libs: true
-
+            cross: false
+          - target: aarch64-unknown-linux-gnu
+            cross: true
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.validate.outputs.tag }}
 
-      - name: Install Linux GUI system libraries
-        if: matrix.install_gui_libs
+      - name: Install Linux GUI libraries + packaging tools
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            pkg-config \
-            libxkbcommon-dev \
-            libx11-dev \
-            libxrandr-dev \
-            libxinerama-dev \
-            libxcursor-dev \
-            libxi-dev \
-            libwayland-dev \
-            libgl1-mesa-dev \
-            libfontconfig1-dev \
-            libssl-dev
+            pkg-config libxkbcommon-dev libx11-dev libxrandr-dev \
+            libxinerama-dev libxcursor-dev libxi-dev libwayland-dev \
+            libgl1-mesa-dev libfontconfig1-dev libssl-dev \
+            gcc-aarch64-linux-gnu dpkg-dev rpm
 
       - name: Install Rust stable + target
         run: |
@@ -147,52 +108,118 @@ jobs:
           . "$HOME/.cargo/env"
           rustup target add ${{ matrix.target }}
 
-      - name: Cache Cargo dependencies
+      - name: Configure aarch64 cross-linker
+        if: matrix.cross == true
+        run: |
+          mkdir -p ~/.cargo
+          echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
+          echo 'linker = "aarch64-linux-gnu-gcc"'   >> ~/.cargo/config.toml
+
+      - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
 
-      - name: Build TUI release binary
+      - name: Build TUI
         run: cargo build --release -p gitkraft-tui --target ${{ matrix.target }}
 
-      - name: Build GUI release binary
-        if: matrix.gui_binary != ''
+      - name: Build GUI
         run: cargo build --release -p gitkraft --target ${{ matrix.target }}
 
       - name: Install Nushell
         run: cargo install nu --locked
 
-      # The empty-string matrix values ("") vanish after shell expansion,
-      # turning `--suffix  --gui-binary gitkraft` into a mis-parse.
-      # Nushell sees --gui-binary as the value of --suffix and "gitkraft"
-      # as an extra positional.  Pass the values via env vars so they are
-      # never subject to word-splitting or empty-string removal.
-      - name: Stage release artifacts
+      - name: Build .deb and .rpm
+        run: nu scripts/ci/package_linux.nu ${{ needs.validate.outputs.version }} ${{ matrix.target }}
+
+      - name: Install appimagetool
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
         run: |
-          ARGS="$STAGE_TARGET"
-          if [ -n "$STAGE_SUFFIX" ]; then
-            ARGS="$ARGS --suffix $STAGE_SUFFIX"
-          fi
-          if [ -n "$STAGE_GUI" ]; then
-            ARGS="$ARGS --gui-binary $STAGE_GUI"
-          fi
-          nu scripts/ci/stage_artifacts.nu $ARGS
-        env:
-          STAGE_TARGET: ${{ matrix.target }}
-          STAGE_SUFFIX: ${{ matrix.suffix }}
-          STAGE_GUI: ${{ matrix.gui_binary }}
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage \
+            -O /tmp/appimagetool
+          chmod +x /tmp/appimagetool
+          sudo cp /tmp/appimagetool /usr/local/bin/appimagetool
+
+      - name: Build AppImage
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: bash scripts/ci/package_appimage.sh ${{ needs.validate.outputs.version }} ${{ matrix.target }}
+
+      - name: Stage raw binaries
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/gitkraft      dist/gitkraft-gui-${{ matrix.target }} || true
+          cp target/${{ matrix.target }}/release/gitkraft-tui  dist/gitkraft-tui-${{ matrix.target }} || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: binaries-${{ matrix.target }}
+          name: linux-${{ matrix.target }}
           path: dist/
           retention-days: 1
 
-  # ── 3. Release ───────────────────────────────────────────────────────────────
+  # ── 3. Windows cross-compile from Linux (mingw-w64) ───────────────────────────
+  # No Windows machine needed — mingw-w64 cross-compiles .exe on Linux.
+  build-windows:
+    name: Build Windows x86_64 (cross from Linux)
+    needs: [validate, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - name: Install mingw-w64 cross-compiler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gcc-mingw-w64-x86-64 mingw-w64 nsis
+
+      - name: Install Rust stable + Windows target
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          . "$HOME/.cargo/env"
+          rustup target add x86_64-pc-windows-gnu
+
+      - name: Configure Windows cross-linker
+        run: |
+          mkdir -p ~/.cargo
+          echo '[target.x86_64-pc-windows-gnu]'           >> ~/.cargo/config.toml
+          echo 'linker = "x86_64-w64-mingw32-gcc"'        >> ~/.cargo/config.toml
+          echo 'ar = "x86_64-w64-mingw32-ar"'             >> ~/.cargo/config.toml
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: x86_64-pc-windows-gnu
+
+      - name: Build TUI for Windows
+        run: cargo build --release -p gitkraft-tui --target x86_64-pc-windows-gnu
+
+      - name: Build GUI for Windows
+        run: cargo build --release -p gitkraft --target x86_64-pc-windows-gnu
+
+      - name: Stage Windows binaries and build zip
+        run: |
+          mkdir -p dist
+          cp target/x86_64-pc-windows-gnu/release/gitkraft.exe     dist/gitkraft-gui-x86_64-windows.exe
+          cp target/x86_64-pc-windows-gnu/release/gitkraft-tui.exe dist/gitkraft-tui-x86_64-windows.exe
+          cd dist
+          zip gitkraft-${{ needs.validate.outputs.version }}-x86_64-windows.zip \
+            gitkraft-gui-x86_64-windows.exe \
+            gitkraft-tui-x86_64-windows.exe
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: windows-x86_64
+          path: dist/
+          retention-days: 1
+
+  # ── 4. Create Gitea Release ───────────────────────────────────────────────────
   release:
     name: Create Release
-    needs: [validate, build]
+    needs: [validate, build-linux, build-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -204,14 +231,11 @@ jobs:
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
       - name: Install git-cliff
         run: cargo install git-cliff --locked
-
       - name: Install Nushell
         run: cargo install nu --locked
-
-      - name: Generate release notes (RELEASE_NOTES.md + CHANGELOG.md)
+      - name: Generate release notes
         run: nu scripts/ci/release_notes.nu ${{ needs.validate.outputs.tag }}
 
       - name: Download all artifacts
@@ -222,46 +246,31 @@ jobs:
       - name: Flatten artifact directories
         run: |
           cd artifacts
-          for dir in */; do
-            cp -r "$dir"* . 2>/dev/null || true
-            rm -rf "$dir"
-          done
+          find . -mindepth 2 -type f -exec mv {} . \; 2>/dev/null || true
+          find . -empty -type d -delete 2>/dev/null || true
 
       - name: List artifacts
         run: ls -lh artifacts/
 
-      - name: Create Release
+      - name: Create Gitea Release
         run: |
           TAG="${{ needs.validate.outputs.tag }}"
           GITEA_URL="${{ github.server_url }}"
           REPO="${{ github.repository }}"
           TOKEN="${{ secrets.GITHUB_TOKEN }}"
 
-          echo "🎉 Creating new Gitea release for tag ${TAG}..."
-
-          # Create the release via Gitea API
-          RELEASE_BODY=$(cat RELEASE_NOTES.md | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')
+          RELEASE_BODY=$(python3 -c 'import sys,json; print(json.dumps(open("RELEASE_NOTES.md").read()))')
           RESPONSE=$(curl -s -X POST \
             "${GITEA_URL}/api/v1/repos/${REPO}/releases" \
             -H "Authorization: token ${TOKEN}" \
             -H "Content-Type: application/json" \
-            -d "{
-              \"tag_name\": \"${TAG}\",
-              \"name\": \"${TAG}\",
-              \"body\": ${RELEASE_BODY},
-              \"draft\": false,
-              \"prerelease\": false
-            }")
+            -d "{\"tag_name\":\"${TAG}\",\"name\":\"${TAG}\",\"body\":${RELEASE_BODY},\"draft\":false,\"prerelease\":false}")
 
           RELEASE_ID=$(echo "$RESPONSE" | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])' 2>/dev/null)
           if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "None" ]; then
-            echo "❌ Failed to create release:"
-            echo "$RESPONSE"
-            exit 1
+            echo "❌ Failed to create release: $RESPONSE"; exit 1
           fi
-          echo "✅ Release created (id: ${RELEASE_ID})"
 
-          # Upload assets
           for file in artifacts/* LICENSE README.md CHANGELOG.md; do
             [ -f "$file" ] || continue
             FILENAME=$(basename "$file")
@@ -271,60 +280,41 @@ jobs:
               -H "Authorization: token ${TOKEN}" \
               -H "Content-Type: application/octet-stream" \
               --data-binary "@${file}" > /dev/null
-            echo "✅ Uploaded ${FILENAME}"
           done
+          echo "✅ Release ${TAG} published."
 
-          echo "🎉 Release ${TAG} published at ${GITEA_URL}/${REPO}/releases/tag/${TAG}"
-
-  # ── 4. Publish to crates.io ──────────────────────────────────────────────────
-  # Order matters: core must be published first because gui and tui depend on it.
-  # gitkraft (crates/gitkraft-gui) is published as `gitkraft` (the GUI binary).
-  # gitkraft-tui is published as `gitkraft-tui` (the TUI binary).
+  # ── 5. Publish to crates.io ───────────────────────────────────────────────────
   publish:
     name: Publish to crates.io
     needs: [validate, release]
     runs-on: ubuntu-latest
-    # `secrets.*` cannot be used in a job-level `if:` on Gitea Actions —
-    # the expression is evaluated before secrets are injected and always
-    # resolves to the empty string, making the condition unparseable.
-    # Instead we expose the secret as an env var and gate every publish
-    # step with `if: env.HAS_TOKEN == 'true'`.
     env:
       HAS_TOKEN: ${{ secrets.CRATES_IO_TOKEN != '' }}
     steps:
-      - name: Skip notice (no token)
+      - name: Skip (no token)
         if: env.HAS_TOKEN != 'true'
-        run: echo "⏭️  CRATES_IO_TOKEN is not configured — skipping crates.io publish."
+        run: echo "⏭️  CRATES_IO_TOKEN not set — skipping."
 
       - uses: actions/checkout@v4
         if: env.HAS_TOKEN == 'true'
         with:
           ref: ${{ needs.validate.outputs.tag }}
 
-      - name: Install Linux GUI system libraries
+      - name: Install Linux GUI libraries
         if: env.HAS_TOKEN == 'true'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            pkg-config \
-            libxkbcommon-dev \
-            libx11-dev \
-            libxrandr-dev \
-            libxinerama-dev \
-            libxcursor-dev \
-            libxi-dev \
-            libwayland-dev \
-            libgl1-mesa-dev \
-            libfontconfig1-dev \
-            libssl-dev
+            pkg-config libxkbcommon-dev libx11-dev libxrandr-dev \
+            libxinerama-dev libxcursor-dev libxi-dev libwayland-dev \
+            libgl1-mesa-dev libfontconfig1-dev libssl-dev
 
       - name: Install Rust stable
         if: env.HAS_TOKEN == 'true'
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
-      - name: Cache Cargo dependencies
+      - name: Cache Cargo
         if: env.HAS_TOKEN == 'true'
         uses: Swatinem/rust-cache@v2
 
@@ -333,56 +323,33 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
         run: |
-          VERSION="${{ needs.validate.outputs.version }}"
-          if cargo info gitkraft-core@${VERSION} 2>/dev/null | grep -q "^gitkraft-core"; then
-            echo "⏭️  gitkraft-core@${VERSION} already on crates.io — skipping."
-          else
-            echo "📦 Copying README.md into crates/gitkraft-core…"
-            cp README.md crates/gitkraft-core/README.md
-            echo "📦 Publishing gitkraft-core…"
-            output=$(cargo publish -p gitkraft-core --allow-dirty 2>&1) && echo "$output" || {
-              echo "$output"
-              echo "$output" | grep -q "already exists" && echo "⏭️  Already published — skipping." || exit 1
+          V="${{ needs.validate.outputs.version }}"
+          cargo info gitkraft-core@$V 2>/dev/null | grep -q "^gitkraft-core" \
+            && echo "⏭️  Already published." || {
+              cp README.md crates/gitkraft-core/README.md
+              cargo publish -p gitkraft-core --allow-dirty && sleep 30
             }
-            echo "⏳ Waiting 30 s for the index to propagate…"
-            sleep 30
-          fi
 
       - name: Publish gitkraft (GUI)
         if: env.HAS_TOKEN == 'true'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
         run: |
-          VERSION="${{ needs.validate.outputs.version }}"
-          if cargo info gitkraft@${VERSION} 2>/dev/null | grep -q "^gitkraft"; then
-            echo "⏭️  gitkraft@${VERSION} already on crates.io — skipping."
-          else
-            echo "📦 Copying README.md into crates/gitkraft-gui…"
-            cp README.md crates/gitkraft-gui/README.md
-            echo "📦 Publishing gitkraft (GUI)…"
-            output=$(cargo publish -p gitkraft --allow-dirty 2>&1) && echo "$output" || {
-              echo "$output"
-              echo "$output" | grep -q "already exists" && echo "⏭️  Already published — skipping." || exit 1
+          V="${{ needs.validate.outputs.version }}"
+          cargo info gitkraft@$V 2>/dev/null | grep -q "^gitkraft" \
+            && echo "⏭️  Already published." || {
+              cp README.md crates/gitkraft-gui/README.md
+              cargo publish -p gitkraft --allow-dirty && sleep 20
             }
-            echo "⏳ Waiting 20 s for the index to propagate…"
-            sleep 20
-          fi
 
       - name: Publish gitkraft-tui
         if: env.HAS_TOKEN == 'true'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
         run: |
-          VERSION="${{ needs.validate.outputs.version }}"
-          if cargo info gitkraft-tui@${VERSION} 2>/dev/null | grep -q "^gitkraft-tui"; then
-            echo "⏭️  gitkraft-tui@${VERSION} already on crates.io — skipping."
-          else
-            echo "📦 Copying README.md into crates/gitkraft-tui…"
-            cp README.md crates/gitkraft-tui/README.md
-            echo "📦 Publishing gitkraft-tui…"
-            output=$(cargo publish -p gitkraft-tui --allow-dirty 2>&1) && echo "$output" || {
-              echo "$output"
-              echo "$output" | grep -q "already exists" && echo "⏭️  Already published — skipping." || exit 1
+          V="${{ needs.validate.outputs.version }}"
+          cargo info gitkraft-tui@$V 2>/dev/null | grep -q "^gitkraft-tui" \
+            && echo "⏭️  Already published." || {
+              cp README.md crates/gitkraft-tui/README.md
+              cargo publish -p gitkraft-tui --allow-dirty
             }
-          fi
-          echo "✅ Publish step complete."

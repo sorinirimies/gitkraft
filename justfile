@@ -193,32 +193,33 @@ vhs-list:
     echo "TUI tapes  →  {{ TUI_VHS }}/"
     ls {{ TUI_VHS }}/*.tape 2>/dev/null | sed 's|.*/||; s|\.tape||' | sed 's/^/  /' || echo "  (none)"
 
-# ── Packaging ────────────────────────────────────────────────────────────────
+# ── Packaging (Linux only — run locally on your Linux machine) ───────────────
 
-# Build Linux .deb and .rpm packages for the current host target
-package-linux version:
+# Build Linux .deb and .rpm packages
+package-linux version: build-release
     nu scripts/ci/package_linux.nu {{ version }} x86_64-unknown-linux-gnu
 
-# Build Linux AppImages for both binaries
-package-appimage version:
+# Build Linux AppImages (requires appimagetool in PATH)
+package-appimage version: build-release
     bash scripts/ci/package_appimage.sh {{ version }} x86_64-unknown-linux-gnu
 
-# Build Windows NSIS installer (requires nsis installed)
+# Cross-compile Windows .exe from Linux (requires mingw-w64)
+
+# Install: sudo pacman -S mingw-w64-gcc
 package-windows version:
-    bash scripts/ci/package_windows.sh {{ version }}
-
-# Create macOS universal binaries from x86_64 + arm64 builds
-macos-universal:
-    bash scripts/ci/build_universal_macos.sh
-
-# Create macOS DMG (run after macos-universal)
-package-macos version: macos-universal
-    bash packaging/macos/create_dmg.sh {{ version }}
+    rustup target add x86_64-pc-windows-gnu
+    cargo build --release -p gitkraft -p gitkraft-tui --target x86_64-pc-windows-gnu
+    mkdir -p dist
+    cp target/x86_64-pc-windows-gnu/release/gitkraft.exe     dist/gitkraft-gui-x86_64-windows.exe
+    cp target/x86_64-pc-windows-gnu/release/gitkraft-tui.exe dist/gitkraft-tui-x86_64-windows.exe
 
 # Update AUR PKGBUILD to a new version
 update-aur version:
     bash scripts/ci/update_aur.sh {{ version }}
 
+# Note: macOS DMG is built automatically by GitHub Actions (macos-latest runner)
+# Note: Windows NSIS installer is built by GitHub Actions (windows-latest runner)
+# Note: Linux aarch64 is cross-compiled by both GitHub Actions and Gitea CI
 # ── Documentation ─────────────────────────────────────────────────────────────
 
 # Generate and open docs for the GUI crate

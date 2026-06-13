@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v0.5.0)"
+        description: "Tag to release (e.g. v0.7.7)"
         required: true
         default: ""
 
@@ -46,7 +46,7 @@ jobs:
           echo "tag=${TAG}"         >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-  # ── 1. Quality gate ──────────────────────────────────────────────────────────
+  # ── 1. Quality gate (Linux) ───────────────────────────────────────────────────
   test:
     name: Test & lint
     needs: validate
@@ -55,7 +55,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.validate.outputs.tag }}
-      - name: Install Linux GUI system libraries
+      - name: Install Linux GUI libraries
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
@@ -68,10 +68,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install Nushell
         run: cargo install nu --locked
-      - name: Run quality gate
+      - name: Quality gate
         run: nu scripts/ci/quality_gate.nu
 
-  # ── 2. Build matrix ──────────────────────────────────────────────────────────
+  # ── 2. Build matrix ───────────────────────────────────────────────────────────
+  # GitHub provides free hosted runners for all three platforms.
+  # No self-hosted machines required.
   build:
     name: Build — ${{ matrix.name }}
     needs: [validate, test]
@@ -80,54 +82,39 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux x86_64
+          # ── Linux x86_64 (GitHub hosted) ─────────────────────────────────────
           - name: Linux x86_64
             runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            tui_bin: gitkraft-tui
-            gui_bin: gitkraft
             suffix: ""
-            build_gui: true
             os: linux
 
-          # Linux aarch64
+          # ── Linux aarch64 (cross-compiled on GitHub hosted ubuntu) ────────────
           - name: Linux aarch64
             runner: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-            tui_bin: gitkraft-tui
-            gui_bin: gitkraft
             suffix: ""
-            build_gui: true
             os: linux
 
-          # Windows x86_64
+          # ── Windows x86_64 (GitHub hosted Windows runner) ─────────────────────
           - name: Windows x86_64
             runner: windows-latest
             target: x86_64-pc-windows-msvc
-            tui_bin: gitkraft-tui
-            gui_bin: gitkraft
             suffix: ".exe"
-            build_gui: true
             os: windows
 
-          # macOS x86_64
+          # ── macOS x86_64 (GitHub hosted macOS runner) ─────────────────────────
           - name: macOS x86_64
             runner: macos-latest
             target: x86_64-apple-darwin
-            tui_bin: gitkraft-tui
-            gui_bin: gitkraft
             suffix: ""
-            build_gui: true
             os: macos
 
-          # macOS aarch64 (Apple Silicon)
+          # ── macOS aarch64 / Apple Silicon (GitHub hosted macOS runner) ─────────
           - name: macOS aarch64
             runner: macos-latest
             target: aarch64-apple-darwin
-            tui_bin: gitkraft-tui
-            gui_bin: gitkraft
             suffix: ""
-            build_gui: true
             os: macos
 
     steps:
@@ -135,7 +122,7 @@ jobs:
         with:
           ref: ${{ needs.validate.outputs.tag }}
 
-      - name: Install Linux GUI system libraries
+      - name: Install Linux GUI libraries + packaging tools
         if: matrix.os == 'linux'
         run: |
           sudo apt-get update -qq
@@ -153,9 +140,10 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - name: Set up cross-compilation for aarch64 Linux
+      - name: Configure aarch64 cross-linker
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
+          mkdir -p ~/.cargo
           echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
           echo 'linker = "aarch64-linux-gnu-gcc"'   >> ~/.cargo/config.toml
 
@@ -163,60 +151,46 @@ jobs:
         run: cargo build --release -p gitkraft-tui --target ${{ matrix.target }}
 
       - name: Build GUI
-        if: matrix.build_gui == true
         run: cargo build --release -p gitkraft --target ${{ matrix.target }}
 
-      # ── Linux packaging ─────────────────────────────────────────────────────
-      - name: Install Nushell (Linux packaging)
+      # ── Linux: .deb, .rpm, AppImage ────────────────────────────────────────
+      - name: Install Nushell
         if: matrix.os == 'linux'
         run: cargo install nu --locked
 
-      - name: Build .deb and .rpm packages
+      - name: Build .deb and .rpm
         if: matrix.os == 'linux'
         run: nu scripts/ci/package_linux.nu ${{ needs.validate.outputs.version }} ${{ matrix.target }}
 
       - name: Install appimagetool
-        if: matrix.os == 'linux'
+        if: matrix.os == 'linux' && matrix.target == 'x86_64-unknown-linux-gnu'
         run: |
-          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O /usr/local/bin/appimagetool
-          chmod +x /usr/local/bin/appimagetool
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage \
+            -O /tmp/appimagetool
+          chmod +x /tmp/appimagetool
+          sudo cp /tmp/appimagetool /usr/local/bin/appimagetool
 
-      - name: Build AppImages
-        if: matrix.os == 'linux'
-        run: |
-          chmod +x scripts/ci/package_appimage.sh
-          bash scripts/ci/package_appimage.sh ${{ needs.validate.outputs.version }} ${{ matrix.target }}
+      - name: Build AppImage
+        if: matrix.os == 'linux' && matrix.target == 'x86_64-unknown-linux-gnu'
+        run: bash scripts/ci/package_appimage.sh ${{ needs.validate.outputs.version }} ${{ matrix.target }}
 
-      # ── Windows packaging ───────────────────────────────────────────────────
+      # ── Windows: NSIS installer ──────────────────────────────────────────────
       - name: Build NSIS installer
         if: matrix.os == 'windows'
         shell: bash
         run: |
-          choco install nsis -y
-          chmod +x scripts/ci/package_windows.sh
+          choco install nsis envar-plugin-nsis -y --no-progress
           bash scripts/ci/package_windows.sh ${{ needs.validate.outputs.version }}
 
-      # ── macOS: create plain binary archives ─────────────────────────────────
-      - name: Archive macOS binaries
-        if: matrix.os == 'macos'
-        run: |
-          mkdir -p dist
-          cp target/${{ matrix.target }}/release/gitkraft dist/gitkraft-${{ matrix.target }}
-          cp target/${{ matrix.target }}/release/gitkraft-tui dist/gitkraft-tui-${{ matrix.target }}
-
-      # ── Stage raw binaries for all platforms ────────────────────────────────
-      - name: Install Nushell (staging)
-        if: matrix.os != 'linux'
-        run: cargo install nu --locked
-
-      - name: Stage raw binaries
+      # ── Stage raw binaries ───────────────────────────────────────────────────
+      - name: Stage binaries
         shell: bash
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/gitkraft-tui${{ matrix.suffix }} \
-             dist/gitkraft-tui-${{ matrix.target }}${{ matrix.suffix }} || true
           cp target/${{ matrix.target }}/release/gitkraft${{ matrix.suffix }} \
              dist/gitkraft-gui-${{ matrix.target }}${{ matrix.suffix }} || true
+          cp target/${{ matrix.target }}/release/gitkraft-tui${{ matrix.suffix }} \
+             dist/gitkraft-tui-${{ matrix.target }}${{ matrix.suffix }} || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -225,7 +199,8 @@ jobs:
           path: dist/
           retention-days: 1
 
-  # ── 3. macOS Universal DMG ───────────────────────────────────────────────────
+  # ── 3. macOS Universal DMG ────────────────────────────────────────────────────
+  # Merges the arm64 + x86_64 macOS binaries into a single universal DMG.
   macos-dmg:
     name: macOS Universal DMG
     needs: [validate, build]
@@ -235,19 +210,19 @@ jobs:
         with:
           ref: ${{ needs.validate.outputs.tag }}
 
-      - name: Download macOS arm64 artifacts
+      - name: Download arm64 artifacts
         uses: actions/download-artifact@v4
         with:
           name: artifacts-aarch64-apple-darwin
           path: artifacts/arm64/
 
-      - name: Download macOS x86_64 artifacts
+      - name: Download x86_64 artifacts
         uses: actions/download-artifact@v4
         with:
           name: artifacts-x86_64-apple-darwin
           path: artifacts/x86_64/
 
-      - name: Reconstruct target dirs for lipo
+      - name: Reconstruct target dirs
         run: |
           mkdir -p target/aarch64-apple-darwin/release
           mkdir -p target/x86_64-apple-darwin/release
@@ -255,30 +230,25 @@ jobs:
           cp artifacts/arm64/gitkraft-tui-aarch64-apple-darwin   target/aarch64-apple-darwin/release/gitkraft-tui
           cp artifacts/x86_64/gitkraft-gui-x86_64-apple-darwin   target/x86_64-apple-darwin/release/gitkraft
           cp artifacts/x86_64/gitkraft-tui-x86_64-apple-darwin   target/x86_64-apple-darwin/release/gitkraft-tui
-          chmod +x target/aarch64-apple-darwin/release/*
-          chmod +x target/x86_64-apple-darwin/release/*
+          chmod +x target/*/release/gitkraft target/*/release/gitkraft-tui
 
       - name: Create universal binaries
-        run: |
-          chmod +x scripts/ci/build_universal_macos.sh
-          ./scripts/ci/build_universal_macos.sh
+        run: bash scripts/ci/build_universal_macos.sh
 
       - name: Install create-dmg
         run: brew install create-dmg
 
       - name: Build DMG
-        run: |
-          chmod +x packaging/macos/create_dmg.sh
-          ./packaging/macos/create_dmg.sh ${{ needs.validate.outputs.version }}
+        run: bash packaging/macos/create_dmg.sh ${{ needs.validate.outputs.version }}
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: artifacts-macos-universal-dmg
+          name: artifacts-macos-universal
           path: dist/*.dmg
           retention-days: 1
 
-  # ── 4. Create GitHub Release ─────────────────────────────────────────────────
+  # ── 4. GitHub Release ─────────────────────────────────────────────────────────
   release:
     name: Create GitHub Release
     needs: [validate, build, macos-dmg]
@@ -303,9 +273,6 @@ jobs:
           path: artifacts/
           merge-multiple: true
 
-      - name: List release artifacts
-        run: ls -lh artifacts/
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -319,7 +286,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 5. Publish to crates.io ──────────────────────────────────────────────────
+  # ── 5. Publish to crates.io ───────────────────────────────────────────────────
   publish:
     name: Publish to crates.io
     needs: [validate, release]
@@ -327,16 +294,16 @@ jobs:
     env:
       HAS_TOKEN: ${{ secrets.CRATES_IO_TOKEN != '' }}
     steps:
-      - name: Skip notice (no token)
+      - name: Skip (no token)
         if: env.HAS_TOKEN != 'true'
-        run: echo "⏭️  CRATES_IO_TOKEN not configured — skipping."
+        run: echo "⏭️  CRATES_IO_TOKEN not set — skipping."
 
       - uses: actions/checkout@v4
         if: env.HAS_TOKEN == 'true'
         with:
           ref: ${{ needs.validate.outputs.tag }}
 
-      - name: Install Linux GUI system libraries
+      - name: Install Linux GUI libraries
         if: env.HAS_TOKEN == 'true'
         run: |
           sudo apt-get update -qq
@@ -347,7 +314,6 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         if: env.HAS_TOKEN == 'true'
-
       - uses: Swatinem/rust-cache@v2
         if: env.HAS_TOKEN == 'true'
 
@@ -356,43 +322,40 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
         run: |
-          VERSION="${{ needs.validate.outputs.version }}"
-          cargo info gitkraft-core@${VERSION} 2>/dev/null | grep -q "^gitkraft-core" && \
-            echo "⏭️  Already published." || {
-            cp README.md crates/gitkraft-core/README.md
-            cargo publish -p gitkraft-core --allow-dirty
-            sleep 30
-          }
+          V="${{ needs.validate.outputs.version }}"
+          cargo info gitkraft-core@$V 2>/dev/null | grep -q "^gitkraft-core" \
+            && echo "⏭️  Already published." || {
+              cp README.md crates/gitkraft-core/README.md
+              cargo publish -p gitkraft-core --allow-dirty && sleep 30
+            }
 
       - name: Publish gitkraft (GUI)
         if: env.HAS_TOKEN == 'true'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
         run: |
-          VERSION="${{ needs.validate.outputs.version }}"
-          cargo info gitkraft@${VERSION} 2>/dev/null | grep -q "^gitkraft" && \
-            echo "⏭️  Already published." || {
-            cp README.md crates/gitkraft-gui/README.md
-            cargo publish -p gitkraft --allow-dirty
-            sleep 20
-          }
+          V="${{ needs.validate.outputs.version }}"
+          cargo info gitkraft@$V 2>/dev/null | grep -q "^gitkraft" \
+            && echo "⏭️  Already published." || {
+              cp README.md crates/gitkraft-gui/README.md
+              cargo publish -p gitkraft --allow-dirty && sleep 20
+            }
 
       - name: Publish gitkraft-tui
         if: env.HAS_TOKEN == 'true'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
         run: |
-          VERSION="${{ needs.validate.outputs.version }}"
-          cargo info gitkraft-tui@${VERSION} 2>/dev/null | grep -q "^gitkraft-tui" && \
-            echo "⏭️  Already published." || {
-            cp README.md crates/gitkraft-tui/README.md
-            cargo publish -p gitkraft-tui --allow-dirty
-          }
-          echo "✅ Publish complete."
+          V="${{ needs.validate.outputs.version }}"
+          cargo info gitkraft-tui@$V 2>/dev/null | grep -q "^gitkraft-tui" \
+            && echo "⏭️  Already published." || {
+              cp README.md crates/gitkraft-tui/README.md
+              cargo publish -p gitkraft-tui --allow-dirty
+            }
 
-  # ── 6. Update AUR PKGBUILD ───────────────────────────────────────────────────
+  # ── 6. Update AUR ─────────────────────────────────────────────────────────────
   update-aur:
-    name: Update AUR PKGBUILD
+    name: Update AUR
     needs: [validate, release]
     runs-on: ubuntu-latest
     steps:
@@ -400,12 +363,10 @@ jobs:
         with:
           ref: ${{ needs.validate.outputs.tag }}
 
-      - name: Update PKGBUILD version and checksums
-        run: |
-          chmod +x scripts/ci/update_aur.sh
-          bash scripts/ci/update_aur.sh ${{ needs.validate.outputs.version }}
+      - name: Update PKGBUILD checksums
+        run: bash scripts/ci/update_aur.sh ${{ needs.validate.outputs.version }}
 
-      - name: Publish to AUR
+      - name: Deploy to AUR
         uses: KSXGitHub/github-actions-deploy-aur@v2
         continue-on-error: true
         with:
@@ -415,6 +376,3 @@ jobs:
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
           commit_message: "Update to v${{ needs.validate.outputs.version }}"
-        env:
-          AUR_USERNAME: ${{ secrets.AUR_USERNAME }}
-          AUR_EMAIL: ${{ secrets.AUR_EMAIL }}
