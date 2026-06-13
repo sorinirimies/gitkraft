@@ -1,0 +1,47 @@
+# Maintainer: Sorin Irimies <sorinirimies@gmail.com>
+pkgbase=gitkraft
+pkgname=('gitkraft' 'gitkraft-tui')
+pkgver=0.7.7
+pkgrel=1
+pkgdesc="Git IDE written entirely in Rust — desktop GUI and terminal UI"
+arch=('x86_64' 'aarch64')
+url="https://github.com/sorinirimies/gitkraft"
+license=('MIT')
+makedepends=('rust' 'cargo' 'cmake' 'pkg-config')
+source=("$pkgbase-$pkgver.tar.gz::https://github.com/sorinirimies/gitkraft/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+# Required for the GUI binary
+_gui_deps=('libxkbcommon' 'wayland' 'libgl' 'fontconfig')
+
+prepare() {
+    cd "$pkgbase-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+    cd "$pkgbase-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR=target
+    cargo build --frozen --release --package gitkraft
+    cargo build --frozen --release --package gitkraft-tui
+}
+
+package_gitkraft() {
+    pkgdesc="GitKraft — desktop GUI Git IDE written in Rust (Iced)"
+    depends=("${_gui_deps[@]}")
+    cd "$pkgbase-$pkgver"
+    install -Dm755 "target/release/gitkraft" "$pkgdir/usr/bin/gitkraft"
+    install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/gitkraft/LICENSE"
+    install -Dm644 "README.md" "$pkgdir/usr/share/doc/gitkraft/README.md"
+}
+
+package_gitkraft-tui() {
+    pkgdesc="GitKraft TUI — terminal Git IDE written in Rust (Ratatui)"
+    depends=('gcc-libs')
+    cd "$pkgbase-$pkgver"
+    install -Dm755 "target/release/gitkraft-tui" "$pkgdir/usr/bin/gitkraft-tui"
+    install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/gitkraft-tui/LICENSE"
+    install -Dm644 "README.md" "$pkgdir/usr/share/doc/gitkraft-tui/README.md"
+}

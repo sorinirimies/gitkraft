@@ -1,0 +1,25 @@
+pkgbase = gitkraft
+	pkgdesc = Git IDE written entirely in Rust — desktop GUI and terminal UI
+	pkgver = 0.7.7
+	pkgrel = 1
+	url = https://github.com/sorinirimies/gitkraft
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	makedepends = rust
+	makedepends = cargo
+	makedepends = cmake
+	makedepends = pkg-config
+	source = gitkraft-0.7.7.tar.gz::https://github.com/sorinirimies/gitkraft/archive/refs/tags/v0.7.7.tar.gz
+	sha256sums = SKIP
+
+pkgname = gitkraft
+	pkgdesc = GitKraft — desktop GUI Git IDE written in Rust (Iced)
+	depends = libxkbcommon
+	depends = wayland
+	depends = libgl
+	depends = fontconfig
+
+pkgname = gitkraft-tui
+	pkgdesc = GitKraft TUI — terminal Git IDE written in Rust (Ratatui)
+	depends = gcc-libs

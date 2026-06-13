@@ -193,6 +193,32 @@ vhs-list:
     echo "TUI tapes  →  {{ TUI_VHS }}/"
     ls {{ TUI_VHS }}/*.tape 2>/dev/null | sed 's|.*/||; s|\.tape||' | sed 's/^/  /' || echo "  (none)"
 
+# ── Packaging ────────────────────────────────────────────────────────────────
+
+# Build Linux .deb and .rpm packages for the current host target
+package-linux version:
+    nu scripts/ci/package_linux.nu {{ version }} x86_64-unknown-linux-gnu
+
+# Build Linux AppImages for both binaries
+package-appimage version:
+    bash scripts/ci/package_appimage.sh {{ version }} x86_64-unknown-linux-gnu
+
+# Build Windows NSIS installer (requires nsis installed)
+package-windows version:
+    bash scripts/ci/package_windows.sh {{ version }}
+
+# Create macOS universal binaries from x86_64 + arm64 builds
+macos-universal:
+    bash scripts/ci/build_universal_macos.sh
+
+# Create macOS DMG (run after macos-universal)
+package-macos version: macos-universal
+    bash packaging/macos/create_dmg.sh {{ version }}
+
+# Update AUR PKGBUILD to a new version
+update-aur version:
+    bash scripts/ci/update_aur.sh {{ version }}
+
 # ── Documentation ─────────────────────────────────────────────────────────────
 
 # Generate and open docs for the GUI crate

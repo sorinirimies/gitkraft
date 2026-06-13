@@ -1,0 +1,28 @@
+gitkraft.ico — placeholder note
+====================================
+
+The NSIS installer script references this path for the installer and
+uninstaller window icons:
+
+    packaging\windows\gitkraft.ico
+
+This file is NOT committed to the repository because `.ico` binaries are
+large and change infrequently. Provide it at build time via one of these
+approaches:
+
+1. **Export from the app icon (recommended)**
+   If the project already has a PNG/SVG application icon (e.g. in
+   `assets/icons/`), convert it with ImageMagick:
+
+       magick assets/icons/gitkraft.png -define icon:auto-resize=256,128,64,48,32,16 \
+           packaging/windows/gitkraft.ico
+
+2. **Download from the release artifacts**
+   The CI pipeline uploads `gitkraft.ico` as a release asset.
+   Download it and place it at `packaging/windows/gitkraft.ico` before
+   running `makensis`.
+
+3. **CI: restore from cache or artifact**
+   In the GitHub Actions / Gitea Actions workflow, add a step that
+   downloads or restores the icon before invoking
+   `scripts/ci/package_windows.sh`.

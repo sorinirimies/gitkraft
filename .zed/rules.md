@@ -139,6 +139,10 @@ The TUI uses a standard ratatui loop running at ~30fps (33ms poll timeout).
 | `just fmt` | Format all code |
 | `just clippy` | Lint with `-D warnings` |
 | `just release 0.X.Y` | Bump, tag, push (runs all checks) |
+| `just package-linux 0.X.Y` | Build .deb + .rpm for Linux |
+| `just package-appimage 0.X.Y` | Build AppImage for Linux |
+| `just package-macos 0.X.Y` | Build universal DMG for macOS |
+| `just update-aur 0.X.Y` | Update AUR PKGBUILD with new version |
 
 ## Common Pitfalls
 
