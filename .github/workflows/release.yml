@@ -367,7 +367,7 @@ jobs:
         run: bash scripts/ci/update_aur.sh ${{ needs.validate.outputs.version }}
 
       - name: Deploy to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v2
+        uses: KSXGitHub/github-actions-deploy-aur@v3
         continue-on-error: true
         with:
           pkgname: gitkraft
