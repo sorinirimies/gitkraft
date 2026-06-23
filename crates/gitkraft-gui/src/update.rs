@@ -4,6 +4,8 @@
 //! feature's update handler. Each feature handler receives `&mut GitKraft`
 //! and the message, and returns a `Task<Message>` for any follow-up async work.
 
+use std::collections::HashSet;
+
 use iced::Task;
 
 use crate::macros::StringErr;
@@ -44,7 +46,10 @@ impl GitKraft {
                     }
                 }
                 let (open_tabs, active) = self.session_state();
-                crate::features::repo::commands::save_session_async(open_tabs, active)
+                Task::batch([
+                    crate::features::repo::commands::save_session_async(open_tabs, active),
+                    crate::features::repo::commands::save_layout_async(self.current_layout()),
+                ])
             }
 
             // ── Repository ────────────────────────────────────────────────
@@ -342,7 +347,7 @@ impl GitKraft {
                 let h = *h;
                 self.window_width = w;
                 self.window_height = h;
-                crate::features::repo::commands::save_layout_async(self.current_layout())
+                Task::none()
             }
 
             Message::WindowMoved(x, y) => {
@@ -350,7 +355,7 @@ impl GitKraft {
                 let y = *y;
                 self.window_x = x;
                 self.window_y = y;
-                crate::features::repo::commands::save_layout_async(self.current_layout())
+                Task::none()
             }
 
             Message::OpenSettingsFile => {
@@ -970,12 +975,12 @@ impl GitKraft {
             Message::ToggleSearch => {
                 self.search_visible = !self.search_visible;
                 if !self.search_visible {
-                    self.search_query.clear();
-                    self.search_results.clear();
+                    self.search_query = String::new();
+                    self.search_results = Vec::new();
                     self.search_selected = None;
-                    self.search_diff_files.clear();
-                    self.search_diff_selected.clear();
-                    self.search_diff_content.clear();
+                    self.search_diff_files = Vec::new();
+                    self.search_diff_selected = HashSet::new();
+                    self.search_diff_content = Vec::new();
                     self.search_diff_oid = None;
                     Task::none()
                 } else {
@@ -1329,7 +1334,7 @@ impl GitKraft {
             Message::CloseFileHistory => {
                 let tab = self.active_tab_mut();
                 tab.file_history_path = None;
-                tab.file_history_commits.clear();
+                tab.file_history_commits = Vec::new();
                 tab.file_history_scroll = 0.0;
                 Task::none()
             }
@@ -1402,18 +1407,18 @@ impl GitKraft {
             Message::CloseFileBlame => {
                 let tab = self.active_tab_mut();
                 tab.blame_path = None;
-                tab.blame_lines.clear();
+                tab.blame_lines = Vec::new();
                 tab.blame_scroll = 0.0;
                 // Also dismiss context menu and search overlay on Escape.
                 tab.context_menu = None;
                 if self.search_visible {
                     self.search_visible = false;
-                    self.search_query.clear();
-                    self.search_results.clear();
+                    self.search_query = String::new();
+                    self.search_results = Vec::new();
                     self.search_selected = None;
-                    self.search_diff_files.clear();
-                    self.search_diff_selected.clear();
-                    self.search_diff_content.clear();
+                    self.search_diff_files = Vec::new();
+                    self.search_diff_selected = HashSet::new();
+                    self.search_diff_content = Vec::new();
                     self.search_diff_oid = None;
                 }
                 Task::none()
@@ -1469,6 +1474,11 @@ impl GitKraft {
 
             Message::ClosePreview => {
                 clear_preview!(self);
+                Task::none()
+            }
+
+            Message::HoverCommit(idx) => {
+                self.active_tab_mut().hovered_commit = *idx;
                 Task::none()
             }
 

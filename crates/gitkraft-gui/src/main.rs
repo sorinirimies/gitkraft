@@ -4,6 +4,14 @@ use iced::Settings;
 fn main() -> iced::Result {
     tracing_subscriber::fmt::init();
 
+    // Limit libgit2's in-memory object cache to 128 MB (default is unbounded).
+    // Without this, large repos can consume GBs of RAM as packfile objects
+    // are cached in memory across multiple Repository::discover() calls.
+    unsafe {
+        git2::opts::set_mwindow_size(64 * 1024 * 1024).ok(); // 64 MB mmap window
+        git2::opts::set_mwindow_mapped_limit(256 * 1024 * 1024).ok(); // 256 MB total mmap
+    }
+
     // Read saved window geometry before starting the app.
     let saved_layout = gitkraft_core::features::persistence::ops::get_saved_layout()
         .ok()

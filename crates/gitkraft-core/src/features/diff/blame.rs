@@ -12,8 +12,6 @@ pub struct BlameLine {
     pub line_number: usize,
     /// Raw line content (no trailing newline).
     pub content: String,
-    /// Abbreviated commit OID (7 chars).
-    pub short_oid: String,
     /// Full commit OID.
     pub oid: String,
     /// Author name.
@@ -23,6 +21,11 @@ pub struct BlameLine {
 }
 
 impl BlameLine {
+    /// Abbreviated OID (first 7 characters), derived from `oid`.
+    pub fn short_oid(&self) -> &str {
+        crate::utils::short_oid_str(&self.oid)
+    }
+
     /// Human-readable relative time (delegates to the core utils).
     pub fn relative_time(&self) -> String {
         crate::utils::relative_time(self.time)
@@ -51,7 +54,6 @@ pub fn blame_file(repo: &Repository, file_path: &str) -> Result<Vec<BlameLine>> 
         if let Some(hunk) = blame.get_line(line_number) {
             let commit_id = hunk.final_commit_id();
             let oid = commit_id.to_string();
-            let short_oid = oid[..7.min(oid.len())].to_string();
 
             let sig = hunk.final_signature();
             let author_name = sig.name().unwrap_or("?").to_string();
@@ -60,7 +62,6 @@ pub fn blame_file(repo: &Repository, file_path: &str) -> Result<Vec<BlameLine>> 
             lines.push(BlameLine {
                 line_number,
                 content: line_content.to_string(),
-                short_oid,
                 oid,
                 author_name,
                 time,
@@ -120,7 +121,7 @@ mod tests {
         let (_dir, repo) = setup_repo_with_file();
         let lines = blame_file(&repo, "file.txt").unwrap();
         for line in &lines {
-            assert_eq!(line.short_oid.len(), 7);
+            assert_eq!(line.short_oid().len(), 7);
             assert!(!line.oid.is_empty());
             assert_eq!(line.author_name, "Test User");
         }

@@ -55,16 +55,53 @@ fn ref_fg(kind: &gitkraft_core::RefKind, c: &ThemeColors) -> Color {
 }
 
 /// Build ref badges for one row in the BRANCH/TAG column.
-fn ref_badges<'a>(refs: &'a [gitkraft_core::RefLabel], c: &ThemeColors) -> Element<'a, Message> {
-    if refs.is_empty() {
-        return Space::new().into();
+fn ref_badges<'a>(
+    refs: &'a [gitkraft_core::RefLabel],
+    c: &ThemeColors,
+    ghost_label: Option<&'a str>,
+    show_ghost: bool,
+) -> Element<'a, Message> {
+    // Show real badges if the commit has refs.
+    if !refs.is_empty() {
+        let mut items: Vec<Element<'a, Message>> = Vec::new();
+        for (i, rf) in refs.iter().take(2).enumerate() {
+            let fg = ref_fg(&rf.kind, c);
+            let bg = c.surface;
+            let name = gitkraft_core::truncate_str(&rf.name, 14);
+            let badge = container(text(name).size(10).color(fg).font(iced::Font::MONOSPACE))
+                .padding([1, 4])
+                .style(move |_: &Theme| iced::widget::container::Style {
+                    background: Some(iced::Background::Color(bg)),
+                    border: iced::Border {
+                        color: fg,
+                        width: 1.0,
+                        radius: 3.0.into(),
+                    },
+                    ..Default::default()
+                });
+            if i > 0 {
+                items.push(Space::new().width(2).into());
+            }
+            items.push(badge.into());
+        }
+        return Row::with_children(items).align_y(Alignment::Center).into();
     }
-    let mut items: Vec<Element<'a, Message>> = Vec::new();
-    for (i, rf) in refs.iter().take(2).enumerate() {
-        let fg = ref_fg(&rf.kind, c);
-        let bg = c.surface;
-        let name = gitkraft_core::truncate_str(&rf.name, 14);
-        let badge = container(text(name).size(10).color(fg).font(iced::Font::MONOSPACE))
+
+    // Show ghost label when hovered OR selected (semi-transparent inherited branch name).
+    if show_ghost {
+        if let Some(label) = ghost_label {
+            let ghost_name = gitkraft_core::truncate_str(label, 14);
+            let fg = Color { a: 0.45, ..c.muted };
+            let bg = Color {
+                a: 0.15,
+                ..c.surface
+            };
+            let badge = container(
+                text(ghost_name)
+                    .size(10)
+                    .color(fg)
+                    .font(iced::Font::MONOSPACE),
+            )
             .padding([1, 4])
             .style(move |_: &Theme| iced::widget::container::Style {
                 background: Some(iced::Background::Color(bg)),
@@ -75,12 +112,11 @@ fn ref_badges<'a>(refs: &'a [gitkraft_core::RefLabel], c: &ThemeColors) -> Eleme
                 },
                 ..Default::default()
             });
-        if i > 0 {
-            items.push(Space::new().width(2).into());
+            return badge.into();
         }
-        items.push(badge.into());
     }
-    Row::with_children(items).align_y(Alignment::Center).into()
+
+    Space::new().into()
 }
 
 /// A thin draggable divider for the column header (fixed height, won't stretch).
@@ -118,6 +154,7 @@ fn message_row<'a>(
     let commit = &tab.commits[idx];
     let is_selected = tab.selected_commit == Some(idx);
     let is_in_range = selected_range.contains(&idx);
+    let is_hovered = tab.hovered_commit == Some(idx);
 
     let summary_str = commit.summary.as_str();
     let display_summary = truncate_to_fit(summary_str, available_px, 7.0);
@@ -165,6 +202,8 @@ fn message_row<'a>(
         theme::selected_row_style as fn(&Theme) -> iced::widget::container::Style
     } else if is_in_range {
         theme::highlight_row_style as fn(&Theme) -> iced::widget::container::Style
+    } else if is_hovered {
+        theme::hover_row_style as fn(&Theme) -> iced::widget::container::Style
     } else {
         theme::surface_style as fn(&Theme) -> iced::widget::container::Style
     };
@@ -183,6 +222,8 @@ fn message_row<'a>(
         .style(style_fn),
     )
     .on_right_press(Message::OpenCommitContextMenu(idx))
+    .on_enter(Message::HoverCommit(Some(idx)))
+    .on_exit(Message::HoverCommit(None))
     .into()
 }
 
@@ -295,17 +336,21 @@ pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
     let bottom_space = (total - last) as f32 * ROW_HEIGHT;
 
     // Column 1: ref badges (virtualised)
-    let mut refs_col = column![].width(Length::Fixed(ref_col_w));
+    let mut refs_col = column![].width(Length::Fixed(ref_col_w)).spacing(0);
     if top_space > 0.0 {
         refs_col = refs_col.push(Space::new().width(ref_col_w).height(top_space));
     }
     for idx in first..last {
+        let is_hovered = tab.hovered_commit == Some(idx);
+        let is_selected = tab.selected_commit == Some(idx);
+        let show_ghost = is_hovered || is_selected;
+        let ghost = tab.branch_context.get(idx).and_then(|ctx| ctx.as_deref());
         refs_col = refs_col.push(
-            container(ref_badges(&tab.commits[idx].refs, &c))
+            container(ref_badges(&tab.commits[idx].refs, &c, ghost, show_ghost))
                 .width(Length::Fixed(ref_col_w))
                 .height(Length::Fixed(ROW_HEIGHT))
                 .clip(true)
-                .center_y(Length::Fixed(ROW_HEIGHT)),
+                .align_y(Alignment::Center),
         );
     }
     if bottom_space > 0.0 {
@@ -334,7 +379,7 @@ pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
     .view(graph_col_w);
 
     // Wrap with the SAME Space padding as the other columns.
-    let mut graph_col = column![].width(Length::Fixed(graph_col_w));
+    let mut graph_col = column![].width(Length::Fixed(graph_col_w)).spacing(0);
     if top_space > 0.0 {
         graph_col = graph_col.push(Space::new().width(graph_col_w).height(top_space));
     }
@@ -344,7 +389,7 @@ pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
     }
 
     // Column 3: commit messages (virtualised)
-    let mut msgs_col = column![].width(Length::Fill);
+    let mut msgs_col = column![].width(Length::Fill).spacing(0);
     if top_space > 0.0 {
         msgs_col = msgs_col.push(Space::new().height(top_space));
     }

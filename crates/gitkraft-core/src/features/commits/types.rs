@@ -43,8 +43,6 @@ pub struct RefLabel {
 pub struct CommitInfo {
     /// Full hex-encoded object id.
     pub oid: String,
-    /// Abbreviated OID (first 7 characters).
-    pub short_oid: String,
     /// First line of the commit message.
     pub summary: String,
     /// Full commit message (includes summary).
@@ -65,10 +63,14 @@ pub struct CommitInfo {
 }
 
 impl CommitInfo {
+    /// Abbreviated OID (first 7 characters), derived from `oid`.
+    pub fn short_oid(&self) -> &str {
+        crate::utils::short_oid_str(&self.oid)
+    }
+
     /// Build a `CommitInfo` from a `git2::Commit`.
     pub fn from_git2_commit(commit: &git2::Commit<'_>) -> Self {
         let oid = commit.id().to_string();
-        let short_oid = oid[..7.min(oid.len())].to_string();
 
         let time_secs = commit.time().seconds();
         let time = DateTime::<Utc>::from_timestamp(time_secs, 0).unwrap_or_default();
@@ -87,7 +89,6 @@ impl CommitInfo {
 
         Self {
             oid,
-            short_oid,
             summary,
             message,
             author_name,
@@ -155,7 +156,6 @@ mod tests {
     fn make_commit(parents: usize, summary: &str, author: &str) -> CommitInfo {
         CommitInfo {
             oid: "abcdef1234567890".to_string(),
-            short_oid: "abcdef1".to_string(),
             summary: summary.to_string(),
             message: summary.to_string(),
             author_name: author.to_string(),

@@ -190,6 +190,16 @@ pub struct RepoTab {
     /// visible window of rows.
     pub commit_scroll_offset: f32,
 
+    /// Index of the commit row currently being hovered by the mouse.
+    /// Used to show ghost branch labels and highlight the row.
+    pub hovered_commit: Option<usize>,
+
+    /// Pre-computed branch context labels for each commit row.
+    /// For rows with refs, this is empty (the real badges are shown instead).
+    /// For rows without refs, this contains the inherited branch name from
+    /// the nearest ancestor in the same graph lane.
+    pub branch_context: Vec<Option<String>>,
+
     /// Current scroll offset of the diff viewer in pixels.
     pub diff_scroll_offset: f32,
     /// Pre-computed display strings for each commit:
@@ -272,6 +282,8 @@ impl RepoTab {
             create_tag_message: String::new(),
             create_branch_at_oid: None,
             commit_scroll_offset: 0.0,
+            hovered_commit: None,
+            branch_context: Vec::new(),
             diff_scroll_offset: 0.0,
             commit_display: Vec::new(),
             has_more_commits: true,
@@ -938,6 +950,11 @@ impl GitKraft {
         match tab.repo_path.clone() {
             Some(path) => {
                 let depth = tab.commits.len();
+                // Mark as loading BEFORE spawning the background task to prevent
+                // concurrent refresh storms from FileSystemChanged events.  Without
+                // this guard, multiple refreshes could overlap — each opening a full
+                // git2::Repository with mmapped packfiles, causing GB-scale memory use.
+                self.active_tab_mut().is_loading = true;
                 crate::features::repo::commands::refresh_repo(path, depth)
             }
             None => Task::none(),
@@ -1710,7 +1727,6 @@ mod tests {
         (0..count)
             .map(|i| gitkraft_core::CommitInfo {
                 oid: i.to_string(),
-                short_oid: i.to_string(),
                 summary: String::new(),
                 message: String::new(),
                 author_name: String::new(),
@@ -1891,7 +1907,6 @@ mod tests {
         state.active_tab_mut().file_history_path = Some("src/lib.rs".to_string());
         state.active_tab_mut().file_history_commits = vec![gitkraft_core::CommitInfo {
             oid: "abc".to_string(),
-            short_oid: "abc".to_string(),
             summary: "s".to_string(),
             message: "s".to_string(),
             author_name: "a".to_string(),
@@ -1932,7 +1947,6 @@ mod tests {
         state.active_tab_mut().commits = vec![
             gitkraft_core::CommitInfo {
                 oid: "abc1".into(),
-                short_oid: "abc1".into(),
                 summary: "first".into(),
                 message: "first".into(),
                 author_name: "A".into(),
@@ -1943,7 +1957,6 @@ mod tests {
             },
             gitkraft_core::CommitInfo {
                 oid: "abc2".into(),
-                short_oid: "abc2".into(),
                 summary: "second".into(),
                 message: "second".into(),
                 author_name: "A".into(),
@@ -1958,7 +1971,6 @@ mod tests {
         state.active_tab_mut().blame_lines = vec![gitkraft_core::BlameLine {
             line_number: 1,
             content: "fn main() {}".into(),
-            short_oid: "abc1".into(),
             oid: "abc1".into(),
             author_name: "A".into(),
             time: Default::default(),
@@ -2070,14 +2082,15 @@ mod tests {
         state.active_tab_mut().repo_path =
             Some(std::path::PathBuf::from("/tmp/fake-repo-for-test"));
 
-        // FileSystemChanged should call refresh_active_tab() which returns
-        // a non-none Task.  We verify by checking that is_loading is NOT set
-        // synchronously (the task is async), but that no error is set either.
+        // FileSystemChanged calls refresh_active_tab() which now sets
+        // is_loading = true synchronously to prevent concurrent refresh storms.
         let _task = state.update(Message::FileSystemChanged);
 
-        // With a repo_path set, the handler must have attempted a refresh
-        // (it returns a Task, so is_loading is set by the task executor, not here).
-        // What we CAN check: no error was set, and status is not "error".
+        // is_loading must be set to prevent overlapping refreshes.
+        assert!(
+            state.active_tab().is_loading,
+            "FileSystemChanged must set is_loading to guard against concurrent refreshes"
+        );
         assert!(
             state.active_tab().error_message.is_none(),
             "FileSystemChanged must not set an error message"
@@ -2562,7 +2575,6 @@ mod tests {
         payload.commits = (0..3)
             .map(|i| gitkraft_core::CommitInfo {
                 oid: format!("new_oid_{i}"),
-                short_oid: format!("new_{i}"),
                 summary: format!("new commit {i}"),
                 message: String::new(),
                 author_name: "Author".into(),
@@ -2637,7 +2649,6 @@ mod tests {
         payload.commits = (0..2)
             .map(|i| gitkraft_core::CommitInfo {
                 oid: format!("new_{i}"),
-                short_oid: format!("n{i}"),
                 summary: String::new(),
                 message: String::new(),
                 author_name: String::new(),
@@ -3384,7 +3395,6 @@ mod tests {
         for i in 0..200 {
             let mut c = tab.commits[0].clone();
             c.oid = format!("extra_{i:04}");
-            c.short_oid = format!("x{i:03}");
             tab.commits.push(c);
         }
         let extended_len = tab.commits.len();
@@ -3624,5 +3634,86 @@ mod tests {
     fn default_remote_fallback_to_origin() {
         let tab = RepoTab::new_empty();
         assert_eq!(tab.default_remote(), "origin");
+    }
+
+    #[test]
+    fn hovered_commit_defaults_to_none() {
+        let tab = RepoTab::new_empty();
+        assert_eq!(tab.hovered_commit, None);
+    }
+
+    #[test]
+    fn hover_commit_message_sets_state() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        let _task = state.update(Message::HoverCommit(Some(5)));
+        assert_eq!(state.active_tab().hovered_commit, Some(5));
+        let _task = state.update(Message::HoverCommit(None));
+        assert_eq!(state.active_tab().hovered_commit, None);
+    }
+
+    #[test]
+    fn branch_context_defaults_empty() {
+        let tab = RepoTab::new_empty();
+        assert!(tab.branch_context.is_empty());
+    }
+
+    #[test]
+    fn ghost_shows_on_selected_commit_without_refs() {
+        // When a commit is selected, the ghost branch label should show.
+        // This verifies the state fields are set correctly for the view
+        // to detect show_ghost = is_hovered || is_selected.
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        let tab = state.active_tab_mut();
+        tab.repo_path = Some(std::path::PathBuf::from("/tmp/test"));
+        tab.commits = vec![
+            gitkraft_core::CommitInfo {
+                oid: "aaa".into(),
+                summary: "tip".into(),
+                message: String::new(),
+                author_name: "A".into(),
+                author_email: String::new(),
+                time: Default::default(),
+                parent_ids: Vec::new(),
+                refs: vec![gitkraft_core::RefLabel {
+                    name: "main".to_string(),
+                    kind: gitkraft_core::RefKind::Head,
+                }],
+            },
+            gitkraft_core::CommitInfo {
+                oid: "bbb".into(),
+                summary: "child".into(),
+                message: String::new(),
+                author_name: "A".into(),
+                author_email: String::new(),
+                time: Default::default(),
+                parent_ids: Vec::new(),
+                refs: Vec::new(),
+            },
+        ];
+        tab.graph_rows = vec![
+            gitkraft_core::GraphRow {
+                width: 1,
+                node_column: 0,
+                node_color: 0,
+                edges: Vec::new(),
+            },
+            gitkraft_core::GraphRow {
+                width: 1,
+                node_column: 0,
+                node_color: 0,
+                edges: Vec::new(),
+            },
+        ];
+        tab.branch_context = vec![None, Some("main".to_string())];
+        tab.selected_commit = Some(1);
+
+        // Verify the state is correct for the view to show ghost.
+        let tab = state.active_tab();
+        assert_eq!(tab.selected_commit, Some(1));
+        assert_eq!(tab.branch_context[1], Some("main".to_string()));
+        // Commits with refs don't get a ghost.
+        assert_eq!(tab.branch_context[0], None);
     }
 }

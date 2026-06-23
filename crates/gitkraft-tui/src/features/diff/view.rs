@@ -297,7 +297,7 @@ pub fn render_file_history(app: &mut App, frame: &mut Frame, area: Rect) {
             let summary = gitkraft_core::truncate_str(&c.summary, 48);
             let line = Line::from(vec![
                 Span::styled(
-                    format!("{} ", c.short_oid),
+                    format!("{} ", c.short_oid()),
                     Style::default().fg(theme.warning),
                 ),
                 Span::styled(summary, style),
@@ -363,7 +363,7 @@ pub fn render_blame(app: &mut App, frame: &mut Frame, area: Rect) {
             let author = gitkraft_core::truncate_str(&bl.author_name, 12);
             Line::from(vec![
                 Span::styled(
-                    format!("{} ", bl.short_oid),
+                    format!("{} ", bl.short_oid()),
                     Style::default().fg(theme.warning),
                 ),
                 Span::styled(

@@ -142,6 +142,9 @@ pub fn list_commits(repo: &Repository, max_count: usize) -> Result<Vec<CommitInf
         // only the summary (first line) is shown in the log view.
         // The full message is re-loaded on demand via get_commit_details().
         info.message = String::new();
+        // Author email is only needed for search (which reads from git2
+        // directly) — not displayed in the commit log list view.
+        info.author_email = String::new();
         if let Some(refs) = ref_map.get(&oid) {
             info.refs = refs.clone();
         }
@@ -251,7 +254,7 @@ mod tests {
         assert_eq!(commits.len(), 1);
         assert_eq!(commits[0].summary, "initial commit");
         assert!(!commits[0].oid.is_empty());
-        assert_eq!(commits[0].short_oid.len(), 7);
+        assert_eq!(commits[0].short_oid().len(), 7);
         assert!(commits[0].parent_ids.is_empty());
     }
 

@@ -440,7 +440,7 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
             theme::surface_style as fn(&iced::Theme) -> iced::widget::container::Style
         };
 
-        let oid_label = text(&commit.short_oid)
+        let oid_label = text(commit.short_oid())
             .size(12)
             .color(c.accent)
             .font(iced::Font::MONOSPACE);
@@ -1104,7 +1104,7 @@ fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, M
                 let shas_joined = oids
                     .iter()
                     .filter_map(|o| tab.commits.iter().find(|c| c.oid == *o))
-                    .map(|c| c.short_oid.clone())
+                    .map(|c| c.short_oid().to_string())
                     .collect::<Vec<_>>()
                     .join("\n");
 

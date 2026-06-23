@@ -129,11 +129,12 @@ pub(crate) fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             state.drag_initialized = false;
             state.drag_initialized_h = false;
 
-            // Persist the updated session and refresh recent repos from disk.
+            // Persist the updated session, layout, and refresh recent repos from disk.
             let (open_tabs, active) = state.session_state();
             Task::batch([
                 commands::load_recent_repos_async(),
                 commands::save_session_async(open_tabs, active),
+                commands::save_layout_async(state.current_layout()),
             ])
         }
 
@@ -210,6 +211,7 @@ fn handle_repo_loaded(state: &mut GitKraft, result: Result<RepoPayload, String>)
             // compute_commit_display is O(n) string formatting — fast enough
             // to run unconditionally even for large histories.
             tab.commit_display = compute_commit_display(&tab.commits);
+            tab.branch_context = compute_branch_context(&tab.commits, &tab.graph_rows);
 
             // Record the repo open AND persist the full session in one atomic
             // write, on a background thread so settings file I/O never blocks the UI.
@@ -259,6 +261,7 @@ fn handle_repo_loaded_at(
             let tab = &mut state.tabs[tab_index];
             tab.apply_payload(payload, path);
             tab.commit_display = compute_commit_display(&tab.commits);
+            tab.branch_context = compute_branch_context(&tab.commits, &tab.graph_rows);
             // Already in recent_repos — no need to re-record.
             Task::none()
         }
@@ -291,6 +294,8 @@ fn handle_more_commits_loaded(
             }
             tab.commits = page.commits;
             tab.graph_rows = page.graph_rows;
+            // Rebuild full branch context since lane assignments may have changed.
+            tab.branch_context = compute_branch_context(&tab.commits, &tab.graph_rows);
         }
         Err(e) => {
             tab.status_message = Some(format!("Failed to load more commits: {e}"));
@@ -311,4 +316,159 @@ fn compute_commit_display(commits: &[gitkraft_core::CommitInfo]) -> Vec<(String,
             (time, author)
         })
         .collect()
+}
+
+/// Pre-compute the inherited branch name for each commit row.
+///
+/// For each graph lane, we track the last-seen branch/tag ref name.
+/// When a commit has an explicit ref, it uses that (the real badge is shown).
+/// When it doesn't, it inherits the branch name from the nearest ancestor
+/// in the same lane.  This allows the UI to show a ghost/semi-transparent
+/// branch label on hover even for commits without explicit refs.
+fn compute_branch_context(
+    commits: &[gitkraft_core::CommitInfo],
+    graph_rows: &[gitkraft_core::GraphRow],
+) -> Vec<Option<String>> {
+    if commits.len() != graph_rows.len() {
+        return vec![None; commits.len()];
+    }
+
+    // Track the current branch name per lane (column).
+    let max_lanes = graph_rows.iter().map(|r| r.width).max().unwrap_or(1);
+    let mut lane_labels: Vec<Option<String>> = vec![None; max_lanes];
+    let mut result = Vec::with_capacity(commits.len());
+
+    for (i, commit) in commits.iter().enumerate() {
+        let col = graph_rows[i].node_column;
+
+        // If this commit has branch/tag refs, update the lane label.
+        if let Some(first_ref) = commit.refs.first() {
+            if col < lane_labels.len() {
+                lane_labels[col] = Some(first_ref.name.clone());
+            }
+            // Commits with explicit refs show real badges, so no ghost needed.
+            result.push(None);
+        } else {
+            // Inherit from the lane.
+            let label = if col < lane_labels.len() {
+                lane_labels[col].clone()
+            } else {
+                None
+            };
+            result.push(label);
+        }
+    }
+
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_commit(oid: &str, refs: Vec<gitkraft_core::RefLabel>) -> gitkraft_core::CommitInfo {
+        gitkraft_core::CommitInfo {
+            oid: oid.to_string(),
+            summary: String::new(),
+            message: String::new(),
+            author_name: String::new(),
+            author_email: String::new(),
+            time: Default::default(),
+            parent_ids: Vec::new(),
+            refs,
+        }
+    }
+
+    fn make_graph_row(node_column: usize) -> gitkraft_core::GraphRow {
+        gitkraft_core::GraphRow {
+            width: node_column + 1,
+            node_column,
+            node_color: 0,
+            edges: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn branch_context_empty_when_no_commits() {
+        let result = compute_branch_context(&[], &[]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn branch_context_none_for_commits_with_refs() {
+        let refs = vec![gitkraft_core::RefLabel {
+            name: "main".to_string(),
+            kind: gitkraft_core::RefKind::Head,
+        }];
+        let commits = vec![make_commit("aaa", refs)];
+        let graph = vec![make_graph_row(0)];
+        let result = compute_branch_context(&commits, &graph);
+        // Commits with explicit refs get None (real badges shown)
+        assert_eq!(result, vec![None]);
+    }
+
+    #[test]
+    fn branch_context_inherits_from_ancestor_in_same_lane() {
+        let refs = vec![gitkraft_core::RefLabel {
+            name: "main".to_string(),
+            kind: gitkraft_core::RefKind::Head,
+        }];
+        let commits = vec![
+            make_commit("tip", refs),       // has ref "main"
+            make_commit("mid", Vec::new()), // no refs, same lane
+            make_commit("old", Vec::new()), // no refs, same lane
+        ];
+        let graph = vec![make_graph_row(0), make_graph_row(0), make_graph_row(0)];
+        let result = compute_branch_context(&commits, &graph);
+        assert_eq!(result[0], None); // has explicit ref
+        assert_eq!(result[1], Some("main".to_string())); // inherited
+        assert_eq!(result[2], Some("main".to_string())); // inherited
+    }
+
+    #[test]
+    fn branch_context_separate_lanes_get_separate_labels() {
+        let main_ref = vec![gitkraft_core::RefLabel {
+            name: "main".to_string(),
+            kind: gitkraft_core::RefKind::Head,
+        }];
+        let feat_ref = vec![gitkraft_core::RefLabel {
+            name: "feature".to_string(),
+            kind: gitkraft_core::RefKind::LocalBranch,
+        }];
+        let commits = vec![
+            make_commit("a", main_ref),   // lane 0, "main"
+            make_commit("b", feat_ref),   // lane 1, "feature"
+            make_commit("c", Vec::new()), // lane 0 -> inherits "main"
+            make_commit("d", Vec::new()), // lane 1 -> inherits "feature"
+        ];
+        let graph = vec![
+            make_graph_row(0),
+            gitkraft_core::GraphRow {
+                width: 2,
+                node_column: 1,
+                node_color: 1,
+                edges: Vec::new(),
+            },
+            make_graph_row(0),
+            gitkraft_core::GraphRow {
+                width: 2,
+                node_column: 1,
+                node_color: 1,
+                edges: Vec::new(),
+            },
+        ];
+        let result = compute_branch_context(&commits, &graph);
+        assert_eq!(result[0], None);
+        assert_eq!(result[1], None);
+        assert_eq!(result[2], Some("main".to_string()));
+        assert_eq!(result[3], Some("feature".to_string()));
+    }
+
+    #[test]
+    fn branch_context_mismatched_lengths_returns_all_none() {
+        let commits = vec![make_commit("a", Vec::new())];
+        let graph = vec![]; // mismatched
+        let result = compute_branch_context(&commits, &graph);
+        assert_eq!(result, vec![None]);
+    }
 }

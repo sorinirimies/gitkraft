@@ -1161,7 +1161,7 @@ impl App {
             let repo = open_repo_str(&repo_path)?;
             let info = gitkraft_core::features::commits::create_commit(&repo, &msg)
                 .map_err(|e| format!("commit: {e}"))?;
-            Ok(format!("Committed: {} {}", info.short_oid, info.summary))
+            Ok(format!("Committed: {} {}", info.short_oid(), info.summary))
         });
     }
 
@@ -3018,7 +3018,6 @@ mod tests {
         // Add a fake commit and select it
         app.tab_mut().commits = vec![gitkraft_core::CommitInfo {
             oid: "abc1234567890".to_string(),
-            short_oid: "abc1234".to_string(),
             summary: "test commit".to_string(),
             message: "test commit".to_string(),
             author_name: "author".to_string(),
@@ -3045,7 +3044,6 @@ mod tests {
         let mut app = App::new();
         app.tab_mut().commits = vec![gitkraft_core::CommitInfo {
             oid: "deadbeef1234567".to_string(),
-            short_oid: "deadbee".to_string(),
             summary: "s".to_string(),
             message: "s".to_string(),
             author_name: "a".to_string(),
@@ -3070,7 +3068,6 @@ mod tests {
         let mut app = App::new();
         app.tab_mut().commits = vec![gitkraft_core::CommitInfo {
             oid: "aaa".to_string(),
-            short_oid: "aaa".to_string(),
             summary: "s".to_string(),
             message: "s".to_string(),
             author_name: "a".to_string(),
@@ -3252,7 +3249,6 @@ mod tests {
         app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
         app.tab_mut().commits = vec![gitkraft_core::CommitInfo {
             oid: "abc1234567890".to_string(),
-            short_oid: "abc1234".to_string(),
             summary: "test".into(),
             message: "test".into(),
             author_name: "A".into(),
@@ -3273,7 +3269,6 @@ mod tests {
         let mut app = App::new();
         app.tab_mut().commits = vec![gitkraft_core::CommitInfo {
             oid: "abc1234567890".to_string(),
-            short_oid: "abc1234".to_string(),
             summary: "test".into(),
             message: "test".into(),
             author_name: "A".into(),
@@ -3295,7 +3290,6 @@ mod tests {
         app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
         app.tab_mut().commits = vec![gitkraft_core::CommitInfo {
             oid: "abc1234567890".to_string(),
-            short_oid: "abc1234".to_string(),
             summary: "test".into(),
             message: "test".into(),
             author_name: "A".into(),
@@ -3320,7 +3314,6 @@ mod tests {
         app.tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
         app.tab_mut().commits = vec![gitkraft_core::CommitInfo {
             oid: "deadbeef12345".to_string(),
-            short_oid: "deadbee".to_string(),
             summary: "fix: something".into(),
             message: "fix: something".into(),
             author_name: "A".into(),
@@ -3352,7 +3345,6 @@ mod tests {
         app.tab_mut().commits = vec![
             gitkraft_core::CommitInfo {
                 oid: "oid_newest".to_string(),
-                short_oid: "newest".to_string(),
                 summary: "newest".into(),
                 message: "newest".into(),
                 author_name: "A".into(),
@@ -3363,7 +3355,6 @@ mod tests {
             },
             gitkraft_core::CommitInfo {
                 oid: "oid_middle".to_string(),
-                short_oid: "middle".to_string(),
                 summary: "middle".into(),
                 message: "middle".into(),
                 author_name: "A".into(),
@@ -3374,7 +3365,6 @@ mod tests {
             },
             gitkraft_core::CommitInfo {
                 oid: "oid_oldest".to_string(),
-                short_oid: "oldest".to_string(),
                 summary: "oldest".into(),
                 message: "oldest".into(),
                 author_name: "A".into(),
@@ -3411,7 +3401,6 @@ mod tests {
         app.tab_mut().commits = vec![
             gitkraft_core::CommitInfo {
                 oid: "oid_0_newest".to_string(),
-                short_oid: "oid0new".to_string(),
                 summary: "newest".into(),
                 message: "newest".into(),
                 author_name: "A".into(),
@@ -3422,7 +3411,6 @@ mod tests {
             },
             gitkraft_core::CommitInfo {
                 oid: "oid_1_oldest".to_string(),
-                short_oid: "oid1old".to_string(),
                 summary: "oldest".into(),
                 message: "oldest".into(),
                 author_name: "A".into(),
@@ -4132,7 +4120,6 @@ mod tests {
         (0..3)
             .map(|i| gitkraft_core::CommitInfo {
                 oid: format!("{i:040x}"),
-                short_oid: format!("{i:07x}"),
                 summary: format!("Commit {i}"),
                 message: format!("Commit {i}"),
                 author_name: "Test".into(),
@@ -4377,7 +4364,6 @@ mod tests {
         let mut app = App::new();
         app.tab_mut().commits = vec![gitkraft_core::CommitInfo {
             oid: "abcdef1234567890".into(),
-            short_oid: "abcdef1".into(),
             summary: "test".into(),
             message: "test".into(),
             author_name: "A".into(),

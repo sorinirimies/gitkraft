@@ -177,7 +177,6 @@ mod tests {
     fn make_commit(oid: &str, parents: &[&str]) -> CommitInfo {
         CommitInfo {
             oid: oid.to_string(),
-            short_oid: oid[..7.min(oid.len())].to_string(),
             summary: format!("commit {oid}"),
             message: format!("commit {oid}"),
             author_name: "Test".to_string(),

@@ -304,7 +304,6 @@ mod tests {
     fn make_commit_info(summary: &str) -> gitkraft_core::CommitInfo {
         gitkraft_core::CommitInfo {
             oid: "abc1234567890".to_string(),
-            short_oid: "abc1234".to_string(),
             summary: summary.to_string(),
             message: summary.to_string(),
             author_name: "author".to_string(),

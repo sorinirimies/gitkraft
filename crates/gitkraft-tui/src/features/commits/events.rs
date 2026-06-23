@@ -307,7 +307,6 @@ mod tests {
         (0..count)
             .map(|i| gitkraft_core::CommitInfo {
                 oid: format!("{i:040x}"),
-                short_oid: format!("{i:07x}"),
                 summary: format!("commit {i}"),
                 message: format!("commit {i}"),
                 author_name: "Test".into(),
@@ -463,7 +462,6 @@ mod tests {
         (0..count)
             .map(|_| gitkraft_core::CommitInfo {
                 oid: String::new(),
-                short_oid: String::new(),
                 summary: String::new(),
                 message: String::new(),
                 author_name: String::new(),

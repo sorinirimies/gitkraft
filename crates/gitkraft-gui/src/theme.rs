@@ -280,6 +280,16 @@ pub fn highlight_row_style(theme: &iced::Theme) -> container::Style {
     }
 }
 
+/// Style for a row being hovered by the mouse — subtle surface-level highlight.
+pub fn hover_row_style(theme: &iced::Theme) -> container::Style {
+    let c = ThemeColors::from_theme(theme);
+    let bg = mix(c.surface, c.surface_highlight, 0.5);
+    container::Style {
+        background: Some(Background::Color(bg)),
+        ..Default::default()
+    }
+}
+
 /// Style for a diff addition line.
 pub fn diff_add_style(theme: &iced::Theme) -> container::Style {
     let c = ThemeColors::from_theme(theme);

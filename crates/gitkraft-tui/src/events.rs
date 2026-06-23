@@ -819,7 +819,6 @@ mod tests {
         app.tab_mut().commits = (0..5)
             .map(|_| gitkraft_core::CommitInfo {
                 oid: String::new(),
-                short_oid: String::new(),
                 summary: String::new(),
                 message: String::new(),
                 author_name: String::new(),
@@ -847,7 +846,6 @@ mod tests {
         app.tab_mut().commits = (0..5)
             .map(|_| gitkraft_core::CommitInfo {
                 oid: String::new(),
-                short_oid: String::new(),
                 summary: String::new(),
                 message: String::new(),
                 author_name: String::new(),
@@ -875,7 +873,6 @@ mod tests {
         app.tab_mut().commits = (0..5)
             .map(|_| gitkraft_core::CommitInfo {
                 oid: String::new(),
-                short_oid: String::new(),
                 summary: String::new(),
                 message: String::new(),
                 author_name: String::new(),

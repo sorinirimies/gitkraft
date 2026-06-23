@@ -397,6 +397,11 @@ fn parse_diff(diff: &Diff<'_>) -> Result<Vec<DiffInfo>> {
     let num_deltas = diff.deltas().len();
     let mut infos: Vec<DiffInfo> = Vec::with_capacity(num_deltas);
 
+    /// Maximum number of diff lines to store per file.
+    /// Beyond this, additional lines are silently dropped to prevent
+    /// multi-GB memory consumption from huge generated/binary diffs.
+    const MAX_LINES_PER_FILE: usize = 10_000;
+
     // Pre-populate DiffInfo shells for each delta so the print callback can
     // index into them.
     for delta in diff.deltas() {
@@ -422,6 +427,7 @@ fn parse_diff(diff: &Diff<'_>) -> Result<Vec<DiffInfo>> {
     // Walk through the diff with the print callback which gives us
     // file / hunk / line events in order.
     let mut current_delta_idx: usize = 0;
+    let mut current_line_count: usize = 0;
 
     diff.print(DiffFormat::Patch, |delta, maybe_hunk, line| {
         // Identify which delta we are currently processing by matching paths.
@@ -450,10 +456,19 @@ fn parse_diff(diff: &Diff<'_>) -> Result<Vec<DiffInfo>> {
 
         let found = found_idx.is_some();
         if let Some(idx) = found_idx {
-            current_delta_idx = idx;
+            if idx != current_delta_idx {
+                // Switched to a new file — reset the line counter.
+                current_delta_idx = idx;
+                current_line_count = infos[idx].hunks.iter().map(|h| h.lines.len()).sum();
+            }
         }
         if !found {
             return true; // skip unknown delta
+        }
+
+        // Skip lines beyond the cap to prevent unbounded memory growth.
+        if current_line_count >= MAX_LINES_PER_FILE {
+            return true;
         }
 
         let info = &mut infos[current_delta_idx];
@@ -474,6 +489,7 @@ fn parse_diff(diff: &Diff<'_>) -> Result<Vec<DiffInfo>> {
                     header: header.clone(),
                     lines: vec![DiffLine::HunkHeader(header)],
                 });
+                current_line_count += 1;
             }
         }
 
@@ -493,6 +509,7 @@ fn parse_diff(diff: &Diff<'_>) -> Result<Vec<DiffInfo>> {
                 _ => return true,
             };
             hunk.lines.push(diff_line);
+            current_line_count += 1;
         }
 
         true

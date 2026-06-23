@@ -465,6 +465,9 @@ pub enum Message {
     /// Close the file preview editor.
     ClosePreview,
 
+    /// Mouse entered/left a commit row in the commit log.
+    HoverCommit(Option<usize>),
+
     /// No-op (used for disabled buttons, etc.).
     Noop,
 }

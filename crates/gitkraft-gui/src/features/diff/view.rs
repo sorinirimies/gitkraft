@@ -328,53 +328,105 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
 fn multi_diff_content<'a>(
     diffs: &'a [DiffInfo],
     c: &ThemeColors,
-    _scroll_offset: f32,
+    scroll_offset: f32,
 ) -> Element<'a, Message> {
+    // Count total lines across all files for virtual scrolling.
+    // Per file: 1 header + content lines (or 1 "no content" line) + 1 gap
+    let total_lines: usize = diffs
+        .iter()
+        .map(|d| {
+            let content = if d.hunks.is_empty() {
+                1 // "No diff content." placeholder
+            } else {
+                d.hunks.iter().map(|h| h.lines.len()).sum::<usize>()
+            };
+            1 + content + 1 // header + content + gap
+        })
+        .sum();
+
+    let first = ((scroll_offset / DIFF_LINE_HEIGHT) as usize).saturating_sub(DIFF_OVERSCAN);
+    let last = (first + DIFF_VISIBLE_LINES + 2 * DIFF_OVERSCAN).min(total_lines);
+
+    let top_space = first as f32 * DIFF_LINE_HEIGHT;
+    let bottom_space = (total_lines.saturating_sub(last)) as f32 * DIFF_LINE_HEIGHT;
+
     let mut col = column![].width(Length::Fill);
 
-    for diff in diffs {
-        // Per-file header bar
-        let status_color = theme::status_color(&diff.status, c);
-        let header = container(
-            row![
-                text(format!(" {} ", diff.status))
-                    .size(12)
-                    .color(status_color)
-                    .font(Font::MONOSPACE),
-                Space::new().width(8),
-                text(diff.display_path().to_string())
-                    .size(13)
-                    .color(c.text_primary)
-                    .font(Font::MONOSPACE),
-            ]
-            .align_y(Alignment::Center),
-        )
-        .padding([6, 12])
-        .width(Length::Fill)
-        .style(theme::header_style);
+    if top_space > 0.0 {
+        col = col.push(Space::new().height(top_space));
+    }
 
-        col = col.push(header);
+    let mut global_idx = 0usize;
+    for diff in diffs {
+        // Per-file header bar (counts as one "line" for virtual scrolling)
+        if global_idx >= first && global_idx < last {
+            let status_color = theme::status_color(&diff.status, c);
+            let header = container(
+                row![
+                    text(format!(" {} ", diff.status))
+                        .size(12)
+                        .color(status_color)
+                        .font(Font::MONOSPACE),
+                    Space::new().width(8),
+                    text(diff.display_path().to_string())
+                        .size(13)
+                        .color(c.text_primary)
+                        .font(Font::MONOSPACE),
+                ]
+                .align_y(Alignment::Center),
+            )
+            .padding([6, 12])
+            .width(Length::Fill)
+            .style(theme::header_style);
+            col = col.push(header);
+        }
+        global_idx += 1;
+        if global_idx >= last {
+            break;
+        }
 
         if diff.hunks.is_empty() {
-            col = col.push(
-                container(
-                    text("No diff content.")
-                        .size(13)
-                        .color(c.muted)
-                        .font(Font::MONOSPACE),
-                )
-                .padding([4, 12]),
-            );
+            if global_idx >= first && global_idx < last {
+                col = col.push(
+                    container(
+                        text("No diff content.")
+                            .size(13)
+                            .color(c.muted)
+                            .font(Font::MONOSPACE),
+                    )
+                    .padding([4, 12]),
+                );
+            }
+            global_idx += 1;
         } else {
             for hunk in &diff.hunks {
                 for line in &hunk.lines {
-                    col = col.push(render_line(line, c));
+                    if global_idx >= first && global_idx < last {
+                        col = col.push(render_line(line, c));
+                    }
+                    global_idx += 1;
+                    if global_idx >= last {
+                        break;
+                    }
+                }
+                if global_idx >= last {
+                    break;
                 }
             }
         }
 
         // Small gap between files
-        col = col.push(Space::new().height(8));
+        if global_idx >= first && global_idx < last {
+            col = col.push(Space::new().height(8));
+        }
+        global_idx += 1;
+        if global_idx >= last {
+            break;
+        }
+    }
+
+    if bottom_space > 0.0 {
+        col = col.push(Space::new().height(bottom_space));
     }
 
     scrollable(col)
@@ -574,7 +626,7 @@ pub(crate) fn file_history_view(state: &GitKraft) -> Element<'_, Message> {
     } else {
         let mut list = column![].width(Length::Fill);
         for commit in &tab.file_history_commits {
-            let short = commit.short_oid.as_str();
+            let short = commit.short_oid();
             let summary = view_utils::truncate_to_fit(&commit.summary, 280.0, 7.0);
             let rel_time = commit.relative_time();
 
@@ -682,7 +734,7 @@ pub(crate) fn blame_view(state: &GitKraft) -> Element<'_, Message> {
             .clip(true);
 
             let blame_row = row![
-                text(line.short_oid.as_str())
+                text(line.short_oid())
                     .size(10)
                     .color(c.accent)
                     .font(Font::MONOSPACE),

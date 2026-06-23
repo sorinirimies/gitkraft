@@ -61,7 +61,7 @@ pub(crate) fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                 .active_tab()
                 .commits
                 .get(index)
-                .map(|c| (c.oid.clone(), c.short_oid.clone()));
+                .map(|c| (c.oid.clone(), c.short_oid().to_string()));
 
             let tab = state.active_tab_mut();
             tab.anchor_commit_index = Some(index);

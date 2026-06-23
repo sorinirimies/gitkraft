@@ -268,7 +268,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
 
             // Append the commit info spans
             spans.push(Span::styled(
-                format!("{} ", commit.short_oid),
+                format!("{} ", commit.short_oid()),
                 Style::default().fg(theme.warning),
             ));
             // Ref badges: branch/tag/HEAD labels between OID and summary
