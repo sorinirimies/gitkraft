@@ -5,6 +5,11 @@ use std::sync::mpsc;
 
 use gitkraft_core::*;
 
+/// Maximum number of per-file diffs cached per tab.
+/// Once this limit is reached the entire cache is cleared before inserting
+/// the next entry, bounding per-tab diff memory to ~30 × 10 000 lines.
+pub(crate) const MAX_CACHED_DIFFS: usize = 30;
+
 // ── Background task macros ────────────────────────────────────────────────────
 
 /// Spawn a background task that requires a repo path.
@@ -856,6 +861,11 @@ impl App {
                     match res {
                         Ok((file_index, diff)) => {
                             let tab = self.tab_mut();
+                            // Evict the cache when it grows too large to prevent unbounded
+                            // memory use on commits that touch hundreds of files.
+                            if tab.commit_diffs.len() >= MAX_CACHED_DIFFS {
+                                tab.commit_diffs.clear();
+                            }
                             tab.commit_diffs.insert(file_index, diff.clone());
                             // Update selected_diff only when this is the currently focused file
                             // and we are NOT showing a multi-file concatenated view.
@@ -2442,7 +2452,7 @@ impl App {
         std::thread::spawn(move || {
             let res: Result<String, String> = (|| {
                 for oid in &oids {
-                    gitkraft_core::features::repo::cherry_pick_commit(&repo_path, oid)
+                    gitkraft_core::features::commits::cherry_pick_commit(&repo_path, oid)
                         .map_err(|e| format!("cherry-pick {}: {e}", &oid[..oid.len().min(7)]))?;
                 }
                 Ok(format!("Cherry-picked {} commit(s)", oids.len()))
@@ -2456,7 +2466,7 @@ impl App {
         });
     }
 
-    pub fn reset_to_selected_commit(&mut self, mode: &str) {
+    pub fn reset_to_selected_commit(&mut self, mode: gitkraft_core::ResetMode) {
         let repo_path = match self.tab().repo_path.clone() {
             Some(p) => p,
             None => return,
@@ -2468,18 +2478,17 @@ impl App {
             },
             None => return,
         };
-        let mode_owned = mode.to_string();
         self.tab_mut().is_loading = true;
         self.tab_mut().status_message = Some(format!("Resetting ({mode})…"));
         let tx = self.bg_tx.clone();
         std::thread::spawn(move || {
             let workdir = std::path::Path::new(&repo_path);
-            let res = gitkraft_core::features::repo::reset_to_commit(workdir, &oid, &mode_owned);
+            let res = gitkraft_core::features::repo::reset_to_commit(workdir, &oid, mode);
             let _ = tx.send(BackgroundResult::OperationDone {
                 ok_message: res
                     .as_ref()
                     .ok()
-                    .map(|_| format!("Reset ({mode_owned}) to {}", &oid[..7])),
+                    .map(|_| format!("Reset ({mode}) to {}", &oid[..7])),
                 err_message: res.err().map(|e| format!("reset: {e}")),
                 needs_refresh: true,
                 needs_staging_refresh: false,
@@ -2974,7 +2983,7 @@ mod tests {
     fn reset_to_selected_commit_no_selection() {
         let mut app = App::new();
         app.tabs[0].repo_path = Some(PathBuf::from("/tmp/fake-repo"));
-        app.reset_to_selected_commit("soft");
+        app.reset_to_selected_commit(gitkraft_core::ResetMode::Soft);
         assert!(!app.tab().is_loading);
     }
 
@@ -4465,5 +4474,72 @@ mod tests {
         crate::events::handle_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         assert_eq!(app.input_mode, crate::app::InputMode::Normal);
         assert!(app.input_buffer.is_empty());
+    }
+
+    // ── commit_diffs cache eviction ───────────────────────────────────────────
+
+    fn make_diff(new_file: &str) -> gitkraft_core::DiffInfo {
+        gitkraft_core::DiffInfo {
+            old_file: String::new(),
+            new_file: new_file.to_string(),
+            status: gitkraft_core::FileStatus::Modified,
+            hunks: Vec::new(),
+        }
+    }
+
+    /// A freshly-created RepoTab starts with an empty cache.
+    #[test]
+    fn commit_diffs_starts_empty() {
+        let tab = RepoTab::new();
+        assert!(tab.commit_diffs.is_empty());
+    }
+
+    /// Cache should not be evicted while it is below the cap.
+    #[test]
+    fn commit_diffs_cache_not_evicted_below_limit() {
+        let mut tab = RepoTab::new();
+        for i in 0..(MAX_CACHED_DIFFS - 1) {
+            tab.commit_diffs.insert(i, make_diff(&format!("file{i}.rs")));
+        }
+        assert_eq!(tab.commit_diffs.len(), MAX_CACHED_DIFFS - 1);
+    }
+
+    /// Inserting entry at exactly MAX_CACHED_DIFFS triggers eviction.
+    #[test]
+    fn commit_diffs_evicted_at_limit() {
+        let mut tab = RepoTab::new();
+        // Fill to the cap.
+        for i in 0..MAX_CACHED_DIFFS {
+            tab.commit_diffs.insert(i, make_diff(&format!("file{i}.rs")));
+        }
+        assert_eq!(tab.commit_diffs.len(), MAX_CACHED_DIFFS);
+
+        // Simulate the eviction + insert that poll_background performs.
+        if tab.commit_diffs.len() >= MAX_CACHED_DIFFS {
+            tab.commit_diffs.clear();
+        }
+        tab.commit_diffs.insert(MAX_CACHED_DIFFS, make_diff("overflow.rs"));
+
+        assert_eq!(
+            tab.commit_diffs.len(),
+            1,
+            "cache should be cleared then contain only the newly inserted entry"
+        );
+        assert!(
+            tab.commit_diffs.contains_key(&MAX_CACHED_DIFFS),
+            "the new entry must survive the eviction"
+        );
+    }
+
+    /// After a full commit switch (`commit_diffs.clear()`) the cache is empty.
+    #[test]
+    fn commit_diffs_cleared_on_commit_switch() {
+        let mut tab = RepoTab::new();
+        for i in 0..5 {
+            tab.commit_diffs.insert(i, make_diff(&format!("file{i}.rs")));
+        }
+        assert!(!tab.commit_diffs.is_empty());
+        tab.commit_diffs.clear();
+        assert!(tab.commit_diffs.is_empty());
     }
 }

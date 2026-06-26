@@ -895,9 +895,9 @@ impl GitKraft {
             | Message::ResetMixed(ref oid)
             | Message::ResetHard(ref oid) => {
                 let mode = match &message {
-                    Message::ResetSoft(_) => "soft",
-                    Message::ResetMixed(_) => "mixed",
-                    Message::ResetHard(_) => "hard",
+                    Message::ResetSoft(_)  => gitkraft_core::ResetMode::Soft,
+                    Message::ResetMixed(_) => gitkraft_core::ResetMode::Mixed,
+                    Message::ResetHard(_)  => gitkraft_core::ResetMode::Hard,
                     _ => unreachable!(),
                 };
                 let oid = oid.clone();
@@ -910,7 +910,7 @@ impl GitKraft {
                     |path| crate::features::repo::commands::reset_to_commit_async(
                         path,
                         oid,
-                        mode.to_string()
+                        mode
                     )
                 )
             }

@@ -4,7 +4,7 @@
 //! branch keeps a single consistent colour.  New colours are only introduced
 //! when a new lane is created for a branch or merge.
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use super::types::{GraphEdge, GraphRow};
 use crate::features::commits::CommitInfo;
@@ -37,10 +37,9 @@ pub fn build_graph(commits: &[CommitInfo]) -> Vec<GraphRow> {
 
     // Pre-build a set of OIDs in this commit list so we can detect when a
     // parent is NOT in the loaded window (and thus its lane will never resolve).
-    let oid_set: HashMap<&str, usize> = commits
+    let oid_set: HashSet<&str> = commits
         .iter()
-        .enumerate()
-        .map(|(i, c)| (c.oid.as_str(), i))
+        .map(|c| c.oid.as_str())
         .collect();
 
     for commit in commits {
@@ -145,7 +144,7 @@ pub fn build_graph(commits: &[CommitInfo]) -> Vec<GraphRow> {
                 continue;
             }
             if let Some(lane) = lane_opt {
-                if !oid_set.contains_key(lane.target_oid.as_str()) {
+                if !oid_set.contains(lane.target_oid.as_str()) {
                     *lane_opt = None;
                 }
             }

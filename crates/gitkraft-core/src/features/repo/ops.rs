@@ -80,31 +80,14 @@ pub fn revert_commit(workdir: &std::path::Path, oid_str: &str) -> Result<()> {
     Ok(())
 }
 
-/// Cherry-pick a commit by OID onto the current branch.
-pub fn cherry_pick_commit(workdir: &std::path::Path, oid_str: &str) -> anyhow::Result<()> {
-    let output = std::process::Command::new("git")
-        .current_dir(workdir)
-        .args(["cherry-pick", oid_str])
-        .output()
-        .context("failed to spawn git")?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("{}", stderr.trim());
-    }
-    Ok(())
-}
-
 /// Reset the current branch to a specific commit.
 ///
-/// `mode` must be one of `"soft"`, `"mixed"`, or `"hard"`:
-/// - **soft**  — moves HEAD; staged + working-directory changes are kept.
-/// - **mixed** — moves HEAD and unstages changes; working directory is kept.
-/// - **hard**  — moves HEAD and discards all uncommitted changes permanently.
-pub fn reset_to_commit(workdir: &std::path::Path, oid_str: &str, mode: &str) -> Result<()> {
-    let flag = format!("--{mode}");
+/// The `mode` parameter is type-safe — use [`ResetMode::Soft`],
+/// [`ResetMode::Mixed`], or [`ResetMode::Hard`].
+pub fn reset_to_commit(workdir: &std::path::Path, oid_str: &str, mode: super::types::ResetMode) -> Result<()> {
     let output = std::process::Command::new("git")
         .current_dir(workdir)
-        .args(["reset", &flag, oid_str])
+        .args(["reset", mode.as_flag(), oid_str])
         .output()
         .context("failed to spawn git")?;
     if !output.status.success() {

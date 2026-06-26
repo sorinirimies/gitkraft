@@ -23,8 +23,8 @@ gitkraft-core = { workspace = true }
 git2          = { workspace = true }
 tui-spinner   = { workspace = true }
 iced       = { workspace = true }
-iced_fonts = { version = "0.1", features = ["bootstrap"] }
-rfd        = "0.15"
+iced_fonts = { workspace = true }
+rfd        = { workspace = true }
 notify        = { workspace = true }
 futures       = { workspace = true }
 tracing       = { workspace = true }

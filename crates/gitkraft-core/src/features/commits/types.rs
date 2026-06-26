@@ -73,7 +73,9 @@ impl CommitInfo {
         let oid = commit.id().to_string();
 
         let time_secs = commit.time().seconds();
-        let time = DateTime::<Utc>::from_timestamp(time_secs, 0).unwrap_or_default();
+        let time = chrono::TimeZone::timestamp_opt(&Utc, time_secs, 0)
+            .single()
+            .unwrap_or_else(chrono::Utc::now);
 
         let summary = commit.summary().unwrap_or("").to_string();
         let message = commit.message().unwrap_or("").to_string();

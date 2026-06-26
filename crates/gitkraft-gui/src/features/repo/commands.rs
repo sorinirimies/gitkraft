@@ -143,11 +143,10 @@ pub(crate) fn revert_commit_async(path: PathBuf, oid: String) -> Task<Message> {
     ))
 }
 
-/// Reset the current branch to `oid` using the given `mode`
-/// (`"soft"`, `"mixed"`, or `"hard"`).
-pub(crate) fn reset_to_commit_async(path: PathBuf, oid: String, mode: String) -> Task<Message> {
+/// Reset the current branch to `oid` using the given `mode`.
+pub(crate) fn reset_to_commit_async(path: PathBuf, oid: String, mode: gitkraft_core::ResetMode) -> Task<Message> {
     git_wd_then_reload!(path, |wd| gitkraft_core::features::repo::reset_to_commit(
-        &wd, &oid, &mode
+        &wd, &oid, mode
     ))
 }
 
@@ -196,7 +195,7 @@ pub(crate) fn create_annotated_tag_async(
 pub(crate) fn cherry_pick_async(path: PathBuf, oid: String) -> Task<Message> {
     git_wd_then_reload!(
         path,
-        |wd| gitkraft_core::features::repo::cherry_pick_commit(&wd, &oid)
+        |wd| gitkraft_core::features::commits::cherry_pick_commit(&wd, &oid)
     )
 }
 
@@ -256,7 +255,7 @@ pub(crate) fn cherry_pick_commits_async(path: PathBuf, oids: Vec<String>) -> Tas
         (|| {
             let wd = workdir(&path)?;
             for oid in &oids {
-                gitkraft_core::features::repo::cherry_pick_commit(&wd, oid).str_err()?;
+                gitkraft_core::features::commits::cherry_pick_commit(&wd, oid).str_err()?;
             }
             load_repo_blocking(&path)
         })()

@@ -19,7 +19,6 @@ dirs          = { workspace = true }
 anyhow        = { workspace = true }
 tracing       = { workspace = true }
 notify        = { workspace = true }
-
+tempfile      = { workspace = true }   # used for atomic settings writes
 
 [dev-dependencies]
-tempfile = { workspace = true }

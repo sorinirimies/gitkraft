@@ -111,7 +111,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
 
         // Reset to this commit — mixed mode (keeps working-tree changes, unstages everything).
         KeyCode::Char('n') => {
-            app.reset_to_selected_commit("mixed");
+            app.reset_to_selected_commit(gitkraft_core::ResetMode::Mixed);
         }
 
         // Revert selected commit(s) — multi-selection aware
@@ -121,12 +121,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
 
         // Reset soft to selected commit
         KeyCode::Char('x') => {
-            app.reset_to_selected_commit("soft");
+            app.reset_to_selected_commit(gitkraft_core::ResetMode::Soft);
         }
 
         // Reset hard to selected commit
         KeyCode::Char('X') => {
-            app.reset_to_selected_commit("hard");
+            app.reset_to_selected_commit(gitkraft_core::ResetMode::Hard);
         }
 
         // Force push current branch

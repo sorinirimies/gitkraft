@@ -57,7 +57,9 @@ pub fn blame_file(repo: &Repository, file_path: &str) -> Result<Vec<BlameLine>> 
 
             let sig = hunk.final_signature();
             let author_name = sig.name().unwrap_or("?").to_string();
-            let time = DateTime::<Utc>::from_timestamp(sig.when().seconds(), 0).unwrap_or_default();
+            let time = chrono::TimeZone::timestamp_opt(&Utc, sig.when().seconds(), 0)
+                .single()
+                .unwrap_or_else(chrono::Utc::now);
 
             lines.push(BlameLine {
                 line_number,

@@ -21,7 +21,6 @@ repository   = "https://github.com/sorinirimies/gitkraft"
 # Core / shared
 git2         = "0.20"
 anyhow       = "1"
-thiserror    = "2"
 serde        = { version = "1", features = ["derive"] }
 serde_json   = "1"
 chrono       = { version = "0.4", features = ["serde"] }
@@ -55,5 +54,8 @@ gitkraft-core = { path = "crates/gitkraft-core", version = "1.1.2" }
 opt-level = 0
 
 [profile.release]
-opt-level = 3
-lto       = true
+opt-level     = 3
+lto           = "thin"   # faster than full LTO, nearly same size reduction
+codegen-units = 1        # maximises inlining across crate boundaries
+strip         = "symbols" # removes debug symbols from release binary
+panic         = "abort"  # removes unwinding tables (~10% smaller binary)

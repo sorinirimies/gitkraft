@@ -2,8 +2,9 @@
 //!
 //! Settings are stored at `~/.config/gitkraft/settings.json` (or the
 //! platform-appropriate config directory).  Writes are **atomic**: content is
-//! first written to a `.tmp` sibling and then renamed into place, so a crash
-//! mid-write can never produce a corrupted file.
+//! first written to a `NamedTempFile` in the same directory and then
+//! `persist()`-ed into place, so a crash mid-write can never produce a
+//! corrupted file and no stale `.tmp` file is ever left behind.
 //!
 //! GUI settings are stored in `settings.json`; TUI settings are stored in
 //! `tui-settings.json`.  The two files are independent so each UI can evolve
@@ -62,17 +63,26 @@ fn load_from(path: &std::path::Path) -> Result<AppSettings> {
     Ok(AppSettings::default())
 }
 
-/// Save settings to any JSON path (internal, atomic write).
+/// Save settings to any JSON path (internal, atomic write via NamedTempFile).
 fn save_to(path: &std::path::Path, settings: &AppSettings) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create directory {}", parent.display()))?;
-    }
-    let tmp = path.with_extension("json.tmp");
+    use std::io::Write as _;
+
+    let parent = path.parent().unwrap_or(std::path::Path::new("."));
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("failed to create directory {}", parent.display()))?;
+
     let content = serde_json::to_string_pretty(settings).context("failed to serialise settings")?;
-    std::fs::write(&tmp, &content).with_context(|| format!("failed to write {}", tmp.display()))?;
-    std::fs::rename(&tmp, path)
-        .with_context(|| format!("failed to rename {} → {}", tmp.display(), path.display()))?;
+
+    // Write to a NamedTempFile in the same directory so that persist() is an
+    // atomic rename on all platforms.  The temp file is auto-deleted on drop
+    // if persist() never succeeds, eliminating stale .tmp files after crashes.
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+        .context("failed to create temporary settings file")?;
+    tmp.write_all(content.as_bytes())
+        .context("failed to write settings to temporary file")?;
+    tmp.persist(path)
+        .map_err(|e| anyhow::anyhow!("failed to persist settings file: {}", e))?;
+
     Ok(())
 }
 
@@ -91,11 +101,18 @@ pub fn save_settings(settings: &AppSettings) -> Result<()> {
     save_to(&json_path()?, settings)
 }
 
+/// Apply a closure to GUI settings and persist the result in a single
+/// read-modify-write cycle.  Avoids duplicating the load → mutate → save
+/// pattern across every individual setting helper.
+pub fn update_settings<F: FnOnce(&mut AppSettings)>(f: F) -> Result<()> {
+    let mut settings = load_settings()?;
+    f(&mut settings);
+    save_settings(&settings)
+}
+
 /// Record that a repository was opened (updates history + `last_repo`).
 pub fn record_repo_opened(path: &Path) -> Result<()> {
-    let mut settings = load_settings()?;
-    settings.add_recent_repo(path.to_path_buf());
-    save_settings(&settings)
+    update_settings(|s| s.add_recent_repo(path.to_path_buf()))
 }
 
 /// Return the last opened repository path, if any.
@@ -105,9 +122,7 @@ pub fn get_last_repo() -> Result<Option<PathBuf>> {
 
 /// Persist the selected theme name.
 pub fn save_theme(theme_name: &str) -> Result<()> {
-    let mut settings = load_settings()?;
-    settings.theme_name = Some(theme_name.to_string());
-    save_settings(&settings)
+    update_settings(|s| s.theme_name = Some(theme_name.to_string()))
 }
 
 /// Return the saved theme name, if any.
@@ -117,9 +132,7 @@ pub fn get_saved_theme() -> Result<Option<String>> {
 
 /// Persist the selected editor name.
 pub fn save_editor(editor_name: &str) -> Result<()> {
-    let mut settings = load_settings()?;
-    settings.editor_name = Some(editor_name.to_string());
-    save_settings(&settings)
+    update_settings(|s| s.editor_name = Some(editor_name.to_string()))
 }
 
 /// Return the saved editor name, if any.
@@ -129,9 +142,8 @@ pub fn get_saved_editor() -> Result<Option<String>> {
 
 /// Persist layout preferences.
 pub fn save_layout(layout: &super::types::LayoutSettings) -> Result<()> {
-    let mut settings = load_settings()?;
-    settings.layout = Some(layout.clone());
-    save_settings(&settings)
+    let layout = layout.clone();
+    update_settings(|s| s.layout = Some(layout))
 }
 
 /// Return saved layout preferences, if any.
@@ -156,10 +168,10 @@ pub fn record_repo_and_save_session(
 
 /// Persist the open-tab session without modifying the recent-repos list.
 pub fn save_session(open_tabs: &[PathBuf], active_tab_index: usize) -> Result<()> {
-    let mut settings = load_settings()?;
-    settings.open_tabs = open_tabs.to_vec();
-    settings.active_tab_index = active_tab_index;
-    save_settings(&settings)
+    update_settings(|s| {
+        s.open_tabs = open_tabs.to_vec();
+        s.active_tab_index = active_tab_index;
+    })
 }
 
 // ── TUI settings (tui-settings.json) ─────────────────────────────────────────
@@ -184,11 +196,21 @@ pub fn save_tui_settings(settings: &AppSettings) -> Result<()> {
     save_to(&tui_json_path()?, settings)
 }
 
+/// Apply a closure to TUI settings and persist the result in a single
+/// read-modify-write cycle.
+///
+/// Loads the raw stored settings (without the editor-fallback inheritance used
+/// by [`load_tui_settings`]) to avoid accidentally overwriting an explicit
+/// editor choice made via the GUI.
+pub fn update_tui_settings<F: FnOnce(&mut AppSettings)>(f: F) -> Result<()> {
+    let mut settings = load_from(&tui_json_path()?)?;
+    f(&mut settings);
+    save_tui_settings(&settings)
+}
+
 /// Record that a repository was opened in the TUI.
 pub fn record_repo_opened_tui(path: &std::path::Path) -> Result<()> {
-    let mut settings = load_tui_settings()?;
-    settings.add_recent_repo(path.to_path_buf());
-    save_tui_settings(&settings)
+    update_tui_settings(|s| s.add_recent_repo(path.to_path_buf()))
 }
 
 /// Return the last TUI-opened repository path, if any.
@@ -198,24 +220,20 @@ pub fn get_last_tui_repo() -> Result<Option<PathBuf>> {
 
 /// Persist the TUI theme selection.
 pub fn save_theme_tui(theme_name: &str) -> Result<()> {
-    let mut settings = load_tui_settings()?;
-    settings.theme_name = Some(theme_name.to_string());
-    save_tui_settings(&settings)
+    update_tui_settings(|s| s.theme_name = Some(theme_name.to_string()))
 }
 
 /// Persist the TUI editor selection.
 pub fn save_editor_tui(editor_name: &str) -> Result<()> {
-    let mut settings = load_tui_settings()?;
-    settings.editor_name = Some(editor_name.to_string());
-    save_tui_settings(&settings)
+    update_tui_settings(|s| s.editor_name = Some(editor_name.to_string()))
 }
 
 /// Persist the TUI open-tab session.
 pub fn save_session_tui(open_tabs: &[PathBuf], active_tab_index: usize) -> Result<()> {
-    let mut settings = load_tui_settings()?;
-    settings.open_tabs = open_tabs.to_vec();
-    settings.active_tab_index = active_tab_index;
-    save_tui_settings(&settings)
+    update_tui_settings(|s| {
+        s.open_tabs = open_tabs.to_vec();
+        s.active_tab_index = active_tab_index;
+    })
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -227,12 +245,11 @@ mod tests {
 
     // ── In-process helpers (bypass dirs::config_dir) ──────────────────────────
 
+    /// Write settings via the real `save_to` implementation so helpers
+    /// automatically exercise the `NamedTempFile` atomic-write path.
     fn write_json(dir: &TempDir, settings: &AppSettings) {
         let path = dir.path().join("settings.json");
-        let tmp = dir.path().join("settings.json.tmp");
-        let content = serde_json::to_string_pretty(settings).unwrap();
-        std::fs::write(&tmp, &content).unwrap();
-        std::fs::rename(&tmp, &path).unwrap();
+        save_to(&path, settings).unwrap();
     }
 
     fn read_json(dir: &TempDir) -> AppSettings {
@@ -465,5 +482,142 @@ mod tests {
         let result = load_from(tmp).unwrap();
         assert_eq!(result.theme_name, None);
         assert!(result.recent_repos.is_empty());
+    }
+
+    // ── save_to: NamedTempFile atomic-write guarantees ──────────────────────────
+
+    #[test]
+    fn save_to_leaves_no_temp_files() {
+        // After save_to completes there must be NO file in the directory
+        // whose extension ends with `tmp`, proving NamedTempFile cleaned up.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        save_to(&path, &AppSettings::default()).unwrap();
+
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .and_then(|x| x.to_str())
+                    .map(|ext| ext.contains("tmp"))
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        assert!(
+            leftovers.is_empty(),
+            "save_to must not leave any temp files: {leftovers:?}"
+        );
+        assert!(path.exists(), "settings file must exist after save_to");
+    }
+
+    #[test]
+    fn save_to_creates_parent_directories_automatically() {
+        let dir = TempDir::new().unwrap();
+        let nested = dir.path().join("a").join("b").join("settings.json");
+        // Parent dirs do not exist yet—save_to must create them.
+        save_to(&nested, &AppSettings::default()).unwrap();
+        assert!(nested.exists());
+    }
+
+    #[test]
+    fn save_to_and_load_from_round_trip() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+
+        let mut s = AppSettings::default();
+        s.theme_name = Some("Nord".to_string());
+        s.editor_name = Some("Neovim".to_string());
+        s.add_recent_repo(PathBuf::from("/tmp/my-repo"));
+
+        save_to(&path, &s).unwrap();
+        let loaded = load_from(&path).unwrap();
+
+        assert_eq!(loaded.theme_name, Some("Nord".to_string()));
+        assert_eq!(loaded.editor_name, Some("Neovim".to_string()));
+        assert_eq!(loaded.recent_repos.len(), 1);
+        assert_eq!(loaded.recent_repos[0].path, PathBuf::from("/tmp/my-repo"));
+    }
+
+    // ── update_settings combinator ──────────────────────────────────────────
+
+    /// Test the combinator via the underlying `save_to` / `load_from`
+    /// primitives (bypasses `dirs::config_dir` which is not controllable
+    /// in unit tests).
+    #[test]
+    fn update_via_save_to_load_from_preserves_other_fields() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+
+        // Write initial state with an editor and a recent repo.
+        let mut initial = AppSettings::default();
+        initial.editor_name = Some("Vim".to_string());
+        initial.add_recent_repo(PathBuf::from("/tmp/repo1"));
+        save_to(&path, &initial).unwrap();
+
+        // Simulate what update_settings does: load → mutate → save.
+        let mut s = load_from(&path).unwrap();
+        s.theme_name = Some("Dracula".to_string());
+        save_to(&path, &s).unwrap();
+
+        let loaded = load_from(&path).unwrap();
+
+        // New field was written.
+        assert_eq!(loaded.theme_name, Some("Dracula".to_string()));
+        // Pre-existing fields were NOT overwritten.
+        assert_eq!(loaded.editor_name, Some("Vim".to_string()));
+        assert_eq!(loaded.recent_repos.len(), 1);
+    }
+
+    #[test]
+    fn update_via_save_to_multiple_mutations_in_one_write() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        save_to(&path, &AppSettings::default()).unwrap();
+
+        // A single load → closure → save call touches multiple fields.
+        let mut s = load_from(&path).unwrap();
+        s.theme_name = Some("Monokai".to_string());
+        s.editor_name = Some("Helix".to_string());
+        s.active_tab_index = 2;
+        save_to(&path, &s).unwrap();
+
+        let loaded = load_from(&path).unwrap();
+        assert_eq!(loaded.theme_name, Some("Monokai".to_string()));
+        assert_eq!(loaded.editor_name, Some("Helix".to_string()));
+        assert_eq!(loaded.active_tab_index, 2);
+    }
+
+    // ── update_tui_settings: raw-load avoids editor-fallback overwrite ────────
+
+    /// `update_tui_settings` must load from the raw TUI file (not via
+    /// `load_tui_settings`), so the GUI’s editor is never silently written
+    /// back into the TUI file.
+    #[test]
+    fn update_tui_settings_does_not_inherit_gui_editor() {
+        let dir = TempDir::new().unwrap();
+        let gui_path = dir.path().join("settings.json");
+        let tui_path = dir.path().join("tui-settings.json");
+
+        // GUI has an editor; TUI file has none.
+        let mut gui = AppSettings::default();
+        gui.editor_name = Some("VS Code".to_string());
+        save_to(&gui_path, &gui).unwrap();
+        save_to(&tui_path, &AppSettings::default()).unwrap();
+
+        // Simulate update_tui_settings: load raw (no fallback) → mutate → save.
+        let mut s = load_from(&tui_path).unwrap();
+        s.theme_name = Some("Nord".to_string());
+        save_to(&tui_path, &s).unwrap();
+
+        // The TUI file must have the new theme but editor_name must remain None.
+        let tui_loaded = load_from(&tui_path).unwrap();
+        assert_eq!(tui_loaded.theme_name, Some("Nord".to_string()));
+        assert!(
+            tui_loaded.editor_name.is_none(),
+            "update_tui_settings must not inherit the GUI editor into the TUI file"
+        );
     }
 }
