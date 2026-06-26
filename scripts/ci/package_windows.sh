@@ -13,6 +13,7 @@ mkdir -p "$DIST"
 sed "s/@VERSION@/${VERSION}/g" "$NSI" > "$DIST/installer_versioned.nsi"
 
 echo "🔨 Building Windows installer with NSIS..."
-makensis "$DIST/installer_versioned.nsi"
+# makensis is installed by choco to a fixed path not automatically on bash PATH
+'/c/Program Files (x86)/NSIS/makensis.exe' "$DIST/installer_versioned.nsi"
 
 echo "✅ Built dist/gitkraft-${VERSION}-windows-x86_64-setup.exe"

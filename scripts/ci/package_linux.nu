@@ -71,6 +71,10 @@ MIT License — see /usr/share/common-licenses/MIT
     print $"✅ Built gitkraft_($version)_($arch).deb"
 
     # ── .rpm for gitkraft-tui ────────────────────────────────────────────────
+    # Pre-compute the changelog date so the "..." inside format date does not
+    # terminate the enclosing $"..." string interpolation prematurely.
+    let rpm_date = (date now | format date "%a %b %d %Y")
+
     let rpm_build = $"($dist_dir)/rpmbuild"
     mkdir $"($rpm_build)/BUILD"
     mkdir $"($rpm_build)/RPMS"
@@ -97,7 +101,7 @@ install -m 755 %{_sourcedir}/gitkraft-tui %{buildroot}/usr/bin/gitkraft-tui
 /usr/bin/gitkraft-tui
 
 %changelog
-* (date now | format date "%a %b %d %Y") Sorin Irimies <sorinirimies@gmail.com> - ($version)-1
+* ($rpm_date) Sorin Irimies <sorinirimies@gmail.com> - ($version)-1
 - Release ($version)
 " | save -f $"($rpm_build)/SPECS/gitkraft-tui.spec"
 
@@ -132,7 +136,7 @@ install -m 755 %{_sourcedir}/gitkraft %{buildroot}/usr/bin/gitkraft
 /usr/bin/gitkraft
 
 %changelog
-* (date now | format date "%a %b %d %Y") Sorin Irimies <sorinirimies@gmail.com> - ($version)-1
+* ($rpm_date) Sorin Irimies <sorinirimies@gmail.com> - ($version)-1
 - Release ($version)
 " | save -f $"($rpm_build)/SPECS/gitkraft.spec"
 
