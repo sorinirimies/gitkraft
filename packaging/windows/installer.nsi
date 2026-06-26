@@ -51,8 +51,15 @@ Section "GitKraft TUI" SecTUI
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\gitkraft-tui.exe" "" "$INSTDIR\gitkraft-tui.exe"
 SectionEnd
 
+; PATH key in the system environment registry
+!define PATH_KEY "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+
 Section "Add to PATH" SecPATH
-    EnVar::AddValue "PATH" "$INSTDIR"
+    ; Append install directory to the system PATH via registry — no plugin required.
+    ReadRegStr $0 HKLM "${PATH_KEY}" "Path"
+    WriteRegExpandStr HKLM "${PATH_KEY}" "Path" "$0;$INSTDIR"
+    ; Broadcast the change so running processes pick it up immediately.
+    SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
 SectionEnd
 
 ; Descriptions
@@ -86,8 +93,15 @@ Section Uninstall
     Delete "$DESKTOP\GitKraft.lnk"
     RMDir "$SMPROGRAMS\GitKraft"
     RMDir "$INSTDIR"
+    ; Remove install directory from the system PATH via registry.
+    ReadRegStr $0 HKLM "${PATH_KEY}" "Path"
+    ; Build cleaned PATH by removing our entry (exact match).
+    ; Uses PowerShell for reliable semicolon-delimited string manipulation.
+    ExecWait 'powershell -NoProfile -Command "\
+        $p = [Environment]::GetEnvironmentVariable(\"Path\",\"Machine\"); \
+        $clean = ($p -split \";\") | Where-Object { $_ -ne \"$INSTDIR\" }; \
+        [Environment]::SetEnvironmentVariable(\"Path\", ($clean -join \";\"), \"Machine\")"'
     DeleteRegKey HKLM "${PRODUCT_UNINST_KEY}"
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\gitkraft.exe"
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\gitkraft-tui.exe"
-    EnVar::DeleteValue "PATH" "$INSTDIR"
 SectionEnd

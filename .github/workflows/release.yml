@@ -130,7 +130,7 @@ jobs:
             pkg-config libxkbcommon-dev libx11-dev libxrandr-dev \
             libxinerama-dev libxcursor-dev libxi-dev libwayland-dev \
             libgl1-mesa-dev libfontconfig1-dev libssl-dev \
-            gcc-aarch64-linux-gnu dpkg-dev rpm
+            gcc-aarch64-linux-gnu libc6-dev-arm64-cross dpkg-dev rpm
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -179,7 +179,7 @@ jobs:
         if: matrix.os == 'windows'
         shell: bash
         run: |
-          choco install nsis envar-plugin-nsis -y --no-progress
+          choco install nsis -y --no-progress
           bash scripts/ci/package_windows.sh ${{ needs.validate.outputs.version }}
 
       # ── Stage raw binaries ───────────────────────────────────────────────────

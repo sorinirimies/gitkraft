@@ -97,7 +97,7 @@ install -m 755 %{_sourcedir}/gitkraft-tui %{buildroot}/usr/bin/gitkraft-tui
 /usr/bin/gitkraft-tui
 
 %changelog
-* $(date '+%a %b %d %Y') Sorin Irimies <sorinirimies@gmail.com> - ($version)-1
+* (date now | format date "%a %b %d %Y") Sorin Irimies <sorinirimies@gmail.com> - ($version)-1
 - Release ($version)
 " | save -f $"($rpm_build)/SPECS/gitkraft-tui.spec"
 
@@ -132,7 +132,7 @@ install -m 755 %{_sourcedir}/gitkraft %{buildroot}/usr/bin/gitkraft
 /usr/bin/gitkraft
 
 %changelog
-* $(date '+%a %b %d %Y') Sorin Irimies <sorinirimies@gmail.com> - ($version)-1
+* (date now | format date "%a %b %d %Y") Sorin Irimies <sorinirimies@gmail.com> - ($version)-1
 - Release ($version)
 " | save -f $"($rpm_build)/SPECS/gitkraft.spec"
 
