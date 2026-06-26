@@ -2,95 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
-## 1.1.1 - 2026-06-11
-### ♻️ Refactor
-- Refactor staging selection logic and context menu handling
-- Refactor staging file lists to use DiffFileEntry type
-### ➕ Added
-- Add reactive git-state watcher using notify crate
-- Add animated loading spinner to GUI and TUI using tui-spinner
-- Add skeleton loading screen using tui-skeleton
-- Add theme background to all panes and update theme switching
-- Add Cyberpunk theme and update theme count references
-- Add 15 new themes and update theme picker to 43 total
-- Add draggable dividers for staging and sidebar panels
-- Add multi-file open and preview actions to context menus
-- Add tests for tab and repo closing and switching scenarios
-- Add utility functions for path, selection, and list navigation
-- Add commit message and ref name validation with inline hints
-- Add stash apply, force-push, and branch rename features stash apply
-- Add pannable canvas commit graph and all-ref revwalk
-- Add tests and GUI helpers for preview and popups
-### 🐛 Bug Fixes
-- Fix branch button highlight and hide delete for current branch
-- Fix tab targeting for repo refresh and deduplication
-- fix: broken rustdoc link to private render_main function
-- Fix tab closing behavior and add tests for CloseRepo and CloseTab
-- Fix indentation of refs field in test data
-- Fix workspace section header in Cargo.toml
-- Fix CI concurrency to properly cancel stale runs
-- Fix stale commit display and refresh race
-### 📈 Improvements
-- Improve git watcher efficiency and add stash list tests
-### 📦 Other Changes
-- Release 0.8.5 with improved git watcher and UI features
-- Preserve multi-selection across commit list refreshes
-- Defer clearing multi-file diff state until diff load completes
-- Preserve file selection and diffs across refresh if commit survives
-- Show branch/tag/HEAD labels in commit log UI
-- Remove unused functions and exports from core crate
-- Show branch ahead/behind status in GUI and TUI
-- Rename gitea_starscream remote to gitea-starscream
-- Canonicalize repo paths and fix tab deduplication logic
-- Remove unnecessary reference to menu_item in context_menu_panel
-### 🔄 Updated
-- Update dependencies in Cargo.lock
-- Update dependencies in Cargo.lock
-- Update badges and theme count in README
-- Update download badges in README with clearer labels
-- Update VHS demo GIFs and theme tape for new theme
-- Update dependencies in Cargo.lock
-### 🔧 Chores
-- chore(deps): nightly dependency upgrade 2026-04-28
-- chore: bump version to 0.8.3
-- chore: bump version to 0.8.4
-- chore: bump version to 0.8.6
-- chore(deps): nightly dependency upgrade 2026-04-30
-- chore: bump version to 0.8.7
-- chore: bump version to 0.8.8
-- chore(deps): nightly dependency upgrade 2026-05-01
-- chore(deps): nightly dependency upgrade 2026-05-02
-- chore: bump version to 0.9.0
-- chore: bump version to 0.9.1
-- chore: bump version to 0.9.2
-- chore: bump version to 0.9.3
-- chore: bump version to 0.9.4
-- chore: bump version to 0.9.5
-- chore: bump version to 1.0.0
-- chore: bump version to 1.0.1
-- chore: bump version to 1.0.2
-- chore: bump version to 1.0.3
-- chore: bump version to 1.0.4
-- chore(deps): nightly dependency upgrade 2026-05-12
-- chore: bump version to 1.0.5
-- chore: bump version to 1.0.6
-- chore(deps): nightly dependency upgrade 2026-05-14
-- chore(deps): nightly dependency upgrade 2026-05-16
-- chore: bump version to 1.0.7
-- chore: bump version to 1.0.9
-- chore: bump version to 1.1.0
-- chore: bump version to 1.1.1
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.8.2...v1.1.1
-## 0.8.2 - 2026-04-27
+## 1.1.3 - 2026-06-26
 ### ♻️ Refactor
 - Refactor key event handlers to reduce nesting and improve clarity
 - Refactor GUI view helpers and TUI commit diff loading
 - Refactor row! macro usage for consistency and readability
 - Refactor header toolbar into left and right item rows
+- Refactor staging selection logic and context menu handling
+- Refactor staging file lists to use DiffFileEntry type
+- refactor: harden safety, memory, and reliability across all crates
 ### ✨ Features
 - feat(gui): diff search results against working tree
 - feat(gui): 'Diff Selected' button for multi-file diff in search
 - feat: auto-focus search input, add tests for new features
+- feat: multi-platform packaging and distribution
 ### ➕ Added
 - Add collapsible branch sections and overlay scrollbars to GUI
 - Add loading spinner to login button
@@ -109,10 +34,35 @@ All notable changes to this project will be documented in this file.
 - Add multi-file diff selection and viewing to GUI
 - Add multi-commit selection and range diff support
 - Add tests for cherry-pick and commit event handling
+- Add reactive git-state watcher using notify crate
+- Add animated loading spinner to GUI and TUI using tui-spinner
+- Add skeleton loading screen using tui-skeleton
+- Add theme background to all panes and update theme switching
+- Add Cyberpunk theme and update theme count references
+- Add 15 new themes and update theme picker to 43 total
+- Add draggable dividers for staging and sidebar panels
+- Add multi-file open and preview actions to context menus
+- Add tests for tab and repo closing and switching scenarios
+- Add utility functions for path, selection, and list navigation
+- Add commit message and ref name validation with inline hints
+- Add stash apply, force-push, and branch rename features stash apply
+- Add pannable canvas commit graph and all-ref revwalk
+- Add tests and GUI helpers for preview and popups
 ### 🐛 Bug Fixes
 - fix doc comments
 - fix(tui): open repo in new tab when current tab already has one
 - fix(gui): prevent search dialog from dismissing when clicking diff content
+- Fix branch button highlight and hide delete for current branch
+- Fix tab targeting for repo refresh and deduplication
+- fix: broken rustdoc link to private render_main function
+- Fix tab closing behavior and add tests for CloseRepo and CloseTab
+- Fix indentation of refs field in test data
+- Fix workspace section header in Cargo.toml
+- Fix CI concurrency to properly cancel stale runs
+- Fix stale commit display and refresh race
+- fix: resolve clippy errors blocking release gate
+### 📈 Improvements
+- Improve git watcher efficiency and add stash list tests
 ### 📚 Documentation
 - docs: add VHS-generated preview GIFs tracked with Git LFS
 - docs: remove non-UI GIFs from Preview section
@@ -144,12 +94,31 @@ All notable changes to this project will be documented in this file.
 - ui(tui): full-height overlay panels and expanded staging Actions
 - ui(gui): add close button to right panel headers in search overlay
 - Release v0.8.1
+- Release 0.8.5 with improved git watcher and UI features
+- Preserve multi-selection across commit list refreshes
+- Defer clearing multi-file diff state until diff load completes
+- Preserve file selection and diffs across refresh if commit survives
+- Show branch/tag/HEAD labels in commit log UI
+- Remove unused functions and exports from core crate
+- Show branch ahead/behind status in GUI and TUI
+- Rename gitea_starscream remote to gitea-starscream
+- Canonicalize repo paths and fix tab deduplication logic
+- Remove unnecessary reference to menu_item in context_menu_panel
+- Derive short OIDs from full IDs across core and UIs
+### 🔄 CI
+- ci: split release workflows by platform capability
 ### 🔄 Updated
 - Update install-tools to install nu if missing
 - Update release workflow to fix artifact handling and tool installs
 - Update Iced to 0.14 and refactor for new widget APIs
 - Update dependencies in Cargo.lock for rfd and iced_fonts
 - Update tui-themes.gif
+- Update dependencies in Cargo.lock
+- Update dependencies in Cargo.lock
+- Update badges and theme count in README
+- Update download badges in README with clearer labels
+- Update VHS demo GIFs and theme tape for new theme
+- Update dependencies in Cargo.lock
 ### 🔧 Chores
 - chore: bump version to 0.4.0
 - chore: bump version to 0.4.1
@@ -179,7 +148,37 @@ All notable changes to this project will be documented in this file.
 - chore(deps): nightly dependency upgrade 2026-04-24
 - chore: bump version to 0.7.7
 - chore: bump version to 0.8.2
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.9...v0.8.2
+- chore(deps): nightly dependency upgrade 2026-04-28
+- chore: bump version to 0.8.3
+- chore: bump version to 0.8.4
+- chore: bump version to 0.8.6
+- chore(deps): nightly dependency upgrade 2026-04-30
+- chore: bump version to 0.8.7
+- chore: bump version to 0.8.8
+- chore(deps): nightly dependency upgrade 2026-05-01
+- chore(deps): nightly dependency upgrade 2026-05-02
+- chore: bump version to 0.9.0
+- chore: bump version to 0.9.1
+- chore: bump version to 0.9.2
+- chore: bump version to 0.9.3
+- chore: bump version to 0.9.4
+- chore: bump version to 0.9.5
+- chore: bump version to 1.0.0
+- chore: bump version to 1.0.1
+- chore: bump version to 1.0.2
+- chore: bump version to 1.0.3
+- chore: bump version to 1.0.4
+- chore(deps): nightly dependency upgrade 2026-05-12
+- chore: bump version to 1.0.5
+- chore: bump version to 1.0.6
+- chore(deps): nightly dependency upgrade 2026-05-14
+- chore(deps): nightly dependency upgrade 2026-05-16
+- chore: bump version to 1.0.7
+- chore: bump version to 1.0.9
+- chore: bump version to 1.1.0
+- chore: bump version to 1.1.1
+- chore: bump version to 1.1.2
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.9...v1.1.3
 ## 0.3.9 - 2026-04-14
 ### 📦 Other Changes
 - Make branches sidebar width responsive
