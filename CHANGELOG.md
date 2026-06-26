@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.1.4 - 2026-06-26
+### 🐛 Bug Fixes
+- fix(ci): resolve all 4 release build failures
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.1.3...v1.1.4
 ## 1.1.3 - 2026-06-26
 ### ♻️ Refactor
 - Refactor key event handlers to reduce nesting and improve clarity
@@ -178,6 +182,7 @@ All notable changes to this project will be documented in this file.
 - chore: bump version to 1.1.0
 - chore: bump version to 1.1.1
 - chore: bump version to 1.1.2
+- chore: bump version to 1.1.3
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.9...v1.1.3
 ## 0.3.9 - 2026-04-14
 ### 📦 Other Changes
