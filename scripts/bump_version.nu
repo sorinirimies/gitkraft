@@ -110,37 +110,43 @@ def main [
     # 5. cargo fmt
     print ""
     print $"(ansi cyan)── cargo fmt ───────────────────────────────────────────────(ansi reset)"
-    cargo fmt --all
+    run-external "cargo" "fmt" "--all"
     print $"(ansi green)✓(ansi reset) cargo fmt completed."
 
     # 6. cargo clippy
     print ""
     print $"(ansi cyan)── cargo clippy ────────────────────────────────────────────(ansi reset)"
-    cargo clippy --workspace -- -D warnings
+    run-external "cargo" "clippy" "--workspace" "--" "-D" "warnings"
     print $"(ansi green)✓(ansi reset) cargo clippy passed."
 
     # 7. cargo test
     print ""
     print $"(ansi cyan)── cargo test ──────────────────────────────────────────────(ansi reset)"
-    cargo test --workspace
+    run-external "cargo" "test" "--workspace"
     print $"(ansi green)✓(ansi reset) cargo test passed."
 
-    # 8. Changelog (git-cliff)
+    # 8. Update Cargo.lock to reflect new workspace version
+    print ""
+    print $"(ansi cyan)── cargo update ────────────────────────────────────────────(ansi reset)"
+    run-external "cargo" "update" "-p" "gitkraft-core" "-p" "gitkraft" "-p" "gitkraft-tui"
+    print $"(ansi green)✓(ansi reset) Cargo.lock updated."
+
+    # 9. Changelog (git-cliff)
     print ""
     print $"(ansi cyan)── changelog ───────────────────────────────────────────────(ansi reset)"
     if (which git-cliff | is-not-empty) {
-        git-cliff --output CHANGELOG.md --tag $"v($new_version)"
+        run-external "git-cliff" "--output" "CHANGELOG.md" "--tag" $"v($new_version)"
         print $"(ansi green)✓(ansi reset) CHANGELOG.md updated via git-cliff."
     } else {
         print $"(ansi yellow)⚠(ansi reset) git-cliff not found — skipping changelog generation."
     }
 
-    # 9. Git commit & tag
+    # 10. Git commit & tag
     print ""
     print $"(ansi cyan)── git commit & tag ────────────────────────────────────────(ansi reset)"
-    git add -A
-    git commit -m $"chore: bump version to ($new_version)"
-    git tag -a $"v($new_version)" -m $"Release v($new_version)"
+    run-external "git" "add" "-A"
+    run-external "git" "commit" "-m" $"chore: bump version to ($new_version)"
+    run-external "git" "tag" "-a" $"v($new_version)" "-m" $"Release v($new_version)"
     print $"(ansi green)✓(ansi reset) Committed and tagged v($new_version)."
 
     print ""

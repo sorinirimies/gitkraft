@@ -251,6 +251,10 @@ changelog-unreleased: _check-git-cliff
 changelog-preview: _check-git-cliff
     @git-cliff --unreleased
 
+# Show the latest tagged release entry (no file write)
+changelog-latest: _check-git-cliff
+    @git-cliff --latest
+
 # ── Version bump ─────────────────────────────────────────────────────────────
 
 # Validate that a version string will produce a valid vX.Y.Z tag.

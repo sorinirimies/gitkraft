@@ -3,58 +3,79 @@
 # ──────────────────────────────────────────────────────────────
 #  GitKraft – CI Release Notes Generator
 # ──────────────────────────────────────────────────────────────
-#  Called by the release workflow AFTER the tag has been pushed.
-#  The version is already bumped in Cargo.toml — this script
-#  only generates CHANGELOG.md and RELEASE_NOTES.md.
+#  Called by the release workflow AFTER the tag has been pushed
+#  and checked out.  Generates:
+#    - CHANGELOG.md  (full history, updated in place)
+#    - RELEASE_NOTES.md  (single-release body used by softprops/action-gh-release)
+#
+#  Key: the workflow runs at the tag commit, so ALL commits up to
+#  HEAD are already tagged.  --unreleased returns nothing at that
+#  point.  We use --latest to get the commits belonging to this
+#  tag vs the previous one.
 #
 #  Usage:
-#    nu scripts/ci/release_notes.nu v0.5.4
+#    nu scripts/ci/release_notes.nu v1.2.3
 # ──────────────────────────────────────────────────────────────
 
 def main [raw_tag: string] {
     let version = ($raw_tag | str replace --regex '^v' '')
+    let tag     = $"v($version)"
 
-    print $"Generating release artifacts for v($version)…"
+    print $"(ansi cyan)═══ Release Notes — ($tag) ═══(ansi reset)"
 
-    # ── Generate CHANGELOG.md ─────────────────────────────────
+    # ── 1. Regenerate the full CHANGELOG.md ───────────────────
     if (which git-cliff | is-not-empty) {
-        print "  Generating CHANGELOG.md…"
-        try {
-            git-cliff --tag $"v($version)" --output CHANGELOG.md
-            print "  ✔ CHANGELOG.md updated"
-        } catch {
-            print "  ⚠ git-cliff failed — skipping changelog"
+        print "  Regenerating CHANGELOG.md…"
+        run-external "git-cliff" "--output" "CHANGELOG.md"
+        print "  ✔ CHANGELOG.md updated"
+    } else {
+        print "  ⚠ git-cliff not found — CHANGELOG.md not updated"
+    }
+
+    # ── 2. Extract per-release notes via --latest ─────────────
+    # --latest gives commits between the previous tag and this one.
+    # --unreleased would return nothing because HEAD is already tagged.
+    let cliff_changes = if (which git-cliff | is-not-empty) {
+        let result = (do { run-external "git-cliff" "--latest" "--strip" "header" } | complete)
+        if $result.exit_code == 0 and ($result.stdout | str trim | is-not-empty) {
+            $result.stdout | str trim
+        } else {
+            "- See commit history for details."
         }
     } else {
-        print "  ⚠ git-cliff not found — skipping changelog"
+        "- See commit history for details."
     }
 
-    # ── Generate RELEASE_NOTES.md ─────────────────────────────
-    print "  Generating RELEASE_NOTES.md…"
-
-    mut notes = $"# GitKraft v($version)\n\n"
-    $notes = $notes + "## Installation\n\n"
-    $notes = $notes + "```sh\n"
-    $notes = $notes + "# Desktop GUI\n"
-    $notes = $notes + "cargo install gitkraft\n\n"
-    $notes = $notes + "# Terminal UI\n"
-    $notes = $notes + "cargo install gitkraft-tui\n"
-    $notes = $notes + "```\n\n"
-    $notes = $notes + $"Or download pre-built binaries from this release.\n\n"
-
-    # Append changelog for this version
-    if (which git-cliff | is-not-empty) {
-        try {
-            let cliff_notes = (git-cliff --tag $"v($version)" --unreleased --strip header | str trim)
-            if ($cliff_notes | is-not-empty) {
-                $notes = $notes + "## What's Changed\n\n"
-                $notes = $notes + $cliff_notes
-                $notes = $notes + "\n"
-            }
-        }
-    }
+    # ── 3. Build RELEASE_NOTES.md ─────────────────────────────
+    let notes = [
+        $"# GitKraft ($version)"
+        ""
+        "## Installation"
+        ""
+        "```sh"
+        "# Desktop GUI"
+        "cargo install gitkraft"
+        ""
+        "# Terminal UI"
+        "cargo install gitkraft-tui"
+        "```"
+        ""
+        $"Or download pre-built binaries for your platform from this release."
+        ""
+        "## What's Changed"
+        ""
+        $cliff_changes
+        ""
+        "## Crates"
+        ""
+        "| Crate | Version |"
+        "|-------|---------|"
+        $"| `gitkraft`      | ($version) |"
+        $"| `gitkraft-tui`  | ($version) |"
+        $"| `gitkraft-core` | ($version) |"
+    ] | str join "\n"
 
     $notes | save --force RELEASE_NOTES.md
-    print "  ✔ RELEASE_NOTES.md generated"
-    print $"✅ Release artifacts ready for v($version)"
+    print "  ✔ RELEASE_NOTES.md written"
+    print $"(ansi green)✅ Release artifacts ready for ($tag)(ansi reset)"
 }
