@@ -84,7 +84,11 @@ pub fn revert_commit(workdir: &std::path::Path, oid_str: &str) -> Result<()> {
 ///
 /// The `mode` parameter is type-safe — use [`ResetMode::Soft`],
 /// [`ResetMode::Mixed`], or [`ResetMode::Hard`].
-pub fn reset_to_commit(workdir: &std::path::Path, oid_str: &str, mode: super::types::ResetMode) -> Result<()> {
+pub fn reset_to_commit(
+    workdir: &std::path::Path,
+    oid_str: &str,
+    mode: super::types::ResetMode,
+) -> Result<()> {
     let output = std::process::Command::new("git")
         .current_dir(workdir)
         .args(["reset", mode.as_flag(), oid_str])

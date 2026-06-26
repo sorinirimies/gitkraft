@@ -144,7 +144,11 @@ pub(crate) fn revert_commit_async(path: PathBuf, oid: String) -> Task<Message> {
 }
 
 /// Reset the current branch to `oid` using the given `mode`.
-pub(crate) fn reset_to_commit_async(path: PathBuf, oid: String, mode: gitkraft_core::ResetMode) -> Task<Message> {
+pub(crate) fn reset_to_commit_async(
+    path: PathBuf,
+    oid: String,
+    mode: gitkraft_core::ResetMode,
+) -> Task<Message> {
     git_wd_then_reload!(path, |wd| gitkraft_core::features::repo::reset_to_commit(
         &wd, &oid, mode
     ))
@@ -193,10 +197,9 @@ pub(crate) fn create_annotated_tag_async(
 
 /// Cherry-pick a commit onto the current branch then reload.
 pub(crate) fn cherry_pick_async(path: PathBuf, oid: String) -> Task<Message> {
-    git_wd_then_reload!(
-        path,
-        |wd| gitkraft_core::features::commits::cherry_pick_commit(&wd, &oid)
-    )
+    git_wd_then_reload!(path, |wd| {
+        gitkraft_core::features::commits::cherry_pick_commit(&wd, &oid)
+    })
 }
 
 /// Create a local branch at a specific commit OID then reload.

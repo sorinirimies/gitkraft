@@ -527,9 +527,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("settings.json");
 
-        let mut s = AppSettings::default();
-        s.theme_name = Some("Nord".to_string());
-        s.editor_name = Some("Neovim".to_string());
+        let mut s = AppSettings {
+            theme_name: Some("Nord".to_string()),
+            editor_name: Some("Neovim".to_string()),
+            ..Default::default()
+        };
         s.add_recent_repo(PathBuf::from("/tmp/my-repo"));
 
         save_to(&path, &s).unwrap();
@@ -552,8 +554,10 @@ mod tests {
         let path = dir.path().join("settings.json");
 
         // Write initial state with an editor and a recent repo.
-        let mut initial = AppSettings::default();
-        initial.editor_name = Some("Vim".to_string());
+        let mut initial = AppSettings {
+            editor_name: Some("Vim".to_string()),
+            ..Default::default()
+        };
         initial.add_recent_repo(PathBuf::from("/tmp/repo1"));
         save_to(&path, &initial).unwrap();
 
@@ -602,8 +606,10 @@ mod tests {
         let tui_path = dir.path().join("tui-settings.json");
 
         // GUI has an editor; TUI file has none.
-        let mut gui = AppSettings::default();
-        gui.editor_name = Some("VS Code".to_string());
+        let gui = AppSettings {
+            editor_name: Some("VS Code".to_string()),
+            ..Default::default()
+        };
         save_to(&gui_path, &gui).unwrap();
         save_to(&tui_path, &AppSettings::default()).unwrap();
 

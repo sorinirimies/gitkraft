@@ -4499,7 +4499,8 @@ mod tests {
     fn commit_diffs_cache_not_evicted_below_limit() {
         let mut tab = RepoTab::new();
         for i in 0..(MAX_CACHED_DIFFS - 1) {
-            tab.commit_diffs.insert(i, make_diff(&format!("file{i}.rs")));
+            tab.commit_diffs
+                .insert(i, make_diff(&format!("file{i}.rs")));
         }
         assert_eq!(tab.commit_diffs.len(), MAX_CACHED_DIFFS - 1);
     }
@@ -4510,7 +4511,8 @@ mod tests {
         let mut tab = RepoTab::new();
         // Fill to the cap.
         for i in 0..MAX_CACHED_DIFFS {
-            tab.commit_diffs.insert(i, make_diff(&format!("file{i}.rs")));
+            tab.commit_diffs
+                .insert(i, make_diff(&format!("file{i}.rs")));
         }
         assert_eq!(tab.commit_diffs.len(), MAX_CACHED_DIFFS);
 
@@ -4518,7 +4520,8 @@ mod tests {
         if tab.commit_diffs.len() >= MAX_CACHED_DIFFS {
             tab.commit_diffs.clear();
         }
-        tab.commit_diffs.insert(MAX_CACHED_DIFFS, make_diff("overflow.rs"));
+        tab.commit_diffs
+            .insert(MAX_CACHED_DIFFS, make_diff("overflow.rs"));
 
         assert_eq!(
             tab.commit_diffs.len(),
@@ -4536,7 +4539,8 @@ mod tests {
     fn commit_diffs_cleared_on_commit_switch() {
         let mut tab = RepoTab::new();
         for i in 0..5 {
-            tab.commit_diffs.insert(i, make_diff(&format!("file{i}.rs")));
+            tab.commit_diffs
+                .insert(i, make_diff(&format!("file{i}.rs")));
         }
         assert!(!tab.commit_diffs.is_empty());
         tab.commit_diffs.clear();

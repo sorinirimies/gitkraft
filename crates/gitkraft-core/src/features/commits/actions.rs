@@ -202,9 +202,21 @@ impl CommitAction {
             Self::CherryPick => super::ops::cherry_pick_commit(workdir, oid),
             Self::Revert => crate::features::repo::revert_commit(workdir, oid),
             Self::RebaseOnto => crate::features::branches::rebase_onto(workdir, oid),
-            Self::ResetSoft  => crate::features::repo::reset_to_commit(workdir, oid, crate::features::repo::ResetMode::Soft),
-            Self::ResetMixed => crate::features::repo::reset_to_commit(workdir, oid, crate::features::repo::ResetMode::Mixed),
-            Self::ResetHard  => crate::features::repo::reset_to_commit(workdir, oid, crate::features::repo::ResetMode::Hard),
+            Self::ResetSoft => crate::features::repo::reset_to_commit(
+                workdir,
+                oid,
+                crate::features::repo::ResetMode::Soft,
+            ),
+            Self::ResetMixed => crate::features::repo::reset_to_commit(
+                workdir,
+                oid,
+                crate::features::repo::ResetMode::Mixed,
+            ),
+            Self::ResetHard => crate::features::repo::reset_to_commit(
+                workdir,
+                oid,
+                crate::features::repo::ResetMode::Hard,
+            ),
             Self::CreateTag(name) => {
                 let repo = crate::features::repo::open_repo(workdir)?;
                 crate::features::branches::create_tag(&repo, name, oid)

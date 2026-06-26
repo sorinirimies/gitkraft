@@ -3663,7 +3663,6 @@ mod tests {
         // When a commit is selected, the ghost branch label should show.
         // This verifies the state fields are set correctly for the view
         // to detect show_ghost = is_hovered || is_selected.
-        use crate::message::Message;
         let mut state = GitKraft::new();
         let tab = state.active_tab_mut();
         tab.repo_path = Some(std::path::PathBuf::from("/tmp/test"));

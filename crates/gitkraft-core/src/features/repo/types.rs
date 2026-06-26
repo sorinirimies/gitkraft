@@ -17,9 +17,9 @@ impl ResetMode {
     /// The corresponding `git reset` flag (e.g. `--soft`).
     pub fn as_flag(self) -> &'static str {
         match self {
-            Self::Soft  => "--soft",
+            Self::Soft => "--soft",
             Self::Mixed => "--mixed",
-            Self::Hard  => "--hard",
+            Self::Hard => "--hard",
         }
     }
 }
@@ -27,9 +27,9 @@ impl ResetMode {
 impl std::fmt::Display for ResetMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Soft  => write!(f, "soft"),
+            Self::Soft => write!(f, "soft"),
             Self::Mixed => write!(f, "mixed"),
-            Self::Hard  => write!(f, "hard"),
+            Self::Hard => write!(f, "hard"),
         }
     }
 }

@@ -37,10 +37,7 @@ pub fn build_graph(commits: &[CommitInfo]) -> Vec<GraphRow> {
 
     // Pre-build a set of OIDs in this commit list so we can detect when a
     // parent is NOT in the loaded window (and thus its lane will never resolve).
-    let oid_set: HashSet<&str> = commits
-        .iter()
-        .map(|c| c.oid.as_str())
-        .collect();
+    let oid_set: HashSet<&str> = commits.iter().map(|c| c.oid.as_str()).collect();
 
     for commit in commits {
         let oid = &commit.oid;
