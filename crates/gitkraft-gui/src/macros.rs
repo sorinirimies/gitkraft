@@ -205,3 +205,33 @@ macro_rules! staging_op {
         )
     };
 }
+
+/// Selects a row's `container` style function from a prioritized list of
+/// `condition => style_fn` pairs, evaluated in order (first match wins),
+/// falling back to `crate::theme::surface_style` when none apply.
+///
+/// This exists purely to avoid repeating the
+/// `... as fn(&iced::Theme) -> iced::widget::container::Style` cast and the
+/// `if / else if / else` chain at every call site that picks between
+/// `theme::selected_row_style`, `theme::highlight_row_style`,
+/// `theme::hover_row_style` and `theme::surface_style` (commit rows, file
+/// rows, search results, ...).
+///
+/// ```ignore
+/// let style_fn = row_style!(
+///     is_selected => theme::selected_row_style,
+///     is_in_range => theme::highlight_row_style,
+///     is_hovered => theme::hover_row_style,
+/// );
+/// container(content).style(style_fn);
+/// ```
+macro_rules! row_style {
+    ($($cond:expr => $style:expr),+ $(,)?) => {{
+        type RowStyleFn = fn(&iced::Theme) -> iced::widget::container::Style;
+        if false {
+            unreachable!()
+        }
+        $(else if $cond { $style as RowStyleFn })+
+        else { crate::theme::surface_style as RowStyleFn }
+    }};
+}

@@ -141,6 +141,54 @@ fn col_divider<'a>(target: crate::state::DragTarget, c: &ThemeColors) -> Element
         .into()
 }
 
+/// A thin vertical gutter column between the BRANCH/TAG, GRAPH and COMMIT
+/// MESSAGE columns, painted per-row with the same selected/range/hover
+/// background as its neighbouring rows.
+///
+/// Without this, the fixed-width `Space` gutters that separate the columns
+/// showed a plain gap in the panel background colour, breaking the
+/// selection/hover highlight into three visually disconnected pieces instead
+/// of one continuous row.
+fn row_gutter<'a>(
+    first: usize,
+    row_states: &[(bool, bool, bool)],
+    width: f32,
+    row_height: f32,
+    top_space: f32,
+    bottom_space: f32,
+) -> Element<'a, Message> {
+    let mut col = column![].width(Length::Fixed(width)).spacing(0);
+    if top_space > 0.0 {
+        col = col.push(Space::new().width(width).height(top_space));
+    }
+    for (i, &(is_selected, is_in_range, is_hovered)) in row_states.iter().enumerate() {
+        let idx = first + i;
+        let style_fn = row_style!(
+            is_selected => theme::selected_row_style,
+            is_in_range => theme::highlight_row_style,
+            is_hovered => theme::hover_row_style,
+        );
+        let cell = container(Space::new())
+            .width(Length::Fixed(width))
+            .height(Length::Fixed(row_height))
+            .style(style_fn);
+        // Wired the same as the BRANCH/TAG and COMMIT MESSAGE columns so the
+        // thin gutters between columns don't create "dead zones" where
+        // hovering/clicking fails to select or highlight the row.
+        col = col.push(
+            mouse_area(cell)
+                .on_press(Message::SelectCommit(idx))
+                .on_right_press(Message::OpenCommitContextMenu(idx))
+                .on_enter(Message::HoverCommit(Some(idx)))
+                .on_exit(Message::HoverCommit(None)),
+        );
+    }
+    if bottom_space > 0.0 {
+        col = col.push(Space::new().width(width).height(bottom_space));
+    }
+    col.into()
+}
+
 // ── single message row ────────────────────────────────────────────────────────
 
 /// Build the message portion of one commit row (summary + author + date).
@@ -198,15 +246,11 @@ fn message_row<'a>(
     .align_y(Alignment::Center)
     .padding([0, 4]);
 
-    let style_fn = if is_selected {
-        theme::selected_row_style as fn(&Theme) -> iced::widget::container::Style
-    } else if is_in_range {
-        theme::highlight_row_style as fn(&Theme) -> iced::widget::container::Style
-    } else if is_hovered {
-        theme::hover_row_style as fn(&Theme) -> iced::widget::container::Style
-    } else {
-        theme::surface_style as fn(&Theme) -> iced::widget::container::Style
-    };
+    let style_fn = row_style!(
+        is_selected => theme::selected_row_style,
+        is_in_range => theme::highlight_row_style,
+        is_hovered => theme::hover_row_style,
+    );
 
     mouse_area(
         container(
@@ -214,11 +258,12 @@ fn message_row<'a>(
                 .padding(0)
                 .width(Length::Fill)
                 .on_press(Message::SelectCommit(idx))
-                .style(theme::ghost_button),
+                .style(theme::ghost_button_flat),
         )
         .width(Length::Fill)
         .height(Length::Fixed(ROW_HEIGHT))
         .clip(true)
+        .align_y(Alignment::Center)
         .style(style_fn),
     )
     .on_right_press(Message::OpenCommitContextMenu(idx))
@@ -335,22 +380,47 @@ pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
     let top_space = first as f32 * ROW_HEIGHT;
     let bottom_space = (total - last) as f32 * ROW_HEIGHT;
 
+    // Precompute each visible row's highlight state once so the refs column,
+    // both inter-column gutters, and the graph canvas all agree on exactly
+    // the same selected/range/hover background -- this is what makes the row
+    // highlight span the full table width instead of just one column.
+    let row_states: Vec<(bool, bool, bool)> = (first..last)
+        .map(|idx| {
+            let is_selected = tab.selected_commit == Some(idx);
+            let is_in_range = selected_range.contains(&idx);
+            let is_hovered = tab.hovered_commit == Some(idx);
+            (is_selected, is_in_range, is_hovered)
+        })
+        .collect();
+
     // Column 1: ref badges (virtualised)
     let mut refs_col = column![].width(Length::Fixed(ref_col_w)).spacing(0);
     if top_space > 0.0 {
         refs_col = refs_col.push(Space::new().width(ref_col_w).height(top_space));
     }
-    for idx in first..last {
-        let is_hovered = tab.hovered_commit == Some(idx);
-        let is_selected = tab.selected_commit == Some(idx);
+    for (idx, &(is_selected, is_in_range, is_hovered)) in (first..last).zip(row_states.iter()) {
         let show_ghost = is_hovered || is_selected;
         let ghost = tab.branch_context.get(idx).and_then(|ctx| ctx.as_deref());
+        let style_fn = row_style!(
+            is_selected => theme::selected_row_style,
+            is_in_range => theme::highlight_row_style,
+            is_hovered => theme::hover_row_style,
+        );
+        let ref_cell = container(ref_badges(&tab.commits[idx].refs, &c, ghost, show_ghost))
+            .width(Length::Fixed(ref_col_w))
+            .height(Length::Fixed(ROW_HEIGHT))
+            .clip(true)
+            .align_y(Alignment::Center)
+            .style(style_fn);
+        // Wired the same as the GRAPH and COMMIT MESSAGE columns so hovering
+        // or clicking the BRANCH/TAG badges reliably highlights/selects the
+        // row instead of only reacting over the commit message text.
         refs_col = refs_col.push(
-            container(ref_badges(&tab.commits[idx].refs, &c, ghost, show_ghost))
-                .width(Length::Fixed(ref_col_w))
-                .height(Length::Fixed(ROW_HEIGHT))
-                .clip(true)
-                .align_y(Alignment::Center),
+            mouse_area(ref_cell)
+                .on_press(Message::SelectCommit(idx))
+                .on_right_press(Message::OpenCommitContextMenu(idx))
+                .on_enter(Message::HoverCommit(Some(idx)))
+                .on_exit(Message::HoverCommit(None)),
         );
     }
     if bottom_space > 0.0 {
@@ -368,6 +438,13 @@ pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
         .max(1);
     let graph_content_w = max_lanes as f32 * crate::widgets::commit_graph::LANE_W + 4.0;
 
+    let row_backgrounds: Vec<Option<Color>> = row_states
+        .iter()
+        .map(|&(is_selected, is_in_range, is_hovered)| {
+            theme::row_highlight_color(is_selected, is_in_range, is_hovered, &c)
+        })
+        .collect();
+
     let graph_canvas = CommitGraph {
         visible_rows: tab.graph_rows[first..last].to_vec(),
         offset: first,
@@ -375,6 +452,7 @@ pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
         row_height: ROW_HEIGHT,
         bg_color: c.bg,
         content_width: graph_content_w,
+        row_backgrounds,
     }
     .view(graph_col_w);
 
@@ -421,9 +499,23 @@ pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
     let scrollable_content = column![
         row![
             refs_col,
-            Space::new().width(DIVIDER_W),
+            row_gutter(
+                first,
+                &row_states,
+                DIVIDER_W,
+                ROW_HEIGHT,
+                top_space,
+                bottom_space
+            ),
             graph_col,
-            Space::new().width(DIVIDER_W),
+            row_gutter(
+                first,
+                &row_states,
+                DIVIDER_W,
+                ROW_HEIGHT,
+                top_space,
+                bottom_space
+            ),
             msgs_col,
         ]
         .width(Length::Fill),
@@ -443,4 +535,61 @@ pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
         .height(Length::Fill);
 
     view_utils::surface_panel(content, Length::Fill)
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tab_with_one_commit() -> RepoTab {
+        let mut tab = RepoTab::new_empty();
+        tab.commits = vec![gitkraft_core::CommitInfo {
+            oid: "aaa".into(),
+            summary: "test commit".into(),
+            message: String::new(),
+            author_name: "A".into(),
+            author_email: String::new(),
+            time: Default::default(),
+            parent_ids: Vec::new(),
+            refs: Vec::new(),
+        }];
+        tab
+    }
+
+    /// Smoke test guarding the vertical-centering fix: `message_row` must
+    /// build successfully (no panics/index errors) for every combination of
+    /// selected/in-range/hovered state, since the outer container now always
+    /// applies `align_y(Center)` regardless of the row's natural content
+    /// height.
+    #[test]
+    fn message_row_builds_for_every_highlight_state() {
+        let c = ThemeColors::from_theme(&Theme::Dark);
+        for is_selected in [false, true] {
+            for is_hovered in [false, true] {
+                let mut tab = tab_with_one_commit();
+                tab.selected_commit = if is_selected { Some(0) } else { None };
+                tab.hovered_commit = if is_hovered { Some(0) } else { None };
+                let selected_range: Vec<usize> = if is_selected { vec![0] } else { Vec::new() };
+                let _ = message_row(&tab, 0, &c, 200.0, &selected_range);
+            }
+        }
+    }
+
+    /// Smoke test guarding the column-gutter fix: `row_gutter` must build
+    /// successfully for an empty row set, a populated row set, and with
+    /// non-zero top/bottom spacer padding (the virtualised-scroll case).
+    #[test]
+    fn row_gutter_builds_for_various_row_states_and_padding() {
+        let states = vec![
+            (true, false, false),
+            (false, true, false),
+            (false, false, true),
+            (false, false, false),
+        ];
+        let _: Element<'_, Message> = row_gutter(0, &states, 6.0, ROW_HEIGHT, 0.0, 0.0);
+        let _: Element<'_, Message> = row_gutter(0, &states, 6.0, ROW_HEIGHT, 100.0, 50.0);
+        let _: Element<'_, Message> = row_gutter(0, &[], 6.0, ROW_HEIGHT, 0.0, 0.0);
+    }
 }

@@ -290,6 +290,33 @@ pub fn hover_row_style(theme: &iced::Theme) -> container::Style {
     }
 }
 
+/// Resolve the background colour (if any) that should be painted behind a
+/// commit-log row for the given interaction state, mirroring
+/// [`selected_row_style`], [`highlight_row_style`] and [`hover_row_style`].
+///
+/// Returns `None` when the row is in its default (unhighlighted) state, in
+/// which case callers should let the panel's base `surface` colour show
+/// through instead of painting anything extra.
+///
+/// Used to keep the BRANCH/TAG, GRAPH and COMMIT MESSAGE columns visually in
+/// sync so row selection/hover spans the full width of the commit log.
+pub fn row_highlight_color(
+    is_selected: bool,
+    is_in_range: bool,
+    is_hovered: bool,
+    c: &ThemeColors,
+) -> Option<Color> {
+    if is_selected {
+        Some(c.surface_highlight)
+    } else if is_in_range {
+        Some(mix(c.surface, c.selection, 0.30))
+    } else if is_hovered {
+        Some(mix(c.surface, c.surface_highlight, 0.5))
+    } else {
+        None
+    }
+}
+
 /// Style for a diff addition line.
 pub fn diff_add_style(theme: &iced::Theme) -> container::Style {
     let c = ThemeColors::from_theme(theme);
@@ -352,6 +379,24 @@ pub fn ghost_button(theme: &iced::Theme, status: button::Status) -> button::Styl
             shadow: iced::Shadow::default(),
             snap: false,
         },
+    }
+}
+
+/// Like [`ghost_button`], but never paints a background of its own — even
+/// while hovered or pressed. Used for buttons embedded inside a larger row
+/// whose background is *already* driven by external state (e.g. the commit
+/// message row, whose full-row highlight is controlled by `row_style!` on
+/// the surrounding container based on hover/selection/range state). Without
+/// this, the button's own native hover background would compete with — and
+/// visually desync from — the row's state-driven highlight.
+pub fn ghost_button_flat(theme: &iced::Theme, _status: button::Status) -> button::Style {
+    let c = ThemeColors::from_theme(theme);
+    button::Style {
+        background: None,
+        text_color: c.text_primary,
+        border: iced::Border::default(),
+        shadow: iced::Shadow::default(),
+        snap: false,
     }
 }
 
@@ -804,5 +849,126 @@ mod tests {
                 "theme {i} selection is identical to bg — should be distinguishable"
             );
         }
+    }
+
+    // ── row_highlight_color ──────────────────────────────────────────────
+
+    #[test]
+    fn row_highlight_color_default_is_none() {
+        let c = ThemeColors::from_theme(&iced::Theme::Dark);
+        assert_eq!(row_highlight_color(false, false, false, &c), None);
+    }
+
+    #[test]
+    fn row_highlight_color_selected_takes_priority() {
+        let c = ThemeColors::from_theme(&iced::Theme::Dark);
+        assert_eq!(
+            row_highlight_color(true, true, true, &c),
+            Some(c.surface_highlight)
+        );
+    }
+
+    #[test]
+    fn row_highlight_color_range_beats_hover() {
+        let c = ThemeColors::from_theme(&iced::Theme::Dark);
+        let range_color = row_highlight_color(false, true, true, &c);
+        let hover_color = row_highlight_color(false, false, true, &c);
+        assert!(range_color.is_some());
+        assert!(hover_color.is_some());
+        assert_ne!(range_color, hover_color);
+    }
+
+    #[test]
+    fn row_highlight_color_hover_only() {
+        let c = ThemeColors::from_theme(&iced::Theme::Dark);
+        let hover_color = row_highlight_color(false, false, true, &c).unwrap();
+        assert_ne!(hover_color, c.surface);
+        assert_ne!(hover_color, c.surface_highlight);
+    }
+
+    #[test]
+    fn row_highlight_color_consistent_across_themes() {
+        for i in 0..gitkraft_core::THEME_COUNT {
+            let core = gitkraft_core::theme_by_index(i);
+            let c = ThemeColors::from_core(&core);
+            assert_eq!(row_highlight_color(false, false, false, &c), None);
+            assert_eq!(
+                row_highlight_color(true, false, false, &c),
+                Some(c.surface_highlight)
+            );
+        }
+    }
+
+    // ── row_style! macro ─────────────────────────────────────────────────
+
+    #[test]
+    fn row_style_macro_picks_first_matching_condition() {
+        let style_fn = row_style!(
+            true => selected_row_style,
+            true => highlight_row_style,
+        );
+        let theme = iced::Theme::Dark;
+        assert_eq!(style_fn(&theme), selected_row_style(&theme));
+    }
+
+    #[test]
+    fn row_style_macro_falls_through_to_next_condition() {
+        let style_fn = row_style!(
+            false => selected_row_style,
+            true => highlight_row_style,
+        );
+        let theme = iced::Theme::Dark;
+        assert_eq!(style_fn(&theme), highlight_row_style(&theme));
+    }
+
+    #[test]
+    fn row_style_macro_defaults_to_surface_style() {
+        let style_fn = row_style!(
+            false => selected_row_style,
+            false => highlight_row_style,
+        );
+        let theme = iced::Theme::Dark;
+        assert_eq!(style_fn(&theme), surface_style(&theme));
+    }
+
+    #[test]
+    fn row_style_macro_supports_single_condition() {
+        let style_fn = row_style!(true => selected_row_style,);
+        let theme = iced::Theme::Dark;
+        assert_eq!(style_fn(&theme), selected_row_style(&theme));
+    }
+
+    // ── ghost_button_flat ────────────────────────────────────────────────
+    // Regression coverage for the "double highlight" bug: a button embedded
+    // in a row whose background is already state-driven (e.g. the commit
+    // message row) must NEVER paint its own hover/pressed background --
+    // otherwise it visually competes with the surrounding row highlight.
+
+    #[test]
+    fn ghost_button_flat_never_paints_background() {
+        let theme = iced::Theme::Dark;
+        for status in [
+            button::Status::Active,
+            button::Status::Hovered,
+            button::Status::Pressed,
+            button::Status::Disabled,
+        ] {
+            let style = ghost_button_flat(&theme, status);
+            assert!(
+                style.background.is_none(),
+                "ghost_button_flat must never paint a background (status: {status:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn ghost_button_flat_differs_from_ghost_button_when_hovered() {
+        // Sanity check that the two styles are genuinely different for the
+        // Hovered status -- otherwise this fix would be a no-op.
+        let theme = iced::Theme::Dark;
+        let flat = ghost_button_flat(&theme, button::Status::Hovered);
+        let regular = ghost_button(&theme, button::Status::Hovered);
+        assert!(flat.background.is_none());
+        assert!(regular.background.is_some());
     }
 }

@@ -29,6 +29,11 @@ pub struct CommitGraph {
     pub bg_color: Color,
     /// Total content width in pixels (max_lanes * LANE_W).
     pub content_width: f32,
+    /// Per-visible-row background highlight colour (selected/range/hover),
+    /// aligned 1:1 with `visible_rows`. `None` means no highlight is painted
+    /// and the panel's base surface colour shows through, matching the
+    /// default state of the BRANCH/TAG and COMMIT MESSAGE columns.
+    pub row_backgrounds: Vec<Option<Color>>,
 }
 
 impl CommitGraph {
@@ -42,6 +47,7 @@ impl CommitGraph {
             bg_color: self.bg_color,
             content_width: self.content_width,
             column_width,
+            row_backgrounds: self.row_backgrounds,
         };
         iced::widget::canvas(program)
             .width(Length::Fixed(column_width))
@@ -59,7 +65,19 @@ pub struct GraphDragState {
     pan_x: f32,
     /// If dragging, the cursor X at drag start and the pan_x at that moment.
     drag: Option<(f32, f32)>,
+    /// Global commit row index currently under the cursor, if any. Tracked so
+    /// we only publish `HoverCommit` when it actually changes (and so the
+    /// GRAPH column keeps `hovered_commit` in sync with the BRANCH/TAG and
+    /// COMMIT MESSAGE columns even though the graph is one big canvas rather
+    /// than a per-row widget).
+    hovered_row: Option<usize>,
 }
+
+/// Maximum pan movement (in pixels) between button-press and button-release
+/// still considered a "click" rather than a drag-to-pan gesture. Keeps
+/// left-click-to-select reliable anywhere in the GRAPH column (not just
+/// exactly on a commit node) without breaking horizontal panning.
+const CLICK_DRAG_THRESHOLD: f32 = 4.0;
 
 struct CommitGraphProgram {
     visible_rows: Vec<gitkraft_core::GraphRow>,
@@ -69,6 +87,7 @@ struct CommitGraphProgram {
     bg_color: Color,
     content_width: f32,
     column_width: f32,
+    row_backgrounds: Vec<Option<Color>>,
 }
 
 #[inline]
@@ -119,20 +138,44 @@ impl canvas::Program<Message> for CommitGraphProgram {
                             };
                             return Some(canvas::Action::publish(msg));
                         }
+
+                        // Right-click anywhere in the row (not just on the
+                        // node) opens the context menu for that commit --
+                        // mirrors the BRANCH/TAG and COMMIT MESSAGE columns.
+                        if *btn == iced::mouse::Button::Right {
+                            return Some(canvas::Action::publish(Message::OpenCommitContextMenu(
+                                global_row,
+                            )));
+                        }
                     }
 
-                    // Not on a node — start drag-to-pan (middle or left button).
+                    // Not on a node -- start drag-to-pan (middle or left
+                    // button). A plain left click (no significant movement
+                    // before release) is resolved as a row selection in the
+                    // `ButtonReleased` arm below, so clicking anywhere in the
+                    // GRAPH column selects the commit, not just the node dot.
                     if matches!(btn, iced::mouse::Button::Left | iced::mouse::Button::Middle) {
                         state.drag = Some((pos.x, state.pan_x));
                         return Some(canvas::Action::request_redraw());
                     }
                 }
             }
-            canvas::Event::Mouse(iced::mouse::Event::ButtonReleased(
-                iced::mouse::Button::Left | iced::mouse::Button::Middle,
-            )) if state.drag.is_some() => {
-                state.drag = None;
-                return Some(canvas::Action::request_redraw());
+            canvas::Event::Mouse(iced::mouse::Event::ButtonReleased(btn)) => {
+                if let Some((_, start_pan)) = state.drag.take() {
+                    let moved = (state.pan_x - start_pan).abs();
+                    if *btn == iced::mouse::Button::Left && moved < CLICK_DRAG_THRESHOLD {
+                        if let Some(pos) = cursor.position_in(bounds) {
+                            let local_row = (pos.y / self.row_height) as usize;
+                            if local_row < self.visible_rows.len() {
+                                let global_row = self.offset + local_row;
+                                return Some(canvas::Action::publish(Message::SelectCommit(
+                                    global_row,
+                                )));
+                            }
+                        }
+                    }
+                    return Some(canvas::Action::request_redraw());
+                }
             }
             canvas::Event::Mouse(iced::mouse::Event::CursorMoved { .. }) => {
                 if let Some((start_x, start_pan)) = state.drag {
@@ -143,6 +186,24 @@ impl canvas::Program<Message> for CommitGraphProgram {
                         return Some(canvas::Action::request_redraw());
                     }
                 }
+
+                // Hover tracking -- without this, moving the mouse over the
+                // GRAPH canvas never updates `hovered_commit`, so the row
+                // highlight only ever engaged via the COMMIT MESSAGE
+                // column's own mouse area. Keep all columns in sync here.
+                let hovered = cursor.position_in(bounds).and_then(|pos| {
+                    let local_row = (pos.y / self.row_height) as usize;
+                    (local_row < self.visible_rows.len()).then(|| self.offset + local_row)
+                });
+                if hovered != state.hovered_row {
+                    state.hovered_row = hovered;
+                    return Some(canvas::Action::publish(Message::HoverCommit(hovered)));
+                }
+            }
+            canvas::Event::Mouse(iced::mouse::Event::CursorLeft)
+                if state.hovered_row.take().is_some() =>
+            {
+                return Some(canvas::Action::publish(Message::HoverCommit(None)));
             }
             _ => {}
         }
@@ -160,15 +221,11 @@ impl canvas::Program<Message> for CommitGraphProgram {
         }
         if let Some(pos) = cursor.position_in(bounds) {
             let local_row = (pos.y / self.row_height) as usize;
+            // Any row is now clickable (selects the commit), not just the
+            // node dot itself, so show a pointer cursor across the whole
+            // row -- matching the BRANCH/TAG and COMMIT MESSAGE columns.
             if local_row < self.visible_rows.len() {
-                let gr = &self.visible_rows[local_row];
-                let node_x = lane_x(gr.node_column, state.pan_x);
-                let local_mid_y = local_row as f32 * self.row_height + self.row_height / 2.0;
-                let dx = pos.x - node_x;
-                let dy = pos.y - local_mid_y;
-                if (dx * dx + dy * dy).sqrt() <= NODE_RADIUS + 4.0 {
-                    return iced::mouse::Interaction::Pointer;
-                }
+                return iced::mouse::Interaction::Pointer;
             }
             // Show grab cursor when hoverable (content wider than column).
             if self.content_width > self.column_width {
@@ -192,6 +249,21 @@ impl canvas::Program<Message> for CommitGraphProgram {
         let rh = self.row_height;
         let len = self.colors.len();
         let pan = state.pan_x;
+
+        // ── Pass 0: row highlight backgrounds (selected/range/hover) ──────
+        // Painted full-width so this column's highlight lines up with the
+        // BRANCH/TAG and COMMIT MESSAGE columns, making row selection span
+        // the entire table width instead of just the message column.
+        for (local_idx, bg) in self.row_backgrounds.iter().enumerate() {
+            if let Some(color) = bg {
+                let top_y = local_idx as f32 * rh;
+                frame.fill_rectangle(
+                    Point::new(0.0, top_y),
+                    iced::Size::new(self.column_width.max(bounds.width), rh),
+                    *color,
+                );
+            }
+        }
 
         // Main branch = color index 0 (first-parent chain from HEAD).
         // It gets thicker lines and larger nodes to stand out.
@@ -295,5 +367,270 @@ impl canvas::Program<Message> for CommitGraphProgram {
         }
 
         vec![frame.into_geometry()]
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use canvas::Program;
+    use iced::mouse::{Button, Cursor, Event as MouseEvent};
+
+    const TEST_ROW_HEIGHT: f32 = 20.0;
+
+    fn test_row() -> gitkraft_core::GraphRow {
+        gitkraft_core::GraphRow {
+            width: 1,
+            node_column: 0,
+            node_color: 0,
+            edges: Vec::new(),
+        }
+    }
+
+    /// Builds a program with `row_count` rows, starting at global `offset`.
+    /// `content_width` lets tests opt into a horizontally-scrollable graph
+    /// (needed to exercise real drag-to-pan behaviour).
+    fn test_program(
+        row_count: usize,
+        offset: usize,
+        column_width: f32,
+        content_width: f32,
+    ) -> CommitGraphProgram {
+        CommitGraphProgram {
+            visible_rows: (0..row_count).map(|_| test_row()).collect(),
+            offset,
+            colors: [Color::WHITE; 8],
+            row_height: TEST_ROW_HEIGHT,
+            bg_color: Color::BLACK,
+            content_width,
+            column_width,
+            row_backgrounds: vec![None; row_count],
+        }
+    }
+
+    fn bounds(width: f32, rows: usize) -> Rectangle {
+        Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width,
+            height: rows as f32 * TEST_ROW_HEIGHT,
+        }
+    }
+
+    fn cursor_moved_at(x: f32, y: f32) -> canvas::Event {
+        canvas::Event::Mouse(MouseEvent::CursorMoved {
+            position: Point::new(x, y),
+        })
+    }
+
+    fn published_message<M>(action: Option<canvas::Action<M>>) -> Option<M> {
+        action.and_then(|a| a.into_inner().0)
+    }
+
+    // ── hover tracking ───────────────────────────────────────────────────
+
+    #[test]
+    fn hover_publishes_on_first_entry() {
+        let program = test_program(3, 5, 100.0, 100.0);
+        let mut state = GraphDragState::default();
+        let bounds = bounds(100.0, 3);
+        let cursor = Cursor::Available(Point::new(50.0, 10.0)); // row 0
+
+        let action = program.update(&mut state, &cursor_moved_at(50.0, 10.0), bounds, cursor);
+        match published_message(action) {
+            Some(Message::HoverCommit(Some(5))) => {}
+            other => panic!("expected HoverCommit(Some(5)), got {other:?}"),
+        }
+        assert_eq!(state.hovered_row, Some(5));
+    }
+
+    #[test]
+    fn hover_does_not_republish_when_unchanged() {
+        let program = test_program(3, 5, 100.0, 100.0);
+        let mut state = GraphDragState::default();
+        let bounds = bounds(100.0, 3);
+        let cursor = Cursor::Available(Point::new(50.0, 10.0));
+
+        let _ = program.update(&mut state, &cursor_moved_at(50.0, 10.0), bounds, cursor);
+        let action = program.update(&mut state, &cursor_moved_at(51.0, 11.0), bounds, cursor);
+        assert!(
+            published_message(action).is_none(),
+            "hovering within the same row should not republish HoverCommit"
+        );
+    }
+
+    #[test]
+    fn hover_updates_when_moving_to_a_different_row() {
+        let program = test_program(3, 5, 100.0, 100.0);
+        let mut state = GraphDragState::default();
+        let bounds = bounds(100.0, 3);
+
+        let _ = program.update(
+            &mut state,
+            &cursor_moved_at(50.0, 10.0),
+            bounds,
+            Cursor::Available(Point::new(50.0, 10.0)),
+        );
+        assert_eq!(state.hovered_row, Some(5));
+
+        let cursor = Cursor::Available(Point::new(50.0, 25.0)); // row 1
+        let action = program.update(&mut state, &cursor_moved_at(50.0, 25.0), bounds, cursor);
+        match published_message(action) {
+            Some(Message::HoverCommit(Some(6))) => {}
+            other => panic!("expected HoverCommit(Some(6)), got {other:?}"),
+        }
+        assert_eq!(state.hovered_row, Some(6));
+    }
+
+    #[test]
+    fn hover_clears_when_cursor_moves_outside_bounds() {
+        let program = test_program(3, 5, 100.0, 100.0);
+        let mut state = GraphDragState::default();
+        let bounds = bounds(100.0, 3);
+
+        let _ = program.update(
+            &mut state,
+            &cursor_moved_at(50.0, 10.0),
+            bounds,
+            Cursor::Available(Point::new(50.0, 10.0)),
+        );
+        assert_eq!(state.hovered_row, Some(5));
+
+        // Cursor position well outside the canvas's own bounds (still a
+        // valid `CursorMoved` event, since iced dispatches these globally).
+        let cursor = Cursor::Available(Point::new(50.0, 500.0));
+        let action = program.update(&mut state, &cursor_moved_at(50.0, 500.0), bounds, cursor);
+        match published_message(action) {
+            Some(Message::HoverCommit(None)) => {}
+            other => panic!("expected HoverCommit(None), got {other:?}"),
+        }
+        assert_eq!(state.hovered_row, None);
+    }
+
+    #[test]
+    fn cursor_left_clears_hover_when_previously_hovering() {
+        let program = test_program(3, 5, 100.0, 100.0);
+        let mut state = GraphDragState {
+            hovered_row: Some(5),
+            ..Default::default()
+        };
+        let bounds = bounds(100.0, 3);
+        let event = canvas::Event::Mouse(MouseEvent::CursorLeft);
+
+        let action = program.update(&mut state, &event, bounds, Cursor::Unavailable);
+        match published_message(action) {
+            Some(Message::HoverCommit(None)) => {}
+            other => panic!("expected HoverCommit(None), got {other:?}"),
+        }
+        assert_eq!(state.hovered_row, None);
+    }
+
+    #[test]
+    fn cursor_left_is_a_no_op_when_not_hovering() {
+        let program = test_program(3, 5, 100.0, 100.0);
+        let mut state = GraphDragState::default();
+        let bounds = bounds(100.0, 3);
+        let event = canvas::Event::Mouse(MouseEvent::CursorLeft);
+
+        let action = program.update(&mut state, &event, bounds, Cursor::Unavailable);
+        assert!(action.is_none());
+    }
+
+    // ── click-vs-drag selection ──────────────────────────────────────────
+
+    #[test]
+    fn plain_click_off_node_selects_the_row() {
+        // Column isn't wide enough to need panning, so any left click
+        // anywhere in the row should be treated as a selection.
+        let program = test_program(3, 5, 100.0, 100.0);
+        let mut state = GraphDragState::default();
+        let bounds = bounds(100.0, 3);
+        let pos = Point::new(90.0, 10.0); // far from the node at x=7, row 0
+        let cursor = Cursor::Available(pos);
+
+        let press = canvas::Event::Mouse(MouseEvent::ButtonPressed(Button::Left));
+        let press_action = program.update(&mut state, &press, bounds, cursor);
+        // Pressing (without a node underneath) only starts a potential drag;
+        // it must not select immediately.
+        assert!(published_message(press_action).is_none());
+        assert!(state.drag.is_some());
+
+        let release = canvas::Event::Mouse(MouseEvent::ButtonReleased(Button::Left));
+        let release_action = program.update(&mut state, &release, bounds, cursor);
+        match published_message(release_action) {
+            Some(Message::SelectCommit(5)) => {}
+            other => panic!("expected SelectCommit(5), got {other:?}"),
+        }
+        assert!(state.drag.is_none());
+    }
+
+    #[test]
+    fn dragging_beyond_threshold_pans_instead_of_selecting() {
+        // Wide content (200px) inside a 100px column makes panning possible.
+        let program = test_program(3, 5, 100.0, 200.0);
+        let mut state = GraphDragState::default();
+        let bounds = bounds(100.0, 3);
+
+        let press_pos = Point::new(90.0, 10.0);
+        let press = canvas::Event::Mouse(MouseEvent::ButtonPressed(Button::Left));
+        let _ = program.update(&mut state, &press, bounds, Cursor::Available(press_pos));
+        assert!(state.drag.is_some());
+
+        // Drag far enough to exceed the click/drag threshold.
+        let move_pos = Point::new(40.0, 10.0);
+        let _ = program.update(
+            &mut state,
+            &cursor_moved_at(move_pos.x, move_pos.y),
+            bounds,
+            Cursor::Available(move_pos),
+        );
+        assert!(state.pan_x >= CLICK_DRAG_THRESHOLD);
+
+        let release = canvas::Event::Mouse(MouseEvent::ButtonReleased(Button::Left));
+        let release_action =
+            program.update(&mut state, &release, bounds, Cursor::Available(move_pos));
+        assert!(
+            published_message(release_action).is_none(),
+            "a real pan-drag must not also select a row"
+        );
+    }
+
+    #[test]
+    fn right_click_off_node_opens_context_menu_for_the_row() {
+        let program = test_program(3, 5, 100.0, 100.0);
+        let mut state = GraphDragState::default();
+        let bounds = bounds(100.0, 3);
+        let pos = Point::new(90.0, 10.0);
+        let cursor = Cursor::Available(pos);
+
+        let press = canvas::Event::Mouse(MouseEvent::ButtonPressed(Button::Right));
+        let action = program.update(&mut state, &press, bounds, cursor);
+        match published_message(action) {
+            Some(Message::OpenCommitContextMenu(5)) => {}
+            other => panic!("expected OpenCommitContextMenu(5), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn click_directly_on_node_selects_immediately_without_drag_state() {
+        let program = test_program(3, 5, 100.0, 100.0);
+        let mut state = GraphDragState::default();
+        let bounds = bounds(100.0, 3);
+        // Node for row 0 sits at lane_x(0, 0.0) = 7.0.
+        let pos = Point::new(7.0, 10.0);
+        let cursor = Cursor::Available(pos);
+
+        let press = canvas::Event::Mouse(MouseEvent::ButtonPressed(Button::Left));
+        let action = program.update(&mut state, &press, bounds, cursor);
+        match published_message(action) {
+            Some(Message::SelectCommit(5)) => {}
+            other => panic!("expected SelectCommit(5), got {other:?}"),
+        }
+        assert!(
+            state.drag.is_none(),
+            "a direct node click should not also start a pan drag"
+        );
     }
 }

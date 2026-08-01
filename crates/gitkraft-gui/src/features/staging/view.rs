@@ -198,11 +198,9 @@ fn staging_file_list_view(state: &GitKraft, kind: StagingKind) -> Element<'_, Me
 
             let file_row = file_row.padding([2, 8]);
 
-            let row_style = if is_selected {
-                theme::selected_row_style as fn(&iced::Theme) -> iced::widget::container::Style
-            } else {
-                theme::surface_style as fn(&iced::Theme) -> iced::widget::container::Style
-            };
+            let row_style = row_style!(
+                is_selected => theme::selected_row_style,
+            );
 
             let toggle_msg = if is_unstaged {
                 Message::ToggleSelectUnstaged(file_path_display.to_string())

@@ -278,13 +278,10 @@ fn commit_file_list<'a>(state: &'a GitKraft, c: &ThemeColors, width: f32) -> Ele
 
         // Primary selected row gets the strongest highlight; multi-selected-but-not-primary
         // gets a distinct secondary highlight; unselected rows use the plain surface style.
-        let style_fn = if is_selected {
-            theme::selected_row_style as fn(&iced::Theme) -> iced::widget::container::Style
-        } else if is_multi_selected {
-            theme::highlight_row_style as fn(&iced::Theme) -> iced::widget::container::Style
-        } else {
-            theme::surface_style as fn(&iced::Theme) -> iced::widget::container::Style
-        };
+        let style_fn = row_style!(
+            is_selected => theme::selected_row_style,
+            is_multi_selected => theme::highlight_row_style,
+        );
 
         let file_btn = button(row_content)
             .padding(0)
