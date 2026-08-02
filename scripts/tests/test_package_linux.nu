@@ -7,11 +7,13 @@
 # line-continuation, producing a `nu::parser::parse_mismatch` ("expected
 # operator") instead of a normal rpmbuild invocation — plus a second, latent
 # parse error from an unsupported `\.` escape inside a double-quoted string
-# used to filter package files.
+# used to filter package files, and a third, purely *runtime* bug (see
+# gui-deb-control / gui-rpm-spec tests below) that only surfaced once the
+# first two were fixed and CI actually reached that code path.
 
 use std/assert
 use runner.nu *
-use ../ci/package_linux.nu [rpmbuild-args, is-linux-package-file]
+use ../ci/package_linux.nu [rpmbuild-args, is-linux-package-file, gui-deb-control, gui-rpm-spec]
 
 # ── rpmbuild-args ────────────────────────────────────────────────────────────
 
@@ -80,6 +82,53 @@ def "test is-linux-package-file: does not match substrings mid-name" [] {
 
 def "test is-linux-package-file: empty string is not a package" [] {
     assert (not (is-linux-package-file ""))
+}
+
+# ── gui-deb-control / gui-rpm-spec ───────────────────────────────────────────
+# Regression tests for a second, purely *runtime* bug that the parse fix
+# above could not catch: the literal parenthesised text "(Elm Architecture)"
+# inside a `$"..."` interpolated string was parsed by Nu as a nested command
+# call (`Elm Architecture`) instead of literal text, since any unescaped
+# `(...)` inside a Nu interpolated string is evaluated as an expression. This
+# only surfaced once the earlier parse-mismatch bug was fixed and CI actually
+# reached this code path -- so these tests exercise the generated text
+# directly rather than relying on a full end-to-end packaging run.
+
+def "test gui-deb-control: contains the literal Elm Architecture parenthetical" [] {
+    let control = (gui-deb-control "1.1.6" "amd64")
+    assert ($control | str contains "(Elm Architecture)")
+}
+
+def "test gui-deb-control: interpolates version and architecture" [] {
+    let control = (gui-deb-control "9.9.9" "arm64")
+    assert ($control | str contains "Version: 9.9.9")
+    assert ($control | str contains "Architecture: arm64")
+}
+
+def "test gui-deb-control: has the expected package name and maintainer" [] {
+    let control = (gui-deb-control "1.0.0" "amd64")
+    assert ($control | str contains "Package: gitkraft")
+    assert ($control | str contains "Maintainer: Sorin Irimies")
+}
+
+def "test gui-rpm-spec: contains the literal Elm Architecture parenthetical" [] {
+    let spec = (gui-rpm-spec "1.1.6" "x86_64" "Sun Aug 02 2026")
+    assert ($spec | str contains "(Elm Architecture)")
+}
+
+def "test gui-rpm-spec: interpolates version, arch, and changelog date" [] {
+    let spec = (gui-rpm-spec "2.3.4" "aarch64" "Mon Jan 01 2027")
+    assert ($spec | str contains "Version:        2.3.4")
+    assert ($spec | str contains "BuildArch:      aarch64")
+    assert ($spec | str contains "* Mon Jan 01 2027")
+}
+
+def "test gui-rpm-spec: has the expected rpm sections" [] {
+    let spec = (gui-rpm-spec "1.0.0" "x86_64" "Sun Aug 02 2026")
+    assert ($spec | str contains "%description")
+    assert ($spec | str contains "%install")
+    assert ($spec | str contains "%files")
+    assert ($spec | str contains "%changelog")
 }
 
 # ── Parse-level regression guard ─────────────────────────────────────────────

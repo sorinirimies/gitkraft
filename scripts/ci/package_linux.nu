@@ -34,6 +34,63 @@ export def is-linux-package-file [name: string]: nothing -> bool {
     ($name | str ends-with ".deb") or ($name | str ends-with ".rpm")
 }
 
+# Build the DEBIAN/control file contents for the desktop GUI .deb package.
+#
+# Extracted into its own pure function (no side effects, no external
+# commands) so its exact text can be asserted in tests. This is a regression
+# guard for a bug where the literal parenthesised text "(Elm Architecture)"
+# inside a `$"..."` interpolated string was parsed by Nu as a *nested
+# command call* (`Elm Architecture`) rather than literal text, since any
+# unescaped `(...)` inside a Nu interpolated string is evaluated as an
+# expression. That bug could not be caught by `nu-check` / parsing alone —
+# it only failed at runtime, when the packaging step actually reached this
+# code path.
+export def gui-deb-control [version: string, arch: string]: nothing -> string {
+    $"Package: gitkraft
+Version: ($version)
+Architecture: ($arch)
+Maintainer: Sorin Irimies <sorinirimies@gmail.com>
+Description: GitKraft — desktop GUI Git IDE written in Rust
+ A mouse-driven desktop GUI for Git, built on Iced \(Elm Architecture\).
+Homepage: https://github.com/sorinirimies/gitkraft
+Depends: libxkbcommon0, libwayland-client0, libgl1
+"
+}
+
+# Build the .spec file contents for the desktop GUI .rpm package. Same
+# rationale as `gui-deb-control` above — kept pure and testable so the
+# escaped parentheses stay literal text instead of silently regressing into
+# a nested command call.
+export def gui-rpm-spec [
+    version: string
+    rpm_arch: string
+    rpm_date: string
+]: nothing -> string {
+    $"Name:           gitkraft
+Version:        ($version)
+Release:        1%{?dist}
+Summary:        Desktop GUI Git IDE written in Rust
+License:        MIT
+URL:            https://github.com/sorinirimies/gitkraft
+BuildArch:      ($rpm_arch)
+Requires:       libxkbcommon, wayland-libs-client, mesa-libGL
+
+%description
+A mouse-driven desktop GUI for Git, built on Iced \(Elm Architecture\).
+
+%install
+mkdir -p %{buildroot}/usr/bin
+install -m 755 %{_sourcedir}/gitkraft %{buildroot}/usr/bin/gitkraft
+
+%files
+/usr/bin/gitkraft
+
+%changelog
+* ($rpm_date) Sorin Irimies <sorinirimies@gmail.com> - ($version)-1
+- Release ($version)
+"
+}
+
 def main [
     version: string   # e.g. 0.7.7
     target: string    # e.g. x86_64-unknown-linux-gnu
@@ -77,15 +134,7 @@ MIT License — see /usr/share/common-licenses/MIT
 
     cp $"target/($target)/release/gitkraft" $"($gui_deb_root)/usr/bin/gitkraft"
 
-    $"Package: gitkraft
-Version: ($version)
-Architecture: ($arch)
-Maintainer: Sorin Irimies <sorinirimies@gmail.com>
-Description: GitKraft — desktop GUI Git IDE written in Rust
- A mouse-driven desktop GUI for Git, built on Iced (Elm Architecture).
-Homepage: https://github.com/sorinirimies/gitkraft
-Depends: libxkbcommon0, libwayland-client0, libgl1
-" | save -f $"($gui_deb_root)/DEBIAN/control"
+    (gui-deb-control $version $arch) | save -f $"($gui_deb_root)/DEBIAN/control"
 
     $"GitKraft ($version)
 Copyright 2024 Sorin Irimies
@@ -139,29 +188,7 @@ install -m 755 %{_sourcedir}/gitkraft-tui %{buildroot}/usr/bin/gitkraft-tui
     print $"✅ Built gitkraft-tui-($version)-($rpm_arch).rpm"
 
     # ── .rpm for gitkraft (GUI) ──────────────────────────────────────────────
-    $"Name:           gitkraft
-Version:        ($version)
-Release:        1%{?dist}
-Summary:        Desktop GUI Git IDE written in Rust
-License:        MIT
-URL:            https://github.com/sorinirimies/gitkraft
-BuildArch:      ($rpm_arch)
-Requires:       libxkbcommon, wayland-libs-client, mesa-libGL
-
-%description
-A mouse-driven desktop GUI for Git, built on Iced (Elm Architecture).
-
-%install
-mkdir -p %{buildroot}/usr/bin
-install -m 755 %{_sourcedir}/gitkraft %{buildroot}/usr/bin/gitkraft
-
-%files
-/usr/bin/gitkraft
-
-%changelog
-* ($rpm_date) Sorin Irimies <sorinirimies@gmail.com> - ($version)-1
-- Release ($version)
-" | save -f $"($rpm_build)/SPECS/gitkraft.spec"
+    (gui-rpm-spec $version $rpm_arch $rpm_date) | save -f $"($rpm_build)/SPECS/gitkraft.spec"
 
     cp $"target/($target)/release/gitkraft" $"($rpm_build)/SOURCES/gitkraft"
 

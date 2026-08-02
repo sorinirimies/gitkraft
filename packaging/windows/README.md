@@ -33,3 +33,10 @@ The installer also creates:
 
 The installer expects `packaging\windows\gitkraft.ico` to exist at build time.
 See [`gitkraft.ico.txt`](gitkraft.ico.txt) for instructions on providing it.
+
+If no icon is committed, `scripts/ci/package_windows.sh` automatically
+generates a simple fallback icon (via PowerShell + System.Drawing, no extra
+tools required) before invoking `makensis`, so the installer build never
+hard-fails on a missing icon file. Replace it with real branded artwork at
+any time using the same path — the fallback is only used when the file is
+absent.
