@@ -2,9 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.1.5] - 2026-08-02
 ### 🐛 Bug Fixes
 - fix remaining 3 build failures (Nu date, Windows makensis path)
+### 🔄 CI
+- bump actions/checkout from 4 to 7
+- bump actions/download-artifact from 4 to 8
+- bump KSXGitHub/github-actions-deploy-aur from 2 to 3
+- bump actions/upload-artifact from 4 to 7
+### 🔧 Chores
+- align git-cliff and changelog setup with tui-file-explorer
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.1.4...v1.1.5
 ## [1.1.4] - 2026-06-26
 ### 🐛 Bug Fixes
 - resolve all 4 release build failures
