@@ -20,17 +20,36 @@
 #
 # A fourth, related bug: even with a byte-verified-valid icon, makensis
 # still failed with "can't open file" when the icon was referenced by a
-# *relative* path ("packaging\windows\gitkraft.ico") from the versioned
-# .nsi script (which itself lives in dist/). The fix resolves an absolute
-# Windows path at build time (via `pwd -W`) and substitutes it into the
-# script through a new @ICON_ABS_PATH@ placeholder, carefully doubling
-# backslashes so sed's replacement-text escaping doesn't mangle the path.
+# *relative* path ("packaging\windows\gitkraft.ico"). The actual root cause
+# (confirmed by a fifth bug, below, hitting the exact same failure mode for
+# a completely different file): NSIS resolves every relative path used by
+# File/LicenseData/Icon-style commands relative to the *compiled script's
+# own directory* — and this script is compiled from a versioned copy at
+# dist/installer_versioned.nsi, not from its committed location. So
+# "packaging\windows\gitkraft.ico" was being looked up as
+# dist\packaging\windows\gitkraft.ico, which never existed.
+#
+# The fifth bug proved this diagnosis: even after fixing the icon path,
+# the build failed identically on `!insertmacro MUI_PAGE_LICENSE "LICENSE"`
+# with `LicenseData: open failed "LICENSE"` — despite LICENSE existing at
+# the repo root — because it too was being resolved relative to dist/.
+#
+# The real, comprehensive fix: add `!cd "@REPO_ROOT_ABS@"` near the top of
+# installer.nsi, substituted at build time with the actual repository root
+# (via Git Bash's `pwd -W`). This re-anchors *every* relative path in the
+# script to the repo root in one place, rather than patching each
+# individual reference (icon, license, File commands) with its own
+# absolute path.
 
 use std/assert
 use runner.nu *
 
 def script-path []: nothing -> string {
     $env.CURRENT_FILE | path dirname | path join ".." "ci" "package_windows.sh"
+}
+
+def nsi-path []: nothing -> string {
+    $env.CURRENT_FILE | path dirname | path join ".." ".." "packaging" "windows" "installer.nsi"
 }
 
 # Extract the base64 payload between the `<<'ICO_BASE64' ... ICO_BASE64` heredoc
@@ -67,35 +86,24 @@ def "test package_windows.sh: no longer runs PowerShell/System.Drawing to build 
     assert (not ($text | str contains "powershell -NoProfile -Command"))
 }
 
-def "test package_windows.sh: resolves the icon to an absolute path before substitution" [] {
-    # Regression guard for a third bug: even a byte-verified-valid icon at
-    # the *relative* path "packaging\windows\gitkraft.ico" was rejected by
-    # makensis with "can't open file" (CI run 30751058486). The fix resolves
-    # an absolute Windows path via `pwd -W` and substitutes it into a new
-    # @ICON_ABS_PATH@ placeholder instead of hardcoding a relative path in
-    # the .nsi script.
+def "test package_windows.sh: resolves the repo root to an absolute path before substitution" [] {
+    # Regression guard: relative paths in installer.nsi (icon, LICENSE, File
+    # commands) all resolve against the *compiled script's* directory
+    # (dist/), not the repo root, so the script must substitute an absolute
+    # @REPO_ROOT_ABS@ placeholder (via `pwd -W`) for `!cd` to anchor to.
     let text = (open --raw (script-path))
     assert ($text | str contains "pwd -W")
-    assert ($text | str contains "@ICON_ABS_PATH@")
+    assert ($text | str contains "@REPO_ROOT_ABS@")
 }
 
-def "test installer.nsi: MUI_ICON/MUI_UNICON use the @ICON_ABS_PATH@ placeholder, not a hardcoded relative path" [] {
-    let nsi_path = ($env.CURRENT_FILE | path dirname | path join ".." ".." "packaging" "windows" "installer.nsi")
-    let text = (open --raw $nsi_path)
-    assert ($text | str contains "!define MUI_ICON \"@ICON_ABS_PATH@\"")
-    assert ($text | str contains "!define MUI_UNICON \"@ICON_ABS_PATH@\"")
-    assert (not ($text | str contains "MUI_ICON \"packaging"))
-    assert (not ($text | str contains "MUI_UNICON \"packaging"))
-}
-
-def "test package_windows.sh: doubles backslashes before using the path in a sed replacement" [] {
+def "test package_windows.sh: doubles backslashes before using the repo root in a sed replacement" [] {
     # sed's replacement text treats a lone backslash as the start of an
     # escape sequence (e.g. \1, \\), so a raw Windows absolute path like
-    # "D:\a\gitkraft\gitkraft\...\gitkraft.ico" must have every
-    # backslash doubled first, or sed could silently mangle the path.
+    # "D:\a\gitkraft\gitkraft" must have every backslash doubled first, or
+    # sed could silently mangle the path.
     let text = (open --raw (script-path))
-    assert ($text | str contains "ICON_ABS_PATH_SED")
-    assert ($text | str contains "@ICON_ABS_PATH@#${ICON_ABS_PATH_SED}#g")
+    assert ($text | str contains "REPO_ROOT_ABS_SED")
+    assert ($text | str contains "@REPO_ROOT_ABS@#${REPO_ROOT_ABS_SED}#g")
 }
 
 def "test package_windows.sh: sed backslash-doubling round-trips to a single backslash per separator" [] {
@@ -105,13 +113,53 @@ def "test package_windows.sh: sed backslash-doubling round-trips to a single bac
     # removed or its direction reversed. Written as a raw string so none of
     # bash's own backslash syntax needs double-escaping through Nu.
     let script = r#'
-ICON_ABS_PATH='D:\a\gitkraft\gitkraft\packaging\windows\gitkraft.ico'
-ICON_ABS_PATH_SED="${ICON_ABS_PATH//\\/\\\\}"
-echo '@ICON_ABS_PATH@ placeholder' | sed -e "s#@ICON_ABS_PATH@#${ICON_ABS_PATH_SED}#g"
+REPO_ROOT_ABS='D:\a\gitkraft\gitkraft'
+REPO_ROOT_ABS_SED="${REPO_ROOT_ABS//\\/\\\\}"
+echo '@REPO_ROOT_ABS@ placeholder' | sed -e "s#@REPO_ROOT_ABS@#${REPO_ROOT_ABS_SED}#g"
 '#
     let result = (^bash "-c" $script | complete)
     assert equal $result.exit_code 0
-    assert equal ($result.stdout | str trim) 'D:\a\gitkraft\gitkraft\packaging\windows\gitkraft.ico placeholder'
+    assert equal ($result.stdout | str trim) 'D:\a\gitkraft\gitkraft placeholder'
+}
+
+# ── installer.nsi ────────────────────────────────────────────────────────────
+
+def "test installer.nsi: sets !cd to the @REPO_ROOT_ABS@ placeholder" [] {
+    let text = (open --raw (nsi-path))
+    assert ($text | str contains "!cd \"@REPO_ROOT_ABS@\"")
+}
+
+def "test installer.nsi: !cd appears before OutFile, MUI_ICON, and LICENSE references" [] {
+    # !cd must take effect before any relative-path command is reached, so
+    # its line number must be lower than all of them.
+    let lines = (open --raw (nsi-path) | lines)
+    let cd_line = ($lines | enumerate | where {|it| $it.item | str contains "!cd "} | get index.0)
+    let outfile_line = ($lines | enumerate | where {|it| $it.item | str starts-with "OutFile "} | get index.0)
+    let icon_line = ($lines | enumerate | where {|it| $it.item | str contains "!define MUI_ICON "} | get index.0)
+    let license_line = ($lines | enumerate | where {|it| $it.item | str contains "MUI_PAGE_LICENSE "} | get index.0)
+    assert ($cd_line < $outfile_line)
+    assert ($cd_line < $icon_line)
+    assert ($cd_line < $license_line)
+}
+
+def "test installer.nsi: MUI_ICON/MUI_UNICON use a plain repo-relative path, relying on !cd" [] {
+    let text = (open --raw (nsi-path))
+    assert ($text | str contains "!define MUI_ICON \"packaging\\windows\\gitkraft.ico\"")
+    assert ($text | str contains "!define MUI_UNICON \"packaging\\windows\\gitkraft.ico\"")
+}
+
+def "test installer.nsi: references LICENSE from the repo root" [] {
+    let text = (open --raw (nsi-path))
+    assert ($text | str contains "MUI_PAGE_LICENSE \"LICENSE\"")
+}
+
+def "test installer.nsi: LICENSE file actually exists at the repo root" [] {
+    # Regression guard: the exact failure mode this fix addresses --
+    # `LicenseData: open failed "LICENSE"` -- would resurface silently if
+    # the LICENSE file were ever moved or removed without updating the
+    # (now repo-root-relative) reference here.
+    let license_path = ($env.CURRENT_FILE | path dirname | path join ".." ".." "LICENSE")
+    assert ($license_path | path exists)
 }
 
 # ── decoded ICO byte-level validation ───────────────────────────────────────

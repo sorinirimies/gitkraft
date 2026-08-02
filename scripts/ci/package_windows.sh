@@ -57,25 +57,24 @@ ICO_BASE64
     echo "✅ Wrote fallback icon at $ICON ($(wc -c < "$ICON" | tr -d ' ') bytes)"
 fi
 
-# NSIS's relative-path resolution for MUI_ICON/MUI_UNICON was unreliable in
-# CI (makensis reported "can't open file" for a byte-verified-valid icon at
-# the relative path "packaging\windows\gitkraft.ico", regardless of how the
-# icon itself was generated, or its size/format). Resolve to an absolute,
-# unambiguous Windows path instead, using Git Bash's `pwd -W` to get a
-# native drive-letter path, then convert forward slashes to backslashes for
-# classic NSIS compatibility.
-ICON_ABS_DIR="$(cd "$(dirname "$ICON")" && pwd -W)"
-ICON_ABS_PATH="$(printf '%s/%s' "$ICON_ABS_DIR" "$(basename "$ICON")" | tr '/' '\\')"
-echo "ℹ️  Resolved icon to absolute path: $ICON_ABS_PATH"
-
-# sed treats backslashes specially in the replacement text (e.g. \1, \\),
-# so double them here to get a single literal backslash per path separator
-# in the generated .nsi file.
-ICON_ABS_PATH_SED="${ICON_ABS_PATH//\\/\\\\}"
+# The .nsi script is compiled from a versioned copy at dist/installer_versioned.nsi,
+# not from its own committed location, and NSIS resolves every relative path
+# used by File/LicenseData/Icon-style commands relative to the *compiled
+# script's own directory*. Left unhandled, "LICENSE" would resolve to
+# dist/LICENSE and "target\...\release\gitkraft.exe" to dist/target/...,
+# neither of which exist. The .nsi script re-anchors all of its relative
+# paths to the real repository root via `!cd "@REPO_ROOT_ABS@"`; resolve
+# that absolute Windows path here using Git Bash's `pwd -W` (native
+# drive-letter path), then double backslashes before using it in sed's
+# replacement text (sed treats a lone backslash there as the start of an
+# escape sequence like \1 or \\).
+REPO_ROOT_ABS="$(pwd -W | tr '/' '\\')"
+echo "ℹ️  Resolved repo root to absolute path: $REPO_ROOT_ABS"
+REPO_ROOT_ABS_SED="${REPO_ROOT_ABS//\\/\\\\}"
 
 # Substitute placeholders
 sed -e "s/@VERSION@/${VERSION}/g" \
-    -e "s#@ICON_ABS_PATH@#${ICON_ABS_PATH_SED}#g" \
+    -e "s#@REPO_ROOT_ABS@#${REPO_ROOT_ABS_SED}#g" \
     "$NSI" > "$DIST/installer_versioned.nsi"
 
 echo "🔨 Building Windows installer with NSIS..."

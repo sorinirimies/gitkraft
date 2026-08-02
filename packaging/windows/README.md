@@ -12,22 +12,28 @@ The `installer.nsi` script builds a standard Windows installer (`.exe`) using
    ```
    cargo build --release -p gitkraft -p gitkraft-tui --target x86_64-pc-windows-msvc
    ```
-3. Replace `@VERSION@` in the `.nsi` file with the actual version
+3. Replace `@VERSION@` and `@REPO_ROOT_ABS@` in the `.nsi` file (see
+   `scripts/ci/package_windows.sh` for how CI does this)
 4. Run: `makensis packaging\windows\installer.nsi`
 
 The installer will be created at `dist\gitkraft-<version>-windows-x86_64-setup.exe`.
 
-### Components
+### Path resolution (`!cd`)
 
-- **GitKraft GUI** (required) — the desktop GUI binary
-- **GitKraft TUI** (optional) — the terminal UI binary
-- **Add to PATH** (optional) — adds the install directory to `%PATH%`
+NSIS resolves every relative path used by `File`, `LicenseData`,
+`MUI_ICON`/`MUI_UNICON`, and similar commands relative to the *compiled
+script's own directory*, not the process's working directory. In CI this
+script is compiled from a versioned copy at `dist\installer_versioned.nsi`
+(see `scripts/ci/package_windows.sh`), so left unhandled, relative paths
+like `LICENSE` or `target\...\release\gitkraft.exe` would be looked up
+under `dist\`, where they don't exist.
 
-The installer also creates:
-- A Start Menu shortcut for the GUI
-- A Desktop shortcut for the GUI
-- Windows App Paths registry entries for both binaries
-- A standard Add/Remove Programs entry
+`installer.nsi` opens with `!cd "@REPO_ROOT_ABS@"`, which
+`package_windows.sh` substitutes with the actual repository root
+(resolved via Git Bash's `pwd -W`) before invoking `makensis`. This
+re-anchors every relative path in the script to the repo root in one
+place, so `LICENSE`, `packaging\windows\gitkraft.ico`, and the `File`
+commands all resolve exactly as if the script were compiled in place.
 
 ## Icon
 

@@ -1,5 +1,22 @@
 ; GitKraft Windows Installer
 ; Built with NSIS (Nullsoft Scriptable Install System)
+;
+; NOTE: this script is compiled from a versioned copy at
+; dist\installer_versioned.nsi (see scripts/ci/package_windows.sh), not from
+; its own committed location (packaging\windows\installer.nsi). NSIS resolves
+; every relative path used by File/LicenseData/Icon-style commands relative
+; to the *compiled script's own directory*, not the process's working
+; directory or the script's original location. Left unhandled, that means
+; "target\...\release\gitkraft.exe" would be looked up under
+; dist\target\...\, and "LICENSE" under dist\LICENSE — neither of which
+; exist, producing errors like:
+;   LicenseData: open failed "LICENSE"
+;   Error while loading icon from "packaging\windows\gitkraft.ico": can't open file
+; `!cd` re-anchors that resolution to the actual repository root
+; (substituted below by package_windows.sh via @REPO_ROOT_ABS@), so every
+; relative path elsewhere in this file behaves exactly as if the script
+; were compiled in place at the repo root.
+!cd "@REPO_ROOT_ABS@"
 
 !define PRODUCT_NAME "GitKraft"
 !define PRODUCT_VERSION "@VERSION@"
@@ -17,16 +34,9 @@ SetCompressor /SOLID lzma
 !include "MUI2.nsh"
 
 ; UI
-; NOTE: MUI_ICON/MUI_UNICON take an absolute path (substituted below by
-; package_windows.sh via @ICON_ABS_PATH@) rather than a path relative to
-; "packaging\windows\gitkraft.ico". This script is compiled from a copy at
-; dist\installer_versioned.nsi, and a plain relative path here was found to
-; be unreliable across NSIS/runner configurations — makensis reported
-; "can't open file" for a verified-valid icon at that relative location.
-; An absolute path removes the ambiguity entirely.
 !define MUI_ABORTWARNING
-!define MUI_ICON "@ICON_ABS_PATH@"
-!define MUI_UNICON "@ICON_ABS_PATH@"
+!define MUI_ICON "packaging\windows\gitkraft.ico"
+!define MUI_UNICON "packaging\windows\gitkraft.ico"
 
 ; Pages
 !insertmacro MUI_PAGE_WELCOME
