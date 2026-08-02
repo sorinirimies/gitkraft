@@ -15,24 +15,33 @@
 # separate args or accidentally merged/split) can be asserted directly in
 # tests, rather than only being caught at CI time via a parser error.
 #
-# Regression guard: these args were previously spread across three lines
+# Regression guard #1: these args were previously spread across three lines
 # with no valid Nu line-continuation between them, which produced a
 # `nu::parser::parse_mismatch` ("expected operator") failure in CI instead
 # of a normal rpmbuild invocation.
 #
-# Also passes --target so cross-architecture builds work: rpmbuild refuses
-# to build a package whose BuildArch isn't in its own host's compatible-
-# architecture list (e.g. building an aarch64 .rpm on an x86_64 CI runner
-# fails with "No compatible architectures found for build" without this).
+# Regression guard #2: a later revision added "--target <rpm_arch>-linux" to
+# make cross-architecture builds work (building an aarch64 .rpm on an x86_64
+# CI runner). That was the wrong fix: passing --target tells rpmbuild to
+# actually validate cross-build *feasibility* against its host's
+# compatible-architecture table (from /usr/lib/rpm/rpmrc), and Ubuntu's rpm
+# package has no aarch64<->x86_64 compatibility entries — so it failed with
+# "No compatible architectures found for build" (CI run 30751058486),
+# regardless of which target triple format was used. --target is meant for
+# genuine cross-*compilation*; we aren't compiling anything here, we're only
+# packaging an already cross-compiled, pre-built binary. The package's
+# architecture tag is controlled entirely by `BuildArch:` in the .spec file
+# (see gui-rpm-spec below and the gitkraft-tui spec in `main`), which does
+# NOT trigger any host-compatibility validation. Omitting --target lets
+# rpmbuild build a `BuildArch: aarch64` package on an x86_64 host with no
+# special configuration needed.
 export def rpmbuild-args [
     rpm_build: string   # e.g. dist/rpmbuild
     spec_path: string   # e.g. dist/rpmbuild/SPECS/gitkraft-tui.spec
-    rpm_arch: string    # e.g. x86_64 or aarch64
 ]: nothing -> list<string> {
     [
         "-bb"
         "--define" $"_topdir (pwd)/($rpm_build)"
-        "--target" $"($rpm_arch)-linux"
         $spec_path
     ]
 }
@@ -192,7 +201,7 @@ install -m 755 %{_sourcedir}/gitkraft-tui %{buildroot}/usr/bin/gitkraft-tui
 
     cp $"target/($target)/release/gitkraft-tui" $"($rpm_build)/SOURCES/gitkraft-tui"
 
-    run-external "rpmbuild" ...(rpmbuild-args $rpm_build $"($rpm_build)/SPECS/gitkraft-tui.spec" $rpm_arch)
+    run-external "rpmbuild" ...(rpmbuild-args $rpm_build $"($rpm_build)/SPECS/gitkraft-tui.spec")
 
     let rpm_file = (ls $"($rpm_build)/RPMS/($rpm_arch)/*.rpm" | first).name
     cp $rpm_file $"($dist_dir)/gitkraft-tui-($version)-($rpm_arch).rpm"
@@ -203,7 +212,7 @@ install -m 755 %{_sourcedir}/gitkraft-tui %{buildroot}/usr/bin/gitkraft-tui
 
     cp $"target/($target)/release/gitkraft" $"($rpm_build)/SOURCES/gitkraft"
 
-    run-external "rpmbuild" ...(rpmbuild-args $rpm_build $"($rpm_build)/SPECS/gitkraft.spec" $rpm_arch)
+    run-external "rpmbuild" ...(rpmbuild-args $rpm_build $"($rpm_build)/SPECS/gitkraft.spec")
 
     let gui_rpm_file = (ls $"($rpm_build)/RPMS/($rpm_arch)/gitkraft-[0-9]*.rpm" | first).name
     cp $gui_rpm_file $"($dist_dir)/gitkraft-($version)-($rpm_arch).rpm"

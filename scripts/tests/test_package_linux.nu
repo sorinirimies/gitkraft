@@ -10,11 +10,21 @@
 #   double-quoted string used to filter package files,
 # - a third, purely *runtime* bug (see gui-deb-control / gui-rpm-spec tests
 #   below) that only surfaced once the first two were fixed and CI actually
-#   reached that code path, and
+#   reached that code path,
 # - a fourth bug where cross-architecture rpm builds (e.g. building an
 #   aarch64 .rpm on an x86_64 CI runner) failed with "No compatible
-#   architectures found for build" because rpmbuild wasn't told the target
-#   architecture explicitly (see the --target tests below).
+#   architectures found for build", which was (wrongly) "fixed" by adding
+#   `--target <arch>-linux`, and
+# - a fifth bug: passing --target actually made things *worse* for genuine
+#   cross-arch builds — it tells rpmbuild to validate cross-build
+#   feasibility against the host's compatible-architecture table, which
+#   Ubuntu's rpm package doesn't have entries for (aarch64 on an x86_64
+#   host), producing the exact same "No compatible architectures found for
+#   build" error (CI run 30751058486). The actual fix is to drop --target
+#   entirely: we aren't compiling anything, only packaging an already
+#   cross-compiled, pre-built binary, and the package's architecture tag is
+#   controlled purely by `BuildArch:` in the .spec file, which doesn't
+#   trigger any host-compatibility validation.
 
 use std/assert
 use runner.nu *
@@ -22,13 +32,13 @@ use ../ci/package_linux.nu [rpmbuild-args, is-linux-package-file, gui-deb-contro
 
 # ── rpmbuild-args ────────────────────────────────────────────────────────────
 
-def "test rpmbuild-args: returns exactly six args" [] {
-    let args = (rpmbuild-args "dist/rpmbuild" "dist/rpmbuild/SPECS/gitkraft-tui.spec" "x86_64")
-    assert equal ($args | length) 6
+def "test rpmbuild-args: returns exactly four args" [] {
+    let args = (rpmbuild-args "dist/rpmbuild" "dist/rpmbuild/SPECS/gitkraft-tui.spec")
+    assert equal ($args | length) 4
 }
 
 def "test rpmbuild-args: first two args are -bb and --define" [] {
-    let args = (rpmbuild-args "dist/rpmbuild" "dist/rpmbuild/SPECS/gitkraft-tui.spec" "x86_64")
+    let args = (rpmbuild-args "dist/rpmbuild" "dist/rpmbuild/SPECS/gitkraft-tui.spec")
     assert equal ($args | get 0) "-bb"
     assert equal ($args | get 1) "--define"
 }
@@ -38,42 +48,37 @@ def "test rpmbuild-args: --define value is a single arg starting with _topdir" [
     # correctly as two args already, but the whole call was broken across
     # lines with no continuation. Assert the --define *value* stays a single,
     # unsplit string containing both the "_topdir" key and the resolved path.
-    let args = (rpmbuild-args "dist/rpmbuild" "dist/rpmbuild/SPECS/gitkraft-tui.spec" "x86_64")
+    let args = (rpmbuild-args "dist/rpmbuild" "dist/rpmbuild/SPECS/gitkraft-tui.spec")
     let define_value = ($args | get 2)
     assert ($define_value | str starts-with "_topdir ")
     assert ($define_value | str ends-with "dist/rpmbuild")
 }
 
-def "test rpmbuild-args: includes --target with the given rpm_arch" [] {
-    # Regression guard: cross-architecture rpm builds (e.g. building an
-    # aarch64 package on an x86_64 CI runner) fail with rpmbuild's
-    # "No compatible architectures found for build" unless --target is
-    # passed explicitly.
-    let args = (rpmbuild-args "dist/rpmbuild" "unused.spec" "aarch64")
-    assert equal ($args | get 3) "--target"
-    assert equal ($args | get 4) "aarch64-linux"
-}
-
-def "test rpmbuild-args: --target reflects x86_64 too" [] {
-    let args = (rpmbuild-args "dist/rpmbuild" "unused.spec" "x86_64")
-    assert equal ($args | get 4) "x86_64-linux"
+def "test rpmbuild-args: does not pass --target" [] {
+    # Regression guard: --target was tried as a fix for cross-arch builds
+    # but actually broke them further by triggering rpmbuild's
+    # host-compatible-architecture validation, which Ubuntu's rpm package
+    # doesn't have aarch64<->x86_64 entries for. The architecture is
+    # controlled entirely by `BuildArch:` in the .spec file instead.
+    let args = (rpmbuild-args "dist/rpmbuild" "unused.spec")
+    assert (not ($args | any { |it| $it == "--target" }))
 }
 
 def "test rpmbuild-args: last arg is the spec path, unmodified" [] {
     let spec = "dist/rpmbuild/SPECS/gitkraft-tui.spec"
-    let args = (rpmbuild-args "dist/rpmbuild" $spec "x86_64")
-    assert equal ($args | get 5) $spec
+    let args = (rpmbuild-args "dist/rpmbuild" $spec)
+    assert equal ($args | get 3) $spec
 }
 
 def "test rpmbuild-args: works for the GUI spec path too" [] {
     let spec = "dist/rpmbuild/SPECS/gitkraft.spec"
-    let args = (rpmbuild-args "dist/rpmbuild" $spec "aarch64")
-    assert equal ($args | length) 6
-    assert equal ($args | get 5) $spec
+    let args = (rpmbuild-args "dist/rpmbuild" $spec)
+    assert equal ($args | length) 4
+    assert equal ($args | get 3) $spec
 }
 
 def "test rpmbuild-args: --define value embeds the given rpm_build directory" [] {
-    let args = (rpmbuild-args "some/other/rpmbuild" "unused.spec" "x86_64")
+    let args = (rpmbuild-args "some/other/rpmbuild" "unused.spec")
     assert (($args | get 2) | str ends-with "some/other/rpmbuild")
 }
 
