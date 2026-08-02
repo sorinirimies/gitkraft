@@ -17,9 +17,16 @@ SetCompressor /SOLID lzma
 !include "MUI2.nsh"
 
 ; UI
+; NOTE: MUI_ICON/MUI_UNICON take an absolute path (substituted below by
+; package_windows.sh via @ICON_ABS_PATH@) rather than a path relative to
+; "packaging\windows\gitkraft.ico". This script is compiled from a copy at
+; dist\installer_versioned.nsi, and a plain relative path here was found to
+; be unreliable across NSIS/runner configurations — makensis reported
+; "can't open file" for a verified-valid icon at that relative location.
+; An absolute path removes the ambiguity entirely.
 !define MUI_ABORTWARNING
-!define MUI_ICON "packaging\windows\gitkraft.ico"
-!define MUI_UNICON "packaging\windows\gitkraft.ico"
+!define MUI_ICON "@ICON_ABS_PATH@"
+!define MUI_UNICON "@ICON_ABS_PATH@"
 
 ; Pages
 !insertmacro MUI_PAGE_WELCOME

@@ -17,6 +17,14 @@
 # PowerShell / System.Drawing dependency at all. These tests parse that
 # blob directly out of the script and validate the decoded bytes form a
 # well-formed classic ICO file, without needing bash or a Windows runner.
+#
+# A fourth, related bug: even with a byte-verified-valid icon, makensis
+# still failed with "can't open file" when the icon was referenced by a
+# *relative* path ("packaging\windows\gitkraft.ico") from the versioned
+# .nsi script (which itself lives in dist/). The fix resolves an absolute
+# Windows path at build time (via `pwd -W`) and substitutes it into the
+# script through a new @ICON_ABS_PATH@ placeholder, carefully doubling
+# backslashes so sed's replacement-text escaping doesn't mangle the path.
 
 use std/assert
 use runner.nu *
@@ -57,6 +65,53 @@ def "test package_windows.sh: no longer runs PowerShell/System.Drawing to build 
     let text = (open --raw (script-path))
     assert (not ($text | str contains "Add-Type -AssemblyName System.Drawing"))
     assert (not ($text | str contains "powershell -NoProfile -Command"))
+}
+
+def "test package_windows.sh: resolves the icon to an absolute path before substitution" [] {
+    # Regression guard for a third bug: even a byte-verified-valid icon at
+    # the *relative* path "packaging\windows\gitkraft.ico" was rejected by
+    # makensis with "can't open file" (CI run 30751058486). The fix resolves
+    # an absolute Windows path via `pwd -W` and substitutes it into a new
+    # @ICON_ABS_PATH@ placeholder instead of hardcoding a relative path in
+    # the .nsi script.
+    let text = (open --raw (script-path))
+    assert ($text | str contains "pwd -W")
+    assert ($text | str contains "@ICON_ABS_PATH@")
+}
+
+def "test installer.nsi: MUI_ICON/MUI_UNICON use the @ICON_ABS_PATH@ placeholder, not a hardcoded relative path" [] {
+    let nsi_path = ($env.CURRENT_FILE | path dirname | path join ".." ".." "packaging" "windows" "installer.nsi")
+    let text = (open --raw $nsi_path)
+    assert ($text | str contains "!define MUI_ICON \"@ICON_ABS_PATH@\"")
+    assert ($text | str contains "!define MUI_UNICON \"@ICON_ABS_PATH@\"")
+    assert (not ($text | str contains "MUI_ICON \"packaging"))
+    assert (not ($text | str contains "MUI_UNICON \"packaging"))
+}
+
+def "test package_windows.sh: doubles backslashes before using the path in a sed replacement" [] {
+    # sed's replacement text treats a lone backslash as the start of an
+    # escape sequence (e.g. \1, \\), so a raw Windows absolute path like
+    # "D:\a\gitkraft\gitkraft\...\gitkraft.ico" must have every
+    # backslash doubled first, or sed could silently mangle the path.
+    let text = (open --raw (script-path))
+    assert ($text | str contains "ICON_ABS_PATH_SED")
+    assert ($text | str contains "@ICON_ABS_PATH@#${ICON_ABS_PATH_SED}#g")
+}
+
+def "test package_windows.sh: sed backslash-doubling round-trips to a single backslash per separator" [] {
+    # End-to-end regression check of the actual escaping logic (mirrors
+    # package_windows.sh, run for real via bash + sed with a synthetic
+    # Windows path), so this test would fail if the doubling logic were
+    # removed or its direction reversed. Written as a raw string so none of
+    # bash's own backslash syntax needs double-escaping through Nu.
+    let script = r#'
+ICON_ABS_PATH='D:\a\gitkraft\gitkraft\packaging\windows\gitkraft.ico'
+ICON_ABS_PATH_SED="${ICON_ABS_PATH//\\/\\\\}"
+echo '@ICON_ABS_PATH@ placeholder' | sed -e "s#@ICON_ABS_PATH@#${ICON_ABS_PATH_SED}#g"
+'#
+    let result = (^bash "-c" $script | complete)
+    assert equal $result.exit_code 0
+    assert equal ($result.stdout | str trim) 'D:\a\gitkraft\gitkraft\packaging\windows\gitkraft.ico placeholder'
 }
 
 # ── decoded ICO byte-level validation ───────────────────────────────────────

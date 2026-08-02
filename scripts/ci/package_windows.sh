@@ -57,8 +57,26 @@ ICO_BASE64
     echo "✅ Wrote fallback icon at $ICON ($(wc -c < "$ICON" | tr -d ' ') bytes)"
 fi
 
-# Substitute version placeholder
-sed "s/@VERSION@/${VERSION}/g" "$NSI" > "$DIST/installer_versioned.nsi"
+# NSIS's relative-path resolution for MUI_ICON/MUI_UNICON was unreliable in
+# CI (makensis reported "can't open file" for a byte-verified-valid icon at
+# the relative path "packaging\windows\gitkraft.ico", regardless of how the
+# icon itself was generated, or its size/format). Resolve to an absolute,
+# unambiguous Windows path instead, using Git Bash's `pwd -W` to get a
+# native drive-letter path, then convert forward slashes to backslashes for
+# classic NSIS compatibility.
+ICON_ABS_DIR="$(cd "$(dirname "$ICON")" && pwd -W)"
+ICON_ABS_PATH="$(printf '%s/%s' "$ICON_ABS_DIR" "$(basename "$ICON")" | tr '/' '\\')"
+echo "ℹ️  Resolved icon to absolute path: $ICON_ABS_PATH"
+
+# sed treats backslashes specially in the replacement text (e.g. \1, \\),
+# so double them here to get a single literal backslash per path separator
+# in the generated .nsi file.
+ICON_ABS_PATH_SED="${ICON_ABS_PATH//\\/\\\\}"
+
+# Substitute placeholders
+sed -e "s/@VERSION@/${VERSION}/g" \
+    -e "s#@ICON_ABS_PATH@#${ICON_ABS_PATH_SED}#g" \
+    "$NSI" > "$DIST/installer_versioned.nsi"
 
 echo "🔨 Building Windows installer with NSIS..."
 # makensis is installed by choco to a fixed path not automatically on bash PATH
