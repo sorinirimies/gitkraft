@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.6] - 2026-08-02
+### 🔄 CI
+- fix nu parse errors in package_linux.nu; add test coverage
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.1.5...v1.1.6
 ## [1.1.5] - 2026-08-02
 ### 🐛 Bug Fixes
 - fix remaining 3 build failures (Nu date, Windows makensis path)
