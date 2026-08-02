@@ -9,6 +9,31 @@
 # Tools are installed in the CI job that calls this script.
 # ──────────────────────────────────────────────────────────────────────────────
 
+# Build the argument list for the `rpmbuild` invocation used to build one
+# .rpm package. Extracted into its own function so the exact shape of the
+# args (how many, in what order, whether `--define` and its value are two
+# separate args or accidentally merged/split) can be asserted directly in
+# tests, rather than only being caught at CI time via a parser error.
+#
+# Regression guard: these args were previously spread across three lines
+# with no valid Nu line-continuation between them, which produced a
+# `nu::parser::parse_mismatch` ("expected operator") failure in CI instead
+# of a normal rpmbuild invocation.
+export def rpmbuild-args [
+    rpm_build: string   # e.g. dist/rpmbuild
+    spec_path: string   # e.g. dist/rpmbuild/SPECS/gitkraft-tui.spec
+]: nothing -> list<string> {
+    ["-bb" "--define" $"_topdir (pwd)/($rpm_build)" $spec_path]
+}
+
+# Whether a file name looks like a Linux package artifact (.deb or .rpm).
+# Extracted so the glob/regex used by the final packaging summary can be
+# unit tested directly instead of only being exercised as a side effect of
+# `ls | where ...` at the end of a full packaging run.
+export def is-linux-package-file [name: string]: nothing -> bool {
+    ($name | str ends-with ".deb") or ($name | str ends-with ".rpm")
+}
+
 def main [
     version: string   # e.g. 0.7.7
     target: string    # e.g. x86_64-unknown-linux-gnu
@@ -107,9 +132,7 @@ install -m 755 %{_sourcedir}/gitkraft-tui %{buildroot}/usr/bin/gitkraft-tui
 
     cp $"target/($target)/release/gitkraft-tui" $"($rpm_build)/SOURCES/gitkraft-tui"
 
-    run-external "rpmbuild" "-bb"
-        $"--define" $"_topdir (pwd)/($rpm_build)"
-        $"($rpm_build)/SPECS/gitkraft-tui.spec"
+    run-external "rpmbuild" ...(rpmbuild-args $rpm_build $"($rpm_build)/SPECS/gitkraft-tui.spec")
 
     let rpm_file = (ls $"($rpm_build)/RPMS/($rpm_arch)/*.rpm" | first).name
     cp $rpm_file $"($dist_dir)/gitkraft-tui-($version)-($rpm_arch).rpm"
@@ -142,9 +165,7 @@ install -m 755 %{_sourcedir}/gitkraft %{buildroot}/usr/bin/gitkraft
 
     cp $"target/($target)/release/gitkraft" $"($rpm_build)/SOURCES/gitkraft"
 
-    run-external "rpmbuild" "-bb"
-        $"--define" $"_topdir (pwd)/($rpm_build)"
-        $"($rpm_build)/SPECS/gitkraft.spec"
+    run-external "rpmbuild" ...(rpmbuild-args $rpm_build $"($rpm_build)/SPECS/gitkraft.spec")
 
     let gui_rpm_file = (ls $"($rpm_build)/RPMS/($rpm_arch)/gitkraft-[0-9]*.rpm" | first).name
     cp $gui_rpm_file $"($dist_dir)/gitkraft-($version)-($rpm_arch).rpm"
@@ -152,5 +173,5 @@ install -m 755 %{_sourcedir}/gitkraft %{buildroot}/usr/bin/gitkraft
 
     print ""
     print "📦 Linux packages:"
-    ls $dist_dir | where name =~ "(\.deb|\.rpm)" | select name size | print
+    ls $dist_dir | where { |it| is-linux-package-file ($it.name | path basename) } | select name size | print
 }
