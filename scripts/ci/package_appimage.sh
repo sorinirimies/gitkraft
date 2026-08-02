@@ -59,7 +59,10 @@ EOF
     chmod +x "$APPDIR/AppRun"
 
     OUTPUT="$DIST/${APP}-${VERSION}-${ARCH}.AppImage"
-    ARCH="$ARCH" appimagetool "$APPDIR" "$OUTPUT" 2>/dev/null || \
-    appimagetool "$APPDIR" "$OUTPUT"
+    # GitHub-hosted Ubuntu runners don't have FUSE available, and appimagetool
+    # is itself an AppImage that needs FUSE to mount and run by default.
+    # APPIMAGE_EXTRACT_AND_RUN makes it extract itself to a temp dir and run
+    # from there instead, which works without FUSE/--privileged/root.
+    ARCH="$ARCH" APPIMAGE_EXTRACT_AND_RUN=1 appimagetool "$APPDIR" "$OUTPUT"
     echo "✅ Built $OUTPUT"
 done

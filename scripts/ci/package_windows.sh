@@ -18,18 +18,23 @@ mkdir -p "$DIST"
 # GitHub-hosted Windows runner, so it needs no extra tool installation.
 if [ ! -f "$ICON" ]; then
     echo "ℹ️  $ICON not found — generating a fallback icon."
+    # NOTE: kept at a classic small size (32x32). System.Drawing's ICO writer
+    # switches to PNG-compressed icon entries for larger bitmaps (Vista+ ICO
+    # format), which NSIS's legacy icon loader cannot read — it fails with a
+    # generic "can't open file" error even though the file exists and is a
+    # valid .ico. Staying at 32x32 forces classic BMP-encoded ICO data.
     powershell -NoProfile -Command "
         Add-Type -AssemblyName System.Drawing
-        \$bmp = New-Object System.Drawing.Bitmap 256,256
+        \$bmp = New-Object System.Drawing.Bitmap 32,32
         \$g = [System.Drawing.Graphics]::FromImage(\$bmp)
         \$g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
         \$g.Clear([System.Drawing.Color]::FromArgb(255, 24, 24, 27))
         \$brush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 231, 76, 60))
-        \$font = New-Object System.Drawing.Font('Consolas', 110, [System.Drawing.FontStyle]::Bold)
+        \$font = New-Object System.Drawing.Font('Consolas', 13, [System.Drawing.FontStyle]::Bold)
         \$sf = New-Object System.Drawing.StringFormat
         \$sf.Alignment = [System.Drawing.StringAlignment]::Center
         \$sf.LineAlignment = [System.Drawing.StringAlignment]::Center
-        \$rect = New-Object System.Drawing.RectangleF 0,0,256,256
+        \$rect = New-Object System.Drawing.RectangleF 0,0,32,32
         \$g.DrawString('GK', \$font, \$brush, \$rect, \$sf)
         \$hIcon = \$bmp.GetHicon()
         \$icon = [System.Drawing.Icon]::FromHandle(\$hIcon)
@@ -43,7 +48,7 @@ if [ ! -f "$ICON" ]; then
         echo "❌ Fallback icon generation failed — $ICON still missing."
         exit 1
     fi
-    echo "✅ Generated fallback icon at $ICON"
+    echo "✅ Generated fallback icon at $ICON ($(wc -c < "$ICON" | tr -d ' ') bytes)"
 fi
 
 # Substitute version placeholder

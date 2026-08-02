@@ -19,11 +19,22 @@
 # with no valid Nu line-continuation between them, which produced a
 # `nu::parser::parse_mismatch` ("expected operator") failure in CI instead
 # of a normal rpmbuild invocation.
+#
+# Also passes --target so cross-architecture builds work: rpmbuild refuses
+# to build a package whose BuildArch isn't in its own host's compatible-
+# architecture list (e.g. building an aarch64 .rpm on an x86_64 CI runner
+# fails with "No compatible architectures found for build" without this).
 export def rpmbuild-args [
     rpm_build: string   # e.g. dist/rpmbuild
     spec_path: string   # e.g. dist/rpmbuild/SPECS/gitkraft-tui.spec
+    rpm_arch: string    # e.g. x86_64 or aarch64
 ]: nothing -> list<string> {
-    ["-bb" "--define" $"_topdir (pwd)/($rpm_build)" $spec_path]
+    [
+        "-bb"
+        "--define" $"_topdir (pwd)/($rpm_build)"
+        "--target" $"($rpm_arch)-linux"
+        $spec_path
+    ]
 }
 
 # Whether a file name looks like a Linux package artifact (.deb or .rpm).
@@ -181,7 +192,7 @@ install -m 755 %{_sourcedir}/gitkraft-tui %{buildroot}/usr/bin/gitkraft-tui
 
     cp $"target/($target)/release/gitkraft-tui" $"($rpm_build)/SOURCES/gitkraft-tui"
 
-    run-external "rpmbuild" ...(rpmbuild-args $rpm_build $"($rpm_build)/SPECS/gitkraft-tui.spec")
+    run-external "rpmbuild" ...(rpmbuild-args $rpm_build $"($rpm_build)/SPECS/gitkraft-tui.spec" $rpm_arch)
 
     let rpm_file = (ls $"($rpm_build)/RPMS/($rpm_arch)/*.rpm" | first).name
     cp $rpm_file $"($dist_dir)/gitkraft-tui-($version)-($rpm_arch).rpm"
@@ -192,7 +203,7 @@ install -m 755 %{_sourcedir}/gitkraft-tui %{buildroot}/usr/bin/gitkraft-tui
 
     cp $"target/($target)/release/gitkraft" $"($rpm_build)/SOURCES/gitkraft"
 
-    run-external "rpmbuild" ...(rpmbuild-args $rpm_build $"($rpm_build)/SPECS/gitkraft.spec")
+    run-external "rpmbuild" ...(rpmbuild-args $rpm_build $"($rpm_build)/SPECS/gitkraft.spec" $rpm_arch)
 
     let gui_rpm_file = (ls $"($rpm_build)/RPMS/($rpm_arch)/gitkraft-[0-9]*.rpm" | first).name
     cp $gui_rpm_file $"($dist_dir)/gitkraft-($version)-($rpm_arch).rpm"
