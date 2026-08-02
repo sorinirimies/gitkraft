@@ -5,45 +5,40 @@
 # Usage:
 #   nu scripts/ci/package_linux.nu <version> <target>
 #
-# Requires: dpkg-deb (for .deb), rpmbuild (for .rpm), appimagetool (for AppImage)
-# Tools are installed in the CI job that calls this script.
+# Requires: dpkg-deb (for .deb), alien (for .deb -> .rpm conversion),
+# appimagetool (for AppImage). Tools are installed in the CI job that calls
+# this script.
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Build the argument list for the `rpmbuild` invocation used to build one
-# .rpm package. Extracted into its own function so the exact shape of the
-# args (how many, in what order, whether `--define` and its value are two
-# separate args or accidentally merged/split) can be asserted directly in
-# tests, rather than only being caught at CI time via a parser error.
+# Build the argument list for the `alien` invocation used to convert one
+# already-built .deb into a .rpm. Extracted into its own pure function so the
+# exact shape of the args can be asserted directly in tests.
 #
-# Regression guard #1: these args were previously spread across three lines
-# with no valid Nu line-continuation between them, which produced a
-# `nu::parser::parse_mismatch` ("expected operator") failure in CI instead
-# of a normal rpmbuild invocation.
+# .rpm packages were previously built directly with `rpmbuild` from a
+# hand-written .spec file (see git history for `rpmbuild-args` /
+# `gui-rpm-spec`), which went through two failed fix attempts:
+#   1. Missing `--target` made cross-architecture builds (e.g. an aarch64
+#      .rpm on an x86_64 CI runner) fail with "No compatible architectures
+#      found for build".
+#   2. Adding `--target <arch>-linux` was the wrong fix: it made rpmbuild
+#      validate cross-build *feasibility* against the host's
+#      compatible-architecture table, which Ubuntu's rpm package has no
+#      aarch64<->x86_64 entries for -- so it failed with the *exact same*
+#      error message (CI run 30751058486).
+#   3. Removing --target again didn't help either (CI run 30752224652):
+#      rpmbuild validates `BuildArch:` in the .spec against the host's
+#      compatible-architecture table regardless of --target, and aarch64
+#      and x86_64 are simply never considered compatible in that table on
+#      this rpm build. There is no rpmbuild flag that bypasses this for a
+#      genuine foreign architecture on this platform.
 #
-# Regression guard #2: a later revision added "--target <rpm_arch>-linux" to
-# make cross-architecture builds work (building an aarch64 .rpm on an x86_64
-# CI runner). That was the wrong fix: passing --target tells rpmbuild to
-# actually validate cross-build *feasibility* against its host's
-# compatible-architecture table (from /usr/lib/rpm/rpmrc), and Ubuntu's rpm
-# package has no aarch64<->x86_64 compatibility entries — so it failed with
-# "No compatible architectures found for build" (CI run 30751058486),
-# regardless of which target triple format was used. --target is meant for
-# genuine cross-*compilation*; we aren't compiling anything here, we're only
-# packaging an already cross-compiled, pre-built binary. The package's
-# architecture tag is controlled entirely by `BuildArch:` in the .spec file
-# (see gui-rpm-spec below and the gitkraft-tui spec in `main`), which does
-# NOT trigger any host-compatibility validation. Omitting --target lets
-# rpmbuild build a `BuildArch: aarch64` package on an x86_64 host with no
-# special configuration needed.
-export def rpmbuild-args [
-    rpm_build: string   # e.g. dist/rpmbuild
-    spec_path: string   # e.g. dist/rpmbuild/SPECS/gitkraft-tui.spec
-]: nothing -> list<string> {
-    [
-        "-bb"
-        "--define" $"_topdir (pwd)/($rpm_build)"
-        $spec_path
-    ]
+# `alien` sidesteps the problem entirely: it derives the .rpm's metadata
+# (name, version, architecture, description, etc.) directly from the
+# already-built, already-correctly-tagged .deb's control file, and doesn't
+# perform any host/target architecture *compilation*-feasibility check --
+# it's just repackaging existing files, which is all we ever needed here.
+export def alien-args [deb_path: string]: nothing -> list<string> {
+    ["--to-rpm" "--scripts" $deb_path]
 }
 
 # Whether a file name looks like a Linux package artifact (.deb or .rpm).
@@ -77,38 +72,29 @@ Depends: libxkbcommon0, libwayland-client0, libgl1
 "
 }
 
-# Build the .spec file contents for the desktop GUI .rpm package. Same
-# rationale as `gui-deb-control` above — kept pure and testable so the
-# escaped parentheses stay literal text instead of silently regressing into
-# a nested command call.
-export def gui-rpm-spec [
-    version: string
-    rpm_arch: string
-    rpm_date: string
+# Convert an already-built .deb into a .rpm using `alien`, and return the
+# path to the produced .rpm file.
+#
+# `alien` writes its output to the current working directory rather than
+# accepting an output-directory flag, so this runs it from a dedicated
+# scratch directory and restores the previous working directory afterward.
+export def alien-deb-to-rpm [
+    deb_path: string   # e.g. dist/gitkraft-tui_1.1.6_arm64.deb
+    out_dir: string     # e.g. dist/alien-rpm
 ]: nothing -> string {
-    $"Name:           gitkraft
-Version:        ($version)
-Release:        1%{?dist}
-Summary:        Desktop GUI Git IDE written in Rust
-License:        MIT
-URL:            https://github.com/sorinirimies/gitkraft
-BuildArch:      ($rpm_arch)
-Requires:       libxkbcommon, wayland-libs-client, mesa-libGL
-
-%description
-A mouse-driven desktop GUI for Git, built on Iced \(Elm Architecture\).
-
-%install
-mkdir -p %{buildroot}/usr/bin
-install -m 755 %{_sourcedir}/gitkraft %{buildroot}/usr/bin/gitkraft
-
-%files
-/usr/bin/gitkraft
-
-%changelog
-* ($rpm_date) Sorin Irimies <sorinirimies@gmail.com> - ($version)-1
-- Release ($version)
-"
+    mkdir $out_dir
+    let deb_abs = ($deb_path | path expand)
+    let prev_dir = (pwd)
+    cd $out_dir
+    run-external "alien" ...(alien-args $deb_abs)
+    cd $prev_dir
+    # `into glob` forces glob expansion of this dynamically-built pattern.
+    # A plain interpolated string (e.g. `ls $"(...)/*.rpm"`) is ambiguous
+    # across nu versions -- some treat it as a literal filename lookup
+    # ("DoNotExpand") instead of a glob, which would fail here even though
+    # a matching file exists.
+    let pattern = ($out_dir + "/*.rpm" | into glob)
+    (ls $pattern | first).name
 }
 
 def main [
@@ -143,7 +129,8 @@ Copyright 2024 Sorin Irimies
 MIT License — see /usr/share/common-licenses/MIT
 " | save -f $"($tui_deb_root)/usr/share/doc/gitkraft-tui/copyright"
 
-    run-external "dpkg-deb" "--build" $tui_deb_root $"($dist_dir)/gitkraft-tui_($version)_($arch).deb"
+    let tui_deb_path = $"($dist_dir)/gitkraft-tui_($version)_($arch).deb"
+    run-external "dpkg-deb" "--build" $tui_deb_root $tui_deb_path
     print $"✅ Built gitkraft-tui_($version)_($arch).deb"
 
     # ── .deb for gitkraft (GUI) ──────────────────────────────────────────────
@@ -161,60 +148,20 @@ Copyright 2024 Sorin Irimies
 MIT License — see /usr/share/common-licenses/MIT
 " | save -f $"($gui_deb_root)/usr/share/doc/gitkraft/copyright"
 
-    run-external "dpkg-deb" "--build" $gui_deb_root $"($dist_dir)/gitkraft_($version)_($arch).deb"
+    let gui_deb_path = $"($dist_dir)/gitkraft_($version)_($arch).deb"
+    run-external "dpkg-deb" "--build" $gui_deb_root $gui_deb_path
     print $"✅ Built gitkraft_($version)_($arch).deb"
 
-    # ── .rpm for gitkraft-tui ────────────────────────────────────────────────
-    # Pre-compute the changelog date so the "..." inside format date does not
-    # terminate the enclosing $"..." string interpolation prematurely.
-    let rpm_date = (date now | format date "%a %b %d %Y")
-
-    let rpm_build = $"($dist_dir)/rpmbuild"
-    mkdir $"($rpm_build)/BUILD"
-    mkdir $"($rpm_build)/RPMS"
-    mkdir $"($rpm_build)/SOURCES"
-    mkdir $"($rpm_build)/SPECS"
-    mkdir $"($rpm_build)/SRPMS"
-
-    $"Name:           gitkraft-tui
-Version:        ($version)
-Release:        1%{?dist}
-Summary:        Terminal Git IDE written in Rust
-License:        MIT
-URL:            https://github.com/sorinirimies/gitkraft
-BuildArch:      ($rpm_arch)
-
-%description
-A keyboard-driven terminal UI for Git, built on Ratatui.
-
-%install
-mkdir -p %{buildroot}/usr/bin
-install -m 755 %{_sourcedir}/gitkraft-tui %{buildroot}/usr/bin/gitkraft-tui
-
-%files
-/usr/bin/gitkraft-tui
-
-%changelog
-* ($rpm_date) Sorin Irimies <sorinirimies@gmail.com> - ($version)-1
-- Release ($version)
-" | save -f $"($rpm_build)/SPECS/gitkraft-tui.spec"
-
-    cp $"target/($target)/release/gitkraft-tui" $"($rpm_build)/SOURCES/gitkraft-tui"
-
-    run-external "rpmbuild" ...(rpmbuild-args $rpm_build $"($rpm_build)/SPECS/gitkraft-tui.spec")
-
-    let rpm_file = (ls $"($rpm_build)/RPMS/($rpm_arch)/*.rpm" | first).name
-    cp $rpm_file $"($dist_dir)/gitkraft-tui-($version)-($rpm_arch).rpm"
+    # ── .rpm for gitkraft-tui and gitkraft (via alien, from the .deb above) ──
+    # Each conversion uses its own scratch subdirectory so a leftover .rpm
+    # from one conversion can never be mistaken for the other's output by
+    # the "pick the only/first .rpm in this directory" lookup in
+    # `alien-deb-to-rpm`.
+    let tui_rpm_file = (alien-deb-to-rpm $tui_deb_path $"($dist_dir)/alien-rpm/tui")
+    cp $tui_rpm_file $"($dist_dir)/gitkraft-tui-($version)-($rpm_arch).rpm"
     print $"✅ Built gitkraft-tui-($version)-($rpm_arch).rpm"
 
-    # ── .rpm for gitkraft (GUI) ──────────────────────────────────────────────
-    (gui-rpm-spec $version $rpm_arch $rpm_date) | save -f $"($rpm_build)/SPECS/gitkraft.spec"
-
-    cp $"target/($target)/release/gitkraft" $"($rpm_build)/SOURCES/gitkraft"
-
-    run-external "rpmbuild" ...(rpmbuild-args $rpm_build $"($rpm_build)/SPECS/gitkraft.spec")
-
-    let gui_rpm_file = (ls $"($rpm_build)/RPMS/($rpm_arch)/gitkraft-[0-9]*.rpm" | first).name
+    let gui_rpm_file = (alien-deb-to-rpm $gui_deb_path $"($dist_dir)/alien-rpm/gui")
     cp $gui_rpm_file $"($dist_dir)/gitkraft-($version)-($rpm_arch).rpm"
     print $"✅ Built gitkraft-($version)-($rpm_arch).rpm"
 

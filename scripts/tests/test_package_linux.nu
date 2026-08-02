@@ -8,78 +8,64 @@
 # operator") instead of a normal rpmbuild invocation — plus:
 # - a second, latent parse error from an unsupported `\.` escape inside a
 #   double-quoted string used to filter package files,
-# - a third, purely *runtime* bug (see gui-deb-control / gui-rpm-spec tests
-#   below) that only surfaced once the first two were fixed and CI actually
-#   reached that code path,
+# - a third, purely *runtime* bug (see gui-deb-control tests below) that
+#   only surfaced once the first two were fixed and CI actually reached
+#   that code path,
 # - a fourth bug where cross-architecture rpm builds (e.g. building an
 #   aarch64 .rpm on an x86_64 CI runner) failed with "No compatible
 #   architectures found for build", which was (wrongly) "fixed" by adding
-#   `--target <arch>-linux`, and
-# - a fifth bug: passing --target actually made things *worse* for genuine
-#   cross-arch builds — it tells rpmbuild to validate cross-build
-#   feasibility against the host's compatible-architecture table, which
-#   Ubuntu's rpm package doesn't have entries for (aarch64 on an x86_64
-#   host), producing the exact same "No compatible architectures found for
-#   build" error (CI run 30751058486). The actual fix is to drop --target
-#   entirely: we aren't compiling anything, only packaging an already
-#   cross-compiled, pre-built binary, and the package's architecture tag is
-#   controlled purely by `BuildArch:` in the .spec file, which doesn't
-#   trigger any host-compatibility validation.
+#   `--target <arch>-linux`,
+# - a fifth bug: passing --target made things *worse* for genuine
+#   cross-arch builds, since it tells rpmbuild to validate cross-build
+#   feasibility against the host's compatible-architecture table (which
+#   Ubuntu's rpm package doesn't have aarch64<->x86_64 entries for) --
+#   producing the exact same error, and
+# - a sixth bug: dropping --target again *still* didn't help (CI run
+#   30752224652), because rpmbuild validates `BuildArch:` in the .spec
+#   against that same host-compatibility table regardless of --target.
+#   aarch64 and x86_64 are simply never compatible in that table on this
+#   rpm build, with no flag to override it for a genuine foreign
+#   architecture.
+#
+# The actual fix replaces rpmbuild + hand-written .spec files entirely
+# with `alien`, which converts the already-built, already-correctly-tagged
+# .deb directly into a .rpm without any host/target architecture
+# compilation-feasibility check (it's pure repackaging of existing files,
+# which is all this step ever needed to do).
 
 use std/assert
 use runner.nu *
-use ../ci/package_linux.nu [rpmbuild-args, is-linux-package-file, gui-deb-control, gui-rpm-spec]
+use ../ci/package_linux.nu [alien-args, is-linux-package-file, gui-deb-control]
 
-# ── rpmbuild-args ────────────────────────────────────────────────────────────
+# ── alien-args ───────────────────────────────────────────────────────────────
 
-def "test rpmbuild-args: returns exactly four args" [] {
-    let args = (rpmbuild-args "dist/rpmbuild" "dist/rpmbuild/SPECS/gitkraft-tui.spec")
-    assert equal ($args | length) 4
+def "test alien-args: returns exactly three args" [] {
+    let args = (alien-args "dist/gitkraft-tui_1.1.6_amd64.deb")
+    assert equal ($args | length) 3
 }
 
-def "test rpmbuild-args: first two args are -bb and --define" [] {
-    let args = (rpmbuild-args "dist/rpmbuild" "dist/rpmbuild/SPECS/gitkraft-tui.spec")
-    assert equal ($args | get 0) "-bb"
-    assert equal ($args | get 1) "--define"
+def "test alien-args: is --to-rpm --scripts <deb_path>" [] {
+    let args = (alien-args "dist/gitkraft-tui_1.1.6_amd64.deb")
+    assert equal ($args | get 0) "--to-rpm"
+    assert equal ($args | get 1) "--scripts"
+    assert equal ($args | get 2) "dist/gitkraft-tui_1.1.6_amd64.deb"
 }
 
-def "test rpmbuild-args: --define value is a single arg starting with _topdir" [] {
-    # Regression guard: previously "--define" and its value were emitted
-    # correctly as two args already, but the whole call was broken across
-    # lines with no continuation. Assert the --define *value* stays a single,
-    # unsplit string containing both the "_topdir" key and the resolved path.
-    let args = (rpmbuild-args "dist/rpmbuild" "dist/rpmbuild/SPECS/gitkraft-tui.spec")
-    let define_value = ($args | get 2)
-    assert ($define_value | str starts-with "_topdir ")
-    assert ($define_value | str ends-with "dist/rpmbuild")
-}
-
-def "test rpmbuild-args: does not pass --target" [] {
-    # Regression guard: --target was tried as a fix for cross-arch builds
-    # but actually broke them further by triggering rpmbuild's
-    # host-compatible-architecture validation, which Ubuntu's rpm package
-    # doesn't have aarch64<->x86_64 entries for. The architecture is
-    # controlled entirely by `BuildArch:` in the .spec file instead.
-    let args = (rpmbuild-args "dist/rpmbuild" "unused.spec")
+def "test alien-args: does not pass --target or a BuildArch-style flag" [] {
+    # Regression guard: unlike the old rpmbuild-based approach, alien takes
+    # no architecture flag at all -- it reads the architecture directly from
+    # the .deb being converted, so there's no host-compatibility gate to
+    # accidentally trip.
+    let args = (alien-args "dist/gitkraft_2.0.0_arm64.deb")
     assert (not ($args | any { |it| $it == "--target" }))
+    assert (not ($args | any { |it| $it | str contains "BuildArch" }))
 }
 
-def "test rpmbuild-args: last arg is the spec path, unmodified" [] {
-    let spec = "dist/rpmbuild/SPECS/gitkraft-tui.spec"
-    let args = (rpmbuild-args "dist/rpmbuild" $spec)
-    assert equal ($args | get 3) $spec
-}
-
-def "test rpmbuild-args: works for the GUI spec path too" [] {
-    let spec = "dist/rpmbuild/SPECS/gitkraft.spec"
-    let args = (rpmbuild-args "dist/rpmbuild" $spec)
-    assert equal ($args | length) 4
-    assert equal ($args | get 3) $spec
-}
-
-def "test rpmbuild-args: --define value embeds the given rpm_build directory" [] {
-    let args = (rpmbuild-args "some/other/rpmbuild" "unused.spec")
-    assert (($args | get 2) | str ends-with "some/other/rpmbuild")
+def "test alien-args: works for the GUI deb path too" [] {
+    let deb = "dist/gitkraft_9.9.9_arm64.deb"
+    let args = (alien-args $deb)
+    assert equal ($args | length) 3
+    assert equal ($args | get 2) $deb
 }
 
 # ── is-linux-package-file ────────────────────────────────────────────────────
@@ -109,7 +95,7 @@ def "test is-linux-package-file: empty string is not a package" [] {
     assert (not (is-linux-package-file ""))
 }
 
-# ── gui-deb-control / gui-rpm-spec ───────────────────────────────────────────
+# ── gui-deb-control ───────────────────────────────────────────────────────────
 # Regression tests for a second, purely *runtime* bug that the parse fix
 # above could not catch: the literal parenthesised text "(Elm Architecture)"
 # inside a `$"..."` interpolated string was parsed by Nu as a nested command
@@ -136,26 +122,6 @@ def "test gui-deb-control: has the expected package name and maintainer" [] {
     assert ($control | str contains "Maintainer: Sorin Irimies")
 }
 
-def "test gui-rpm-spec: contains the literal Elm Architecture parenthetical" [] {
-    let spec = (gui-rpm-spec "1.1.6" "x86_64" "Sun Aug 02 2026")
-    assert ($spec | str contains "(Elm Architecture)")
-}
-
-def "test gui-rpm-spec: interpolates version, arch, and changelog date" [] {
-    let spec = (gui-rpm-spec "2.3.4" "aarch64" "Mon Jan 01 2027")
-    assert ($spec | str contains "Version:        2.3.4")
-    assert ($spec | str contains "BuildArch:      aarch64")
-    assert ($spec | str contains "* Mon Jan 01 2027")
-}
-
-def "test gui-rpm-spec: has the expected rpm sections" [] {
-    let spec = (gui-rpm-spec "1.0.0" "x86_64" "Sun Aug 02 2026")
-    assert ($spec | str contains "%description")
-    assert ($spec | str contains "%install")
-    assert ($spec | str contains "%files")
-    assert ($spec | str contains "%changelog")
-}
-
 # ── Parse-level regression guard ─────────────────────────────────────────────
 # The original bug was a syntax error, not a logic error, so the most direct
 # regression test is simply confirming the script still parses cleanly.
@@ -169,6 +135,25 @@ def "test package_linux.nu: parses cleanly as a module too" [] {
     # above, guarding against a regression that only manifests when the file
     # is imported as a module rather than run as a script.
     assert (nu-check --as-module ($env.CURRENT_FILE | path dirname | path join ".." "ci" "package_linux.nu"))
+}
+
+def "test package_linux.nu: uses into glob for the dynamic .rpm lookup pattern" [] {
+    # Regression guard: `ls $"(...)/*.rpm"` (a plain interpolated string) is
+    # ambiguous across nu versions -- some treat it as a literal filename
+    # lookup ("DoNotExpand") rather than a glob, which fails even when a
+    # matching file exists. `into glob` forces correct glob expansion.
+    let text = (open --raw ($env.CURRENT_FILE | path dirname | path join ".." "ci" "package_linux.nu"))
+    assert ($text | str contains "into glob")
+}
+
+def "test package_linux.nu: no longer invokes rpmbuild" [] {
+    # Regression guard: rpmbuild + hand-written .spec files were replaced
+    # entirely by alien (see module header for the full saga of why). Prose
+    # comments are allowed to mention "rpmbuild" (to explain the history);
+    # the actual external-command invocation must be gone.
+    let text = (open --raw ($env.CURRENT_FILE | path dirname | path join ".." "ci" "package_linux.nu"))
+    assert (not ($text | str contains "run-external \"rpmbuild\""))
+    assert (not ($text | str contains "%install"))
 }
 
 # ── Main ────────────────────────────────────────────────────────────────────
