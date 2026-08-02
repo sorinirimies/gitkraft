@@ -34,9 +34,17 @@ The installer also creates:
 The installer expects `packaging\windows\gitkraft.ico` to exist at build time.
 See [`gitkraft.ico.txt`](gitkraft.ico.txt) for instructions on providing it.
 
-If no icon is committed, `scripts/ci/package_windows.sh` automatically
-generates a simple fallback icon (via PowerShell + System.Drawing, no extra
-tools required) before invoking `makensis`, so the installer build never
-hard-fails on a missing icon file. Replace it with real branded artwork at
-any time using the same path — the fallback is only used when the file is
-absent.
+If no icon is committed, `scripts/ci/package_windows.sh` writes a small
+bundled fallback icon (a pre-built, verified-valid classic 16x16 32bpp ICO,
+embedded as a base64 blob and decoded with `base64 -d`) before invoking
+`makensis`, so the installer build never hard-fails on a missing icon file.
+Replace it with real branded artwork at any time using the same path — the
+fallback is only used when the file is absent.
+
+Earlier versions of this script generated the fallback icon at build time
+via PowerShell + `System.Drawing` (`Bitmap.GetHicon()` → `Icon.Save()`).
+That reliably produced an ICO file `makensis` rejected with
+`Error while loading icon ... can't open file`, regardless of the bitmap
+size used — this is a known quirk where `Icon.Save()` on a handle-derived
+icon emits non-standard ICO data. The bundled, pre-verified byte blob
+avoids that code path entirely.

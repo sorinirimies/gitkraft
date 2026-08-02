@@ -14,41 +14,47 @@ mkdir -p "$DIST"
 # at build time, but it is deliberately not committed to the repo (see
 # packaging/windows/gitkraft.ico.txt). Generate a simple fallback icon here
 # if one hasn't been provided, so the installer build never hard-fails on a
-# missing file. This uses PowerShell + System.Drawing, which ship with every
-# GitHub-hosted Windows runner, so it needs no extra tool installation.
+# missing file.
+#
+# NOTE: an earlier version of this script generated the fallback icon at
+# runtime via PowerShell + System.Drawing (Bitmap -> GetHicon -> Icon.Save).
+# That reliably produced a file NSIS's legacy icon loader rejected with a
+# generic "can't open file" error, regardless of the bitmap size used (both
+# 256x256 and 32x32 failed identically) — .NET's Icon.Save() on an icon
+# created from GetHicon() is known to emit non-standard ICO data. Instead,
+# embed a pre-built, verified-valid classic 16x16 32bpp ICO (BMP-encoded,
+# not the Vista+ PNG-compressed format) as a base64 blob and decode it
+# directly, removing the dependency on that broken code path entirely.
 if [ ! -f "$ICON" ]; then
-    echo "ℹ️  $ICON not found — generating a fallback icon."
-    # NOTE: kept at a classic small size (32x32). System.Drawing's ICO writer
-    # switches to PNG-compressed icon entries for larger bitmaps (Vista+ ICO
-    # format), which NSIS's legacy icon loader cannot read — it fails with a
-    # generic "can't open file" error even though the file exists and is a
-    # valid .ico. Staying at 32x32 forces classic BMP-encoded ICO data.
-    powershell -NoProfile -Command "
-        Add-Type -AssemblyName System.Drawing
-        \$bmp = New-Object System.Drawing.Bitmap 32,32
-        \$g = [System.Drawing.Graphics]::FromImage(\$bmp)
-        \$g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-        \$g.Clear([System.Drawing.Color]::FromArgb(255, 24, 24, 27))
-        \$brush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 231, 76, 60))
-        \$font = New-Object System.Drawing.Font('Consolas', 13, [System.Drawing.FontStyle]::Bold)
-        \$sf = New-Object System.Drawing.StringFormat
-        \$sf.Alignment = [System.Drawing.StringAlignment]::Center
-        \$sf.LineAlignment = [System.Drawing.StringAlignment]::Center
-        \$rect = New-Object System.Drawing.RectangleF 0,0,32,32
-        \$g.DrawString('GK', \$font, \$brush, \$rect, \$sf)
-        \$hIcon = \$bmp.GetHicon()
-        \$icon = [System.Drawing.Icon]::FromHandle(\$hIcon)
-        \$fs = New-Object System.IO.FileStream '$ICON', 'Create'
-        \$icon.Save(\$fs)
-        \$fs.Close()
-        \$icon.Dispose()
-        \$bmp.Dispose()
-    "
-    if [ ! -f "$ICON" ]; then
-        echo "❌ Fallback icon generation failed — $ICON still missing."
+    echo "ℹ️  $ICON not found — writing a bundled fallback icon."
+    base64 -d > "$ICON" <<'ICO_BASE64'
+AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAQAQAAAAAAAAAAAAAAAAA
+AAAAAAAbGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/
+GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8b
+GBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsY
+GP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP88TOf/PEzn/zxM5/88TOf/PEzn
+/zxM5/88TOf/PEzn/zxM5/88TOf/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/PEzn/zxM5/88TOf/
+PEzn/zxM5/88TOf/PEzn/zxM5/88TOf/PEzn/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/zxM5/88
+TOf/PEzn/zxM5/88TOf/PEzn/zxM5/88TOf/PEzn/zxM5/8bGBj/GxgY/xsYGP8bGBj/GxgY/xsY
+GP88TOf/PEzn/zxM5/88TOf/PEzn/zxM5/88TOf/PEzn/zxM5/88TOf/GxgY/xsYGP8bGBj/GxgY
+/xsYGP8bGBj/PEzn/zxM5/88TOf/PEzn/zxM5/88TOf/PEzn/zxM5/88TOf/PEzn/xsYGP8bGBj/
+GxgY/xsYGP8bGBj/GxgY/zxM5/88TOf/PEzn/zxM5/88TOf/PEzn/zxM5/88TOf/PEzn/zxM5/8b
+GBj/GxgY/xsYGP8bGBj/GxgY/xsYGP88TOf/PEzn/zxM5/88TOf/PEzn/zxM5/88TOf/PEzn/zxM
+5/88TOf/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/PEzn/zxM5/88TOf/PEzn/zxM5/88TOf/PEzn
+/zxM5/88TOf/PEzn/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/zxM5/88TOf/PEzn/zxM5/88TOf/
+PEzn/zxM5/88TOf/PEzn/zxM5/8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP88TOf/PEzn/zxM5/88
+TOf/PEzn/zxM5/88TOf/PEzn/zxM5/88TOf/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsY
+GP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY
+/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/
+GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8bGBj/GxgY/xsYGP8b
+GBj/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAA==
+ICO_BASE64
+    if [ ! -f "$ICON" ] || [ ! -s "$ICON" ]; then
+        echo "❌ Fallback icon generation failed — $ICON still missing or empty."
         exit 1
     fi
-    echo "✅ Generated fallback icon at $ICON ($(wc -c < "$ICON" | tr -d ' ') bytes)"
+    echo "✅ Wrote fallback icon at $ICON ($(wc -c < "$ICON" | tr -d ' ') bytes)"
 fi
 
 # Substitute version placeholder
