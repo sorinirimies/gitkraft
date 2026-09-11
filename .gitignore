@@ -145,14 +145,8 @@ secrets/
 tmp/
 temp/
 
-# =============================================================================
-# Persistence — redb embedded databases
-#
-# The real DB lives in the OS config dir (~/.config/gitkraft/) so it will
-# never appear here in normal use, but this catches test accidents.
-# =============================================================================
-*.redb
-
+# Codegraph AST DB
+.codegraph
 # =============================================================================
 # Project-specific
 # =============================================================================
