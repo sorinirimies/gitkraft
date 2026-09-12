@@ -24,6 +24,13 @@ GitKraft ships two front-ends from a single Rust workspace:
 
 ## Preview
 
+### Desktop GUI
+
+![GUI Demo](docs/screenshots/gui-demo.gif)
+![GUI Main](docs/screenshots/gui-main.png)
+![GUI Diff View](docs/screenshots/gui-diff.png)
+![GUI Theme Picker](docs/screenshots/gui-theme.png)
+
 ### Terminal UI
 
 ![TUI Demo](crates/gitkraft-tui/examples/vhs/generated/tui-demo.gif)
