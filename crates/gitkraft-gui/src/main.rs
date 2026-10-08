@@ -140,7 +140,10 @@ fn boot() -> (GitKraft, iced::Task<gitkraft_gui::Message>) {
         }
     };
 
-    (state, iced::Task::batch([maximize_task, restore_task]))
+    (
+        state,
+        iced::Task::batch([maximize_task, gitkraft_gui::window::setup(), restore_task]),
+    )
 }
 
 /// Reactive git-state watcher subscription.

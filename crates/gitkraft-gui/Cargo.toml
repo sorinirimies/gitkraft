@@ -31,3 +31,12 @@ tracing       = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde         = { workspace = true }
 dirs          = { workspace = true }
+
+# macOS: winit builds a menu bar with only the application menu, so the system's window
+# commands (Minimize, Zoom, Move & Resize / tiling, and the shortcuts that go with them)
+# are missing. `src/window/macos.rs` adds the standard Window menu. The same versions winit
+# itself uses, so nothing new is compiled.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2            = "0.5"
+objc2-app-kit    = { version = "0.2", features = ["NSApplication", "NSMenu", "NSMenuItem", "NSResponder"] }
+objc2-foundation = { version = "0.2", features = ["NSString", "NSObject"] }

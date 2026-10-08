@@ -15,6 +15,7 @@ pub mod update;
 pub mod view;
 pub mod view_utils;
 pub mod widgets;
+pub mod window;
 
 pub use message::Message;
 pub use state::{GitKraft, RepoTab};
