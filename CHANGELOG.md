@@ -2,9 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-10-09
+### ✨ Features
+- add version label, settings and about menu items to GUI and TUI
+### 🐛 Bug Fixes
+- add the macOS Window menu (window module) so Zoom, Move & Resize and the tiling shortcuts work
+### 📚 Documentation
+- regenerate VHS demo GIFs, add GUI screenshots + recording to README
+- refresh README — fix stale info, expand keyboard shortcuts, no preview changes
+### 🔧 Chores
+- update dependencies
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.1.6...v1.2.0
 ## [1.1.6] - 2026-08-02
 ### 🔄 CI
 - fix nu parse errors in package_linux.nu; add test coverage
+- fix runtime bug in package_linux.nu; add Windows icon fallback
+- fix Windows icon fallback size, AppImage FUSE, and rpm cross-arch build
+- replace PowerShell/System.Drawing icon fallback with a verified static ICO
+- resolve Windows installer icon to an absolute path
+- drop rpmbuild --target, fix cross-arch aarch64 .rpm builds for real
+- anchor all installer.nsi relative paths to the repo root via !cd
+- replace rpmbuild with alien for .rpm packaging (cross-arch never worked)
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.1.5...v1.1.6
 ## [1.1.5] - 2026-08-02
 ### 🐛 Bug Fixes
