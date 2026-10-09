@@ -3,7 +3,7 @@
 //!
 //! * **macOS**: the system builds *Zoom*, *Fill*, *Move & Resize* (the ⌃⌘← tiling
 //!   shortcuts), *Minimize* and *Bring All to Front* from the app's **Window menu**, and
-//!   winit's default menu bar has none. [`macos`] adds it.
+//!   winit's default menu bar has none. `macos` adds it.
 //! * **Windows and Linux**: the OS or the compositor draws the frame and does all of this
 //!   already (Win+Arrow snapping, X11 window managers, Wayland client-side decorations),
 //!   so there is nothing to add.
