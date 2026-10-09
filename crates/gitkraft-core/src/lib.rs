@@ -9,10 +9,12 @@
 //!
 //! This crate has NO GUI or TUI dependencies.
 
+pub mod about;
 pub mod features;
 pub mod utils;
 
 // Convenience re-exports
+pub use about::{version_label, APP_NAME};
 pub use features::branches::{validate_ref_name, BranchInfo, BranchType};
 pub use features::commits::CommitInfo;
 pub use features::commits::{check_commit_message, CommitMsgSeverity, COMMIT_SUBJECT_LIMIT};

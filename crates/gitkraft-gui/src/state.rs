@@ -567,6 +567,10 @@ pub struct GitKraft {
     /// Recently opened repositories (loaded from settings on startup).
     pub recent_repos: Vec<gitkraft_core::RepoHistoryEntry>,
 
+    // ── About ─────────────────────────────────────────────────────────────
+    /// Whether the About dialog is visible.
+    pub show_about: bool,
+
     // ── Search ────────────────────────────────────────────────────────────
     /// Whether the search overlay is visible.
     pub search_visible: bool,
@@ -688,6 +692,7 @@ impl GitKraft {
 
             recent_repos,
 
+            show_about: false,
             search_visible: false,
             search_query: String::new(),
             search_results: Vec::new(),

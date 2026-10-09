@@ -358,6 +358,19 @@ impl GitKraft {
                 Task::none()
             }
 
+            Message::ToggleAbout => {
+                self.show_about = !self.show_about;
+                Task::none()
+            }
+
+            Message::OpenUrl(url) => {
+                if let Err(e) = gitkraft_core::open_file_default(std::path::Path::new(url)) {
+                    self.active_tab_mut().error_message =
+                        Some(format!("Could not open {url}: {e}"));
+                }
+                Task::none()
+            }
+
             Message::OpenSettingsFile => {
                 // Resolve the settings file path.
                 let path = match gitkraft_core::features::persistence::ops::settings_json_path() {
@@ -1407,6 +1420,7 @@ impl GitKraft {
                 tab.blame_scroll = 0.0;
                 // Also dismiss context menu and search overlay on Escape.
                 tab.context_menu = None;
+                self.show_about = false;
                 if self.search_visible {
                     self.search_visible = false;
                     self.search_query = String::new();

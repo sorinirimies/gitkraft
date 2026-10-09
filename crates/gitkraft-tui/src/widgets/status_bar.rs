@@ -30,7 +30,34 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         .constraints([Constraint::Length(3), Constraint::Min(0)])
         .split(area);
     let left = chunks[0];
-    let right = chunks[1];
+    let body = chunks[1];
+
+    // Right-aligned version label ("GitKraft v1.2.3").
+    let version_text = format!(
+        " {} {} ",
+        gitkraft_core::APP_NAME,
+        gitkraft_core::version_label()
+    );
+    let version_width = version_text.chars().count() as u16;
+    let (right, version_area) = if body.width > version_width + 10 {
+        let split = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(0), Constraint::Length(version_width)])
+            .split(body);
+        (split[0], Some(split[1]))
+    } else {
+        (body, None)
+    };
+    if let Some(va) = version_area {
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                version_text,
+                Style::default().fg(theme.text_muted),
+            ))
+            .style(Style::default().bg(theme.border_inactive)),
+            va,
+        );
+    }
 
     // ── Spinner area ──────────────────────────────────────────────────────
     // Centre a 1×1 cell inside the 3-col left block (1 col padding each side).

@@ -118,7 +118,9 @@ fn render_main(app: &mut App, frame: &mut Frame) {
     };
 
     // Diff view OR theme panel OR options panel (full-height overlay)
-    if app.show_theme_panel {
+    if app.show_about_panel {
+        features::about::view::render(app, frame, overlay_rect);
+    } else if app.show_theme_panel {
         features::theme::view::render(app, frame, overlay_rect);
     } else if app.show_options_panel {
         features::options::view::render(app, frame, overlay_rect);
@@ -133,7 +135,7 @@ fn render_main(app: &mut App, frame: &mut Frame) {
     }
 
     // Staging area (only when no overlay is active)
-    if !app.show_theme_panel && !app.show_options_panel {
+    if !app.show_theme_panel && !app.show_options_panel && !app.show_about_panel {
         features::staging::view::render(app, frame, outer[2]);
     } else {
         // Render staging only for the left 2/3 (unstaged + staged columns)

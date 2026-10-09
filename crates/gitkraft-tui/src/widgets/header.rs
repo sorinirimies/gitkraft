@@ -141,6 +141,20 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         ),
         Span::styled(" options ", Style::default().fg(theme.text_primary)),
         Span::styled(
+            "[,]",
+            Style::default()
+                .fg(theme.warning)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" settings ", Style::default().fg(theme.text_primary)),
+        Span::styled(
+            "[A]",
+            Style::default()
+                .fg(theme.warning)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" about ", Style::default().fg(theme.text_primary)),
+        Span::styled(
             "[o]",
             Style::default()
                 .fg(theme.warning)

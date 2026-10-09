@@ -13,6 +13,8 @@ pub const DASH_CIRCLE: char = '\u{f2e6}';
 pub const ARROW_REPEAT: char = '\u{f130}';
 pub const CLOUD_ARROW_DOWN: char = '\u{f295}';
 pub const CLOUD_ARROW_UP: char = '\u{f296}';
+pub const GEAR: char = '\u{f3e5}';
+pub const INFO_CIRCLE: char = '\u{f431}';
 pub const EXCLAMATION_TRIANGLE: char = '\u{f33b}';
 
 // -- Git objects -----------------------------------------------------------

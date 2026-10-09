@@ -61,11 +61,12 @@ impl GitKraft {
             if tab.status_message.is_some() {
                 outer = outer.push(status_bar_view(self));
             }
-            return container(outer)
+            let welcome_screen: Element<'_, Message> = container(outer)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .style(theme::bg_style)
                 .into();
+            return self.with_about_overlay(welcome_screen);
         }
 
         let tab = self.active_tab();
@@ -205,7 +206,7 @@ impl GitKraft {
         };
 
         // ── Context menu overlay ──────────────────────────────────
-        if self.active_tab().context_menu.is_some() {
+        let with_menu: Element<'_, Message> = if self.active_tab().context_menu.is_some() {
             // Transparent full-screen backdrop — clicking it dismisses the menu.
             let backdrop = mouse_area(
                 container(Space::new().width(Length::Fill).height(Length::Fill))
@@ -232,6 +233,17 @@ impl GitKraft {
             iced::widget::stack![ma, backdrop, positioned].into()
         } else {
             ma
+        };
+
+        self.with_about_overlay(with_menu)
+    }
+
+    /// Stack the About dialog on top of `base` when it is open.
+    fn with_about_overlay<'a>(&'a self, base: Element<'a, Message>) -> Element<'a, Message> {
+        if self.show_about {
+            iced::widget::stack![base, widgets::about::view(self)].into()
+        } else {
+            base
         }
     }
 }

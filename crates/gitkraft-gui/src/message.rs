@@ -442,6 +442,11 @@ pub enum Message {
     /// Triggered by Ctrl/Cmd + , (like Zed).
     OpenSettingsFile,
 
+    /// Show / hide the About dialog.
+    ToggleAbout,
+    /// Open the given URL in the system browser (About dialog links).
+    OpenUrl(String),
+
     /// Shift+Down arrow — extends range selection in the file list (if files are
     /// loaded) or in the commit log (fallback).
     ShiftArrowDown,

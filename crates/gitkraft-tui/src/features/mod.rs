@@ -1,3 +1,4 @@
+pub mod about;
 pub mod branches;
 pub mod commits;
 pub mod diff;

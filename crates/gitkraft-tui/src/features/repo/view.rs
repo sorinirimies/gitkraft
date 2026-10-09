@@ -16,7 +16,14 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         .border_style(Style::default().fg(theme.border_active))
         .style(Style::default().bg(theme.bg))
         .title(" GitKraft ")
-        .title_alignment(Alignment::Center);
+        .title_alignment(Alignment::Center)
+        .title_bottom(
+            Line::from(Span::styled(
+                format!(" {} ", gitkraft_core::version_label()),
+                Style::default().fg(theme.text_muted),
+            ))
+            .right_aligned(),
+        );
 
     let mut lines: Vec<Line> = vec![
         Line::from(""),

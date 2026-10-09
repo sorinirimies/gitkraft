@@ -85,6 +85,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             }
         }
         AppScreen::Main => {
+            if app.show_about_panel {
+                features::about::events::handle_key(app, key);
+                return;
+            }
+
             if app.show_theme_panel {
                 features::theme::events::handle_key(app, key);
                 return;
@@ -140,6 +145,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 KeyCode::Char('t') => {
                     app.cycle_theme_next();
                     app.save_theme();
+                }
+                KeyCode::Char('A') => {
+                    app.show_about_panel = !app.show_about_panel;
+                    app.show_theme_panel = false;
+                    app.show_options_panel = false;
+                    app.show_editor_panel = false;
                 }
                 KeyCode::Char('T') => {
                     app.show_theme_panel = !app.show_theme_panel;

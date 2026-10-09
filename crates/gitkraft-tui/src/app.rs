@@ -434,6 +434,8 @@ pub struct App {
     pub show_theme_panel: bool,
     /// Whether the options panel is visible.
     pub show_options_panel: bool,
+    /// Whether the About panel is visible.
+    pub show_about_panel: bool,
     /// Configured editor for opening files.
     pub editor: gitkraft_core::Editor,
     /// Whether the editor picker panel is visible.
@@ -506,6 +508,7 @@ impl App {
 
             show_theme_panel: false,
             show_options_panel: false,
+            show_about_panel: false,
             editor: settings
                 .editor_name
                 .as_deref()
@@ -1640,6 +1643,7 @@ impl App {
         self.input_buffer.clear();
         self.show_theme_panel = false;
         self.show_options_panel = false;
+        self.show_about_panel = false;
         self.screen = AppScreen::Welcome;
         // Reload recent repos
         if let Ok(settings) = gitkraft_core::features::persistence::load_tui_settings() {
