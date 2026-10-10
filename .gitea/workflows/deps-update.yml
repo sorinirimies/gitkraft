@@ -42,10 +42,14 @@ jobs:
             libssl-dev
 
       # ── Rust toolchain ────────────────────────────────────────────────────────
+      # dtolnay/rust-toolchain does not work on the Gitea runner (see ci.yml),
+      # so install via rustup directly.
       - name: Install Rust stable (rustfmt + clippy)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          . "$HOME/.cargo/env"
+          rustup component add rustfmt clippy
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
@@ -72,7 +76,9 @@ jobs:
       # to "6.0", `nix = "0.29"` to "0.31", etc.
       # `cargo update` then resolves the new constraints into Cargo.lock.
       - name: Upgrade workspace dependency pins
-        run: cargo upgrade --incompatible allow
+        run: |
+          # Non-fatal: if the resolver trips, still pick up lockfile updates.
+          cargo upgrade --incompatible allow || echo "::warning::cargo upgrade failed; falling back to lockfile-only update"
 
       - name: Sync Cargo.lock
         run: cargo update

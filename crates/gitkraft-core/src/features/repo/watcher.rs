@@ -68,11 +68,28 @@ where
         }
 
         loop {
-            // Block until a notify event arrives or the fallback timeout elapses.
-            let _ = raw_rx.recv_timeout(fallback);
-            // Drain any extra events so a rapid burst counts as one refresh.
-            while raw_rx.try_recv().is_ok() {}
-            // Debounce: give git time to finish writing all its index files.
+            // Block until a relevant notify event arrives or fallback elapses.
+            // On Linux inotify reports Access/Open/Close-nowrite events when
+            // git2 merely READS files, which would cause a refresh loop
+            // (read → event → refresh → read), so ignore those and *.lock.
+            let is_relevant = |res: &notify::Result<notify::Event>| match res {
+                Ok(ev) => {
+                    !matches!(ev.kind, notify::EventKind::Access(_))
+                        && !ev.paths.iter().all(|p| {
+                            p.extension().is_some_and(|e| e == "lock")
+                        })
+                }
+                Err(_) => true,
+            };
+            let deadline = std::time::Instant::now() + fallback;
+            loop {
+                let left = deadline.saturating_duration_since(std::time::Instant::now());
+                match raw_rx.recv_timeout(left) {
+                    Ok(res) if !is_relevant(&res) => continue,
+                    _ => break,
+                }
+            }
+            // Debounce: give git time to finish writing all its files.
             thread::sleep(Duration::from_millis(300));
             while raw_rx.try_recv().is_ok() {}
 
@@ -171,6 +188,58 @@ mod tests {
         assert!(
             wait_for(|| handle.is_finished(), Duration::from_secs(4)),
             "watcher thread did not exit after callback returned false"
+        );
+    }
+
+    #[test]
+    fn watcher_ignores_read_only_access() {
+        let dir = tempfile::tempdir().unwrap();
+        let git_dir = dir.path().join(".git");
+        std::fs::create_dir_all(&git_dir).unwrap();
+        std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+
+        let fired = Arc::new(Mutex::new(false));
+        let fired_clone = Arc::clone(&fired);
+        let _handle =
+            spawn_git_watcher_with_fallback(git_dir.clone(), Duration::from_secs(5), move || {
+                *fired_clone.lock().unwrap() = true;
+                false
+            });
+        thread::sleep(Duration::from_millis(200));
+
+        // Pure reads (inotify Access/Open events) must not trigger a refresh.
+        for _ in 0..5 {
+            let _ = std::fs::read_to_string(git_dir.join("HEAD")).unwrap();
+            thread::sleep(Duration::from_millis(50));
+        }
+
+        assert!(
+            !wait_for(|| *fired.lock().unwrap(), Duration::from_secs(2)),
+            "read-only access wrongly triggered on_change"
+        );
+    }
+
+    #[test]
+    fn watcher_ignores_lock_file_only_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let git_dir = dir.path().join(".git");
+        std::fs::create_dir_all(&git_dir).unwrap();
+
+        let fired = Arc::new(Mutex::new(false));
+        let fired_clone = Arc::clone(&fired);
+        let _handle =
+            spawn_git_watcher_with_fallback(git_dir.clone(), Duration::from_secs(5), move || {
+                *fired_clone.lock().unwrap() = true;
+                false
+            });
+        thread::sleep(Duration::from_millis(200));
+
+        std::fs::write(git_dir.join("index.lock"), "x").unwrap();
+        std::fs::remove_file(git_dir.join("index.lock")).unwrap();
+
+        assert!(
+            !wait_for(|| *fired.lock().unwrap(), Duration::from_secs(2)),
+            "lock-file change wrongly triggered on_change"
         );
     }
 }
