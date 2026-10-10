@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=GitKraft
+Comment=Git IDE written in Rust
+Exec=gitkraft
+Icon=io.github.sorinirimies.GitKraft
+Terminal=false
+Type=Application
+Categories=Development;RevisionControl;
+Keywords=git;vcs;repository;
+StartupWMClass=gitkraft

@@ -1,0 +1,37 @@
+# CI copies this dir's snap/ to the repo root and sets the version via sed.
+name: gitkraft
+base: core24
+version: '0.0.0'
+summary: GitKraft — desktop GUI Git IDE written in Rust
+description: |
+  Git IDE written entirely in Rust.
+license: MIT
+grade: stable
+confinement: strict
+title: GitKraft
+
+apps:
+  gitkraft:
+    command: bin/gitkraft
+    extensions: [gnome]
+    plugs: [home, removable-media, network, ssh-keys]
+
+parts:
+  gitkraft:
+    plugin: rust
+    source: .
+    rust-path: [crates/gitkraft-gui]
+    build-packages:
+      - pkg-config
+      - cmake
+      - make
+      - perl
+      - libssl-dev
+      - libxkbcommon-dev
+      - libwayland-dev
+      - libfontconfig1-dev
+      - libgl1-mesa-dev
+    stage-packages:
+      - libfontconfig1
+      - libxkbcommon0
+      - libwayland-client0

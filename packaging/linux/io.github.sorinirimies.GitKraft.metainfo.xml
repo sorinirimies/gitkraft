@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.sorinirimies.GitKraft</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>GitKraft</name>
+  <summary>Git IDE written entirely in Rust</summary>
+  <description>
+    <p>GitKraft is a fast, native Git client: browse history, stage and commit changes, manage branches, stashes and remotes, and inspect diffs.</p>
+  </description>
+  <launchable type="desktop-id">io.github.sorinirimies.GitKraft.desktop</launchable>
+  <url type="homepage">https://github.com/sorinirimies/gitkraft</url>
+  <url type="bugtracker">https://github.com/sorinirimies/gitkraft/issues</url>
+  <developer id="io.github.sorinirimies"><name>Sorin Irimies</name></developer>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/sorinirimies/gitkraft/main/docs/screenshots/gui-main.png</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <provides><binary>gitkraft</binary></provides>
+  <releases>
+    <release version="1.2.1" date="2025-01-01"/>
+  </releases>
+</component>

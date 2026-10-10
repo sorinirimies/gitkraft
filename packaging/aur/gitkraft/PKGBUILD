@@ -33,6 +33,8 @@ package_gitkraft() {
     depends=("${_gui_deps[@]}")
     cd "$pkgbase-$pkgver"
     install -Dm755 "target/release/gitkraft" "$pkgdir/usr/bin/gitkraft"
+    install -Dm644 "packaging/linux/io.github.sorinirimies.GitKraft.desktop" "$pkgdir/usr/share/applications/io.github.sorinirimies.GitKraft.desktop"
+    install -Dm644 "assets/icons/gitkraft.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/io.github.sorinirimies.GitKraft.svg"
     install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/gitkraft/LICENSE"
     install -Dm644 "README.md" "$pkgdir/usr/share/doc/gitkraft/README.md"
 }

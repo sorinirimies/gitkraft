@@ -376,3 +376,66 @@ jobs:
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
           commit_message: "Update to v${{ needs.validate.outputs.version }}"
+
+  # ── 7. Publish Snaps (gitkraft + gitkraft-tui) ────────────────────────────────
+  # Requires secret SNAPCRAFT_STORE_CREDENTIALS (`snapcraft export-login`).
+  # Names `gitkraft` and `gitkraft-tui` must be registered once on snapcraft.io.
+  publish-snap:
+    name: Publish Snap — ${{ matrix.snap }}
+    needs: [validate, release]
+    runs-on: ubuntu-latest
+    env:
+      SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+    strategy:
+      fail-fast: false
+      matrix:
+        snap: [gitkraft, gitkraft-tui]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - name: Skip (no credentials)
+        if: env.SNAPCRAFT_STORE_CREDENTIALS == ''
+        run: echo "⏭️  SNAPCRAFT_STORE_CREDENTIALS not set — skipping."
+
+      - name: Prepare snap project
+        if: env.SNAPCRAFT_STORE_CREDENTIALS != ''
+        run: |
+          cp -r packaging/snap/${{ matrix.snap }}/snap ./snap
+          sed -i "s/^version: .*/version: '${{ needs.validate.outputs.version }}'/" snap/snapcraft.yaml
+
+      - uses: snapcore/action-build@v1
+        if: env.SNAPCRAFT_STORE_CREDENTIALS != ''
+        id: build
+
+      - uses: snapcore/action-publish@v1
+        if: env.SNAPCRAFT_STORE_CREDENTIALS != ''
+        with:
+          snap: ${{ steps.build.outputs.snap }}
+          release: stable
+
+  # ── 8. Update Flathub (GUI only) ──────────────────────────────────────────────
+  # Requires secret FLATHUB_TOKEN (PAT with push access to
+  # flathub/io.github.sorinirimies.GitKraft, created after the first
+  # Flathub submission is accepted).
+  update-flathub:
+    name: Update Flathub
+    needs: [validate, release]
+    runs-on: ubuntu-latest
+    env:
+      FLATHUB_TOKEN: ${{ secrets.FLATHUB_TOKEN }}
+    steps:
+      - name: Skip (no token)
+        if: env.FLATHUB_TOKEN == ''
+        run: echo "⏭️  FLATHUB_TOKEN not set — skipping."
+
+      - uses: actions/checkout@v7
+        if: env.FLATHUB_TOKEN != ''
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Push update to Flathub repo
+        if: env.FLATHUB_TOKEN != ''
+        run: bash scripts/ci/update_flathub.sh ${{ needs.validate.outputs.version }}

@@ -1,0 +1,42 @@
+# Flathub manifest for the GitKraft GUI (the TUI is not distributed on Flathub:
+# Flathub only accepts graphical apps).
+# `tag`/`commit` and cargo-sources.json are refreshed on each release by
+# scripts/ci/update_flathub.sh.
+app-id: io.github.sorinirimies.GitKraft
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: gitkraft
+
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --socket=ssh-auth
+  - --filesystem=home
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/gitkraft/cargo
+
+modules:
+  - name: gitkraft
+    buildsystem: simple
+    build-commands:
+      - cargo --offline fetch --manifest-path Cargo.toml --verbose
+      - cargo --offline build --release --verbose -p gitkraft
+      - install -Dm755 target/release/gitkraft -t /app/bin
+      - install -Dm644 packaging/linux/io.github.sorinirimies.GitKraft.desktop -t /app/share/applications
+      - install -Dm644 packaging/linux/io.github.sorinirimies.GitKraft.metainfo.xml -t /app/share/metainfo
+      - install -Dm644 assets/icons/gitkraft.svg /app/share/icons/hicolor/scalable/apps/io.github.sorinirimies.GitKraft.svg
+    sources:
+      - type: git
+        url: https://github.com/sorinirimies/gitkraft.git
+        tag: v1.2.1
+        commit: 0000000000000000000000000000000000000000
+      - cargo-sources.json

@@ -1,0 +1,28 @@
+# CI copies this dir's snap/ to the repo root and sets the version via sed.
+name: gitkraft-tui
+base: core24
+version: '0.0.0'
+summary: GitKraft TUI — terminal Git IDE written in Rust
+description: |
+  Git IDE written entirely in Rust.
+license: MIT
+grade: stable
+confinement: strict
+title: GitKraft TUI
+
+apps:
+  gitkraft-tui:
+    command: bin/gitkraft-tui
+    plugs: [home, removable-media, network, ssh-keys]
+
+parts:
+  gitkraft-tui:
+    plugin: rust
+    source: .
+    rust-path: [crates/gitkraft-tui]
+    build-packages:
+      - pkg-config
+      - cmake
+      - make
+      - perl
+      - libssl-dev
