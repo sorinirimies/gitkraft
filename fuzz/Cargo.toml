@@ -1,0 +1,40 @@
+[package]
+name = "gitkraft-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+gitkraft-core = { path = "../crates/gitkraft-core" }
+
+# Not part of the main workspace (needs nightly).
+[workspace]
+
+[[bin]]
+name = "text_utils"
+path = "fuzz_targets/text_utils.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "validate_ref_name"
+path = "fuzz_targets/validate_ref_name.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "commit_message"
+path = "fuzz_targets/commit_message.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "settings_json"
+path = "fuzz_targets/settings_json.rs"
+test = false
+doc = false

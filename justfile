@@ -562,3 +562,11 @@ setup-gitea url: _check-nu
 # Migrate this project to dual GitHub + Gitea hosting (interactive)
 migrate-gitea: _check-nu
     nu scripts/migrate_to_gitea.nu
+
+# Security
+audit:
+    cargo audit
+
+# Fuzz a target (needs nightly + cargo-fuzz): just fuzz text_utils
+fuzz target="text_utils" secs="60":
+    cargo +nightly fuzz run {{target}} -- -max_total_time={{secs}}

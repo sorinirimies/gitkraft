@@ -1,0 +1,4 @@
+# cargo-audit configuration. Vulnerabilities always fail; unsound/unmaintained
+# are reported as warnings (several come from upstream git2/lru and have no fix yet).
+[advisories]
+ignore = []   # add "RUSTSEC-YYYY-NNNN" with a justification comment
