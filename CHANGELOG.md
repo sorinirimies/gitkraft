@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.1] - 2026-10-10
+### 🐛 Bug Fixes
+- unresolved rustdoc link to macos
+### 🔄 CI
+- install alien, fakeroot and arm64 libc headers for release builds
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.2.0...v1.2.1
 ## [1.2.0] - 2026-10-09
 ### ✨ Features
 - add version label, settings and about menu items to GUI and TUI
