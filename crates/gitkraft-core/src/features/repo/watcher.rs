@@ -75,9 +75,10 @@ where
             let is_relevant = |res: &notify::Result<notify::Event>| match res {
                 Ok(ev) => {
                     !matches!(ev.kind, notify::EventKind::Access(_))
-                        && !ev.paths.iter().all(|p| {
-                            p.extension().is_some_and(|e| e == "lock")
-                        })
+                        && !ev
+                            .paths
+                            .iter()
+                            .all(|p| p.extension().is_some_and(|e| e == "lock"))
                 }
                 Err(_) => true,
             };
