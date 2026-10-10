@@ -70,6 +70,10 @@ jobs:
         run: cargo install nu --locked
       - name: Quality gate
         run: nu scripts/ci/quality_gate.nu
+      - name: Security audit
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit
 
   # ── 2. Build matrix ───────────────────────────────────────────────────────────
   # GitHub provides free hosted runners for all three platforms.

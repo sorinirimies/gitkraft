@@ -116,17 +116,17 @@ fmt-check:
 clippy:
     cargo clippy --workspace --all-targets --all-features -- -D warnings -A deprecated
 
-# Run all quality checks (format, clippy, test, nu) — must pass before a release.
+# Run all quality checks (format, clippy, test, nu, audit) — must pass before a release.
 
 # Auto-formats first, then verifies no changes remain (catches unstaged format diffs).
-check-all: fmt clippy test test-nu
+check-all: fmt clippy test test-nu audit
     @echo "🔍 Verifying formatting is clean…"
     cargo fmt --all -- --check
     @echo "✅ All checks passed!"
 
 # Full pre-release quality gate — everything in check-all plus a release build.
-check-release: check-all build-release
-    @echo "✅ Release quality gate passed (fmt + clippy + test + nu + release build)!"
+check-release: check-all fuzz-smoke build-release
+    @echo "✅ Release quality gate passed (fmt + clippy + test + nu + audit + fuzz + release build)!"
 
 # ── VHS Demo GIFs ─────────────────────────────────────────────────────────────
 
@@ -563,10 +563,18 @@ setup-gitea url: _check-nu
 migrate-gitea: _check-nu
     nu scripts/migrate_to_gitea.nu
 
-# Security
+# Security: dependency vulnerability scan (needs `cargo install cargo-audit`)
 audit:
     cargo audit
 
 # Fuzz a target (needs nightly + cargo-fuzz): just fuzz text_utils
 fuzz target="text_utils" secs="60":
     cargo +nightly fuzz run {{target}} -- -max_total_time={{secs}}
+
+# Short fuzz run of every target (needs nightly + cargo-fuzz)
+fuzz-smoke secs="10":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for t in $(cargo +nightly fuzz list); do
+        cargo +nightly fuzz run "$t" -- -max_total_time={{secs}}
+    done
