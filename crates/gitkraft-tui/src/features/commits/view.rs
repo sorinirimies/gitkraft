@@ -79,7 +79,9 @@ fn build_graph_spans(
     for edge in &row.edges {
         if edge.from_column == edge.to_column {
             // Straight-through or first-parent-continuation
-            column_passthrough[edge.to_column] = Some(edge.color_index);
+            if let Some(slot) = column_passthrough.get_mut(edge.to_column) {
+                *slot = Some(edge.color_index);
+            }
         } else {
             // Crossing edge — from node_column to some other column
             let target = edge.to_column;
