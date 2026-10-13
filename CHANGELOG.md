@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.4] - 2026-10-13
+### 🔄 CI
+- split fuzz into own workflow; add audit & fuzz badges to README
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.2.2...v1.2.4
 ## [1.2.2] - 2026-10-13
 ### 🐛 Bug Fixes
 - ignore inotify access/lock events to stop refresh loop; chore(deps): update lockfile; ci: fix nightly deps toolchain setup
