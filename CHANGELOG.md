@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.2] - 2026-10-13
+### 🐛 Bug Fixes
+- ignore inotify access/lock events to stop refresh loop; chore(deps): update lockfile; ci: fix nightly deps toolchain setup
+- avoid panics in graph column indexing and short_oid_str on multibyte input
+### 💄 Style
+- cargo fmt watcher
+### 🔄 CI
+- add snap and flathub publishing, icons, desktop/metainfo, AUR desktop entry
+- add cargo-audit and cargo-fuzz targets with nightly workflows
+- run cargo audit in release gate; add audit and fuzz-smoke to just check-release
+- bump actions/upload-artifact from 4 to 7
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.2.1...v1.2.2
 ## [1.2.1] - 2026-10-10
 ### 🐛 Bug Fixes
 - unresolved rustdoc link to macos
