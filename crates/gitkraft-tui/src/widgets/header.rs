@@ -6,6 +6,38 @@ use ratatui::Frame;
 
 use crate::app::{App, AppScreen};
 
+/// Header shortcut hints in priority order: (key, label).
+const HINTS: [(&str, &str); 11] = [
+    ("[q]", "quit"),
+    ("[←→]", "pane"),
+    ("[r]", "refresh"),
+    ("[f]", "fetch"),
+    ("[t]", "theme"),
+    ("[o]", "open"),
+    ("[W]", "close"),
+    ("[E]", "editor"),
+    ("[O]", "options"),
+    ("[,]", "settings"),
+    ("[A]", "about"),
+];
+
+/// Display width of one hint as rendered: key + " label ".
+fn hint_width(h: &(&str, &str)) -> usize {
+    h.0.chars().count() + h.1.chars().count() + 2
+}
+
+/// How many leading hints fit into `avail` columns.
+fn visible_hints(avail: usize) -> usize {
+    let mut used = 0;
+    for (i, h) in HINTS.iter().enumerate() {
+        used += hint_width(h);
+        if used > avail {
+            return i;
+        }
+    }
+    HINTS.len()
+}
+
 /// Render the top header bar showing repo name, current branch, state, and
 /// keyboard shortcuts.
 pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
@@ -98,87 +130,54 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         Span::styled("│", Style::default().fg(theme.text_secondary)),
         Span::styled(format!(" {} ", state), Style::default().fg(theme.accent)),
         Span::styled("│", Style::default().fg(theme.text_secondary)),
-        Span::styled(
-            " [←→]",
-            Style::default()
-                .fg(theme.warning)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" pane ", Style::default().fg(theme.text_primary)),
-        Span::styled(
-            "[r]",
-            Style::default()
-                .fg(theme.warning)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" refresh ", Style::default().fg(theme.text_primary)),
-        Span::styled(
-            "[f]",
-            Style::default()
-                .fg(theme.warning)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" fetch ", Style::default().fg(theme.text_primary)),
-        Span::styled(
-            "[t]",
-            Style::default()
-                .fg(theme.warning)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" theme ", Style::default().fg(theme.text_primary)),
-        Span::styled(
-            "[E]",
-            Style::default()
-                .fg(theme.warning)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" editor ", Style::default().fg(theme.text_primary)),
-        Span::styled(
-            "[O]",
-            Style::default()
-                .fg(theme.warning)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" options ", Style::default().fg(theme.text_primary)),
-        Span::styled(
-            "[,]",
-            Style::default()
-                .fg(theme.warning)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" settings ", Style::default().fg(theme.text_primary)),
-        Span::styled(
-            "[A]",
-            Style::default()
-                .fg(theme.warning)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" about ", Style::default().fg(theme.text_primary)),
-        Span::styled(
-            "[o]",
-            Style::default()
-                .fg(theme.warning)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" open ", Style::default().fg(theme.text_primary)),
-        Span::styled(
-            "[W]",
-            Style::default()
-                .fg(theme.warning)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" close ", Style::default().fg(theme.text_primary)),
-        Span::styled(
-            "[q]",
-            Style::default()
-                .fg(theme.warning)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" quit", Style::default().fg(theme.text_primary)),
     ]);
+
+    // Shortcut hints, in priority order; drop from the end when the header
+    // is too narrow (2 columns of border).
+    let used: usize = spans.iter().map(|sp| sp.content.chars().count()).sum();
+    let avail = (area.width as usize).saturating_sub(2 + used);
+    for (key, label) in &HINTS[..visible_hints(avail)] {
+        spans.push(Span::styled(
+            *key,
+            Style::default()
+                .fg(theme.warning)
+                .add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(
+            format!(" {label} "),
+            Style::default().fg(theme.text_primary),
+        ));
+    }
 
     let line = Line::from(spans);
     let paragraph = Paragraph::new(line).block(block);
 
     frame.render_widget(paragraph, area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_space_no_hints() {
+        assert_eq!(visible_hints(0), 0);
+    }
+
+    #[test]
+    fn plenty_of_space_all_hints() {
+        assert_eq!(visible_hints(500), HINTS.len());
+    }
+
+    #[test]
+    fn hints_grow_monotonically_and_fit() {
+        let mut prev = 0;
+        for w in 0..300 {
+            let n = visible_hints(w);
+            assert!(n >= prev);
+            let used: usize = HINTS[..n].iter().map(hint_width).sum();
+            assert!(used <= w);
+            prev = n;
+        }
+    }
 }
