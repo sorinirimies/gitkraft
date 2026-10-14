@@ -30,6 +30,8 @@ use crate::view_utils;
 /// Render the tab bar above the header toolbar.
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let c = state.colors();
+    let dims = state.layout();
+    let max_name = if dims.minimal_toolbar { 14 } else { 28 };
 
     let mut tabs_row = row![].spacing(2).align_y(Alignment::Center);
 
@@ -51,7 +53,10 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         } else {
             c.text_secondary
         };
-        let label = text(name).size(12).color(label_color);
+        let label = text(gitkraft_core::truncate_str(&name, max_name))
+            .size(12)
+            .color(label_color)
+            .wrapping(iced::widget::text::Wrapping::None);
 
         // ── Tab label button (icon + name only — NO close button inside) ──
         //
@@ -103,27 +108,27 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .width(Length::Fill);
 
     // ── Right-hand menu: Settings │ About │ version ───────────────────
-    let settings_btn = view_utils::toolbar_btn(
+    let icon_only = dims.compact_toolbar;
+    let settings_btn = view_utils::toolbar_btn_adaptive(
         icon!(icons::GEAR, 13, c.text_secondary),
         "Settings",
         Message::OpenSettingsFile,
+        icon_only,
     );
-    let about_btn = view_utils::toolbar_btn(
+    let about_btn = view_utils::toolbar_btn_adaptive(
         icon!(icons::INFO_CIRCLE, 13, c.text_secondary),
         "About",
         Message::ToggleAbout,
+        icon_only,
     );
-    let version_label = text(gitkraft_core::version_label()).size(11).color(c.muted);
 
-    let menu = row![
-        settings_btn,
-        Space::new().width(2),
-        about_btn,
-        Space::new().width(10),
-        version_label,
-        Space::new().width(10),
-    ]
-    .align_y(Alignment::Center);
+    let mut menu = row![settings_btn, Space::new().width(2), about_btn].align_y(Alignment::Center);
+    if !dims.minimal_toolbar {
+        menu = menu
+            .push(Space::new().width(10))
+            .push(text(gitkraft_core::version_label()).size(11).color(c.muted));
+    }
+    menu = menu.push(Space::new().width(10));
 
     container(row![scrollable_tabs, menu].align_y(Alignment::Center))
         .width(Length::Fill)

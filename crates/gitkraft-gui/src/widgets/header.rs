@@ -17,13 +17,16 @@ use crate::view_utils;
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let tab = state.active_tab();
     let c = state.colors();
+    let dims = state.layout();
+    let compact = dims.compact_toolbar;
 
     // ── Repo name ─────────────────────────────────────────────────────────
     let repo_icon = icon!(icons::FOLDER_OPEN, 14, c.accent);
 
     let repo_name = text(state.repo_display_name())
         .size(14)
-        .color(c.text_primary);
+        .color(c.text_primary)
+        .wrapping(iced::widget::text::Wrapping::None);
 
     let separator = || text("|").size(14).color(c.border);
 
@@ -32,7 +35,10 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     let branch_name_str = tab.current_branch.as_deref().unwrap_or("(detached)");
 
-    let branch_label = text(branch_name_str).size(14).color(c.text_primary);
+    let branch_label = text(branch_name_str)
+        .size(14)
+        .color(c.text_primary)
+        .wrapping(iced::widget::text::Wrapping::None);
 
     // ── Repo state badge (if not clean) ───────────────────────────────────
     let state_badge: Element<'_, Message> = if let Some(ref info) = tab.repo_info {
@@ -53,11 +59,13 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     let fetch_msg = (!tab.remotes.is_empty()).then_some(Message::Fetch);
     let fetch_btn = crate::view_utils::on_press_maybe(
-        button(
+        button(if compact {
+            row![fetch_icon].align_y(Alignment::Center)
+        } else {
             row![fetch_icon, Space::new().width(4), text("Fetch").size(12)]
-                .align_y(Alignment::Center),
-        )
-        .padding([4, 10])
+                .align_y(Alignment::Center)
+        })
+        .padding([4, if compact { 8 } else { 10 }])
         .style(theme::toolbar_button),
         fetch_msg,
     );
@@ -65,12 +73,13 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     // ── Open another repo button ──────────────────────────────────────────
     let open_icon = icon!(icons::FOLDER_OPEN, 14, c.text_secondary);
 
-    let open_btn = view_utils::toolbar_btn(open_icon, "Open", Message::OpenRepo);
+    let open_btn = view_utils::toolbar_btn_adaptive(open_icon, "Open", Message::OpenRepo, compact);
 
     // ── Close repo button (return to welcome screen) ──────────────────────
     let close_icon = icon!(icons::X_CIRCLE, 14, c.text_secondary);
 
-    let close_btn = view_utils::toolbar_btn(close_icon, "Close", Message::CloseRepo);
+    let close_btn =
+        view_utils::toolbar_btn_adaptive(close_icon, "Close", Message::CloseRepo, compact);
 
     // ── Toggle sidebar ────────────────────────────────────────────────────
     let sidebar_icon_char = if state.sidebar_expanded {
@@ -95,16 +104,21 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     };
 
     let loading_indicator: Element<'_, Message> = if tab.is_loading {
-        row![
-            text(spinner_frame)
-                .size(14)
-                .color(c.accent)
-                .font(iced::Font::MONOSPACE),
-            iced::widget::Space::new().width(4),
-            text("Loading…").size(12).color(c.yellow),
-        ]
-        .align_y(iced::Alignment::Center)
-        .into()
+        let spinner = text(spinner_frame)
+            .size(14)
+            .color(c.accent)
+            .font(iced::Font::MONOSPACE);
+        if compact {
+            spinner.into()
+        } else {
+            row![
+                spinner,
+                iced::widget::Space::new().width(4),
+                text("Loading…").size(12).color(c.yellow),
+            ]
+            .align_y(iced::Alignment::Center)
+            .into()
+        }
     } else {
         Space::new().into()
     };
@@ -130,25 +144,32 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     ]
     .align_y(Alignment::Center);
 
-    let right_items = row![
+    let theme_w = if compact { 140.0 } else { 180.0 };
+    let mut right_items = row![
         fetch_btn,
         Space::new().width(4),
         open_btn,
         Space::new().width(4),
         close_btn,
-        Space::new().width(8),
-        theme_selector(state.current_theme_index),
-        Space::new().width(4),
-        editor_selector(&state.editor),
     ]
     .align_y(Alignment::Center);
+    if !dims.tiny_toolbar {
+        right_items = right_items
+            .push(Space::new().width(8))
+            .push(theme_selector(state.current_theme_index, theme_w));
+    }
+    if !dims.minimal_toolbar {
+        right_items = right_items
+            .push(Space::new().width(4))
+            .push(editor_selector(&state.editor));
+    }
 
     let toolbar = row![
         container(left_items).width(Length::Fill).clip(true),
         right_items,
     ]
     .align_y(Alignment::Center)
-    .padding([6, 12])
+    .padding([6, if compact { 8 } else { 12 }])
     .width(Length::Fill);
 
     container(toolbar)

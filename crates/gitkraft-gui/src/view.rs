@@ -76,14 +76,7 @@ impl GitKraft {
 
         // ── Sidebar (branches + stash + remotes) ──────────────────────
         // ── Responsive layout: clamp pane sizes to the window ─────────
-        let dims = crate::layout::LayoutDims::compute(
-            self.window_width,
-            self.window_height,
-            self.sidebar_expanded,
-            self.sidebar_width,
-            self.commit_log_width,
-            self.staging_height,
-        );
+        let dims = self.layout();
         let (show_sidebar, sidebar_w, commit_w, staging_h) = (
             dims.show_sidebar,
             dims.sidebar_width,
@@ -289,7 +282,15 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
         tab.status_message.as_deref().unwrap_or("Ready").to_string()
     };
 
-    let status_label = text(status_text).size(12).color(c.text_secondary);
+    let dims = state.layout();
+    let status_label = container(
+        text(status_text)
+            .size(12)
+            .color(c.text_secondary)
+            .wrapping(iced::widget::text::Wrapping::None),
+    )
+    .width(Length::Fill)
+    .clip(true);
 
     let branch_info: Element<'_, Message> = if let Some(ref branch) = tab.current_branch {
         let icon = icon!(icons::GIT_BRANCH, 12, c.accent);
@@ -333,20 +334,20 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
         Space::new().into()
     };
 
-    let bar = row![
-        status_label,
-        Space::new().width(Length::Fill),
-        changes_summary,
-        Space::new().width(16),
-        zoom_label,
-        Space::new().width(16),
-        repo_state_info,
-        Space::new().width(16),
-        branch_info,
-    ]
-    .align_y(Alignment::Center)
-    .padding([4, 10])
-    .width(Length::Fill);
+    // Drop lower-priority items as the window narrows; the message and the
+    // branch stay.
+    let mut bar = row![status_label].spacing(16);
+    if !dims.tiny_toolbar {
+        bar = bar.push(changes_summary);
+    }
+    if !dims.minimal_toolbar {
+        bar = bar.push(zoom_label).push(repo_state_info);
+    }
+    bar = bar.push(branch_info);
+    let bar = bar
+        .align_y(Alignment::Center)
+        .padding([4, 10])
+        .width(Length::Fill);
 
     container(bar)
         .width(Length::Fill)

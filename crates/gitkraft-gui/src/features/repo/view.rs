@@ -86,7 +86,8 @@ pub(crate) fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
     ]
     .spacing(4)
     .align_x(Alignment::Center)
-    .width(420);
+    .width(Length::Fill)
+    .max_width(420);
 
     // ── Recent repositories ───────────────────────────────────────────────
     if !state.recent_repos.is_empty() {

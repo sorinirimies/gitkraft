@@ -88,6 +88,25 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
+    /// Whether the theme follows the OS light/dark setting (`theme_name == "System"`).
+    pub fn follow_system_theme(&self) -> bool {
+        self.theme_name
+            .as_deref()
+            .is_some_and(crate::features::theme::is_system_name)
+    }
+
+    /// Preset index for the saved theme. `"System"` resolves from the OS
+    /// appearance; unknown/missing names fall back to `0`.
+    pub fn theme_index(&self) -> usize {
+        match self.theme_name.as_deref() {
+            Some(n) if crate::features::theme::is_system_name(n) => {
+                crate::features::theme::current_system_theme_index()
+            }
+            Some(n) => crate::features::theme::theme_index_by_name(n),
+            None => 0,
+        }
+    }
+
     /// Add a repo to the recent list, moving it to the front if it already exists.
     /// Also sets it as the last_repo.
     pub fn add_recent_repo(&mut self, path: PathBuf) {
@@ -116,5 +135,34 @@ impl AppSettings {
         }
 
         self.last_repo = Some(path);
+    }
+}
+
+#[cfg(test)]
+mod theme_tests {
+    use super::*;
+
+    #[test]
+    fn system_theme_name_follows_system() {
+        let s = AppSettings {
+            theme_name: Some("System".to_string()),
+            ..Default::default()
+        };
+        assert!(s.follow_system_theme());
+        assert!(s.theme_index() < crate::features::theme::THEME_COUNT);
+        assert!(!AppSettings::default().follow_system_theme());
+        assert_eq!(AppSettings::default().theme_index(), 0);
+    }
+
+    #[test]
+    fn theme_index_resolves_known_and_unknown() {
+        let mut s = AppSettings {
+            theme_name: Some("Dracula".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(s.theme_index(), 9);
+        s.theme_name = Some("Not A Real Theme".to_string());
+        assert_eq!(s.theme_index(), 0);
+        assert!(!s.follow_system_theme());
     }
 }

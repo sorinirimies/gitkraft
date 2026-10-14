@@ -93,7 +93,7 @@ pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
     // ── Priority 3: multi-file diff (existing code unchanged below) ────
     // Multi-file mode: show concatenated diffs for all selected files.
     if !tab.multi_file_diffs.is_empty() {
-        let file_list = commit_file_list(state, &c, state.diff_file_list_width);
+        let file_list = commit_file_list(state, &c, state.layout().diff_file_list_width);
         let divider = crate::widgets::divider::vertical_divider(
             crate::state::DragTarget::DiffFileListRight,
             &c,
@@ -114,7 +114,7 @@ pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
         Some(diff) => {
             if !tab.commit_files.is_empty() {
                 // Multiple files in this commit — show file list + divider + diff side by side.
-                let file_list = commit_file_list(state, &c, state.diff_file_list_width);
+                let file_list = commit_file_list(state, &c, state.layout().diff_file_list_width);
                 let divider = crate::widgets::divider::vertical_divider(
                     crate::state::DragTarget::DiffFileListRight,
                     &c,
@@ -142,7 +142,7 @@ pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
         None => {
             if !tab.commit_files.is_empty() {
                 // Files loaded but no diff selected yet — show file list + loading/placeholder.
-                let file_list = commit_file_list(state, &c, state.diff_file_list_width);
+                let file_list = commit_file_list(state, &c, state.layout().diff_file_list_width);
                 let divider = crate::widgets::divider::vertical_divider(
                     crate::state::DragTarget::DiffFileListRight,
                     &c,

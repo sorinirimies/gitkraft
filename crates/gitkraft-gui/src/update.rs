@@ -448,18 +448,24 @@ impl GitKraft {
 
                         // Drag from the rendered (clamped) size so the divider
                         // tracks the cursor in small windows.
-                        let d = crate::layout::LayoutDims::compute(
-                            self.window_width,
-                            self.window_height,
-                            self.sidebar_expanded,
-                            self.sidebar_width,
-                            self.commit_log_width,
-                            self.staging_height,
-                        );
+                        let d = self.layout();
                         let (orig_sidebar, orig_commit) =
                             (self.sidebar_width, self.commit_log_width);
                         self.sidebar_width = d.sidebar_width.max(1.0);
                         self.commit_log_width = d.commit_log_width.max(1.0);
+                        let cols = crate::layout::CommitColumns::compute(
+                            d.commit_log_width,
+                            self.commit_ref_width,
+                            self.commit_graph_width,
+                        );
+                        let (orig_ref, orig_graph, orig_difflist) = (
+                            self.commit_ref_width,
+                            self.commit_graph_width,
+                            self.diff_file_list_width,
+                        );
+                        self.commit_ref_width = cols.ref_w.max(1.0);
+                        self.commit_graph_width = cols.graph_w.max(1.0);
+                        self.diff_file_list_width = d.diff_file_list_width.max(1.0);
 
                         let dragged = target;
                         match target {
@@ -515,6 +521,15 @@ impl GitKraft {
                         }
                         if dragged != DragTarget::CommitLogRight {
                             self.commit_log_width = orig_commit;
+                        }
+                        if dragged != DragTarget::CommitRefColumnRight {
+                            self.commit_ref_width = orig_ref;
+                        }
+                        if dragged != DragTarget::CommitGraphColumnRight {
+                            self.commit_graph_width = orig_graph;
+                        }
+                        if dragged != DragTarget::DiffFileListRight {
+                            self.diff_file_list_width = orig_difflist;
                         }
                     }
                 }

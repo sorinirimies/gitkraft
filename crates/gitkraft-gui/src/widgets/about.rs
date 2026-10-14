@@ -67,7 +67,8 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     .width(Length::Fill);
 
     let panel = container(content)
-        .width(460)
+        .width(Length::Fill)
+        .max_width(460)
         .padding(20)
         .style(theme::context_menu_style);
 

@@ -31,11 +31,7 @@ use crate::widgets::commit_graph::CommitGraph;
 /// Height of one commit row in pixels.
 const ROW_HEIGHT: f32 = 26.0;
 
-/// Fixed width of the author sub-column.
-const AUTHOR_COLUMN_PX: f32 = 110.0;
-
-/// Fixed width of the date/time sub-column.
-const TIME_COLUMN_PX: f32 = 72.0;
+use crate::layout::{CommitColumns, AUTHOR_COLUMN_PX, DIVIDER_W, TIME_COLUMN_PX};
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -196,9 +192,10 @@ fn message_row<'a>(
     tab: &'a RepoTab,
     idx: usize,
     c: &ThemeColors,
-    available_px: f32,
+    cols: &CommitColumns,
     selected_range: &[usize],
 ) -> Element<'a, Message> {
+    let available_px = cols.msg_px;
     let commit = &tab.commits[idx];
     let is_selected = tab.selected_commit == Some(idx);
     let is_in_range = selected_range.contains(&idx);
@@ -218,33 +215,33 @@ fn message_row<'a>(
         .map(|(t, a)| (t.as_str(), a.as_str()))
         .unwrap_or(("", commit.author_name.as_str()));
 
-    let author_label = container(
-        text(author_str)
-            .size(11)
-            .color(c.text_secondary)
-            .wrapping(iced::widget::text::Wrapping::None),
-    )
-    .width(Length::Fixed(AUTHOR_COLUMN_PX))
-    .clip(true);
-
-    let time_label = container(
-        text(time_str)
-            .size(11)
-            .color(c.muted)
-            .wrapping(iced::widget::text::Wrapping::None),
-    )
-    .width(Length::Fixed(TIME_COLUMN_PX))
-    .clip(true);
-
-    let row_content = row![
-        container(summary_label).width(Length::Fill).clip(true),
-        Space::new().width(6),
-        author_label,
-        Space::new().width(6),
-        time_label,
-    ]
-    .align_y(Alignment::Center)
-    .padding([0, 4]);
+    let mut row_content = row![container(summary_label).width(Length::Fill).clip(true)]
+        .align_y(Alignment::Center)
+        .padding([0, 4]);
+    if cols.show_author {
+        row_content = row_content.push(Space::new().width(6)).push(
+            container(
+                text(author_str)
+                    .size(11)
+                    .color(c.text_secondary)
+                    .wrapping(iced::widget::text::Wrapping::None),
+            )
+            .width(Length::Fixed(AUTHOR_COLUMN_PX))
+            .clip(true),
+        );
+    }
+    if cols.show_time {
+        row_content = row_content.push(Space::new().width(6)).push(
+            container(
+                text(time_str)
+                    .size(11)
+                    .color(c.muted)
+                    .wrapping(iced::widget::text::Wrapping::None),
+            )
+            .width(Length::Fixed(TIME_COLUMN_PX))
+            .clip(true),
+        );
+    }
 
     let style_fn = row_style!(
         is_selected => theme::selected_row_style,
@@ -318,15 +315,14 @@ pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
         return view_utils::surface_panel(content, Length::Fill);
     }
 
-    // ── Column widths ─────────────────────────────────────────────────────
-    let ref_col_w = state.commit_ref_width;
-    let graph_col_w = state.commit_graph_width;
-
-    // Each col_divider is 6px wide; two dividers = 12px.
-    const DIVIDER_W: f32 = 6.0;
-    let fixed_cols =
-        ref_col_w + DIVIDER_W + graph_col_w + DIVIDER_W + AUTHOR_COLUMN_PX + TIME_COLUMN_PX + 30.0;
-    let msg_available_px = (state.commit_log_width - fixed_cols).max(60.0);
+    // ── Column widths (clamped to the rendered pane, not the stored size) ──
+    let cols = CommitColumns::compute(
+        state.layout().commit_log_width,
+        state.commit_ref_width,
+        state.commit_graph_width,
+    );
+    let ref_col_w = cols.ref_w;
+    let graph_col_w = cols.graph_w;
 
     // ── Column headers with draggable dividers ────────────────────────────
     let col_header = row![
@@ -472,7 +468,7 @@ pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
         msgs_col = msgs_col.push(Space::new().height(top_space));
     }
     for idx in first..last {
-        msgs_col = msgs_col.push(message_row(tab, idx, &c, msg_available_px, selected_range));
+        msgs_col = msgs_col.push(message_row(tab, idx, &c, &cols, selected_range));
     }
     if bottom_space > 0.0 {
         msgs_col = msgs_col.push(Space::new().height(bottom_space));
@@ -572,7 +568,8 @@ mod tests {
                 tab.selected_commit = if is_selected { Some(0) } else { None };
                 tab.hovered_commit = if is_hovered { Some(0) } else { None };
                 let selected_range: Vec<usize> = if is_selected { vec![0] } else { Vec::new() };
-                let _ = message_row(&tab, 0, &c, 200.0, &selected_range);
+                let cols = CommitColumns::compute(600.0, 120.0, 100.0);
+                let _ = message_row(&tab, 0, &c, &cols, &selected_range);
             }
         }
     }

@@ -34,21 +34,48 @@ pub(crate) fn view(state: &GitKraft) -> Element<'_, Message> {
     let divider2 =
         crate::widgets::divider::vertical_divider(crate::state::DragTarget::StagingStagedRight, &c);
 
-    let content = row![
-        container(unstaged_panel)
-            .width(Length::FillPortion(unstaged_pct))
-            .height(Length::Fill),
-        divider1,
-        container(staged_panel)
-            .width(Length::FillPortion(staged_pct))
-            .height(Length::Fill),
-        divider2,
-        container(commit_panel)
-            .width(Length::FillPortion(commit_pct))
-            .height(Length::Fill),
-    ]
-    .height(Length::Fill)
-    .width(Length::Fill);
+    let content: Element<'_, Message> = if state.layout().staging_stacked {
+        // Narrow window: unstaged on the left, staged over the commit box on the right.
+        let right = column![
+            container(staged_panel)
+                .width(Length::Fill)
+                .height(Length::FillPortion(1)),
+            container(commit_panel)
+                .width(Length::Fill)
+                .height(Length::FillPortion(1)),
+        ]
+        .width(Length::Fill)
+        .height(Length::Fill);
+        row![
+            container(unstaged_panel)
+                .width(Length::FillPortion(1))
+                .height(Length::Fill),
+            divider1,
+            container(right)
+                .width(Length::FillPortion(1))
+                .height(Length::Fill),
+        ]
+        .height(Length::Fill)
+        .width(Length::Fill)
+        .into()
+    } else {
+        row![
+            container(unstaged_panel)
+                .width(Length::FillPortion(unstaged_pct))
+                .height(Length::Fill),
+            divider1,
+            container(staged_panel)
+                .width(Length::FillPortion(staged_pct))
+                .height(Length::Fill),
+            divider2,
+            container(commit_panel)
+                .width(Length::FillPortion(commit_pct))
+                .height(Length::Fill),
+        ]
+        .height(Length::Fill)
+        .width(Length::Fill)
+        .into()
+    };
 
     container(content)
         .width(Length::Fill)

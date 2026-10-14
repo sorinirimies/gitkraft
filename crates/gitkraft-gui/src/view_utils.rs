@@ -194,6 +194,24 @@ pub fn toolbar_btn<'a>(
     .on_press(msg)
 }
 
+/// Like [`toolbar_btn`], but drops the text label when `icon_only` is set.
+pub fn toolbar_btn_adaptive<'a>(
+    icon_widget: impl Into<iced::Element<'a, crate::message::Message>>,
+    label: &'a str,
+    msg: crate::message::Message,
+    icon_only: bool,
+) -> iced::widget::Button<'a, crate::message::Message> {
+    use iced::widget::button;
+
+    if !icon_only {
+        return toolbar_btn(icon_widget, label, msg);
+    }
+    button(icon_widget.into())
+        .padding([4, 8])
+        .style(crate::theme::toolbar_button)
+        .on_press(msg)
+}
+
 // ── Panel wrapper ─────────────────────────────────────────────────────────
 
 /// Wrap content in a full-size container with the surface background style.

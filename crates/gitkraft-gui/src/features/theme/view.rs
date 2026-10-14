@@ -36,7 +36,7 @@ pub(crate) fn all_themes() -> Vec<ThemeChoice> {
 /// The widget displays the name of the current theme and, when opened, lists
 /// every theme returned by [`all_themes`]. Selecting a new entry emits
 /// [`Message::ThemeChanged`] with the chosen theme index.
-pub(crate) fn theme_selector(current_theme_index: usize) -> Element<'static, Message> {
+pub(crate) fn theme_selector(current_theme_index: usize, width: f32) -> Element<'static, Message> {
     let choices = all_themes();
     let selected = choices.get(current_theme_index).cloned();
 
@@ -45,6 +45,6 @@ pub(crate) fn theme_selector(current_theme_index: usize) -> Element<'static, Mes
     })
     .placeholder("Select theme")
     .text_size(13.0)
-    .width(Length::Fixed(180.0))
+    .width(Length::Fixed(width))
     .into()
 }
