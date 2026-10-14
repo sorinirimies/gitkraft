@@ -26,6 +26,21 @@ pub struct UiTheme {
 }
 
 impl UiTheme {
+    /// Colours for the embedded `tui-file-explorer` widget.
+    pub fn file_explorer_theme(&self) -> tui_file_explorer::Theme {
+        tui_file_explorer::Theme {
+            brand: self.accent,
+            accent: self.border_active,
+            success: self.success,
+            dim: self.text_muted,
+            fg: self.text_primary,
+            sel_bg: self.sel_bg,
+            dir: self.accent,
+            match_file: self.success,
+            bg: self.bg,
+        }
+    }
+
     /// Convert from the core's platform-agnostic theme.
     pub fn from_core(t: &AppTheme) -> Self {
         let gc = &t.graph_colors;

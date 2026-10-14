@@ -457,12 +457,9 @@ pub struct App {
     /// Recently opened repositories loaded from persistence.
     pub recent_repos: Vec<gitkraft_core::RepoHistoryEntry>,
 
-    /// Current directory being browsed in the directory picker.
-    pub browser_dir: PathBuf,
-    /// Entries in the current browser directory.
-    pub browser_entries: Vec<std::path::PathBuf>,
-    /// List state for the directory browser.
-    pub browser_list_state: ListState,
+    /// Directory picker (the `tui-file-explorer` widget). `Some` while the
+    /// directory-browser screen is open.
+    pub browser: Option<tui_file_explorer::FileExplorer>,
     /// Screen to return to when the directory browser is dismissed.
     pub browser_return_screen: AppScreen,
 
@@ -551,9 +548,7 @@ impl App {
 
             recent_repos,
 
-            browser_dir: dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")),
-            browser_entries: Vec::new(),
-            browser_list_state: ListState::default(),
+            browser: None,
             browser_return_screen: AppScreen::Welcome,
 
             tabs: vec![RepoTab::new()],
@@ -1719,48 +1714,35 @@ impl App {
         self.save_session();
     }
 
-    /// Populate `browser_entries` with the contents of `browser_dir`.
-    pub fn refresh_browser(&mut self) {
-        let mut entries = Vec::new();
-        if let Ok(read_dir) = std::fs::read_dir(&self.browser_dir) {
-            for entry in read_dir.flatten() {
-                let path = entry.path();
-                // Show only directories to help navigate & identify repos
-                if path.is_dir() {
-                    entries.push(path);
-                }
-            }
-        }
-        entries.sort_by(|a, b| {
-            let a_name = a
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_lowercase();
-            let b_name = b
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_lowercase();
-            // Dot-dirs last
-            let a_dot = a_name.starts_with('.');
-            let b_dot = b_name.starts_with('.');
-            a_dot.cmp(&b_dot).then(a_name.cmp(&b_name))
-        });
-        self.browser_entries = entries;
-        self.browser_list_state = ListState::default();
-        if !self.browser_entries.is_empty() {
-            self.browser_list_state.select(Some(0));
-        }
-    }
-
-    /// Open the directory browser starting from a given path.
+    /// Open the directory browser (a `tui-file-explorer` widget that selects
+    /// directories) starting from `start`.
     pub fn open_browser(&mut self, start: PathBuf) {
         self.browser_return_screen = self.screen.clone();
-        self.browser_dir = start;
-        self.refresh_browser();
+        self.browser = Some(
+            tui_file_explorer::FileExplorer::builder(start)
+                .selection_mode(tui_file_explorer::SelectionMode::Directories)
+                .show_hidden(false)
+                .build(),
+        );
         self.screen = AppScreen::DirBrowser;
     }
+
+    /// Close the directory browser and return to the previous screen.
+    pub fn close_browser(&mut self) {
+        self.browser = None;
+        self.screen = self.browser_return_screen.clone();
+    }
+
+    /// Open `path` as a repository (in a new tab if the current one has a repo)
+    /// and close the directory browser.
+    pub fn open_repo_from_browser(&mut self, path: PathBuf) {
+        self.close_browser();
+        if self.tab().repo_path.is_some() {
+            self.new_tab();
+        }
+        self.open_repo(path);
+    }
+
     /// Open the TUI settings file (`tui-settings.json`) in the configured editor.
     /// If no editor is configured, shows the file path in the status bar instead.
     pub fn open_settings_in_editor(&mut self) {
@@ -2876,6 +2858,10 @@ mod tests {
         app.open_browser(PathBuf::from("/tmp"));
         assert_eq!(app.screen, AppScreen::DirBrowser);
         assert_eq!(app.browser_return_screen, AppScreen::Main);
+        assert!(app.browser.is_some());
+        app.close_browser();
+        assert!(app.browser.is_none());
+        assert_eq!(app.screen, AppScreen::Main);
     }
 
     #[test]

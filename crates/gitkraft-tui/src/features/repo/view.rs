@@ -1,7 +1,7 @@
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
+use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 use crate::app::App;
@@ -151,102 +151,12 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     frame.render_widget(paragraph, centered);
 }
 
-/// Render the directory browser screen.
+/// Render the directory browser screen with the `tui-file-explorer` widget.
 pub fn render_browser(app: &mut App, frame: &mut Frame, area: Rect) {
-    let theme = app.theme();
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.border_active))
-        .style(Style::default().bg(theme.bg))
-        .title(format!(" 📂 {} ", app.browser_dir.display()))
-        .title_alignment(Alignment::Left);
-
-    let items: Vec<ListItem> = app
-        .browser_entries
-        .iter()
-        .map(|path| {
-            let name = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            let is_git = path.join(".git").exists();
-            let (icon, style) = if is_git {
-                (
-                    "⊙ ",
-                    Style::default()
-                        .fg(theme.success)
-                        .add_modifier(Modifier::BOLD),
-                )
-            } else if name.starts_with('.') {
-                ("  ", Style::default().fg(theme.text_muted))
-            } else {
-                ("📁 ", Style::default().fg(theme.text_primary))
-            };
-            ListItem::new(Line::from(vec![
-                Span::styled(icon, style),
-                Span::styled(name, style),
-            ]))
-        })
-        .collect();
-
-    let list = List::new(items)
-        .block(block)
-        .highlight_style(
-            Style::default()
-                .fg(theme.accent)
-                .add_modifier(Modifier::BOLD)
-                .bg(theme.sel_bg),
-        )
-        .highlight_symbol("▸ ");
-
-    // Help bar at the bottom
-    let help = Paragraph::new(Line::from(vec![
-        Span::styled(
-            "↑↓",
-            Style::default()
-                .fg(theme.warning)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" navigate  ", Style::default().fg(theme.text_muted)),
-        Span::styled(
-            "Enter",
-            Style::default()
-                .fg(theme.warning)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" open  ", Style::default().fg(theme.text_muted)),
-        Span::styled(
-            "Backspace",
-            Style::default()
-                .fg(theme.warning)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" go up  ", Style::default().fg(theme.text_muted)),
-        Span::styled(
-            "o",
-            Style::default()
-                .fg(theme.warning)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" open as repo  ", Style::default().fg(theme.text_muted)),
-        Span::styled(
-            "Esc",
-            Style::default()
-                .fg(theme.warning)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" cancel", Style::default().fg(theme.text_muted)),
-    ]));
-
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(3), Constraint::Length(1)])
-        .split(area);
-
-    frame.render_stateful_widget(list, chunks[0], &mut app.browser_list_state);
-    frame.render_widget(help, chunks[1]);
+    let theme = app.theme().file_explorer_theme();
+    if let Some(explorer) = app.browser.as_mut() {
+        tui_file_explorer::render_themed(explorer, frame, area, &theme);
+    }
 }
 
 /// Return a `Rect` centered within `area` occupying the given percentage of

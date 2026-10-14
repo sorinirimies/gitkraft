@@ -1,7 +1,44 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::app::{ActivePane, App, AppScreen, DiffSubPane, InputMode, InputPurpose};
 use crate::features;
+
+/// Keys on the directory-browser screen, handled by the `tui-file-explorer`
+/// widget. Extra behaviour on top of the widget:
+/// * `Enter` on a git repo opens it; on any other folder it descends,
+/// * `o` opens the highlighted folder as a repo even if it is not one.
+fn handle_browser_key(app: &mut App, key: KeyEvent) {
+    use tui_file_explorer::ExplorerOutcome;
+
+    let Some(explorer) = app.browser.as_mut() else {
+        app.screen = app.browser_return_screen.clone();
+        return;
+    };
+    // While a prompt or search owns the keyboard, forward everything.
+    let typing = explorer.prompt.is_some() || explorer.search_active;
+    if !typing && key.kind != KeyEventKind::Release {
+        let highlighted = explorer
+            .current_entry()
+            .filter(|e| e.is_dir)
+            .map(|e| e.path.clone());
+        match (key.code, highlighted) {
+            (KeyCode::Char('o'), Some(path)) => {
+                app.open_repo_from_browser(path);
+                return;
+            }
+            (KeyCode::Enter, Some(path)) if !path.join(".git").exists() => {
+                explorer.navigate_to(path);
+                return;
+            }
+            _ => {}
+        }
+    }
+    match explorer.handle_key(key) {
+        ExplorerOutcome::Selected(path) => app.open_repo_from_browser(path),
+        ExplorerOutcome::Dismissed => app.close_browser(),
+        _ => {}
+    }
+}
 
 /// Top-level key dispatch — called once per key event from the event loop.
 pub fn handle_key(app: &mut App, key: KeyEvent) {
@@ -19,71 +56,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
 
     match app.screen {
         AppScreen::Welcome => features::repo::events::handle_key(app, key),
-        AppScreen::DirBrowser => {
-            match key.code {
-                KeyCode::Up | KeyCode::Char('k') => {
-                    let len = app.browser_entries.len();
-                    if len > 0 {
-                        let i = app.browser_list_state.selected().unwrap_or(0);
-                        let new = gitkraft_core::wrap_prev(i, len);
-                        app.browser_list_state.select(Some(new));
-                    }
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    let len = app.browser_entries.len();
-                    if len > 0 {
-                        let i = app.browser_list_state.selected().unwrap_or(0);
-                        let new = gitkraft_core::wrap_next(i, len);
-                        app.browser_list_state.select(Some(new));
-                    }
-                }
-                KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-                    if let Some(idx) = app.browser_list_state.selected() {
-                        if let Some(path) = app.browser_entries.get(idx).cloned() {
-                            if path.is_dir() {
-                                // Check if it is a git repo
-                                if path.join(".git").exists() {
-                                    app.screen = app.browser_return_screen.clone();
-                                    // If current tab already has a repo, open in a new tab
-                                    if app.tab().repo_path.is_some() {
-                                        app.new_tab();
-                                    }
-                                    app.open_repo(path);
-                                } else {
-                                    // Navigate into directory
-                                    app.browser_dir = path;
-                                    app.refresh_browser();
-                                }
-                            }
-                        }
-                    }
-                }
-                KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => {
-                    // Go up one directory
-                    if let Some(parent) = app.browser_dir.parent().map(|p| p.to_path_buf()) {
-                        app.browser_dir = parent;
-                        app.refresh_browser();
-                    }
-                }
-                KeyCode::Esc | KeyCode::Char('q') => {
-                    app.screen = app.browser_return_screen.clone();
-                }
-                // Allow typing 'o' to open the selected directory even if it is not a git repo
-                KeyCode::Char('o') => {
-                    if let Some(idx) = app.browser_list_state.selected() {
-                        if let Some(path) = app.browser_entries.get(idx).cloned() {
-                            app.screen = app.browser_return_screen.clone();
-                            // If current tab already has a repo, open in a new tab
-                            if app.tab().repo_path.is_some() {
-                                app.new_tab();
-                            }
-                            app.open_repo(path);
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
+        AppScreen::DirBrowser => handle_browser_key(app, key),
         AppScreen::Main => {
             if app.show_about_panel {
                 features::about::events::handle_key(app, key);
@@ -603,6 +576,47 @@ mod tests {
         assert_eq!(app.active_pane, ActivePane::Branches);
         handle_key(&mut app, key(KeyCode::Left));
         assert_eq!(app.active_pane, ActivePane::Staging);
+    }
+
+    fn temp_tree(tag: &str) -> std::path::PathBuf {
+        let base =
+            std::env::temp_dir().join(format!("gitkraft-tui-browser-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("plain/inner")).unwrap();
+        base
+    }
+
+    #[test]
+    fn browser_esc_returns_to_previous_screen() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.open_browser(std::env::temp_dir());
+        handle_key(&mut app, key(KeyCode::Esc));
+        assert_eq!(app.screen, AppScreen::Main);
+        assert!(app.browser.is_none());
+    }
+
+    #[test]
+    fn browser_enter_descends_into_non_repo_folder() {
+        let base = temp_tree("enter");
+        let mut app = App::new();
+        app.open_browser(base.clone());
+        handle_key(&mut app, key(KeyCode::Enter));
+        assert_eq!(app.screen, AppScreen::DirBrowser);
+        let dir = app.browser.as_ref().unwrap().current_dir.clone();
+        assert_eq!(dir, base.join("plain"));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn browser_o_opens_highlighted_folder_as_repo() {
+        let base = temp_tree("o");
+        let mut app = App::new();
+        app.open_browser(base.clone());
+        handle_key(&mut app, key(KeyCode::Char('o')));
+        assert_ne!(app.screen, AppScreen::DirBrowser);
+        assert!(app.browser.is_none());
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
