@@ -446,6 +446,22 @@ impl GitKraft {
                         let dx = *x - self.drag_start_x;
                         self.drag_start_x = *x;
 
+                        // Drag from the rendered (clamped) size so the divider
+                        // tracks the cursor in small windows.
+                        let d = crate::layout::LayoutDims::compute(
+                            self.window_width,
+                            self.window_height,
+                            self.sidebar_expanded,
+                            self.sidebar_width,
+                            self.commit_log_width,
+                            self.staging_height,
+                        );
+                        let (orig_sidebar, orig_commit) =
+                            (self.sidebar_width, self.commit_log_width);
+                        self.sidebar_width = d.sidebar_width.max(1.0);
+                        self.commit_log_width = d.commit_log_width.max(1.0);
+
+                        let dragged = target;
                         match target {
                             DragTarget::SidebarRight => {
                                 self.sidebar_width = (self.sidebar_width + dx).clamp(120.0, 500.0);
@@ -491,6 +507,14 @@ impl GitKraft {
                                 self.commit_graph_width =
                                     (self.commit_graph_width + dx).clamp(24.0, 300.0);
                             }
+                        }
+                        // Only the dragged divider keeps its new value; others
+                        // retain their saved (unclamped) sizes.
+                        if dragged != DragTarget::SidebarRight {
+                            self.sidebar_width = orig_sidebar;
+                        }
+                        if dragged != DragTarget::CommitLogRight {
+                            self.commit_log_width = orig_commit;
                         }
                     }
                 }

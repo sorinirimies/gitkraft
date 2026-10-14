@@ -75,7 +75,23 @@ impl GitKraft {
         let header = widgets::header::view(self);
 
         // ── Sidebar (branches + stash + remotes) ──────────────────────
-        let sidebar: Element<'_, Message> = if self.sidebar_expanded {
+        // ── Responsive layout: clamp pane sizes to the window ─────────
+        let dims = crate::layout::LayoutDims::compute(
+            self.window_width,
+            self.window_height,
+            self.sidebar_expanded,
+            self.sidebar_width,
+            self.commit_log_width,
+            self.staging_height,
+        );
+        let (show_sidebar, sidebar_w, commit_w, staging_h) = (
+            dims.show_sidebar,
+            dims.sidebar_width,
+            dims.commit_log_width,
+            dims.staging_height,
+        );
+
+        let sidebar: Element<'_, Message> = if show_sidebar || dims.overlay_sidebar {
             let branches = features::branches::view::view(self);
             let stash = features::stash::view::view(self);
             let remotes = features::remotes::view::view(self);
@@ -110,7 +126,7 @@ impl GitKraft {
                 .width(Length::Fill)
                 .height(Length::Fill),
             )
-            .width(Length::Fixed(self.sidebar_width))
+            .width(Length::Fixed(sidebar_w))
             .height(Length::Fill)
             .style(theme::sidebar_style);
 
@@ -123,7 +139,7 @@ impl GitKraft {
 
         // ── Commit log ────────────────────────────────────────────────────
         let commit_log_content = container(features::commits::view::view(self))
-            .width(Length::Fixed(self.commit_log_width))
+            .width(Length::Fixed(commit_w))
             .height(Length::Fill);
 
         let commit_divider = widgets::divider::vertical_divider(DragTarget::CommitLogRight, &c);
@@ -148,9 +164,20 @@ impl GitKraft {
             .height(Length::Fill);
 
         // ── Middle row: sidebar | divider | commit log | divider | diff ───
-        let middle = row![sidebar, commit_log, diff_viewer]
-            .height(Length::Fill)
-            .width(Length::Fill);
+        let middle: Element<'_, Message> = if dims.overlay_sidebar {
+            let base = row![commit_log, diff_viewer]
+                .height(Length::Fill)
+                .width(Length::Fill);
+            iced::widget::stack![base, sidebar]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else {
+            row![sidebar, commit_log, diff_viewer]
+                .height(Length::Fill)
+                .width(Length::Fill)
+                .into()
+        };
 
         // ── Horizontal divider between middle and staging ─────────────────
         let h_divider = widgets::divider::horizontal_divider(DragTargetH::StagingTop, &c);
@@ -158,7 +185,7 @@ impl GitKraft {
         // ── Staging area ──────────────────────────────────────────────────
         let staging = container(features::staging::view::view(self))
             .width(Length::Fill)
-            .height(Length::Fixed(self.staging_height));
+            .height(Length::Fixed(staging_h));
 
         // ── Status bar ────────────────────────────────────────────────────
         let status_bar = status_bar_view(self);

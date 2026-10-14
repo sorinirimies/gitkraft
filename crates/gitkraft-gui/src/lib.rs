@@ -8,6 +8,7 @@ mod macros;
 
 pub mod features;
 pub mod icons;
+pub mod layout;
 pub mod message;
 pub mod state;
 pub mod theme;
