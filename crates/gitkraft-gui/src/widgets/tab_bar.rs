@@ -25,7 +25,6 @@ use crate::message::Message;
 use crate::state::GitKraft;
 use crate::theme;
 use crate::theme::ThemeColors;
-use crate::view_utils;
 
 /// Render the tab bar above the header toolbar.
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
@@ -108,26 +107,10 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         .style(crate::theme::overlay_scrollbar)
         .width(Length::Fill);
 
-    // ── Right-hand menu: Settings │ About │ version ───────────────────
-    let icon_only = dims.compact_toolbar;
-    let settings_btn = view_utils::toolbar_btn_adaptive(
-        icon!(icons::GEAR, 13, c.text_secondary),
-        "Settings",
-        Message::OpenSettingsFile,
-        icon_only,
-    );
-    let about_btn = view_utils::toolbar_btn_adaptive(
-        icon!(icons::INFO_CIRCLE, 13, c.text_secondary),
-        "About",
-        Message::ToggleAbout,
-        icon_only,
-    );
-
-    let mut menu = row![settings_btn, Space::new().width(2), about_btn].align_y(Alignment::Center);
+    // ── Right-hand version label (Settings / About live in the header) ──
+    let mut menu = row![].align_y(Alignment::Center);
     if !dims.minimal_toolbar {
-        menu = menu
-            .push(Space::new().width(10))
-            .push(text(gitkraft_core::version_label()).size(11).color(c.muted));
+        menu = menu.push(text(gitkraft_core::version_label()).size(11).color(c.muted));
     }
     menu = menu.push(Space::new().width(10));
 

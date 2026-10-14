@@ -144,6 +144,19 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     ]
     .align_y(Alignment::Center);
 
+    let settings_btn = view_utils::toolbar_btn_adaptive(
+        icon!(icons::GEAR, 14, c.text_secondary),
+        "Settings",
+        Message::OpenSettingsFile,
+        compact,
+    );
+    let about_btn = view_utils::toolbar_btn_adaptive(
+        icon!(icons::INFO_CIRCLE, 14, c.text_secondary),
+        "About",
+        Message::ToggleAbout,
+        compact,
+    );
+
     let theme_w = if compact { 140.0 } else { 180.0 };
     let mut right_items = row![
         fetch_btn,
@@ -151,6 +164,10 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         open_btn,
         Space::new().width(4),
         close_btn,
+        Space::new().width(4),
+        settings_btn,
+        Space::new().width(4),
+        about_btn,
     ]
     .align_y(Alignment::Center);
     if !dims.tiny_toolbar {
@@ -160,7 +177,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
             theme_w,
         ));
     }
-    if !dims.minimal_toolbar {
+    if !dims.hide_editor_picker {
         right_items = right_items
             .push(Space::new().width(4))
             .push(editor_selector(&state.editor));

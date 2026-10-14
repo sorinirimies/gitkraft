@@ -7,6 +7,8 @@ pub const NARROW_WIDTH: f32 = 720.0;
 pub const COMPACT_WIDTH: f32 = 1000.0;
 /// Below this width secondary toolbar widgets (editor picker, version) go away.
 pub const MINIMAL_WIDTH: f32 = 800.0;
+/// Below this width the editor picker is dropped (the header also carries Settings/About).
+pub const EDITOR_PICKER_MIN_WIDTH: f32 = 900.0;
 /// Below this width even the theme picker is dropped.
 pub const TINY_WIDTH: f32 = 520.0;
 
@@ -85,6 +87,8 @@ pub struct LayoutDims {
     pub compact_toolbar: bool,
     /// Drop secondary toolbar widgets (editor picker, version label).
     pub minimal_toolbar: bool,
+    /// Drop the editor picker from the header.
+    pub hide_editor_picker: bool,
     /// Drop even the theme picker.
     pub tiny_toolbar: bool,
     /// Short window: tighten vertical padding.
@@ -143,6 +147,7 @@ impl LayoutDims {
             staging_stacked: window_w < NARROW_WIDTH,
             compact_toolbar: window_w < COMPACT_WIDTH,
             minimal_toolbar: window_w < MINIMAL_WIDTH,
+            hide_editor_picker: window_w < EDITOR_PICKER_MIN_WIDTH,
             tiny_toolbar: window_w < TINY_WIDTH,
             compact_vertical: window_h < SHORT_HEIGHT,
         }
@@ -313,6 +318,12 @@ mod tests {
         let d = dims(700.0, 800.0, true);
         assert!(d.minimal_toolbar && d.staging_stacked && !d.tiny_toolbar);
         assert!(dims(500.0, 800.0, true).tiny_toolbar);
+    }
+
+    #[test]
+    fn editor_picker_hidden_below_900() {
+        assert!(!dims(900.0, 800.0, true).hide_editor_picker);
+        assert!(dims(899.0, 800.0, true).hide_editor_picker);
     }
 
     #[test]
