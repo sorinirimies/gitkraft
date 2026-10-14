@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.5] - 2026-10-14
+### ✨ Features
+- responsive layout with clamped panes and overlay sidebar on narrow windows
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.2.4...v1.2.5
 ## [1.2.4] - 2026-10-13
 ### 🔄 CI
 - split fuzz into own workflow; add audit & fuzz badges to README
@@ -65,27 +69,37 @@ All notable changes to this project will be documented in this file.
 ### ♻️  Refactor
 - harden safety, memory, and reliability across all crates
 ### ✨ Features
+- multi-platform packaging and distribution
+### 🐛 Bug Fixes
+- resolve clippy errors blocking release gate
+### 🔄 CI
+- split release workflows by platform capability
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.1.2...v1.1.3
+## [0.9.0] - 2026-05-02
+### 🐛 Bug Fixes
+- broken rustdoc link to private render_main function
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.8.8...v0.9.0
+## [0.7.4] - 2026-04-23
+### ✨ Features
 - diff search results against working tree
 - 'Diff Selected' button for multi-file diff in search
 - auto-focus search input, add tests for new features
-- multi-platform packaging and distribution
 ### 🐛 Bug Fixes
 - open repo in new tab when current tab already has one
 - prevent search dialog from dismissing when clicking diff content
-- broken rustdoc link to private render_main function
-- resolve clippy errors blocking release gate
+### 📚 Documentation
+- regenerate all TUI VHS GIFs with updated layout
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.7.3...v0.7.4
+## [0.7.1] - 2026-04-23
 ### 📚 Documentation
 - add VHS-generated preview GIFs tracked with Git LFS
 - remove non-UI GIFs from Preview section
 - hide cargo run from TUI tapes and remove tui-build GIF
 - add TUI theme selector and multi-repo tabs VHS tapes
 - rewrite tui-tabs tape to open a real second repo
-- regenerate all TUI VHS GIFs with updated layout
-### 🔄 CI
-- split release workflows by platform capability
 ### 🔧 Chores
 - add .zed/rules.md with project conventions for agents
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.3.9...v1.1.3
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v0.6.6...v0.7.1
 ## [0.3.2] - 2026-04-05
 ### 🐛 Bug Fixes
 - remove macOS x86_64 build target (no macos-13 runner available)
