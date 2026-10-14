@@ -171,7 +171,10 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         right_items,
     ]
     .align_y(Alignment::Center)
-    .padding([6, if compact { 8 } else { 12 }])
+    .padding([
+        if dims.compact_vertical { 2 } else { 6 },
+        if compact { 8 } else { 12 },
+    ])
     .width(Length::Fill);
 
     container(toolbar)

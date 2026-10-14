@@ -87,6 +87,8 @@ pub struct LayoutDims {
     pub minimal_toolbar: bool,
     /// Drop even the theme picker.
     pub tiny_toolbar: bool,
+    /// Short window: tighten vertical padding.
+    pub compact_vertical: bool,
 }
 
 impl LayoutDims {
@@ -142,6 +144,7 @@ impl LayoutDims {
             compact_toolbar: window_w < COMPACT_WIDTH,
             minimal_toolbar: window_w < MINIMAL_WIDTH,
             tiny_toolbar: window_w < TINY_WIDTH,
+            compact_vertical: window_h < SHORT_HEIGHT,
         }
     }
 }
@@ -203,6 +206,13 @@ impl crate::state::GitKraft {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn short_window_is_vertically_compact() {
+        let d = |h| LayoutDims::compute(1200.0, h, true, 250.0, 600.0, 300.0, 200.0);
+        assert!(d(SHORT_HEIGHT - 1.0).compact_vertical);
+        assert!(!d(SHORT_HEIGHT).compact_vertical);
+    }
+
     #[test]
     fn dialog_fits_window() {
         assert_eq!(super::clamp_dialog(1100.0, 2000.0), 1100.0);

@@ -31,6 +31,7 @@ use crate::view_utils;
 pub fn view(state: &GitKraft) -> Element<'_, Message> {
     let c = state.colors();
     let dims = state.layout();
+    let vpad = if dims.compact_vertical { 2 } else { 6 };
     let max_name = if dims.minimal_toolbar { 14 } else { 28 };
 
     let mut tabs_row = row![].spacing(2).align_y(Alignment::Center);
@@ -73,7 +74,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
         };
 
         let tab_btn = button(tab_content)
-            .padding([6, 10])
+            .padding([vpad, 10])
             .style(tab_style)
             .on_press(Message::SwitchTab(idx));
 
@@ -94,7 +95,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     // "+" button to open a new empty tab
     let new_tab_btn = button(icon!(icons::PLUS_CIRCLE, 14, c.text_secondary))
-        .padding([6, 10])
+        .padding([vpad, 10])
         .style(theme::ghost_button)
         .on_press(Message::NewTab);
 
