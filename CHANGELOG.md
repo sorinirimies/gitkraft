@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.6] - 2026-10-14
+### ✨ Features
+- deeper responsive layout — adaptive commit columns, diff min width, compact toolbars, stacked staging, clamped file list
+- responsive TUI layout, clamped GUI dialogs and sidebar scrim, System theme option (GUI + TUI)
+- header shortcut hints adapt to terminal width
+- vertical compact mode for short windows
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.2.5...v1.2.6
 ## [1.2.5] - 2026-10-14
 ### ✨ Features
 - responsive layout with clamped panes and overlay sidebar on narrow windows
