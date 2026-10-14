@@ -563,6 +563,10 @@ setup-gitea url: _check-nu
 migrate-gitea: _check-nu
     nu scripts/migrate_to_gitea.nu
 
+# Security: cargo-deny (advisories, licenses, bans, sources; needs `cargo install cargo-deny`)
+deny:
+    cargo deny check
+
 # Security: dependency vulnerability scan (needs `cargo install cargo-audit`)
 audit:
     cargo audit

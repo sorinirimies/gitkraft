@@ -70,7 +70,15 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
       - name: Install Nushell
-        run: cargo install nu --locked
+        run: |
+          if [ "$(uname -s)" = Linux ]; then
+            V=0.116.1
+            curl -fsSL https://github.com/nushell/nushell/releases/download/$V/nu-$V-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C /tmp
+            sudo install -m 0755 /tmp/nu-$V-x86_64-unknown-linux-gnu/nu /usr/local/bin/nu || { mkdir -p $HOME/.cargo/bin; install -m 0755 /tmp/nu-$V-x86_64-unknown-linux-gnu/nu $HOME/.cargo/bin/nu; }
+          else
+            cargo install nu --locked
+          fi
+          nu --version
       - name: Quality gate
         run: nu scripts/ci/quality_gate.nu
       - name: Security audit
@@ -131,7 +139,15 @@ jobs:
         run: cargo build --release -p gitkraft --target ${{ matrix.target }}
 
       - name: Install Nushell
-        run: cargo install nu --locked
+        run: |
+          if [ "$(uname -s)" = Linux ]; then
+            V=0.116.1
+            curl -fsSL https://github.com/nushell/nushell/releases/download/$V/nu-$V-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C /tmp
+            sudo install -m 0755 /tmp/nu-$V-x86_64-unknown-linux-gnu/nu /usr/local/bin/nu || { mkdir -p $HOME/.cargo/bin; install -m 0755 /tmp/nu-$V-x86_64-unknown-linux-gnu/nu $HOME/.cargo/bin/nu; }
+          else
+            cargo install nu --locked
+          fi
+          nu --version
 
       - name: Build .deb and .rpm
         run: nu scripts/ci/package_linux.nu ${{ needs.validate.outputs.version }} ${{ matrix.target }}
@@ -238,7 +254,15 @@ jobs:
       - name: Install git-cliff
         run: cargo install git-cliff --locked
       - name: Install Nushell
-        run: cargo install nu --locked
+        run: |
+          if [ "$(uname -s)" = Linux ]; then
+            V=0.116.1
+            curl -fsSL https://github.com/nushell/nushell/releases/download/$V/nu-$V-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C /tmp
+            sudo install -m 0755 /tmp/nu-$V-x86_64-unknown-linux-gnu/nu /usr/local/bin/nu || { mkdir -p $HOME/.cargo/bin; install -m 0755 /tmp/nu-$V-x86_64-unknown-linux-gnu/nu $HOME/.cargo/bin/nu; }
+          else
+            cargo install nu --locked
+          fi
+          nu --version
       - name: Generate release notes
         run: nu scripts/ci/release_notes.nu ${{ needs.validate.outputs.tag }}
 

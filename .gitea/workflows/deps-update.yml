@@ -133,7 +133,15 @@ jobs:
       # A fresh tag push triggers release.yml (on: push: tags: v*) on both.
       - name: Install Nushell (bump_version.nu needs it)
         if: steps.check.outputs.has_changes == 'true'
-        run: cargo install nu --locked
+        run: |
+          if [ "$(uname -s)" = Linux ]; then
+            V=0.116.1
+            curl -fsSL https://github.com/nushell/nushell/releases/download/$V/nu-$V-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C /tmp
+            sudo install -m 0755 /tmp/nu-$V-x86_64-unknown-linux-gnu/nu /usr/local/bin/nu || { mkdir -p $HOME/.cargo/bin; install -m 0755 /tmp/nu-$V-x86_64-unknown-linux-gnu/nu $HOME/.cargo/bin/nu; }
+          else
+            cargo install nu --locked
+          fi
+          nu --version
 
       - name: Install git-cliff (bump_version.nu uses it for CHANGELOG.md)
         if: steps.check.outputs.has_changes == 'true'
