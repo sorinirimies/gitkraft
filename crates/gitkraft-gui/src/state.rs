@@ -562,6 +562,8 @@ pub struct GitKraft {
     // ── Theme ─────────────────────────────────────────────────────────────
     /// Index into `gitkraft_core::THEME_NAMES` for the currently active theme.
     pub current_theme_index: usize,
+    /// Whether the theme follows the OS light/dark setting ("System").
+    pub follow_system: bool,
 
     // ── Persistence ───────────────────────────────────────────────────────
     /// Recently opened repositories (loaded from settings on startup).
@@ -629,11 +631,8 @@ impl GitKraft {
     /// that want to restore the full session should use
     /// [`Self::new_with_session_paths`] instead.
     fn from_settings(settings: gitkraft_core::AppSettings) -> Self {
-        let current_theme_index = settings
-            .theme_name
-            .as_deref()
-            .map(gitkraft_core::theme_index_by_name)
-            .unwrap_or(0);
+        let follow_system = settings.follow_system_theme();
+        let current_theme_index = settings.theme_index();
 
         let recent_repos = settings.recent_repos;
 
@@ -689,6 +688,7 @@ impl GitKraft {
             cursor_pos: Point::ORIGIN,
 
             current_theme_index,
+            follow_system,
 
             recent_repos,
 
@@ -934,7 +934,40 @@ impl GitKraft {
         true
     }
 
-    /// The display name of the currently active theme.
+    /// Name to persist for the current choice (`"System"` while following the OS).
+    pub fn persisted_theme_name(&self) -> &'static str {
+        if self.follow_system {
+            gitkraft_core::SYSTEM_THEME_NAME
+        } else {
+            self.current_theme_name()
+        }
+    }
+
+    /// Apply a pick-list choice (`THEME_COUNT` = System, otherwise a preset
+    /// index). Returns `false` for out-of-range values.
+    pub fn apply_theme_choice(&mut self, choice: usize) -> bool {
+        if choice == gitkraft_core::THEME_COUNT {
+            self.follow_system = true;
+            self.current_theme_index = gitkraft_core::current_system_theme_index();
+            true
+        } else if choice < gitkraft_core::THEME_COUNT {
+            self.follow_system = false;
+            self.current_theme_index = choice;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Re-read the OS appearance while following the system.
+    pub fn refresh_system_theme(&mut self) {
+        if self.follow_system {
+            self.current_theme_index = gitkraft_core::current_system_theme_index();
+        }
+    }
+
+    /// The display name of the currently active preset (the resolved preset
+    /// while following the system).
     pub fn current_theme_name(&self) -> &'static str {
         gitkraft_core::THEME_NAMES
             .get(self.current_theme_index)
@@ -3719,5 +3752,35 @@ mod tests {
         assert_eq!(tab.branch_context[1], Some("main".to_string()));
         // Commits with refs don't get a ghost.
         assert_eq!(tab.branch_context[0], None);
+    }
+
+    #[test]
+    fn theme_choice_system_follows_and_preset_stops() {
+        let mut state = GitKraft::new();
+        assert!(state.apply_theme_choice(gitkraft_core::THEME_COUNT));
+        assert!(state.follow_system);
+        assert_eq!(state.persisted_theme_name(), "System");
+        assert!(state.current_theme_index < gitkraft_core::THEME_COUNT);
+        let nord = gitkraft_core::theme_index_by_name("Nord");
+        assert!(state.apply_theme_choice(nord));
+        assert!(!state.follow_system);
+        assert_eq!(state.persisted_theme_name(), "Nord");
+        assert!(!state.apply_theme_choice(gitkraft_core::THEME_COUNT + 5));
+        assert_eq!(state.current_theme_index, nord);
+    }
+
+    #[test]
+    fn refresh_system_theme_only_when_following() {
+        let mut state = GitKraft::new();
+        state.follow_system = false;
+        state.current_theme_index = 9;
+        state.refresh_system_theme();
+        assert_eq!(state.current_theme_index, 9);
+        state.follow_system = true;
+        state.refresh_system_theme();
+        assert_eq!(
+            state.current_theme_index,
+            gitkraft_core::current_system_theme_index()
+        );
     }
 }

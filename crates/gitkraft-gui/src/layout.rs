@@ -146,6 +146,11 @@ impl LayoutDims {
     }
 }
 
+/// Clamp a dialog dimension so it fits the window with a margin.
+pub fn clamp_dialog(want: f32, window: f32) -> f32 {
+    want.min((window - 32.0).max(120.0))
+}
+
 /// Commit-log column sizes for a given pane width.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CommitColumns {
@@ -198,6 +203,13 @@ impl crate::state::GitKraft {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn dialog_fits_window() {
+        assert_eq!(super::clamp_dialog(1100.0, 2000.0), 1100.0);
+        assert_eq!(super::clamp_dialog(1100.0, 600.0), 568.0);
+        assert_eq!(super::clamp_dialog(700.0, 50.0), 120.0);
+    }
+
     use super::*;
 
     fn dims(w: f32, h: f32, exp: bool) -> LayoutDims {

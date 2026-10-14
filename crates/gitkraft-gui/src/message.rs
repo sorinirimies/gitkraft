@@ -325,8 +325,11 @@ pub enum Message {
     GitOperationResult(Result<RepoPayload, String>),
 
     /// User selected a different theme from the picker (by index into
-    /// `gitkraft_core::THEME_NAMES`).
+    /// `gitkraft_core::THEME_NAMES`; `THEME_COUNT` means "follow system").
     ThemeChanged(usize),
+
+    /// Periodic poll of the OS light/dark setting (only while following it).
+    SystemThemeTick,
 
     /// User selected a different editor from the picker.
     EditorChanged(gitkraft_core::Editor),

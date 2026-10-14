@@ -154,9 +154,11 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     ]
     .align_y(Alignment::Center);
     if !dims.tiny_toolbar {
-        right_items = right_items
-            .push(Space::new().width(8))
-            .push(theme_selector(state.current_theme_index, theme_w));
+        right_items = right_items.push(Space::new().width(8)).push(theme_selector(
+            state.current_theme_index,
+            state.follow_system,
+            theme_w,
+        ));
     }
     if !dims.minimal_toolbar {
         right_items = right_items

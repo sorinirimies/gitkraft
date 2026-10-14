@@ -9,6 +9,7 @@
 //! Call [`run`] with an optional repository path to start the TUI application.
 
 pub mod app;
+pub mod cli;
 pub mod events;
 pub mod features;
 pub mod layout;
@@ -134,6 +135,9 @@ where
 
         // Drain any results from background tasks before drawing.
         app.poll_background();
+
+        // Track OS light/dark changes while the theme follows the system.
+        app.refresh_system_theme();
 
         // ── Reactive git watcher ──────────────────────────────────────────
         // Spawn a background thread to watch the .git directory whenever:

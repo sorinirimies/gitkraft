@@ -4,7 +4,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem};
 use ratatui::Frame;
 
-use gitkraft_core::{Rgb, THEME_NAMES};
+use gitkraft_core::Rgb;
+
+use super::palette::{picker_name, PICKER_LEN};
 
 use crate::app::App;
 
@@ -16,25 +18,32 @@ fn rgb_to_color(rgb: Rgb) -> Color {
 /// Build the accent-colour swatch for each theme by pulling the `accent` field
 /// from the canonical core definition.  This replaces the old hand-maintained
 /// `THEME_COLORS` constant.
-fn accent_color_for_index(index: usize) -> Color {
+///
+/// `row` is a picker row (`0` = System, previewing the preset the OS currently
+/// resolves to; `n + 1` = preset `n`).
+fn accent_color_for_row(row: usize) -> Color {
+    let index = if row == 0 {
+        gitkraft_core::current_system_theme_index()
+    } else {
+        row - 1
+    };
     rgb_to_color(gitkraft_core::theme_by_index(index).accent)
 }
 
 /// Render the theme picker panel on the right side of the main content area.
 ///
 /// Shows a bordered block titled "Themes" with navigation hints at the top.
-/// Lists all theme names numbered 1–43. The current theme is highlighted with
+/// Lists "System" followed by every core preset. The current theme is highlighted with
 /// a reversed style and a `← ` arrow prefix.
 pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let theme = app.theme();
-    let current = app.current_theme_index;
+    let current = app.picker_index();
 
-    let items: Vec<ListItem> = THEME_NAMES
-        .iter()
-        .enumerate()
-        .map(|(i, name)| {
-            let number = format!("{:>2}. ", i + 1);
-            let color = accent_color_for_index(i);
+    let items: Vec<ListItem> = (0..PICKER_LEN)
+        .map(|i| {
+            let name = picker_name(i);
+            let number = format!("{:>2}. ", i);
+            let color = accent_color_for_row(i);
 
             if i == current {
                 // Highlighted row: arrow prefix, bold, custom background
@@ -54,7 +63,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(
-                        (*name).to_string(),
+                        name.to_string(),
                         Style::default()
                             .fg(color)
                             .bg(theme.sel_bg)
@@ -66,7 +75,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                 let line = Line::from(vec![
                     Span::styled("  ", Style::default().fg(theme.text_muted)),
                     Span::styled(number, Style::default().fg(theme.text_muted)),
-                    Span::styled((*name).to_string(), Style::default().fg(color)),
+                    Span::styled(name.to_string(), Style::default().fg(color)),
                 ]);
                 ListItem::new(line)
             }
@@ -74,7 +83,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         .collect();
 
     let block = Block::default()
-        .title(" Themes  ↑ prev  ↓/t next ")
+        .title(" Themes  ↑/k prev  ↓/j/t next  Enter/Esc close ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.border_active))
         .style(Style::default().bg(theme.bg));
@@ -90,4 +99,37 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let mut state = app.theme_list_state;
     frame.render_stateful_widget(list, area, &mut state);
     app.theme_list_state = state;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    fn draw(app: &mut App) -> String {
+        let mut term = Terminal::new(TestBackend::new(60, 52)).unwrap();
+        term.draw(|f| render(app, f, f.area())).unwrap();
+        let buf = term.backend().buffer().clone();
+        buf.content().iter().map(|c| c.symbol()).collect::<String>()
+    }
+
+    #[test]
+    fn picker_renders_system_and_presets() {
+        let mut app = App::new();
+        app.set_follow_system();
+        let out = draw(&mut app);
+        assert!(out.contains("System"));
+        assert!(out.contains("Default"));
+        assert!(out.contains("←"));
+    }
+
+    #[test]
+    fn picker_marks_selected_preset() {
+        let mut app = App::new();
+        app.set_theme(9);
+        let out = draw(&mut app);
+        assert!(out.contains("Dracula"));
+        assert_eq!(app.theme_list_state.selected(), Some(10));
+    }
 }

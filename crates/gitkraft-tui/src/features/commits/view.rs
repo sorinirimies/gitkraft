@@ -168,10 +168,7 @@ fn build_graph_spans(
                     ));
                 }
             } else {
-                spans.push(Span::styled(
-                    "  ".to_string(),
-                    Style::default().fg(Color::DarkGray),
-                ));
+                spans.push(Span::styled("  ".to_string(), Style::default()));
             }
         }
     }

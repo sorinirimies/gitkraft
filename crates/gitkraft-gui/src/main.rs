@@ -95,7 +95,12 @@ fn main() -> iced::Result {
             } else {
                 iced::Subscription::none()
             };
-            iced::Subscription::batch([keyboard, git_watcher, animation_ticker])
+            let system_theme = if state.follow_system {
+                iced::Subscription::run(system_theme_stream)
+            } else {
+                iced::Subscription::none()
+            };
+            iced::Subscription::batch([keyboard, git_watcher, animation_ticker, system_theme])
         })
         .scale_factor(|state: &GitKraft| state.ui_scale)
         .settings(Settings {
@@ -214,6 +219,15 @@ fn animation_tick_stream() -> impl futures::Stream<Item = gitkraft_gui::Message>
         // Subscription on its own thread-pool worker.
         std::thread::sleep(std::time::Duration::from_millis(100));
         Some((gitkraft_gui::Message::AnimationTick, ()))
+    })
+}
+
+/// Emits [`gitkraft_gui::Message::SystemThemeTick`] every 3 s (only subscribed
+/// while the theme follows the system).
+fn system_theme_stream() -> impl futures::Stream<Item = gitkraft_gui::Message> {
+    futures::stream::unfold((), |()| async {
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        Some((gitkraft_gui::Message::SystemThemeTick, ()))
     })
 }
 

@@ -971,13 +971,18 @@ impl GitKraft {
 
             // ── Persistence / misc ────────────────────────────────────────
             Message::ThemeChanged(index) => {
-                self.current_theme_index = *index;
+                if !self.apply_theme_choice(*index) {
+                    return Task::none();
+                }
                 // Persist the selected theme name on a background thread.
-                let name = gitkraft_core::THEME_NAMES
-                    .get(*index)
-                    .copied()
-                    .unwrap_or("Default");
-                crate::features::repo::commands::save_theme_async(name.to_string())
+                crate::features::repo::commands::save_theme_async(
+                    self.persisted_theme_name().to_string(),
+                )
+            }
+
+            Message::SystemThemeTick => {
+                self.refresh_system_theme();
+                Task::none()
             }
 
             Message::ThemeSaved(_)

@@ -1,6 +1,6 @@
 use ratatui::style::Color;
 
-use gitkraft_core::{AppTheme, Rgb};
+use gitkraft_core::{AppTheme, Rgb, SYSTEM_THEME_NAME, THEME_COUNT, THEME_NAMES};
 
 /// All the colour slots the UI needs.  Every view file should obtain a
 /// `UiTheme` via `app.theme()` and use these fields instead of hard-coding
@@ -64,6 +64,18 @@ fn rgb_to_color(rgb: Rgb) -> Color {
     Color::Rgb(rgb.r, rgb.g, rgb.b)
 }
 
+/// Number of picker rows: "System" followed by every core preset.
+pub const PICKER_LEN: usize = THEME_COUNT + 1;
+
+/// Label of picker row `i` (`0` = "System", `n + 1` = preset `n`).
+pub fn picker_name(i: usize) -> &'static str {
+    if i == 0 {
+        SYSTEM_THEME_NAME
+    } else {
+        THEME_NAMES.get(i - 1).copied().unwrap_or("Default")
+    }
+}
+
 /// Map a theme index (0–26) to a concrete `UiTheme` by delegating to the
 /// canonical definitions in `gitkraft_core`.
 pub fn theme_for_index(index: usize) -> UiTheme {
@@ -75,7 +87,6 @@ pub fn theme_for_index(index: usize) -> UiTheme {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gitkraft_core::THEME_COUNT;
 
     #[test]
     fn all_27_themes_resolve() {
@@ -88,6 +99,14 @@ mod tests {
                 "theme index {i} has identical active and inactive border colors"
             );
         }
+    }
+
+    #[test]
+    fn picker_lists_system_first_then_all_presets() {
+        assert_eq!(PICKER_LEN, THEME_COUNT + 1);
+        assert_eq!(picker_name(0), "System");
+        assert_eq!(picker_name(1), THEME_NAMES[0]);
+        assert_eq!(picker_name(PICKER_LEN - 1), THEME_NAMES[THEME_COUNT - 1]);
     }
 
     #[test]

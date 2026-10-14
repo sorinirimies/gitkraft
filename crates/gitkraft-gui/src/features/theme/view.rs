@@ -1,7 +1,7 @@
 //! Theme selector widget for the GitKraft GUI.
 //!
 //! Provides a [`pick_list()`] drop-down that lets the user switch between
-//! all 27 unified themes defined in `gitkraft_core` at runtime.
+//! "System" plus all unified themes defined in `gitkraft_core` at runtime.
 
 use iced::widget::pick_list;
 use iced::{Element, Length};
@@ -21,7 +21,7 @@ impl std::fmt::Display for ThemeChoice {
     }
 }
 
-/// All available themes as [`ThemeChoice`] values, derived from the canonical
+/// All core presets as [`ThemeChoice`] values, derived from the canonical
 /// core definitions.
 pub(crate) fn all_themes() -> Vec<ThemeChoice> {
     gitkraft_core::THEME_NAMES
@@ -31,14 +31,32 @@ pub(crate) fn all_themes() -> Vec<ThemeChoice> {
         .collect()
 }
 
+/// [`all_themes`] preceded by a "System" entry (index `THEME_COUNT`).
+pub(crate) fn theme_choices() -> Vec<ThemeChoice> {
+    let mut v = vec![ThemeChoice {
+        index: gitkraft_core::THEME_COUNT,
+        name: gitkraft_core::SYSTEM_THEME_NAME,
+    }];
+    v.extend(all_themes());
+    v
+}
+
 /// Create a theme selector [`pick_list()`] widget.
 ///
-/// The widget displays the name of the current theme and, when opened, lists
-/// every theme returned by [`all_themes`]. Selecting a new entry emits
-/// [`Message::ThemeChanged`] with the chosen theme index.
-pub(crate) fn theme_selector(current_theme_index: usize, width: f32) -> Element<'static, Message> {
-    let choices = all_themes();
-    let selected = choices.get(current_theme_index).cloned();
+/// Lists "System" first, then every preset. Selecting an entry emits
+/// [`Message::ThemeChanged`] (`THEME_COUNT` for System, else the preset index).
+pub(crate) fn theme_selector(
+    current_theme_index: usize,
+    follow_system: bool,
+    width: f32,
+) -> Element<'static, Message> {
+    let choices = theme_choices();
+    let selected = if follow_system {
+        choices.first().cloned()
+    } else {
+        // +1: the "System" entry is listed first.
+        choices.get(current_theme_index + 1).cloned()
+    };
 
     pick_list(choices, selected, |choice| {
         Message::ThemeChanged(choice.index)
@@ -47,4 +65,25 @@ pub(crate) fn theme_selector(current_theme_index: usize, width: f32) -> Element<
     .text_size(13.0)
     .width(Length::Fixed(width))
     .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn choices_lead_with_system() {
+        let c = theme_choices();
+        assert_eq!(c.len(), gitkraft_core::THEME_COUNT + 1);
+        assert_eq!(c[0].index, gitkraft_core::THEME_COUNT);
+        assert_eq!(c[0].name, "System");
+        assert_eq!(c[1].index, 0);
+    }
+
+    #[test]
+    fn all_themes_match_core() {
+        let t = all_themes();
+        assert_eq!(t.len(), gitkraft_core::THEME_COUNT);
+        assert!(t.iter().enumerate().all(|(i, c)| c.index == i));
+    }
 }

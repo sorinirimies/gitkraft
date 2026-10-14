@@ -161,7 +161,13 @@ impl GitKraft {
             let base = row![commit_log, diff_viewer]
                 .height(Length::Fill)
                 .width(Length::Fill);
-            iced::widget::stack![base, sidebar]
+            // Click outside the floating sidebar to close it.
+            let scrim = mouse_area(
+                container(Space::new().width(Length::Fill).height(Length::Fill))
+                    .style(theme::backdrop_style),
+            )
+            .on_press(Message::ToggleSidebar);
+            iced::widget::stack![base, scrim, sidebar]
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
@@ -439,6 +445,11 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
     };
     use iced::{Alignment, Length};
 
+    // Clamp dialog size to the window (16px margin each side).
+    let (win_w, win_h) = (state.window_width, state.window_height);
+    let sw = move |w: f32| crate::layout::clamp_dialog(w, win_w);
+    let sh = move |h: f32| crate::layout::clamp_dialog(h, win_h);
+
     let has_diff_files = !state.search_diff_files.is_empty();
     let has_diff_content = !state.search_diff_content.is_empty();
 
@@ -649,8 +660,8 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
         .height(Length::Fill);
 
         container(content)
-            .width(1100)
-            .height(600)
+            .width(sw(1100.0))
+            .height(sh(600.0))
             .style(theme::context_menu_style)
             .padding(8)
             .into()
@@ -775,8 +786,8 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
     } else {
         // No commit selected yet — just show the search panel
         container(left_panel)
-            .width(700)
-            .height(500)
+            .width(sw(700.0))
+            .height(sh(500.0))
             .style(theme::context_menu_style)
             .padding(8)
             .into()
