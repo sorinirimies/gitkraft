@@ -12,18 +12,18 @@ pub fn list_remotes(repo: &Repository) -> Result<Vec<RemoteInfo>> {
     let mut remotes = Vec::with_capacity(remote_names.len());
 
     for name in remote_names.iter() {
-        let name = name.unwrap_or("<invalid utf-8>");
+        let name = name.ok().flatten().unwrap_or("<invalid utf-8>");
         let remote = repo
             .find_remote(name)
             .with_context(|| format!("failed to find remote '{name}'"))?;
 
-        let url = remote.url().map(String::from);
+        let url = remote.url().ok().map(String::from);
 
         let mut fetch_refspecs = Vec::new();
         let refspecs = remote.refspecs();
         for refspec in refspecs {
             if refspec.direction() == git2::Direction::Fetch {
-                if let Some(s) = refspec.str() {
+                if let Ok(s) = refspec.str() {
                     fetch_refspecs.push(s.to_string());
                 }
             }

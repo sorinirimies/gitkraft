@@ -13,7 +13,7 @@ pub fn list_branches(repo: &Repository) -> Result<Vec<BranchInfo>> {
     let head_ref = repo.head().ok();
     let head_name = head_ref
         .as_ref()
-        .and_then(|r| r.shorthand().map(String::from));
+        .and_then(|r| r.shorthand().ok().map(String::from));
 
     for branch_result in repo.branches(None)? {
         let (branch, bt) = branch_result?;

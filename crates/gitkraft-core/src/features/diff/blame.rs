@@ -56,8 +56,13 @@ pub fn blame_file(repo: &Repository, file_path: &str) -> Result<Vec<BlameLine>> 
             let oid = commit_id.to_string();
 
             let sig = hunk.final_signature();
-            let author_name = sig.name().unwrap_or("?").to_string();
-            let time = chrono::TimeZone::timestamp_opt(&Utc, sig.when().seconds(), 0)
+            let author_name = sig
+                .as_ref()
+                .and_then(|s| s.name().ok())
+                .unwrap_or("?")
+                .to_string();
+            let secs = sig.as_ref().map_or(0, |s| s.when().seconds());
+            let time = chrono::TimeZone::timestamp_opt(&Utc, secs, 0)
                 .single()
                 .unwrap_or_else(chrono::Utc::now);
 

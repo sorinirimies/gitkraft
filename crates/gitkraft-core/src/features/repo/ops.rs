@@ -31,7 +31,7 @@ pub fn get_repo_info(repo: &Repository) -> Result<RepoInfo> {
 
     let head_branch = repo.head().ok().and_then(|reference| {
         if reference.is_branch() {
-            reference.shorthand().map(String::from)
+            reference.shorthand().ok().map(String::from)
         } else {
             // Detached HEAD — show the short OID instead
             reference.target().map(|oid| {

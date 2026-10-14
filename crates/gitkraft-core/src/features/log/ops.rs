@@ -90,7 +90,7 @@ pub fn search_commits(repo: &Repository, query: &str, max_count: usize) -> Resul
             .find_commit(oid)
             .context("failed to find commit during search")?;
 
-        let summary = commit.summary().unwrap_or("").to_lowercase();
+        let summary = commit.summary().ok().flatten().unwrap_or("").to_lowercase();
         let message = commit.message().unwrap_or("").to_lowercase();
         let author = commit.author();
         let author_name = author.name().unwrap_or("").to_lowercase();

@@ -77,7 +77,7 @@ impl CommitInfo {
             .single()
             .unwrap_or_else(chrono::Utc::now);
 
-        let summary = commit.summary().unwrap_or("").to_string();
+        let summary = commit.summary().ok().flatten().unwrap_or("").to_string();
         let message = commit.message().unwrap_or("").to_string();
 
         let author = commit.author();

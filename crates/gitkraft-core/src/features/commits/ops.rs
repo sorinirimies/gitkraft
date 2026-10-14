@@ -19,13 +19,13 @@ pub(crate) fn build_ref_map(repo: &Repository) -> HashMap<git2::Oid, Vec<RefLabe
         .head()
         .ok()
         .filter(|h| h.is_branch())
-        .and_then(|h| h.shorthand().map(|s| s.to_string()));
+        .and_then(|h| h.shorthand().ok().map(|s| s.to_string()));
 
     if let Ok(refs) = repo.references() {
         for rf in refs.flatten() {
             let full_name = match rf.name() {
-                Some(n) => n.to_string(),
-                None => continue,
+                Ok(n) => n.to_string(),
+                Err(_) => continue,
             };
             let oid = match rf.peel_to_commit() {
                 Ok(c) => c.id(),
