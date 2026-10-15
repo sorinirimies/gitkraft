@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.8] - 2026-10-15
+### ✨ Features
+- use tui-file-explorer (lightweight, no cli) for the o directory browser
+- move Settings and About into the header next to Fetch/Open/Close; keep version in tab bar
+### 🔄 CI
+- prebuilt Nushell, cargo-deny + cargo-audit security workflow
+### 🔧 Chores
+- push/pull current branch instead of hardcoded main
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.2.6...v1.2.8
 ## [1.2.6] - 2026-10-14
 ### ✨ Features
 - deeper responsive layout — adaptive commit columns, diff min width, compact toolbars, stacked staging, clamped file list
