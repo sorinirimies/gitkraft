@@ -21,6 +21,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_NET_RETRY: "10"
+  CARGO_HTTP_TIMEOUT: "120"
+  CARGO_HTTP_LOW_SPEED_LIMIT: "0"
 
 jobs:
   # ── 0. Validate tag ──────────────────────────────────────────────────────────
