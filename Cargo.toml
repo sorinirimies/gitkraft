@@ -24,7 +24,7 @@ anyhow       = "1"
 serde        = { version = "1", features = ["derive"] }
 serde_json   = "1"
 chrono       = { version = "0.4", features = ["serde"] }
-dirs         = "6.0"
+dirs         = "7.0"
 
 notify       = { version = "8.2.0", features = [] }
 futures      = "0.3"
@@ -43,8 +43,8 @@ arboard              = "3"
 ratatui              = "0.30"
 crossterm            = "0.29"
 tui-file-explorer    = { version = "3", default-features = false }
-tui-checkbox         = "0.4.6"
-tui-spinner          = "0.2.3"
+tui-checkbox         = "0.5.1"
+tui-spinner          = "0.5.0"
 tui-skeleton         = "0.3.0"
 
 # Internal crates
