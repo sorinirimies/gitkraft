@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.9] - 2026-10-17
+### 🔄 CI
+- harden cargo network retries/timeouts in release workflow
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.2.8...v1.2.9
 ## [1.2.8] - 2026-10-15
 ### ✨ Features
 - use tui-file-explorer (lightweight, no cli) for the o directory browser
@@ -78,19 +82,16 @@ All notable changes to this project will be documented in this file.
 - align git-cliff and changelog setup with tui-file-explorer
 **Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.1.4...v1.1.5
 ## [1.1.4] - 2026-06-26
-### 🐛 Bug Fixes
-- resolve all 4 release build failures
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.1.3...v1.1.4
-## [1.1.3] - 2026-06-26
 ### ♻️  Refactor
 - harden safety, memory, and reliability across all crates
 ### ✨ Features
 - multi-platform packaging and distribution
 ### 🐛 Bug Fixes
 - resolve clippy errors blocking release gate
+- resolve all 4 release build failures
 ### 🔄 CI
 - split release workflows by platform capability
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.1.2...v1.1.3
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.1.2...v1.1.4
 ## [0.9.0] - 2026-05-02
 ### 🐛 Bug Fixes
 - broken rustdoc link to private render_main function
