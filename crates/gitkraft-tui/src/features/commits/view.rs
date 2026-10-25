@@ -396,8 +396,7 @@ mod tests {
 
     #[test]
     fn push_ref_badges_empty_refs_adds_nothing() {
-        let theme =
-            crate::features::theme::palette::UiTheme::from_core(&gitkraft_core::theme_by_index(0));
+        let theme = crate::features::theme::palette::theme_for_index(0);
         let mut spans: Vec<Span<'static>> = Vec::new();
         push_ref_badges(&mut spans, &[], &theme, 3);
         assert!(spans.is_empty());
@@ -405,8 +404,7 @@ mod tests {
 
     #[test]
     fn push_ref_badges_respects_max() {
-        let theme =
-            crate::features::theme::palette::UiTheme::from_core(&gitkraft_core::theme_by_index(0));
+        let theme = crate::features::theme::palette::theme_for_index(0);
         let refs = vec![
             gitkraft_core::RefLabel {
                 name: "main".into(),
@@ -433,8 +431,7 @@ mod tests {
 
     #[test]
     fn push_ref_badges_contains_ref_name() {
-        let theme =
-            crate::features::theme::palette::UiTheme::from_core(&gitkraft_core::theme_by_index(0));
+        let theme = crate::features::theme::palette::theme_for_index(0);
         let refs = vec![gitkraft_core::RefLabel {
             name: "main".into(),
             kind: gitkraft_core::RefKind::Head,

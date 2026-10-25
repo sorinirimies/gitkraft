@@ -48,7 +48,7 @@ mod tests {
         handle_key(&mut app, key(KeyCode::Up));
         assert_eq!(
             app.picker_index(),
-            crate::features::theme::palette::PICKER_LEN - 1
+            crate::features::theme::palette::picker_len() - 1
         );
         handle_key(&mut app, key(KeyCode::Esc));
         assert!(!app.show_theme_panel);

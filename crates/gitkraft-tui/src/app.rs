@@ -5,7 +5,7 @@ use std::sync::mpsc;
 
 use gitkraft_core::*;
 
-use crate::features::theme::palette::PICKER_LEN;
+use crate::features::theme::palette::{self, picker_len};
 
 /// Maximum number of per-file diffs cached per tab.
 /// Once this limit is reached the entire cache is cleared before inserting
@@ -492,7 +492,11 @@ impl App {
             gitkraft_core::features::persistence::load_tui_settings().unwrap_or_default();
 
         let follow_system = settings.follow_system_theme();
-        let theme_index = settings.theme_index();
+        let theme_index = match settings.theme_name.as_deref() {
+            Some(n) if gitkraft_core::is_system_name(n) => palette::system_index(),
+            Some(n) => palette::index_by_name(n),
+            None => 0,
+        };
 
         let recent_repos = settings.recent_repos;
 
@@ -642,14 +646,14 @@ impl App {
     /// Pick preset `index` (stops following the system). Does not persist.
     pub fn set_theme(&mut self, index: usize) {
         self.follow_system = false;
-        self.current_theme_index = index.min(gitkraft_core::THEME_COUNT - 1);
+        self.current_theme_index = index.min(palette::theme_count() - 1);
         self.sync_theme_list();
     }
 
     /// Follow the OS light/dark setting. Does not persist.
     pub fn set_follow_system(&mut self) {
         self.follow_system = true;
-        self.current_theme_index = gitkraft_core::current_system_theme_index();
+        self.current_theme_index = palette::system_index();
         self.last_system_check = std::time::Instant::now();
         self.sync_theme_list();
     }
@@ -670,7 +674,7 @@ impl App {
 
     /// Select picker entry `i` (`0` = System, `n + 1` = preset `n`).
     pub fn select_picker(&mut self, i: usize) {
-        let i = i.min(PICKER_LEN - 1);
+        let i = i.min(picker_len() - 1);
         if i == 0 {
             self.set_follow_system();
         } else {
@@ -680,7 +684,7 @@ impl App {
 
     /// Move `delta` entries through the picker (System + all presets), wrapping.
     pub fn cycle_theme(&mut self, delta: isize) {
-        let n = PICKER_LEN as isize;
+        let n = picker_len() as isize;
         let next = (self.picker_index() as isize + delta).rem_euclid(n) as usize;
         self.select_picker(next);
         self.tab_mut().status_message = Some(format!("Theme: {}", self.current_theme_name()));
@@ -700,7 +704,7 @@ impl App {
             return;
         }
         self.last_system_check = std::time::Instant::now();
-        self.current_theme_index = gitkraft_core::current_system_theme_index();
+        self.current_theme_index = palette::system_index();
     }
 
     /// Name shown/persisted for the current choice (`"System"` while following).
@@ -708,10 +712,10 @@ impl App {
         if self.follow_system {
             return gitkraft_core::SYSTEM_THEME_NAME;
         }
-        gitkraft_core::THEME_NAMES
+        palette::theme_names()
             .get(self.current_theme_index)
             .copied()
-            .unwrap_or("Default")
+            .unwrap_or("default")
     }
 
     /// Return the `UiTheme` for the currently active preset.
@@ -2616,7 +2620,7 @@ mod tests {
         app.cycle_theme_next();
         assert_eq!(app.current_theme_index, 1);
         assert!(!app.follow_system);
-        for _ in 0..gitkraft_core::THEME_COUNT - 1 {
+        for _ in 0..palette::theme_count() - 1 {
             app.cycle_theme_next();
         }
         assert!(app.follow_system); // wrapped onto System
@@ -2632,7 +2636,7 @@ mod tests {
         app.cycle_theme_prev();
         assert!(app.follow_system); // System sits before preset 0
         app.cycle_theme_prev();
-        assert_eq!(app.current_theme_index, gitkraft_core::THEME_COUNT - 1);
+        assert_eq!(app.current_theme_index, palette::theme_count() - 1);
         assert!(!app.follow_system);
     }
 
@@ -2642,14 +2646,12 @@ mod tests {
         app.set_follow_system();
         assert_eq!(app.picker_index(), 0);
         assert_eq!(app.current_theme_name(), "System");
-        assert_eq!(
-            app.current_theme_index,
-            gitkraft_core::current_system_theme_index()
-        );
-        app.set_theme(9);
-        assert_eq!(app.picker_index(), 10);
-        assert_eq!(app.current_theme_name(), "Dracula");
-        assert_eq!(app.theme_list_state.selected(), Some(10));
+        assert_eq!(app.current_theme_index, palette::system_index());
+        let d = palette::index_by_name("dracula");
+        app.set_theme(d);
+        assert_eq!(app.picker_index(), d + 1);
+        assert_eq!(app.current_theme_name(), "dracula");
+        assert_eq!(app.theme_list_state.selected(), Some(d + 1));
     }
 
     #[test]
@@ -2658,7 +2660,7 @@ mod tests {
         app.select_picker(0);
         assert!(app.follow_system);
         app.select_picker(999);
-        assert_eq!(app.current_theme_index, gitkraft_core::THEME_COUNT - 1);
+        assert_eq!(app.current_theme_index, palette::theme_count() - 1);
         app.select_picker(1);
         assert_eq!(app.current_theme_index, 0);
     }
@@ -2675,10 +2677,7 @@ mod tests {
         assert_eq!(app.current_theme_index, 5);
         app.last_system_check = std::time::Instant::now() - std::time::Duration::from_secs(5);
         app.refresh_system_theme();
-        assert_eq!(
-            app.current_theme_index,
-            gitkraft_core::current_system_theme_index()
-        );
+        assert_eq!(app.current_theme_index, palette::system_index());
     }
 
     #[test]
@@ -2686,10 +2685,10 @@ mod tests {
         let mut app = App::new();
         app.current_theme_index = 0;
         let theme = app.theme();
-        // Default theme active border comes from the core accent (80, 200, 255)
+        // Active border comes from the tui-nuances default theme.
         assert_eq!(
-            format!("{:?}", theme.border_active),
-            format!("{:?}", ratatui::style::Color::Rgb(80, 200, 255))
+            theme.border_active,
+            tui_nuances::Theme::default().border_focused
         );
     }
 

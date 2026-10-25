@@ -32,3 +32,4 @@ notify             = { workspace = true }
 tui-spinner        = { workspace = true }
 tui-skeleton       = { workspace = true }
 tui-file-explorer  = { workspace = true }
+tui-nuances        = { workspace = true }

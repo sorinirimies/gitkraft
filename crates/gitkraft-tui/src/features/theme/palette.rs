@@ -1,6 +1,9 @@
-use ratatui::style::Color;
+use std::sync::OnceLock;
 
-use gitkraft_core::{AppTheme, Rgb, SYSTEM_THEME_NAME, THEME_COUNT, THEME_NAMES};
+use ratatui::style::Color;
+use tui_nuances::Theme;
+
+use gitkraft_core::SYSTEM_THEME_NAME;
 
 /// All the colour slots the UI needs.  Every view file should obtain a
 /// `UiTheme` via `app.theme()` and use these fields instead of hard-coding
@@ -41,60 +44,79 @@ impl UiTheme {
         }
     }
 
-    /// Convert from the core's platform-agnostic theme.
-    pub fn from_core(t: &AppTheme) -> Self {
-        let gc = &t.graph_colors;
+    /// Derive the UI colours from a [`tui_nuances::Theme`] — the single source
+    /// of truth for every palette.
+    pub fn from_nuances(t: &Theme) -> Self {
+        let pal = t.colors();
+        let lane = |i: usize| pal.get(i % pal.len().max(1)).copied().unwrap_or(t.accent);
         Self {
-            border_active: rgb_to_color(t.accent),
-            border_inactive: rgb_to_color(t.border),
-            text_primary: rgb_to_color(t.text_primary),
-            text_secondary: rgb_to_color(t.text_secondary),
-            text_muted: rgb_to_color(t.text_muted),
-            accent: rgb_to_color(t.accent),
-            success: rgb_to_color(t.success),
-            warning: rgb_to_color(t.warning),
-            error: rgb_to_color(t.error),
-            diff_add: rgb_to_color(t.diff_add),
-            diff_del: rgb_to_color(t.diff_del),
-            diff_context: rgb_to_color(t.diff_context),
-            diff_hunk: rgb_to_color(t.diff_hunk),
-            sel_bg: rgb_to_color(t.selection),
-            bg: rgb_to_color(t.background),
-            graph_colors: [
-                rgb_to_color(gc[0]),
-                rgb_to_color(gc[1]),
-                rgb_to_color(gc[2]),
-                rgb_to_color(gc[3]),
-                rgb_to_color(gc[4]),
-                rgb_to_color(gc[5]),
-                rgb_to_color(gc[6]),
-                rgb_to_color(gc[7]),
-            ],
+            border_active: t.border_focused,
+            border_inactive: t.border,
+            text_primary: t.foreground,
+            text_secondary: t.secondary,
+            text_muted: t.muted,
+            accent: t.accent,
+            success: t.success,
+            warning: t.warning,
+            error: t.error,
+            diff_add: t.success,
+            diff_del: t.error,
+            diff_context: t.muted,
+            diff_hunk: t.info,
+            sel_bg: t.selection_bg,
+            bg: t.background.unwrap_or(Color::Reset),
+            graph_colors: std::array::from_fn(lane),
         }
     }
 }
 
-/// Convert a core [`Rgb`] to a ratatui [`Color`].
-fn rgb_to_color(rgb: Rgb) -> Color {
-    Color::Rgb(rgb.r, rgb.g, rgb.b)
+fn themes() -> &'static [Theme] {
+    static THEMES: OnceLock<Vec<Theme>> = OnceLock::new();
+    THEMES.get_or_init(Theme::all)
 }
 
-/// Number of picker rows: "System" followed by every core preset.
-pub const PICKER_LEN: usize = THEME_COUNT + 1;
+/// Names of every `tui-nuances` theme, in picker order.
+pub fn theme_names() -> &'static [&'static str] {
+    static NAMES: OnceLock<Vec<&'static str>> = OnceLock::new();
+    NAMES.get_or_init(Theme::names)
+}
+
+/// Number of themes (excluding the "System" pseudo-theme).
+pub fn theme_count() -> usize {
+    theme_names().len()
+}
+
+/// Index of a theme by name (case/space/accent-insensitive); `0` if unknown.
+pub fn index_by_name(name: &str) -> usize {
+    Theme::by_name(name)
+        .and_then(|t| theme_names().iter().position(|n| *n == t.name))
+        .unwrap_or(0)
+}
+
+/// Index of the theme matching the OS appearance (dark if undetectable).
+pub fn system_index() -> usize {
+    let dark = gitkraft_core::detect_system_dark().unwrap_or(true);
+    index_by_name(if dark { "default" } else { "default-light" })
+}
+
+/// Number of picker rows: "System" followed by every theme.
+pub fn picker_len() -> usize {
+    theme_count() + 1
+}
 
 /// Label of picker row `i` (`0` = "System", `n + 1` = preset `n`).
 pub fn picker_name(i: usize) -> &'static str {
     if i == 0 {
         SYSTEM_THEME_NAME
     } else {
-        THEME_NAMES.get(i - 1).copied().unwrap_or("Default")
+        theme_names().get(i - 1).copied().unwrap_or("default")
     }
 }
 
-/// Map a theme index (0–26) to a concrete `UiTheme` by delegating to the
-/// canonical definitions in `gitkraft_core`.
+/// Map a theme index to a concrete `UiTheme` (out of range → first theme).
 pub fn theme_for_index(index: usize) -> UiTheme {
-    UiTheme::from_core(&gitkraft_core::theme_by_index(index))
+    let all = themes();
+    UiTheme::from_nuances(all.get(index).unwrap_or(&all[0]))
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -104,10 +126,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_27_themes_resolve() {
-        for i in 0..THEME_COUNT {
+    fn all_themes_resolve() {
+        for i in 0..theme_count() {
             let theme = theme_for_index(i);
-            // Just verify it doesn't panic and returns distinct active/inactive borders
             assert_ne!(
                 format!("{:?}", theme.border_active),
                 format!("{:?}", theme.border_inactive),
@@ -117,15 +138,38 @@ mod tests {
     }
 
     #[test]
-    fn picker_lists_system_first_then_all_presets() {
-        assert_eq!(PICKER_LEN, THEME_COUNT + 1);
-        assert_eq!(picker_name(0), "System");
-        assert_eq!(picker_name(1), THEME_NAMES[0]);
-        assert_eq!(picker_name(PICKER_LEN - 1), THEME_NAMES[THEME_COUNT - 1]);
+    fn nuances_is_the_source_and_covers_gitkraft_themes() {
+        assert!(theme_count() >= 43);
+        for n in [
+            "dracula",
+            "nord",
+            "synthwave",
+            "kanagawa-wave",
+            "default-light",
+        ] {
+            assert!(theme_names().contains(&n), "{n} missing");
+        }
+        // Legacy gitkraft display names still resolve.
+        assert_eq!(
+            index_by_name("Catppuccin Frappé"),
+            index_by_name("catppuccin-frappe")
+        );
+        assert_ne!(index_by_name("Dracula"), 0);
     }
 
     #[test]
-    fn out_of_range_returns_default() {
+    fn picker_lists_system_first_then_all_themes() {
+        assert_eq!(picker_len(), theme_count() + 1);
+        assert_eq!(picker_name(0), "System");
+        assert_eq!(picker_name(1), theme_names()[0]);
+        assert_eq!(
+            picker_name(picker_len() - 1),
+            theme_names()[theme_count() - 1]
+        );
+    }
+
+    #[test]
+    fn out_of_range_returns_first() {
         let d = theme_for_index(0);
         let oob = theme_for_index(999);
         assert_eq!(
@@ -135,24 +179,11 @@ mod tests {
     }
 
     #[test]
-    fn from_core_round_trips_rgb() {
-        let core_theme = gitkraft_core::theme_by_index(8); // Dracula
-        let ui = UiTheme::from_core(&core_theme);
-        assert_eq!(
-            ui.bg,
-            Color::Rgb(
-                core_theme.background.r,
-                core_theme.background.g,
-                core_theme.background.b
-            )
-        );
-        assert_eq!(
-            ui.accent,
-            Color::Rgb(
-                core_theme.accent.r,
-                core_theme.accent.g,
-                core_theme.accent.b
-            )
-        );
+    fn from_nuances_maps_slots() {
+        let t = Theme::dracula();
+        let ui = UiTheme::from_nuances(&t);
+        assert_eq!(ui.accent, t.accent);
+        assert_eq!(Some(ui.bg), t.background);
+        assert_eq!(ui.graph_colors[0], t.colors()[0]);
     }
 }

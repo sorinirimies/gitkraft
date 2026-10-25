@@ -4,30 +4,19 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem};
 use ratatui::Frame;
 
-use gitkraft_core::Rgb;
-
-use super::palette::{picker_name, PICKER_LEN};
+use super::palette::{picker_len, picker_name, system_index, theme_for_index};
 
 use crate::app::App;
 
-/// Convert a core [`Rgb`] to a ratatui [`Color`].
-fn rgb_to_color(rgb: Rgb) -> Color {
-    Color::Rgb(rgb.r, rgb.g, rgb.b)
-}
-
 /// Build the accent-colour swatch for each theme by pulling the `accent` field
-/// from the canonical core definition.  This replaces the old hand-maintained
+/// from the `tui-nuances` theme.  This replaces the old hand-maintained
 /// `THEME_COLORS` constant.
 ///
 /// `row` is a picker row (`0` = System, previewing the preset the OS currently
 /// resolves to; `n + 1` = preset `n`).
 fn accent_color_for_row(row: usize) -> Color {
-    let index = if row == 0 {
-        gitkraft_core::current_system_theme_index()
-    } else {
-        row - 1
-    };
-    rgb_to_color(gitkraft_core::theme_by_index(index).accent)
+    let index = if row == 0 { system_index() } else { row - 1 };
+    theme_for_index(index).accent
 }
 
 /// Render the theme picker panel on the right side of the main content area.
@@ -39,7 +28,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let theme = app.theme();
     let current = app.picker_index();
 
-    let items: Vec<ListItem> = (0..PICKER_LEN)
+    let items: Vec<ListItem> = (0..picker_len())
         .map(|i| {
             let name = picker_name(i);
             let number = format!("{:>2}. ", i);
@@ -120,16 +109,17 @@ mod tests {
         app.set_follow_system();
         let out = draw(&mut app);
         assert!(out.contains("System"));
-        assert!(out.contains("Default"));
+        assert!(out.contains("default"));
         assert!(out.contains("←"));
     }
 
     #[test]
     fn picker_marks_selected_preset() {
         let mut app = App::new();
-        app.set_theme(9);
+        let d = super::super::palette::index_by_name("dracula");
+        app.set_theme(d);
         let out = draw(&mut app);
-        assert!(out.contains("Dracula"));
-        assert_eq!(app.theme_list_state.selected(), Some(10));
+        assert!(out.contains("dracula"));
+        assert_eq!(app.theme_list_state.selected(), Some(d + 1));
     }
 }
