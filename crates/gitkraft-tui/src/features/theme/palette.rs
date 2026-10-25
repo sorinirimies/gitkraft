@@ -47,8 +47,6 @@ impl UiTheme {
     /// Derive the UI colours from a [`tui_nuances::Theme`] — the single source
     /// of truth for every palette.
     pub fn from_nuances(t: &Theme) -> Self {
-        let pal = t.colors();
-        let lane = |i: usize| pal.get(i % pal.len().max(1)).copied().unwrap_or(t.accent);
         Self {
             border_active: t.border_focused,
             border_inactive: t.border,
@@ -65,7 +63,7 @@ impl UiTheme {
             diff_hunk: t.info,
             sel_bg: t.selection_bg,
             bg: t.background.unwrap_or(Color::Reset),
-            graph_colors: std::array::from_fn(lane),
+            graph_colors: std::array::from_fn(|i| t.color(i)),
         }
     }
 }
@@ -184,6 +182,6 @@ mod tests {
         let ui = UiTheme::from_nuances(&t);
         assert_eq!(ui.accent, t.accent);
         assert_eq!(Some(ui.bg), t.background);
-        assert_eq!(ui.graph_colors[0], t.colors()[0]);
+        assert_eq!(ui.graph_colors[0], t.color(0));
     }
 }
