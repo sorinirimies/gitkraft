@@ -723,6 +723,11 @@ impl App {
         crate::features::theme::palette::theme_for_index(self.current_theme_index)
     }
 
+    /// The active `tui-nuances` theme (used by embedded `tui-nuances`-aware widgets).
+    pub fn nuances_theme(&self) -> tui_nuances::Theme {
+        crate::features::theme::palette::nuances_theme_for_index(self.current_theme_index)
+    }
+
     /// Persist the current theme selection to disk.
     pub fn save_theme(&self) {
         if cfg!(test) {

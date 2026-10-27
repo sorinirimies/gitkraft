@@ -29,21 +29,6 @@ pub struct UiTheme {
 }
 
 impl UiTheme {
-    /// Colours for the embedded `tui-file-explorer` widget.
-    pub fn file_explorer_theme(&self) -> tui_file_explorer::Theme {
-        tui_file_explorer::Theme {
-            brand: self.accent,
-            accent: self.border_active,
-            success: self.success,
-            dim: self.text_muted,
-            fg: self.text_primary,
-            sel_bg: self.sel_bg,
-            dir: self.accent,
-            match_file: self.success,
-            bg: self.bg,
-        }
-    }
-
     /// Derive the UI colours from a [`tui_nuances::Theme`] — the single source
     /// of truth for every palette.
     pub fn from_nuances(t: &Theme) -> Self {
@@ -112,6 +97,12 @@ pub fn picker_name(i: usize) -> &'static str {
 }
 
 /// Map a theme index to a concrete `UiTheme` (out of range → first theme).
+/// The raw `tui-nuances` theme at `index` (falls back to the first theme).
+pub fn nuances_theme_for_index(index: usize) -> Theme {
+    let all = themes();
+    all.get(index).unwrap_or(&all[0]).clone()
+}
+
 pub fn theme_for_index(index: usize) -> UiTheme {
     let all = themes();
     UiTheme::from_nuances(all.get(index).unwrap_or(&all[0]))

@@ -42,7 +42,7 @@ rfd          = "0.17"
 arboard              = "3"
 ratatui              = "0.30"
 crossterm            = "0.29"
-tui-file-explorer    = { version = "3", default-features = false }
+tui-file-explorer    = { version = "4", default-features = false }
 tui-checkbox         = "0.5.1"
 tui-spinner          = "0.5.0"
 tui-skeleton         = "0.3.0"

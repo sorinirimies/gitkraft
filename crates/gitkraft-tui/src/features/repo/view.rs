@@ -153,9 +153,9 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
 
 /// Render the directory browser screen with the `tui-file-explorer` widget.
 pub fn render_browser(app: &mut App, frame: &mut Frame, area: Rect) {
-    let theme = app.theme().file_explorer_theme();
+    let theme = app.nuances_theme();
     if let Some(explorer) = app.browser.as_mut() {
-        tui_file_explorer::render_themed(explorer, frame, area, &theme);
+        tui_file_explorer::render_nuanced(explorer, frame, area, &theme);
     }
 }
 

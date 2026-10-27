@@ -4540,13 +4540,14 @@ dependencies = [
 
 [[package]]
 name = "tui-file-explorer"
-version = "3.0.2"
+version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0f4682faf9b7dd7d1c1743112d47d9e64b6ca2e4f604616657aeb056d29f37b"
+checksum = "32c0c5529ee2d8fa59fb5f9411f4f9add5c9f5606130fcc01cb9b7957aee2b67"
 dependencies = [
  "crossterm",
  "libc",
  "ratatui",
+ "tui-nuances",
  "windows-sys 0.61.2",
 ]
 
