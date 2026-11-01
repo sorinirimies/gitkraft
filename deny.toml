@@ -6,9 +6,10 @@ all-features = true
 version = 2
 # Documented ignores: no upstream fix available (transitive via git2 / iced).
 ignore = [
-    "RUSTSEC-2026-0183", # git2 unsound Remote::list(); no fix yet, not reachable from our usage
-    "RUSTSEC-2026-0184", # git2 unsound BlameHunk Signature; no fix yet
     "RUSTSEC-2024-0436", # paste unmaintained (transitive via iced/wgpu)
+    "RUSTSEC-2026-0370", # zvariant/zbus_names unmaintained (transitive via iced_winit -> mundy -> zbus); no safe upgrade
+    "RUSTSEC-2026-0371", # zbus_names unmaintained (same chain)
+    "RUSTSEC-2026-0372", # zvariant_derive unmaintained (same chain)
     "RUSTSEC-2026-0192", # ttf-parser unmaintained (transitive via iced/cosmic-text)
 ]
 
