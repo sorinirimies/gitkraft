@@ -178,9 +178,10 @@ jobs:
             libfontconfig1-dev \
             libssl-dev
 
-      # Use nightly for doc(cfg) and intra-doc link checking.
-      - name: Install Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
+      # Stable: nightly rustc currently ICEs on zvariant_utils (async-drop
+      # query cycle), and the crates don't use doc(cfg).
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
