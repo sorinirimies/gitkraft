@@ -363,10 +363,16 @@ remotes:
     @git remote -v
 
 # ── Git remotes & pushing ────────────────────────────────────────────────────
+# All configured hosting remotes. Recipes skip remotes that are not configured.
+REMOTES := "origin gitea-microlab gitea-starscream gitea-nexus-lab"
 
 # Push the current branch to GitHub (origin)
 push:
     git push origin "$(git branch --show-current)"
+
+# Force-push the current branch to GitHub (use with care)
+push-force:
+    git push --force origin "$(git branch --show-current)"
 
 # Push the current branch to Gitea Microlab
 push-gitea-microlab:
@@ -380,45 +386,29 @@ push-gitea-starscream:
 push-gitea-nexus-lab:
     git push gitea-nexus-lab "$(git branch --show-current)"
 
-# Push the current branch to all remotes (continues on failure)
+# Push the current branch to all configured remotes (continues on failure)
 push-all:
     #!/usr/bin/env sh
-    git_try() {
-        r=$1; shift
-        if git remote get-url "$r" >/dev/null 2>&1; then "$@"; else echo "↷ skipping $r (not configured here; add with: git remote add $r <url>)"; skipped="$skipped $r"; fi
-    }
-    skipped=""
-    failed=""
-    git_try origin git push origin "$(git branch --show-current)"             || failed="$failed origin"
-    git_try gitea-microlab git push gitea-microlab "$(git branch --show-current)"     || failed="$failed gitea-microlab"
-    git_try gitea-starscream git push gitea-starscream "$(git branch --show-current)"   || failed="$failed gitea-starscream"
-    git_try gitea-nexus-lab git push gitea-nexus-lab "$(git branch --show-current)"    || failed="$failed gitea-nexus-lab"
+    failed=""; skipped=""
+    for r in {{ REMOTES }}; do
+        git remote get-url "$r" >/dev/null 2>&1 || { echo "↷ skipping $r (not configured here; add with: git remote add $r <url>)"; skipped="$skipped $r"; continue; }
+        git push "$r" "$(git branch --show-current)" || failed="$failed $r"
+    done
     if [ -n "$skipped" ]; then echo "ℹ️  Skipped (not configured):$skipped"; fi
-    if [ -n "$failed" ]; then
-        echo "⚠️  Failed to push to:$failed"
-    else
-        echo "✅ Pushed to GitHub, Gitea Microlab, Gitea Starscream, and Gitea (nexus-lab)!"
-    fi
+    if [ -n "$failed" ]; then echo "⚠️  Failed to push to:$failed"; exit 1; fi
+    echo "✅ Pushed to: {{ REMOTES }}"
 
-# Force-push the current branch to all remotes
+# Force-push the current branch to all configured remotes (leases are not used)
 push-all-force:
     #!/usr/bin/env sh
-    git_try() {
-        r=$1; shift
-        if git remote get-url "$r" >/dev/null 2>&1; then "$@"; else echo "↷ skipping $r (not configured here; add with: git remote add $r <url>)"; skipped="$skipped $r"; fi
-    }
-    skipped=""
-    failed=""
-    git_try origin git push --force origin "$(git branch --show-current)"             || failed="$failed origin"
-    git_try gitea-microlab git push --force gitea-microlab "$(git branch --show-current)"     || failed="$failed gitea-microlab"
-    git_try gitea-starscream git push --force gitea-starscream "$(git branch --show-current)"   || failed="$failed gitea-starscream"
-    git_try gitea-nexus-lab git push --force gitea-nexus-lab "$(git branch --show-current)"    || failed="$failed gitea-nexus-lab"
+    failed=""; skipped=""
+    for r in {{ REMOTES }}; do
+        git remote get-url "$r" >/dev/null 2>&1 || { echo "↷ skipping $r (not configured here; add with: git remote add $r <url>)"; skipped="$skipped $r"; continue; }
+        git push --force "$r" "$(git branch --show-current)" || failed="$failed $r"
+    done
     if [ -n "$skipped" ]; then echo "ℹ️  Skipped (not configured):$skipped"; fi
-    if [ -n "$failed" ]; then
-        echo "⚠️  Failed to force-push to:$failed"
-    else
-        echo "✅ Force-pushed to GitHub, Gitea Microlab, Gitea Starscream, and Gitea (nexus-lab)!"
-    fi
+    if [ -n "$failed" ]; then echo "⚠️  Failed to force-push to:$failed"; exit 1; fi
+    echo "✅ Force-pushed to: {{ REMOTES }}"
 
 # Pull the current branch from GitHub (origin)
 pull:
@@ -528,6 +518,11 @@ release-all version: (bump version)
         echo "✅ Release v{{ version }} pushed to GitHub, Gitea Microlab, Gitea Starscream, and Gitea (nexus-lab)!"
     fi
 
+# Push the latest commit and all tags to GitHub (no bump, after check-all).
+push-release: check-all
+    git push --follow-tags origin "$(git branch --show-current)"
+    @echo "✅ Latest commit + tags pushed to GitHub."
+
 # Push the latest commit and all tags to every remote (no bump, continues on failure).
 push-release-all: check-all
     #!/usr/bin/env sh
@@ -544,6 +539,7 @@ push-release-all: check-all
     if [ -n "$skipped" ]; then echo "ℹ️  Skipped (not configured):$skipped"; fi
     if [ -n "$failed" ]; then
         echo "⚠️  Failed to push to:$failed"
+        exit 1
     else
         echo "✅ Latest commit + tags pushed to all remotes."
     fi
