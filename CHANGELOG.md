@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.14] - 2026-11-02
+### 📚 Documentation
+- this repo's agent rules as a project skill in .agents/skills
+- drop the per-repo agent rules skill; the shared skills cover it
+### 🔄 CI
+- ignore unmaintained zbus/zvariant advisories, drop stale git2 ignores
+### 🔧 Chores
+- align just git workflows with tokenburn
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.2.12...v1.2.14
 ## [1.2.12] - 2026-11-01
 ### ✨ Features
 - source all themes from tui-nuances (47 built-ins)
