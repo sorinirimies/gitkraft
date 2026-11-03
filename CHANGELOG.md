@@ -2,16 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.2.14] - 2026-11-02
-### 📚 Documentation
-- this repo's agent rules as a project skill in .agents/skills
-- drop the per-repo agent rules skill; the shared skills cover it
-### 🔄 CI
-- ignore unmaintained zbus/zvariant advisories, drop stale git2 ignores
-### 🔧 Chores
-- align just git workflows with tokenburn
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.2.12...v1.2.14
-## [1.2.12] - 2026-11-01
+## [1.2.15] - 2026-11-03
 ### ✨ Features
 - source all themes from tui-nuances (47 built-ins)
 ### 🐛 Bug Fixes
@@ -19,14 +10,18 @@ All notable changes to this project will be documented in this file.
 - drop unnecessary unsafe after objc2 update
 ### 📚 Documentation
 - move agent rules from .zed/rules.md to AGENTS.md
+- this repo's agent rules as a project skill in .agents/skills
+- drop the per-repo agent rules skill; the shared skills cover it
 ### 🔄 CI
 - harden cargo network retries/timeouts in release workflow
 - nightly dependency update pushes lockfile only, no version bump or release
 - nightly merges lockfile-only updates; bump + release only when a Cargo.toml requirement changes
 - build docs on stable and update dependencies
+- ignore unmaintained zbus/zvariant advisories, drop stale git2 ignores
 ### 🔧 Chores
 - remove AGENTS.md
-**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.2.8...v1.2.12
+- align just git workflows with tokenburn
+**Full Changelog**: https://github.com/sorinirimies/gitkraft/compare/v1.2.8...v1.2.15
 ## [1.2.8] - 2026-10-15
 ### ✨ Features
 - use tui-file-explorer (lightweight, no cli) for the o directory browser
