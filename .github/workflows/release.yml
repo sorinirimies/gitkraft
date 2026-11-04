@@ -1,416 +1,291 @@
 name: Release
 
+# Push a vX.Y.Z tag (`just release X.Y.Z`): validate tag == Cargo.toml → gate →
+# build the binaries in scripts/project.nu for macOS (arm64, x86-64), Linux
+# (static musl arm64, x86-64) and Windows → GitHub release with the archives +
+# sha256 and git-cliff notes → crates.io, every crate in scripts/project.nu (only
+# if the CRATES_IO_TOKEN secret is set; idempotent).
+
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v0.7.7)"
+        description: "Tag to release (e.g. v0.2.0)"
         required: true
-        default: ""
 
 permissions:
   contents: write
 
 concurrency:
   group: release
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # ── 0. Validate tag ──────────────────────────────────────────────────────────
   validate:
     name: Validate tag
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.resolve.outputs.tag }}
-      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      version: ${{ steps.v.outputs.version }}
+      matrix: ${{ steps.m.outputs.matrix }}
     steps:
-      - name: Resolve and validate tag
-        id: resolve
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ github.event.inputs.tag }}"
-          else
-            TAG="${{ github.ref_name }}"
-          fi
-          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "❌ Tag '${TAG}' does not match vX.Y.Z — aborting."
-            exit 1
-          fi
-          VERSION="${TAG#v}"
-          echo "tag=${TAG}"         >> "$GITHUB_OUTPUT"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: Validate tag
+        id: v
+        run: nu scripts/ci/validate_tag.nu "${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+      - name: Versions match the tag
+        run: nu scripts/ci/check_versions.nu "${{ steps.v.outputs.tag }}"
+      - name: Build matrix
+        id: m
+        run: nu scripts/project.nu matrix >> "$GITHUB_OUTPUT"
 
-  # ── 1. Quality gate (Linux) ───────────────────────────────────────────────────
-  test:
-    name: Test & lint
+  gate:
+    name: Quality gate
     needs: validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.validate.outputs.tag }}
-      - name: Install Linux GUI libraries
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            pkg-config libxkbcommon-dev libx11-dev libxrandr-dev \
-            libxinerama-dev libxcursor-dev libxi-dev libwayland-dev \
-            libgl1-mesa-dev libfontconfig1-dev libssl-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt,clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Install Nushell
-        run: |
-          if [ "$(uname -s)" = Linux ]; then
-            V=0.116.1
-            curl -fsSL https://github.com/nushell/nushell/releases/download/$V/nu-$V-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C /tmp
-            sudo install -m 0755 /tmp/nu-$V-x86_64-unknown-linux-gnu/nu /usr/local/bin/nu || { mkdir -p $HOME/.cargo/bin; install -m 0755 /tmp/nu-$V-x86_64-unknown-linux-gnu/nu $HOME/.cargo/bin/nu; }
-          else
-            cargo install nu --locked
-          fi
-          nu --version
-      - name: Quality gate
-        run: nu scripts/ci/quality_gate.nu
-      - name: Security audit
-        run: |
-          cargo install cargo-audit --locked
-          cargo audit
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: Install system packages
+        run: nu scripts/ci/apt.nu
+      - run: nu scripts/ci/quality_gate.nu
 
-  # ── 2. Build matrix ───────────────────────────────────────────────────────────
-  # GitHub provides free hosted runners for all three platforms.
-  # No self-hosted machines required.
   build:
-    name: Build — ${{ matrix.name }}
-    needs: [validate, test]
+    name: Build ${{ matrix.target }}
+    needs: [validate, gate]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      # release_matrix in scripts/project.nu: the targets for its LINUX flavour.
+      matrix: ${{ fromJSON(needs.validate.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: Install system packages
+        run: nu scripts/ci/apt.nu
+      # Static Linux binaries for both architectures from one runner: zig is the
+      # C cross-compiler for any bundled C code (sqlite, zstd, …).
+      - name: Install zig
+        if: matrix.zig
+        uses: mlugg/setup-zig@v2
+      - name: Install cargo-zigbuild
+        if: matrix.zig
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+      - name: Build (zig)
+        if: matrix.zig
+        run: nu scripts/ci/build_release.nu ${{ matrix.target }} --zig
+      - name: Build
+        if: ${{ !matrix.zig }}
+        run: nu scripts/ci/build_release.nu ${{ matrix.target }}
+      - name: Package
+        run: nu scripts/ci/package.nu ${{ matrix.target }} --out dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  # .deb, .rpm and AppImages, built on the OLDEST hosted runners: a binary needs
+  # at least the glibc it was linked against (22.04 = 2.35).
+  linux-packages:
+    name: Linux packages ${{ matrix.target }}
+    needs: [validate, gate]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          # ── Linux x86_64 (GitHub hosted) ─────────────────────────────────────
-          - name: Linux x86_64
-            runner: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            suffix: ""
-            os: linux
-
-          # ── Linux aarch64 (cross-compiled on GitHub hosted ubuntu) ────────────
-          - name: Linux aarch64
-            runner: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            suffix: ""
-            os: linux
-
-          # ── Windows x86_64 (GitHub hosted Windows runner) ─────────────────────
-          - name: Windows x86_64
-            runner: windows-latest
-            target: x86_64-pc-windows-msvc
-            suffix: ".exe"
-            os: windows
-
-          # ── macOS x86_64 (GitHub hosted macOS runner) ─────────────────────────
-          - name: macOS x86_64
-            runner: macos-latest
-            target: x86_64-apple-darwin
-            suffix: ""
-            os: macos
-
-          # ── macOS aarch64 / Apple Silicon (GitHub hosted macOS runner) ─────────
-          - name: macOS aarch64
-            runner: macos-latest
-            target: aarch64-apple-darwin
-            suffix: ""
-            os: macos
-
+          - { runner: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+          - { runner: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.validate.outputs.tag }}
-
-      - name: Install Linux GUI libraries + packaging tools
-        if: matrix.os == 'linux'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            pkg-config libxkbcommon-dev libx11-dev libxrandr-dev \
-            libxinerama-dev libxcursor-dev libxi-dev libwayland-dev \
-            libgl1-mesa-dev libfontconfig1-dev libssl-dev \
-            gcc-aarch64-linux-gnu libc6-dev-arm64-cross dpkg-dev rpm alien fakeroot
-
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
-
-      - name: Configure aarch64 cross-linker
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          mkdir -p ~/.cargo
-          echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
-          echo 'linker = "aarch64-linux-gnu-gcc"'   >> ~/.cargo/config.toml
-
-      - name: Build TUI
-        run: cargo build --release -p gitkraft-tui --target ${{ matrix.target }}
-
-      - name: Build GUI
-        run: cargo build --release -p gitkraft --target ${{ matrix.target }}
-
-      # ── Linux: .deb, .rpm, AppImage ────────────────────────────────────────
-      - name: Install Nushell
-        if: matrix.os == 'linux'
-        run: |
-          if [ "$(uname -s)" = Linux ]; then
-            V=0.116.1
-            curl -fsSL https://github.com/nushell/nushell/releases/download/$V/nu-$V-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C /tmp
-            sudo install -m 0755 /tmp/nu-$V-x86_64-unknown-linux-gnu/nu /usr/local/bin/nu || { mkdir -p $HOME/.cargo/bin; install -m 0755 /tmp/nu-$V-x86_64-unknown-linux-gnu/nu $HOME/.cargo/bin/nu; }
-          else
-            cargo install nu --locked
-          fi
-          nu --version
-
-      - name: Build .deb and .rpm
-        if: matrix.os == 'linux'
-        run: nu scripts/ci/package_linux.nu ${{ needs.validate.outputs.version }} ${{ matrix.target }}
-
-      - name: Install appimagetool
-        if: matrix.os == 'linux' && matrix.target == 'x86_64-unknown-linux-gnu'
-        run: |
-          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage \
-            -O /tmp/appimagetool
-          chmod +x /tmp/appimagetool
-          sudo cp /tmp/appimagetool /usr/local/bin/appimagetool
-
-      - name: Build AppImage
-        if: matrix.os == 'linux' && matrix.target == 'x86_64-unknown-linux-gnu'
-        run: bash scripts/ci/package_appimage.sh ${{ needs.validate.outputs.version }} ${{ matrix.target }}
-
-      # ── Windows: NSIS installer ──────────────────────────────────────────────
-      - name: Build NSIS installer
-        if: matrix.os == 'windows'
-        shell: bash
-        run: |
-          choco install nsis -y --no-progress
-          bash scripts/ci/package_windows.sh ${{ needs.validate.outputs.version }}
-
-      # ── Stage raw binaries ───────────────────────────────────────────────────
-      - name: Stage binaries
-        shell: bash
-        run: |
-          mkdir -p dist
-          cp target/${{ matrix.target }}/release/gitkraft${{ matrix.suffix }} \
-             dist/gitkraft-gui-${{ matrix.target }}${{ matrix.suffix }} || true
-          cp target/${{ matrix.target }}/release/gitkraft-tui${{ matrix.suffix }} \
-             dist/gitkraft-tui-${{ matrix.target }}${{ matrix.suffix }} || true
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v7
+          key: desktop-${{ matrix.target }}
+      - uses: hustcer/setup-nu@v3
         with:
-          name: artifacts-${{ matrix.target }}
-          path: dist/
-          retention-days: 1
+          version: "0.116.1"
+      - name: Install system packages
+        run: nu scripts/ci/apt.nu
+      - name: Install packaging tools
+        run: nu scripts/ci/package_desktop.nu tools linux
+      - name: Build
+        run: nu scripts/ci/build_release.nu ${{ matrix.target }}
+      - name: .deb, .rpm and AppImage
+        run: nu scripts/ci/package_desktop.nu linux ${{ needs.validate.outputs.version }} ${{ matrix.target }} --appimage
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-${{ matrix.target }}
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.AppImage
+          if-no-files-found: error
 
-  # ── 3. macOS Universal DMG ────────────────────────────────────────────────────
-  # Merges the arm64 + x86_64 macOS binaries into a single universal DMG.
   macos-dmg:
-    name: macOS Universal DMG
-    needs: [validate, build]
+    name: macOS universal DMG
+    needs: [validate, gate]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.validate.outputs.tag }}
-
-      - name: Download arm64 artifacts
-        uses: actions/download-artifact@v8
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          name: artifacts-aarch64-apple-darwin
-          path: artifacts/arm64/
-
-      - name: Download x86_64 artifacts
-        uses: actions/download-artifact@v8
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - uses: hustcer/setup-nu@v3
         with:
-          name: artifacts-x86_64-apple-darwin
-          path: artifacts/x86_64/
-
-      - name: Reconstruct target dirs
-        run: |
-          mkdir -p target/aarch64-apple-darwin/release
-          mkdir -p target/x86_64-apple-darwin/release
-          cp artifacts/arm64/gitkraft-gui-aarch64-apple-darwin   target/aarch64-apple-darwin/release/gitkraft
-          cp artifacts/arm64/gitkraft-tui-aarch64-apple-darwin   target/aarch64-apple-darwin/release/gitkraft-tui
-          cp artifacts/x86_64/gitkraft-gui-x86_64-apple-darwin   target/x86_64-apple-darwin/release/gitkraft
-          cp artifacts/x86_64/gitkraft-tui-x86_64-apple-darwin   target/x86_64-apple-darwin/release/gitkraft-tui
-          chmod +x target/*/release/gitkraft target/*/release/gitkraft-tui
-
-      - name: Create universal binaries
-        run: bash scripts/ci/build_universal_macos.sh
-
-      - name: Install create-dmg
-        run: brew install create-dmg
-
-      - name: Build DMG
-        run: bash packaging/macos/create_dmg.sh ${{ needs.validate.outputs.version }}
-
-      - name: Upload DMG
-        uses: actions/upload-artifact@v7
+          version: "0.116.1"
+      - name: Build arm64
+        run: nu scripts/ci/build_release.nu aarch64-apple-darwin
+      - name: Build x86_64
+        run: nu scripts/ci/build_release.nu x86_64-apple-darwin
+      - name: DMG
+        run: nu scripts/ci/package_desktop.nu macos ${{ needs.validate.outputs.version }}
+      - uses: actions/upload-artifact@v7
         with:
-          name: artifacts-macos-universal
+          name: desktop-macos
           path: dist/*.dmg
-          retention-days: 1
+          if-no-files-found: error
 
-  # ── 4. GitHub Release ─────────────────────────────────────────────────────────
-  release:
-    name: Create GitHub Release
-    needs: [validate, build, macos-dmg]
+  windows-installer:
+    name: Windows installer
+    needs: [validate, gate]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: Install NSIS
+        run: nu scripts/ci/package_desktop.nu tools windows
+      - name: Build
+        run: nu scripts/ci/build_release.nu x86_64-pc-windows-msvc
+      - name: Installer
+        run: nu scripts/ci/package_desktop.nu windows ${{ needs.validate.outputs.version }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-windows
+          path: dist/*-setup.exe
+          if-no-files-found: error
+
+  publish:
+    name: GitHub release
+    needs: [validate, build, linux-packages, macos-dmg, windows-installer]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.validate.outputs.tag }}
           fetch-depth: 0
-
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install git-cliff
-        run: cargo install git-cliff --locked
-      - name: Install Nushell
-        run: |
-          if [ "$(uname -s)" = Linux ]; then
-            V=0.116.1
-            curl -fsSL https://github.com/nushell/nushell/releases/download/$V/nu-$V-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C /tmp
-            sudo install -m 0755 /tmp/nu-$V-x86_64-unknown-linux-gnu/nu /usr/local/bin/nu || { mkdir -p $HOME/.cargo/bin; install -m 0755 /tmp/nu-$V-x86_64-unknown-linux-gnu/nu $HOME/.cargo/bin/nu; }
-          else
-            cargo install nu --locked
-          fi
-          nu --version
-      - name: Generate release notes
-        run: nu scripts/ci/release_notes.nu ${{ needs.validate.outputs.tag }}
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v8
+      - uses: hustcer/setup-nu@v3
         with:
-          path: artifacts/
+          version: "0.116.1"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+      - name: Release notes
+        run: nu scripts/ci/release_notes.nu ${{ needs.validate.outputs.tag }}
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
           merge-multiple: true
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.validate.outputs.tag }}
+          name: GitKraft ${{ needs.validate.outputs.version }}
           body_path: RELEASE_NOTES.md
-          files: |
-            artifacts/*
-            LICENSE
-            README.md
-            CHANGELOG.md
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: dist/*
 
-  # ── 5. Publish to crates.io ───────────────────────────────────────────────────
-  publish:
-    name: Publish to crates.io
-    needs: [validate, release]
+  crates-io:
+    name: crates.io
+    needs: [validate, publish]
     runs-on: ubuntu-latest
-    env:
-      HAS_TOKEN: ${{ secrets.CRATES_IO_TOKEN != '' }}
     steps:
-      - name: Skip (no token)
-        if: env.HAS_TOKEN != 'true'
-        run: echo "⏭️  CRATES_IO_TOKEN not set — skipping."
-
       - uses: actions/checkout@v7
-        if: env.HAS_TOKEN == 'true'
         with:
           ref: ${{ needs.validate.outputs.tag }}
-
-      - name: Install Linux GUI libraries
-        if: env.HAS_TOKEN == 'true'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            pkg-config libxkbcommon-dev libx11-dev libxrandr-dev \
-            libxinerama-dev libxcursor-dev libxi-dev libwayland-dev \
-            libgl1-mesa-dev libfontconfig1-dev libssl-dev
-
       - uses: dtolnay/rust-toolchain@stable
-        if: env.HAS_TOKEN == 'true'
-      - uses: Swatinem/rust-cache@v2
-        if: env.HAS_TOKEN == 'true'
-
-      - name: Publish gitkraft-core
-        if: env.HAS_TOKEN == 'true'
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: Install system packages
+        run: nu scripts/ci/apt.nu
+      # Every crate in scripts/project.nu, dependencies first.
+      - name: Publish crates (idempotent)
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
-        run: |
-          V="${{ needs.validate.outputs.version }}"
-          cargo info gitkraft-core@$V 2>/dev/null | grep -q "^gitkraft-core" \
-            && echo "⏭️  Already published." || {
-              cp README.md crates/gitkraft-core/README.md
-              cargo publish -p gitkraft-core --allow-dirty && sleep 30
-            }
+        run: nu scripts/ci/publish_crate.nu
 
-      - name: Publish gitkraft (GUI)
-        if: env.HAS_TOKEN == 'true'
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
-        run: |
-          V="${{ needs.validate.outputs.version }}"
-          cargo info gitkraft@$V 2>/dev/null | grep -q "^gitkraft" \
-            && echo "⏭️  Already published." || {
-              cp README.md crates/gitkraft-gui/README.md
-              cargo publish -p gitkraft --allow-dirty && sleep 20
-            }
-
-      - name: Publish gitkraft-tui
-        if: env.HAS_TOKEN == 'true'
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
-        run: |
-          V="${{ needs.validate.outputs.version }}"
-          cargo info gitkraft-tui@$V 2>/dev/null | grep -q "^gitkraft-tui" \
-            && echo "⏭️  Already published." || {
-              cp README.md crates/gitkraft-tui/README.md
-              cargo publish -p gitkraft-tui --allow-dirty
-            }
-
-  # ── 6. Update AUR ─────────────────────────────────────────────────────────────
-  update-aur:
-    name: Update AUR
-    needs: [validate, release]
+  # Needs the AUR_USERNAME, AUR_EMAIL and AUR_SSH_PRIVATE_KEY secrets; without
+  # them the deploy fails without failing the release.
+  aur:
+    name: AUR
+    needs: [validate, publish]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.validate.outputs.tag }}
-
-      - name: Update PKGBUILD checksums
-        run: bash scripts/ci/update_aur.sh ${{ needs.validate.outputs.version }}
-
-      - name: Deploy to AUR
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: PKGBUILD for this version
+        run: nu scripts/ci/package_desktop.nu aur ${{ needs.validate.outputs.version }}
+      - name: Deploy to the AUR
         uses: KSXGitHub/github-actions-deploy-aur@v3
         continue-on-error: true
         with:
           pkgname: gitkraft
-          pkgbuild: packaging/aur/gitkraft/PKGBUILD
+          pkgbuild: dist/aur/PKGBUILD
           commit_username: ${{ secrets.AUR_USERNAME }}
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "Update to v${{ needs.validate.outputs.version }}"
+          commit_message: Update to v${{ needs.validate.outputs.version }}
 
-  # ── 7. Publish Snaps (gitkraft + gitkraft-tui) ────────────────────────────────
-  # Requires secret SNAPCRAFT_STORE_CREDENTIALS (`snapcraft export-login`).
-  # Names `gitkraft` and `gitkraft-tui` must be registered once on snapcraft.io.
+  # Needs the SNAPCRAFT_STORE_CREDENTIALS secret (`snapcraft export-login`); the
+  # names gitkraft and gitkraft-tui are registered on snapcraft.io.
   publish-snap:
-    name: Publish Snap — ${{ matrix.snap }}
-    needs: [validate, release]
+    name: Snap ${{ matrix.snap }}
+    needs: [validate, publish]
     runs-on: ubuntu-latest
     env:
       SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
@@ -420,50 +295,47 @@ jobs:
         snap: [gitkraft, gitkraft-tui]
     steps:
       - uses: actions/checkout@v7
+        if: env.SNAPCRAFT_STORE_CREDENTIALS != ''
         with:
           ref: ${{ needs.validate.outputs.tag }}
-
-      - name: Skip (no credentials)
-        if: env.SNAPCRAFT_STORE_CREDENTIALS == ''
-        run: echo "⏭️  SNAPCRAFT_STORE_CREDENTIALS not set — skipping."
-
-      - name: Prepare snap project
+      - uses: hustcer/setup-nu@v3
         if: env.SNAPCRAFT_STORE_CREDENTIALS != ''
-        run: |
-          cp -r packaging/snap/${{ matrix.snap }}/snap ./snap
-          sed -i "s/^version: .*/version: '${{ needs.validate.outputs.version }}'/" snap/snapcraft.yaml
-
-      - uses: snapcore/action-build@v1
+        with:
+          version: "0.116.1"
+      - name: Snap project for this version
+        if: env.SNAPCRAFT_STORE_CREDENTIALS != ''
+        run: nu scripts/ci/snap_prepare.nu ${{ matrix.snap }} ${{ needs.validate.outputs.version }}
+      - name: Build the snap
         if: env.SNAPCRAFT_STORE_CREDENTIALS != ''
         id: build
-
-      - uses: snapcore/action-publish@v1
+        uses: snapcore/action-build@v1
+      - name: Publish the snap
         if: env.SNAPCRAFT_STORE_CREDENTIALS != ''
+        uses: snapcore/action-publish@v1
         with:
           snap: ${{ steps.build.outputs.snap }}
           release: stable
 
-  # ── 8. Update Flathub (GUI only) ──────────────────────────────────────────────
-  # Requires secret FLATHUB_TOKEN (PAT with push access to
-  # flathub/io.github.sorinirimies.GitKraft, created after the first
-  # Flathub submission is accepted).
+  # Needs the FLATHUB_TOKEN secret (push access to flathub/io.github.sorinirimies.GitKraft).
   update-flathub:
-    name: Update Flathub
-    needs: [validate, release]
+    name: Flathub
+    needs: [validate, publish]
     runs-on: ubuntu-latest
     env:
       FLATHUB_TOKEN: ${{ secrets.FLATHUB_TOKEN }}
     steps:
-      - name: Skip (no token)
-        if: env.FLATHUB_TOKEN == ''
-        run: echo "⏭️  FLATHUB_TOKEN not set — skipping."
-
       - uses: actions/checkout@v7
         if: env.FLATHUB_TOKEN != ''
         with:
           ref: ${{ needs.validate.outputs.tag }}
           fetch-depth: 0
-
-      - name: Push update to Flathub repo
+      - uses: hustcer/setup-nu@v3
         if: env.FLATHUB_TOKEN != ''
-        run: bash scripts/ci/update_flathub.sh ${{ needs.validate.outputs.version }}
+        with:
+          version: "0.116.1"
+      - name: Install flatpak-cargo-generator dependencies
+        if: env.FLATHUB_TOKEN != ''
+        run: pip install --quiet aiohttp toml tomlkit
+      - name: Push the update to Flathub
+        if: env.FLATHUB_TOKEN != ''
+        run: nu scripts/ci/update_flathub.nu ${{ needs.validate.outputs.version }}

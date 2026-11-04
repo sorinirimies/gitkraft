@@ -1,192 +1,91 @@
 #!/usr/bin/env nu
-# ── GitKraft · test_bump_version.nu ─────────────────────────────────────────
-# Tests for scripts/bump_version.nu — bumping versions across all crate manifests.
+# ── GitKraft · test_bump_version.nu ─────────────────────────────────
+# Tests for the pure helpers of scripts/bump_version.nu.
 
 use std/assert
 use runner.nu *
+use ../bump_version.nu [is_semver compare_versions set_workspace_version set_extension_version]
 
-# ── Helpers ─────────────────────────────────────────────────────────────────
-
-# Build a minimal workspace Cargo.toml with the given version.
-def make_workspace_cargo [version: string]: nothing -> string {
-    $'[workspace]
-members = [
-    "crates/gitkraft-core",
-    "crates/gitkraft-gui",
-    "crates/gitkraft-tui",
-]
-resolver = "2"
+const CARGO = '[package]
+name = "gitkraft"
+version.workspace = true
 
 [workspace.package]
-version = "($version)"
-edition = "2021"
+version      = "0.1.0"
+edition      = "2021"
 
 [workspace.dependencies]
-gitkraft-core = { path = "crates/gitkraft-core", version = "($version)" }
+demo-core    = "=0.3.7"
+serde = { version = "1", features = ["derive"] }
 '
-}
 
-# Build a minimal crate Cargo.toml (uses workspace version).
-def make_crate_cargo [name: string]: nothing -> string {
-    $'[package]
-name = "($name)"
-version.workspace = true
-edition.workspace = true
+const EXT = 'id = "demo"
+name = "Demo"
+version = "0.1.0"
+schema_version = 1
+
+[language_servers.demo]
+name = "Demo"
 '
+
+def "test bump: semver accepts releases and pre-releases" [] {
+    assert (is_semver "0.1.0")
+    assert (is_semver "12.0.3-rc.1")
+    assert (not (is_semver "v0.1.0"))
+    assert (not (is_semver "0.1"))
+    assert (not (is_semver "0.1.0.4"))
+    assert (not (is_semver ""))
 }
 
-# Read the workspace.package version from a Cargo.toml string.
-def read_workspace_version [cargo_toml: string]: nothing -> string {
-    $cargo_toml
-    | lines
-    | each { |l| $l | str trim }
-    | where { |l| $l | str starts-with 'version' }
-    | where { |l| not ($l | str contains 'workspace = true') }
-    | first
-    | parse --regex 'version\s*=\s*"(?P<ver>[^"]+)"'
-    | get ver
-    | first
+def "test bump: compare orders by major minor patch" [] {
+    assert equal (compare_versions "0.2.0" "0.1.9") 1
+    assert equal (compare_versions "0.1.9" "0.2.0") (-1)
+    assert equal (compare_versions "1.0.0" "1.0.0") 0
+    assert equal (compare_versions "0.10.0" "0.9.0") 1 "numeric, not lexical"
 }
 
-# Read the gitkraft-core dependency version from a workspace Cargo.toml string.
-def read_core_dep_version [cargo_toml: string]: nothing -> string {
-    let dep_line = (
-        $cargo_toml
-        | lines
-        | where { |l| $l =~ '^gitkraft-core\s*=' }
-        | first
-    )
-    $dep_line
-    | parse --regex 'version\s*=\s*"(?P<ver>[^"]+)"'
-    | get ver
-    | first
+def "test bump: a pre-release sorts below its release" [] {
+    assert equal (compare_versions "1.0.0-rc.1" "1.0.0") (-1)
+    assert equal (compare_versions "1.0.0" "1.0.0-rc.1") 1
+    assert equal (compare_versions "1.0.0-rc.2" "1.0.0-rc.10") (-1)
+    assert equal (compare_versions "1.0.0-alpha" "1.0.0-1") 1
+    assert equal (compare_versions "1.0.0-rc" "1.0.0-rc.1") (-1)
 }
 
-# Update the workspace.package version in a Cargo.toml string.
-def apply_workspace_version_update [cargo_toml: string, new_version: string]: nothing -> string {
-    $cargo_toml
-    | lines
-    | each { |l|
-        let trimmed = ($l | str trim)
-        if ($trimmed | str starts-with 'version') and (not ($trimmed | str contains 'workspace = true')) and ($trimmed =~ '^version\s*=\s*"') {
-            $'version = "($new_version)"'
-        } else {
-            $l
-        }
-    }
-    | str join "\n"
+def "test bump: only the workspace.package version changes" [] {
+    let out = (set_workspace_version $CARGO "0.2.0")
+    assert ($out | str contains 'version      = "0.2.0"')
+    assert ($out | str contains 'demo-core    = "=0.3.7"') "dependency pins stay"
+    assert ($out | str contains 'serde = { version = "1"') "dependency versions stay"
+    assert ($out | str contains 'version.workspace = true')
+    assert equal ($out | from toml | get workspace.package.version) "0.2.0"
 }
 
-# Update the gitkraft-core dependency version in a workspace Cargo.toml string.
-def apply_core_dep_update [cargo_toml: string, new_version: string]: nothing -> string {
-    $cargo_toml
-    | lines
-    | each { |l|
-        if ($l =~ '^gitkraft-core\s*=') {
-            $'gitkraft-core = { path = "crates/gitkraft-core", version = "($new_version)" }'
-        } else {
-            $l
-        }
-    }
-    | str join "\n"
+def "test bump: a single crate at the root bumps its package version" [] {
+    let text = "[package]\nname = \"x\"\nversion = \"0.1.0\"\n\n[dependencies]\nserde = { version = \"1\" }\nfoo = \"0.1.0\"\n"
+    let out = set_workspace_version $text "0.2.0"
+    assert equal ($out | from toml | get package.version) "0.2.0"
+    assert equal ($out | from toml | get dependencies.foo) "0.1.0" "dependency versions stay"
 }
 
-# Bump: apply both workspace version and core dep version updates.
-def bump_version [cargo_toml: string, new_version: string]: nothing -> string {
-    let step1 = (apply_workspace_version_update $cargo_toml $new_version)
-    apply_core_dep_update $step1 $new_version
+def "test bump: workspace crates in workspace.dependencies follow the version" [] {
+    let text = "[workspace.package]\nversion = \"0.1.0\"\n\n[workspace.dependencies]\napp-core = { path = \"crates/app-core\", version = \"0.1.0\" }\nserde = { version = \"1\", features = [\"derive\"] }\n\n[profile.release]\nlto = true\n"
+    let out = set_workspace_version $text "0.2.0" | from toml
+    assert equal $out.workspace.package.version "0.2.0"
+    assert equal $out.workspace.dependencies.app-core.version "0.2.0"
+    assert equal $out.workspace.dependencies.serde.version "1" "registry dependencies stay"
 }
 
-# ── Tests ───────────────────────────────────────────────────────────────────
-
-def "test bump_version: patch bump updates workspace version" [] {
-    let cargo = (make_workspace_cargo "1.0.0")
-    let bumped = (bump_version $cargo "1.0.1")
-    let ver = (read_workspace_version $bumped)
-    assert equal $ver "1.0.1"
+def "test bump: extension version changes once" [] {
+    let out = (set_extension_version $EXT "0.2.0")
+    assert equal ($out | from toml | get version) "0.2.0"
+    assert equal ($out | from toml | get language_servers.demo.name) "Demo"
+    assert equal ($out | lines | where {|l| $l starts-with "version" } | length) 1
 }
 
-def "test bump_version: minor bump updates workspace version" [] {
-    let cargo = (make_workspace_cargo "1.0.0")
-    let bumped = (bump_version $cargo "1.1.0")
-    let ver = (read_workspace_version $bumped)
-    assert equal $ver "1.1.0"
+def "test bump: setting the same version is a no-op on content" [] {
+    let out = (set_extension_version $EXT "0.1.0")
+    assert equal ($out | from toml) ($EXT | from toml)
 }
-
-def "test bump_version: major bump updates workspace version" [] {
-    let cargo = (make_workspace_cargo "1.2.3")
-    let bumped = (bump_version $cargo "2.0.0")
-    let ver = (read_workspace_version $bumped)
-    assert equal $ver "2.0.0"
-}
-
-def "test bump_version: core dep version is updated" [] {
-    let cargo = (make_workspace_cargo "0.1.0")
-    let bumped = (bump_version $cargo "0.2.0")
-    let dep_ver = (read_core_dep_version $bumped)
-    assert equal $dep_ver "0.2.0"
-}
-
-def "test bump_version: workspace and core dep versions stay in sync" [] {
-    let cargo = (make_workspace_cargo "3.0.0")
-    let bumped = (bump_version $cargo "3.1.0")
-    let ws_ver = (read_workspace_version $bumped)
-    let dep_ver = (read_core_dep_version $bumped)
-    assert equal $ws_ver $dep_ver
-}
-
-def "test bump_version: pre-release version" [] {
-    let cargo = (make_workspace_cargo "1.0.0")
-    let bumped = (bump_version $cargo "1.1.0-rc.1")
-    let ver = (read_workspace_version $bumped)
-    assert equal $ver "1.1.0-rc.1"
-}
-
-def "test bump_version: pre-release core dep version" [] {
-    let cargo = (make_workspace_cargo "1.0.0")
-    let bumped = (bump_version $cargo "1.1.0-rc.1")
-    let dep_ver = (read_core_dep_version $bumped)
-    assert equal $dep_ver "1.1.0-rc.1"
-}
-
-def "test bump_version: idempotent when version unchanged" [] {
-    let cargo = (make_workspace_cargo "0.5.0")
-    let bumped = (bump_version $cargo "0.5.0")
-    let ver = (read_workspace_version $bumped)
-    assert equal $ver "0.5.0"
-}
-
-def "test bump_version: crate manifests use workspace version" [] {
-    # Crate Cargo.tomls should have version.workspace = true,
-    # meaning they don't need individual updates — only the root does.
-    let crate_cargo = (make_crate_cargo "gitkraft-core")
-    assert ($crate_cargo | str contains "version.workspace = true")
-
-    let crate_gui = (make_crate_cargo "gitkraft")
-    assert ($crate_gui | str contains "version.workspace = true")
-
-    let crate_tui = (make_crate_cargo "gitkraft-tui")
-    assert ($crate_tui | str contains "version.workspace = true")
-}
-
-def "test bump_version: workspace members list is preserved" [] {
-    let cargo = (make_workspace_cargo "1.0.0")
-    let bumped = (bump_version $cargo "2.0.0")
-    assert ($bumped | str contains '"crates/gitkraft-core"')
-    assert ($bumped | str contains '"crates/gitkraft-gui"')
-    assert ($bumped | str contains '"crates/gitkraft-tui"')
-}
-
-def "test bump_version: double bump produces correct version" [] {
-    let cargo = (make_workspace_cargo "0.1.0")
-    let first = (bump_version $cargo "0.2.0")
-    let second = (bump_version $first "0.3.0")
-    let ver = (read_workspace_version $second)
-    let dep_ver = (read_core_dep_version $second)
-    assert equal $ver "0.3.0"
-    assert equal $dep_ver "0.3.0"
-}
-
-# ── Main ────────────────────────────────────────────────────────────────────
 
 def main [] { run-tests }

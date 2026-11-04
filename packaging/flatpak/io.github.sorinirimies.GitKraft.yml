@@ -1,7 +1,7 @@
 # Flathub manifest for the GitKraft GUI (the TUI is not distributed on Flathub:
 # Flathub only accepts graphical apps).
 # `tag`/`commit` and cargo-sources.json are refreshed on each release by
-# scripts/ci/update_flathub.sh.
+# scripts/ci/update_flathub.nu.
 app-id: io.github.sorinirimies.GitKraft
 runtime: org.freedesktop.Platform
 runtime-version: '24.08'
