@@ -3,7 +3,7 @@
 //!
 //! Works correctly for any window size (maximized, windowed, small).
 
-use iced::widget::{column, container, row, scrollable, Space};
+use iced::widget::{Space, column, container, row, scrollable};
 use iced::{Element, Length};
 
 use crate::message::Message;
@@ -51,6 +51,15 @@ pub struct BoundedPopup<'a> {
     popup_width: f32,
     popup_max_height: f32,
     style_fn: Option<fn(&iced::Theme) -> iced::widget::container::Style>,
+}
+
+impl std::fmt::Debug for BoundedPopup<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BoundedPopup")
+            .field("cursor", &(self.cursor_x, self.cursor_y))
+            .field("window", &(self.window_w, self.window_h))
+            .finish_non_exhaustive()
+    }
 }
 
 /// Create a bounded popup that stays within the window.

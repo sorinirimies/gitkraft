@@ -3,7 +3,7 @@
 //! Shows each configured remote with its URL, and a "Fetch" button per remote
 //! (currently we only support fetching the first remote via `Message::Fetch`).
 
-use iced::widget::{button, column, container, row, text, Space};
+use iced::widget::{Space, button, column, container, row, text};
 use iced::{Alignment, Element, Length};
 
 use crate::icons;

@@ -21,6 +21,7 @@ const LINE_WIDTH: f32 = 2.0;
 const LINE_WIDTH_MAIN: f32 = 3.0;
 
 /// A commit-graph widget with built-in horizontal drag-to-pan.
+#[derive(Debug)]
 pub struct CommitGraph {
     pub visible_rows: Vec<gitkraft_core::GraphRow>,
     pub offset: usize,
@@ -59,7 +60,7 @@ impl CommitGraph {
 // ── canvas internals ──────────────────────────────────────────────────────────
 
 /// Drag state for horizontal panning, stored as the Canvas `State`.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct GraphDragState {
     /// Current horizontal pan offset (pixels scrolled to the right).
     pan_x: f32,
@@ -163,28 +164,29 @@ impl canvas::Program<Message> for CommitGraphProgram {
             canvas::Event::Mouse(iced::mouse::Event::ButtonReleased(btn)) => {
                 if let Some((_, start_pan)) = state.drag.take() {
                     let moved = (state.pan_x - start_pan).abs();
-                    if *btn == iced::mouse::Button::Left && moved < CLICK_DRAG_THRESHOLD {
-                        if let Some(pos) = cursor.position_in(bounds) {
-                            let local_row = (pos.y / self.row_height) as usize;
-                            if local_row < self.visible_rows.len() {
-                                let global_row = self.offset + local_row;
-                                return Some(canvas::Action::publish(Message::SelectCommit(
-                                    global_row,
-                                )));
-                            }
+                    if *btn == iced::mouse::Button::Left
+                        && moved < CLICK_DRAG_THRESHOLD
+                        && let Some(pos) = cursor.position_in(bounds)
+                    {
+                        let local_row = (pos.y / self.row_height) as usize;
+                        if local_row < self.visible_rows.len() {
+                            let global_row = self.offset + local_row;
+                            return Some(canvas::Action::publish(Message::SelectCommit(
+                                global_row,
+                            )));
                         }
                     }
                     return Some(canvas::Action::request_redraw());
                 }
             }
             canvas::Event::Mouse(iced::mouse::Event::CursorMoved { .. }) => {
-                if let Some((start_x, start_pan)) = state.drag {
-                    if let Some(pos) = cursor.position_in(bounds) {
-                        let dx = start_x - pos.x;
-                        let max_pan = (self.content_width - self.column_width).max(0.0);
-                        state.pan_x = (start_pan + dx).clamp(0.0, max_pan);
-                        return Some(canvas::Action::request_redraw());
-                    }
+                if let Some((start_x, start_pan)) = state.drag
+                    && let Some(pos) = cursor.position_in(bounds)
+                {
+                    let dx = start_x - pos.x;
+                    let max_pan = (self.content_width - self.column_width).max(0.0);
+                    state.pan_x = (start_pan + dx).clamp(0.0, max_pan);
+                    return Some(canvas::Action::request_redraw());
                 }
 
                 // Hover tracking -- without this, moving the mouse over the

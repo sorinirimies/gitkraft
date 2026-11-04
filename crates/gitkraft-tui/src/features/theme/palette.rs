@@ -8,6 +8,7 @@ use gitkraft_core::SYSTEM_THEME_NAME;
 /// All the colour slots the UI needs.  Every view file should obtain a
 /// `UiTheme` via `app.theme()` and use these fields instead of hard-coding
 /// `Color::*` values.
+#[derive(Debug)]
 pub struct UiTheme {
     pub border_active: Color,
     pub border_inactive: Color,

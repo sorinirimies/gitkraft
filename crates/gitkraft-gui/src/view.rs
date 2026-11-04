@@ -26,7 +26,7 @@
 //! This avoids firing `PaneDragMove → update() → view()` on every cursor
 //! movement when no resize drag is active.
 
-use iced::widget::{column, container, mouse_area, row, text, Space};
+use iced::widget::{Space, column, container, mouse_area, row, text};
 use iced::{Alignment, Element, Length};
 
 use crate::features;
@@ -362,7 +362,7 @@ fn status_bar_view(state: &GitKraft) -> Element<'_, Message> {
 }
 
 fn delete_confirmation_banner<'a>(file_name: &str, c: &ThemeColors) -> Element<'a, Message> {
-    use iced::widget::{button, row, text, Space};
+    use iced::widget::{Space, button, row, text};
 
     let label = text(format!("Delete '{file_name}' permanently?"))
         .size(13)
@@ -441,7 +441,7 @@ fn error_banner<'a>(message: &str, c: &ThemeColors) -> Element<'a, Message> {
 /// When a commit is selected, the panel expands to show changed files and diffs.
 fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Message> {
     use iced::widget::{
-        button, checkbox, column, container, mouse_area, row, scrollable, text, text_input, Space,
+        Space, button, checkbox, column, container, mouse_area, row, scrollable, text, text_input,
     };
     use iced::{Alignment, Length};
 
@@ -969,7 +969,7 @@ fn file_context_menu_items<'a>(
 
 /// Build the context menu panel widget for the currently active menu.
 fn context_menu_panel<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Message> {
-    use iced::widget::{button, column, row, text, Space};
+    use iced::widget::{Space, button, column, row, text};
     use iced::{Alignment, Length};
 
     let text_primary = c.text_primary;

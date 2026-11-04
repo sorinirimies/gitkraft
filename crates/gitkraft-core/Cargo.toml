@@ -2,6 +2,7 @@
 name = "gitkraft-core"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -22,3 +23,6 @@ notify        = { workspace = true }
 tempfile      = { workspace = true }   # used for atomic settings writes
 
 [dev-dependencies]
+
+[lints]
+workspace = true

@@ -3,7 +3,7 @@
 //! layout.
 
 use iced::widget::{
-    button, column, container, mouse_area, row, scrollable, text, text_input, Space,
+    Space, button, column, container, mouse_area, row, scrollable, text, text_input,
 };
 use iced::{Alignment, Element, Font, Length};
 

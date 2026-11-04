@@ -160,10 +160,10 @@ impl ThemeColors {
         THEME_CACHE.with(|cache| {
             let mut cache = cache.borrow_mut();
             let name = theme.to_string();
-            if let Some((ref cached_name, cached_colors)) = *cache {
-                if *cached_name == name {
-                    return cached_colors;
-                }
+            if let Some((ref cached_name, cached_colors)) = *cache
+                && *cached_name == name
+            {
+                return cached_colors;
             }
             let index = gitkraft_core::theme_index_by_name(&name);
             let colors = Self::from_core(&gitkraft_core::theme_by_index(index));

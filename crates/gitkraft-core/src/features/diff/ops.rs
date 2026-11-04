@@ -455,12 +455,12 @@ fn parse_diff(diff: &Diff<'_>) -> Result<Vec<DiffInfo>> {
             });
 
         let found = found_idx.is_some();
-        if let Some(idx) = found_idx {
-            if idx != current_delta_idx {
-                // Switched to a new file — reset the line counter.
-                current_delta_idx = idx;
-                current_line_count = infos[idx].hunks.iter().map(|h| h.lines.len()).sum();
-            }
+        if let Some(idx) = found_idx
+            && idx != current_delta_idx
+        {
+            // Switched to a new file — reset the line counter.
+            current_delta_idx = idx;
+            current_line_count = infos[idx].hunks.iter().map(|h| h.lines.len()).sum();
         }
         if !found {
             return true; // skip unknown delta

@@ -32,7 +32,7 @@ impl<T, E: std::fmt::Display> StringErr<T> for Result<T, E> {
 /// })())
 /// ```
 macro_rules! git_task {
-    ($msg:expr, $body:expr) => {
+    ($msg:expr_2021, $body:expr_2021) => {
         Task::perform(
             async move {
                 let (tx, rx) = futures::channel::oneshot::channel();
@@ -75,19 +75,19 @@ macro_rules! git_task {
 /// `is_loading` / `status_message` mutable borrow has already been dropped.
 macro_rules! with_repo {
     // ── dismiss + plain variant ────────────────────────────────────────
-    ($state:expr, dismiss, $status:expr, |$rp:ident| $cmd:expr) => {{
+    ($state:expr_2021, dismiss, $status:expr_2021, |$rp:ident| $cmd:expr_2021) => {{
         $state.active_tab_mut().context_menu = None;
         with_repo!($state, $status, |$rp| $cmd)
     }};
 
     // ── dismiss + loading variant ─────────────────────────────────────
-    ($state:expr, dismiss, loading, $status:expr, |$rp:ident| $cmd:expr) => {{
+    ($state:expr_2021, dismiss, loading, $status:expr_2021, |$rp:ident| $cmd:expr_2021) => {{
         $state.active_tab_mut().context_menu = None;
         with_repo!($state, loading, $status, |$rp| $cmd)
     }};
 
     // ── plain variant (status only) ────────────────────────────────────────
-    ($state:expr, $status:expr, |$rp:ident| $cmd:expr) => {{
+    ($state:expr_2021, $status:expr_2021, |$rp:ident| $cmd:expr_2021) => {{
         let $rp = $state.active_tab().repo_path.clone();
         if let Some($rp) = $rp {
             $state.active_tab_mut().status_message = Some($status);
@@ -98,7 +98,7 @@ macro_rules! with_repo {
     }};
 
     // ── loading variant (is_loading + status) ──────────────────────────────
-    ($state:expr, loading, $status:expr, |$rp:ident| $cmd:expr) => {{
+    ($state:expr_2021, loading, $status:expr_2021, |$rp:ident| $cmd:expr_2021) => {{
         let $rp = $state.active_tab().repo_path.clone();
         if let Some($rp) = $rp {
             {
@@ -117,13 +117,13 @@ macro_rules! with_repo {
 ///
 /// Two forms: 3-arg `icon!(CHAR, SIZE, COLOR)` or 2-arg `icon!(CHAR, SIZE)`.
 macro_rules! icon {
-    ($char:expr, $size:expr, $color:expr) => {
+    ($char:expr_2021, $size:expr_2021, $color:expr_2021) => {
         text($char)
             .font(iced::Font::with_name("bootstrap-icons"))
             .size($size)
             .color($color)
     };
-    ($char:expr, $size:expr) => {
+    ($char:expr_2021, $size:expr_2021) => {
         text($char)
             .font(iced::Font::with_name("bootstrap-icons"))
             .size($size)
@@ -139,7 +139,7 @@ macro_rules! icon {
 /// // Task::none()
 /// ```
 macro_rules! set_field {
-    ($state:expr, $field:ident, $value:expr) => {{
+    ($state:expr_2021, $field:ident, $value:expr_2021) => {{
         $state.active_tab_mut().$field = $value;
         Task::none()
     }};
@@ -147,7 +147,7 @@ macro_rules! set_field {
 
 /// Clear the file preview editor state.
 macro_rules! clear_preview {
-    ($state:expr) => {
+    ($state:expr_2021) => {
         $state.preview_editor = None;
         $state.preview_path = None;
     };
@@ -158,7 +158,7 @@ macro_rules! clear_preview {
 /// Shorthand for `gitkraft_core::features::repo::open_repo($path).str_err()?`.
 /// Used inside `git_task!` closures where the `?` operator is available.
 macro_rules! open_repo {
-    ($path:expr) => {
+    ($path:expr_2021) => {
         gitkraft_core::features::repo::open_repo($path).str_err()?
     };
 }
@@ -166,7 +166,7 @@ macro_rules! open_repo {
 /// Run a git mutation that requires a `Repository` handle, then reload
 /// the full repo snapshot.  Returns `Task<Message::GitOperationResult>`.
 macro_rules! git_repo_then_reload {
-    ($path:expr, |$repo:ident| $op:expr) => {
+    ($path:expr_2021, |$repo:ident| $op:expr_2021) => {
         git_task!(
             Message::GitOperationResult,
             (|| {
@@ -180,7 +180,7 @@ macro_rules! git_repo_then_reload {
 
 /// Same as `git_repo_then_reload!` but extracts the workdir first.
 macro_rules! git_wd_then_reload {
-    ($path:expr, |$wd:ident| $op:expr) => {
+    ($path:expr_2021, |$wd:ident| $op:expr_2021) => {
         git_task!(
             Message::GitOperationResult,
             (|| {
@@ -194,7 +194,7 @@ macro_rules! git_wd_then_reload {
 
 /// Run a staging operation then refresh the staging state.
 macro_rules! staging_op {
-    ($path:expr, |$repo:ident| $op:expr) => {
+    ($path:expr_2021, |$repo:ident| $op:expr_2021) => {
         git_task!(
             Message::StagingUpdated,
             (|| {
@@ -226,7 +226,7 @@ macro_rules! staging_op {
 /// container(content).style(style_fn);
 /// ```
 macro_rules! row_style {
-    ($($cond:expr => $style:expr),+ $(,)?) => {{
+    ($($cond:expr_2021 => $style:expr_2021),+ $(,)?) => {{
         type RowStyleFn = fn(&iced::Theme) -> iced::widget::container::Style;
         if false {
             unreachable!()

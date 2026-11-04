@@ -4,7 +4,7 @@
 //! button, a horizontal rule, an "Init Repository" button, and (if available)
 //! a list of recently opened repositories.
 
-use iced::widget::{button, column, container, row, scrollable, text, Space};
+use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Length};
 
 use crate::icons;

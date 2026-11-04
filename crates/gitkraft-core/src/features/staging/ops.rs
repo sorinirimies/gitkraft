@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use git2::{build::CheckoutBuilder, IndexAddOption, Repository};
+use git2::{IndexAddOption, Repository, build::CheckoutBuilder};
 use tracing::debug;
 
 /// Stage a single file (add it to the index).

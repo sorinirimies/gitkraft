@@ -368,11 +368,7 @@ pub fn select_down(app: &mut App) {
     extend_staging_selection(
         app,
         |cur, len| {
-            if cur + 1 >= len {
-                None
-            } else {
-                Some(cur + 1)
-            }
+            if cur + 1 >= len { None } else { Some(cur + 1) }
         },
     );
 }

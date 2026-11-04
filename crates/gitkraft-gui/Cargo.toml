@@ -2,11 +2,12 @@
 name = "gitkraft"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "GitKraft — Git IDE desktop application (Iced GUI)"
-readme = "README.md"
+readme = "../../README.md"
 categories = ["gui", "development-tools"]
 keywords = ["git", "vcs", "ide", "gui"]
 
@@ -20,17 +21,12 @@ path = "src/main.rs"
 
 [dependencies]
 gitkraft-core = { workspace = true }
-git2          = { workspace = true }
 tui-spinner   = { workspace = true }
 iced       = { workspace = true }
 iced_fonts = { workspace = true }
 rfd        = { workspace = true }
-notify        = { workspace = true }
 futures       = { workspace = true }
-tracing       = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-serde         = { workspace = true }
-dirs          = { workspace = true }
 
 # macOS: winit builds a menu bar with only the application menu, so the system's window
 # commands (Minimize, Zoom, Move & Resize / tiling, and the shortcuts that go with them)
@@ -40,3 +36,6 @@ dirs          = { workspace = true }
 objc2            = "0.6"
 objc2-app-kit    = { version = "0.3", features = ["NSApplication", "NSMenu", "NSMenuItem", "NSResponder"] }
 objc2-foundation = { version = "0.3", features = ["NSString", "NSObject"] }
+
+[lints]
+workspace = true

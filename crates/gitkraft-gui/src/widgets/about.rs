@@ -1,6 +1,6 @@
 //! About dialog — app name, version, author and project info.
 
-use iced::widget::{button, column, container, mouse_area, row, text, Space};
+use iced::widget::{Space, button, column, container, mouse_area, row, text};
 use iced::{Alignment, Element, Length};
 
 use crate::message::Message;

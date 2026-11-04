@@ -22,10 +22,10 @@ pub fn list_remotes(repo: &Repository) -> Result<Vec<RemoteInfo>> {
         let mut fetch_refspecs = Vec::new();
         let refspecs = remote.refspecs();
         for refspec in refspecs {
-            if refspec.direction() == git2::Direction::Fetch {
-                if let Ok(s) = refspec.str() {
-                    fetch_refspecs.push(s.to_string());
-                }
+            if refspec.direction() == git2::Direction::Fetch
+                && let Ok(s) = refspec.str()
+            {
+                fetch_refspecs.push(s.to_string());
             }
         }
 

@@ -1,8 +1,8 @@
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem};
-use ratatui::Frame;
 
 use super::palette::{picker_len, picker_name, system_index, theme_for_index};
 
@@ -93,8 +93,8 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::backend::TestBackend;
     use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
 
     fn draw(app: &mut App) -> String {
         let mut term = Terminal::new(TestBackend::new(60, 52)).unwrap();

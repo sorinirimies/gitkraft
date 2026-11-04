@@ -18,7 +18,7 @@ use std::time::Duration;
 /// `on_change` after each debounced burst.
 ///
 /// Uses a 60-second fallback poll so that the UI eventually reflects external
-/// changes even on network file systems. Use [`spawn_git_watcher_with_fallback`]
+/// changes even on network file systems. Use `spawn_git_watcher_with_fallback`
 /// when a custom fallback interval is needed (e.g. in tests).
 pub fn spawn_git_watcher<F>(git_dir: PathBuf, on_change: F) -> JoinHandle<()>
 where

@@ -10,7 +10,7 @@
 //! widget tree small even for multi-thousand-line diffs.
 
 use gitkraft_core::{DiffInfo, DiffLine};
-use iced::widget::{button, column, container, mouse_area, row, scrollable, text, Space};
+use iced::widget::{Space, button, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Element, Font, Length};
 
 use crate::icons;

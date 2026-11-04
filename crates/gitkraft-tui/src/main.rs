@@ -1,12 +1,7 @@
 use std::path::PathBuf;
 
 fn main() -> anyhow::Result<()> {
-    // Limit libgit2's memory-mapped window to prevent GB-scale RAM usage
-    // on large repositories.
-    unsafe {
-        git2::opts::set_mwindow_size(64 * 1024 * 1024).ok();
-        git2::opts::set_mwindow_mapped_limit(256 * 1024 * 1024).ok();
-    }
+    gitkraft_core::limit_git_memory();
 
     let cli = gitkraft_tui::cli::parse_args(std::env::args().skip(1)).unwrap_or_else(|e| {
         eprintln!("{e}\nusage: gitkraft-tui [REPO] [--theme NAME] [--list-themes]");

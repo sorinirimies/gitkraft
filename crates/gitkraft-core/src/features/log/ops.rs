@@ -3,8 +3,8 @@
 use anyhow::{Context, Result};
 use git2::Repository;
 
-use crate::features::commits::ops::build_ref_map;
 use crate::features::commits::CommitInfo;
+use crate::features::commits::ops::build_ref_map;
 
 /// Retrieve the commit log, optionally filtered by author and/or message
 /// substring. Each commit's [`CommitInfo::refs`] is populated with branch /

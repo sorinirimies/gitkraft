@@ -41,11 +41,7 @@ pub fn wrap_prev(current: usize, len: usize) -> usize {
     if len == 0 {
         return 0;
     }
-    if current == 0 {
-        len - 1
-    } else {
-        current - 1
-    }
+    if current == 0 { len - 1 } else { current - 1 }
 }
 
 /// Next index in a list, clamped at `len - 1` (no wrapping).

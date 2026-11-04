@@ -115,16 +115,15 @@ impl GitKraft {
                 if *rel_y >= LOAD_TRIGGER_RELATIVE
                     && tab.has_more_commits
                     && !tab.is_loading_more_commits
+                    && let Some(path) = tab.repo_path.clone()
                 {
-                    if let Some(path) = tab.repo_path.clone() {
-                        let current = tab.commits.len();
-                        self.active_tab_mut().is_loading_more_commits = true;
-                        return crate::features::repo::commands::load_more_commits(
-                            path,
-                            current,
-                            COMMITS_PAGE_SIZE,
-                        );
-                    }
+                    let current = tab.commits.len();
+                    self.active_tab_mut().is_loading_more_commits = true;
+                    return crate::features::repo::commands::load_more_commits(
+                        path,
+                        current,
+                        COMMITS_PAGE_SIZE,
+                    );
                 }
                 Task::none()
             }
@@ -686,23 +685,21 @@ impl GitKraft {
                         tab.repo_path.clone(),
                     )
                 };
-                if let (Some(orig), false) = (&original, new_name.is_empty()) {
-                    if *orig != new_name {
-                        if let Some(path) = path {
-                            let orig = orig.clone();
-                            {
-                                let tab = self.active_tab_mut();
-                                tab.rename_branch_target = None;
-                                tab.rename_branch_input.clear();
-                                tab.is_loading = true;
-                                tab.status_message =
-                                    Some(format!("Renaming '{orig}' → '{new_name}'…"));
-                            }
-                            return crate::features::repo::commands::rename_branch_async(
-                                path, orig, new_name,
-                            );
-                        }
+                if let (Some(orig), false) = (&original, new_name.is_empty())
+                    && *orig != new_name
+                    && let Some(path) = path
+                {
+                    let orig = orig.clone();
+                    {
+                        let tab = self.active_tab_mut();
+                        tab.rename_branch_target = None;
+                        tab.rename_branch_input.clear();
+                        tab.is_loading = true;
+                        tab.status_message = Some(format!("Renaming '{orig}' → '{new_name}'…"));
                     }
+                    return crate::features::repo::commands::rename_branch_async(
+                        path, orig, new_name,
+                    );
                 }
                 self.active_tab_mut().rename_branch_target = None;
                 Task::none()
@@ -817,25 +814,25 @@ impl GitKraft {
                         tab.repo_path.clone(),
                     )
                 };
-                if let (Some(oid), false) = (&oid, name.is_empty()) {
-                    if let Some(path) = path {
-                        let oid = oid.clone();
-                        {
-                            let tab = self.active_tab_mut();
-                            tab.create_tag_target_oid = None;
-                            tab.create_tag_name.clear();
-                            tab.create_tag_message.clear();
-                            tab.is_loading = true;
-                            tab.status_message = Some(format!("Creating tag '{name}'…"));
-                        }
-                        return if annotated {
-                            crate::features::repo::commands::create_annotated_tag_async(
-                                path, name, message, oid,
-                            )
-                        } else {
-                            crate::features::repo::commands::create_tag_async(path, name, oid)
-                        };
+                if let (Some(oid), false) = (&oid, name.is_empty())
+                    && let Some(path) = path
+                {
+                    let oid = oid.clone();
+                    {
+                        let tab = self.active_tab_mut();
+                        tab.create_tag_target_oid = None;
+                        tab.create_tag_name.clear();
+                        tab.create_tag_message.clear();
+                        tab.is_loading = true;
+                        tab.status_message = Some(format!("Creating tag '{name}'…"));
                     }
+                    return if annotated {
+                        crate::features::repo::commands::create_annotated_tag_async(
+                            path, name, message, oid,
+                        )
+                    } else {
+                        crate::features::repo::commands::create_tag_async(path, name, oid)
+                    };
                 }
                 Task::none()
             }
@@ -874,20 +871,20 @@ impl GitKraft {
                         tab.repo_path.clone(),
                     )
                 };
-                if let (Some(oid), false) = (&oid, name.is_empty()) {
-                    if let Some(path) = path {
-                        let oid = oid.clone();
-                        {
-                            let tab = self.active_tab_mut();
-                            tab.create_branch_at_oid = None;
-                            tab.new_branch_name.clear();
-                            tab.is_loading = true;
-                            tab.status_message = Some(format!("Creating branch '{name}'…"));
-                        }
-                        return crate::features::repo::commands::create_branch_at_commit_async(
-                            path, name, oid,
-                        );
+                if let (Some(oid), false) = (&oid, name.is_empty())
+                    && let Some(path) = path
+                {
+                    let oid = oid.clone();
+                    {
+                        let tab = self.active_tab_mut();
+                        tab.create_branch_at_oid = None;
+                        tab.new_branch_name.clear();
+                        tab.is_loading = true;
+                        tab.status_message = Some(format!("Creating branch '{name}'…"));
                     }
+                    return crate::features::repo::commands::create_branch_at_commit_async(
+                        path, name, oid,
+                    );
                 }
                 Task::none()
             }
@@ -943,9 +940,7 @@ impl GitKraft {
                 )
             }
 
-            Message::ResetSoft(ref oid)
-            | Message::ResetMixed(ref oid)
-            | Message::ResetHard(ref oid) => {
+            Message::ResetSoft(oid) | Message::ResetMixed(oid) | Message::ResetHard(oid) => {
                 let mode = match &message {
                     Message::ResetSoft(_) => gitkraft_core::ResetMode::Soft,
                     Message::ResetMixed(_) => gitkraft_core::ResetMode::Mixed,
@@ -1082,20 +1077,20 @@ impl GitKraft {
             }
 
             Message::ConfirmSearchResult => {
-                if let Some(idx) = self.search_selected {
-                    if let Some(commit) = self.search_results.get(idx).cloned() {
-                        let oid = commit.oid.clone();
-                        // Keep search open — load the file list for commit vs working tree
-                        self.search_diff_oid = Some(oid.clone());
-                        self.search_diff_files.clear();
-                        self.search_diff_selected.clear();
-                        self.search_diff_content.clear();
+                if let Some(idx) = self.search_selected
+                    && let Some(commit) = self.search_results.get(idx).cloned()
+                {
+                    let oid = commit.oid.clone();
+                    // Keep search open — load the file list for commit vs working tree
+                    self.search_diff_oid = Some(oid.clone());
+                    self.search_diff_files.clear();
+                    self.search_diff_selected.clear();
+                    self.search_diff_content.clear();
 
-                        if let Some(path) = self.active_tab().repo_path.clone() {
-                            return crate::features::commits::commands::search_diff_file_list(
-                                path, oid,
-                            );
-                        }
+                    if let Some(path) = self.active_tab().repo_path.clone() {
+                        return crate::features::commits::commands::search_diff_file_list(
+                            path, oid,
+                        );
                     }
                 }
                 Task::none()

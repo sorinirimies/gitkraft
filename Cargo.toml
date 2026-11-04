@@ -8,7 +8,8 @@ resolver = "2"
 
 [workspace.package]
 version      = "1.2.15"
-edition      = "2021"
+edition      = "2024"
+rust-version = "1.90"
 authors      = ["Sorin Irimies <sorinirimies@gmail.com>"]
 license      = "MIT"
 repository   = "https://github.com/sorinirimies/gitkraft"
@@ -30,11 +31,9 @@ notify       = { version = "8.2.1", features = [] }
 futures      = "0.3"
 tempfile     = "3"
 tracing            = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # GUI (Iced)
 iced         = { version = "0.14", features = ["advanced", "canvas"] }
-iced_aw      = "0.14"
 iced_fonts   = { version = "0.3", features = ["bootstrap"] }
 rfd          = "0.17"
 
@@ -43,13 +42,24 @@ arboard              = "3"
 ratatui              = "0.30"
 crossterm            = "0.29"
 tui-file-explorer    = { version = "4", default-features = false }
-tui-checkbox         = "0.5.3"
 tui-spinner          = "0.5.1"
 tui-skeleton         = "0.3.0"
 tui-nuances          = "0.1.10"
 
 # Internal crates
 gitkraft-core = { path = "crates/gitkraft-core", version = "1.2.15" }
+
+[workspace.lints.rust]
+# libgit2 settings and AppKit need unsafe: each use allows it with a reason.
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+# `pub` only for what another crate uses; then dead_code finds the rest.
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"
 
 [profile.dev]
 opt-level = 0

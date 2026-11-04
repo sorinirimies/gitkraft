@@ -1,7 +1,7 @@
 //! Command-line handling for theme selection (`--theme`, `--list-themes`).
 
 use crate::features::theme::palette::theme_names as nuances_names;
-use gitkraft_core::{is_system_name, SYSTEM_THEME_NAME};
+use gitkraft_core::{SYSTEM_THEME_NAME, is_system_name};
 
 /// Every selectable theme name: `System` followed by all core presets.
 pub fn theme_names() -> Vec<&'static str> {

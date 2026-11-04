@@ -1421,19 +1421,14 @@ dependencies = [
 name = "gitkraft"
 version = "1.2.15"
 dependencies = [
- "dirs",
  "futures",
- "git2",
  "gitkraft-core",
  "iced",
  "iced_fonts",
- "notify",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
  "rfd",
- "serde",
- "tracing",
  "tracing-subscriber",
  "tui-spinner",
 ]
@@ -1463,10 +1458,8 @@ dependencies = [
  "dirs",
  "git2",
  "gitkraft-core",
- "notify",
  "ratatui",
  "tracing",
- "tracing-subscriber",
  "tui-file-explorer",
  "tui-nuances",
  "tui-skeleton",

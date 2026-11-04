@@ -105,7 +105,7 @@ use crate::features::{
 
 /// Full snapshot of a repository loaded in one background operation.
 ///
-/// Returned by [`load_repo_snapshot`] and used by both GUI and TUI to
+/// Returned by [`load_repo_snapshot`](super::ops::load_repo_snapshot) and used by both GUI and TUI to
 /// apply a fresh repo state without multiple round-trips.
 #[derive(Debug, Clone)]
 pub struct RepoSnapshot {

@@ -104,13 +104,14 @@ pub fn build_graph(commits: &[CommitInfo]) -> Vec<GraphRow> {
 
             // Additional parents get new lanes (or reuse existing ones).
             for parent_oid in &parents[1..] {
-                let existing = lanes
-                    .iter()
-                    .position(|l| l.as_ref().is_some_and(|ln| ln.target_oid == *parent_oid));
+                let existing = lanes.iter().enumerate().find_map(|(col, l)| {
+                    l.as_ref()
+                        .filter(|ln| ln.target_oid == *parent_oid)
+                        .map(|ln| (col, ln.color))
+                });
 
-                let (target_col, target_color) = if let Some(col) = existing {
-                    let color = lanes[col].as_ref().unwrap().color;
-                    (col, color)
+                let (target_col, target_color) = if let Some(found) = existing {
+                    found
                 } else {
                     let color = next_color;
                     next_color += 1;
@@ -140,10 +141,10 @@ pub fn build_graph(commits: &[CommitInfo]) -> Vec<GraphRow> {
             if col == node_col {
                 continue;
             }
-            if let Some(lane) = lane_opt {
-                if !oid_set.contains(lane.target_oid.as_str()) {
-                    *lane_opt = None;
-                }
+            if let Some(lane) = lane_opt
+                && !oid_set.contains(lane.target_oid.as_str())
+            {
+                *lane_opt = None;
             }
         }
 

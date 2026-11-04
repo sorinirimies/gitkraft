@@ -5,8 +5,7 @@ pub const APP_NAME: &str = "GitKraft";
 /// Current version (taken from the workspace `Cargo.toml`).
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Short project description.
-pub const DESCRIPTION: &str =
-    "A modern Git IDE with a desktop GUI (Iced) and a terminal UI (Ratatui), \
+pub const DESCRIPTION: &str = "A modern Git IDE with a desktop GUI (Iced) and a terminal UI (Ratatui), \
      sharing one Rust core.";
 /// Author's display name.
 pub const AUTHOR_NAME: &str = "Sorin Irimies";

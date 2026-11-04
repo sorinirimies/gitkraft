@@ -82,8 +82,10 @@ pub fn revert_commit(workdir: &std::path::Path, oid_str: &str) -> Result<()> {
 
 /// Reset the current branch to a specific commit.
 ///
-/// The `mode` parameter is type-safe — use [`ResetMode::Soft`],
-/// [`ResetMode::Mixed`], or [`ResetMode::Hard`].
+/// The `mode` parameter is type-safe — use
+/// [`ResetMode::Soft`](super::types::ResetMode::Soft),
+/// [`ResetMode::Mixed`](super::types::ResetMode::Mixed), or
+/// [`ResetMode::Hard`](super::types::ResetMode::Hard).
 pub fn reset_to_commit(
     workdir: &std::path::Path,
     oid_str: &str,

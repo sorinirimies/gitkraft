@@ -25,10 +25,10 @@ use anyhow::Result;
 use crossterm::event::{self, Event};
 use crossterm::execute;
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
 
 use crate::app::App;
 
@@ -150,15 +150,14 @@ where
             .as_ref()
             .map(|t| t.is_finished())
             .unwrap_or(true)
+            && let Some(ref path) = app.tab().repo_path.clone()
         {
-            if let Some(ref path) = app.tab().repo_path.clone() {
-                let git_dir = path.join(".git");
-                let tx = app.bg_tx.clone();
-                git_watcher_thread = Some(gitkraft_core::spawn_git_watcher(git_dir, move || {
-                    tx.send(crate::app::BackgroundResult::GitStateChanged)
-                        .is_ok()
-                }));
-            }
+            let git_dir = path.join(".git");
+            let tx = app.bg_tx.clone();
+            git_watcher_thread = Some(gitkraft_core::spawn_git_watcher(git_dir, move || {
+                tx.send(crate::app::BackgroundResult::GitStateChanged)
+                    .is_ok()
+            }));
         }
         // ─────────────────────────────────────────────────────────────────
 
@@ -167,12 +166,12 @@ where
         // Use a shorter poll interval (33 ms ≈ 30 fps) so background-task
         // results are picked up promptly and the loading indicator updates
         // without a noticeable lag.
-        if event::poll(Duration::from_millis(33))? {
-            if let Event::Key(key) = event::read()? {
-                // Ignore key-release events on platforms that send them
-                if key.kind == crossterm::event::KeyEventKind::Press {
-                    events::handle_key(&mut app, key);
-                }
+        if event::poll(Duration::from_millis(33))?
+            && let Event::Key(key) = event::read()?
+        {
+            // Ignore key-release events on platforms that send them
+            if key.kind == crossterm::event::KeyEventKind::Press {
+                events::handle_key(&mut app, key);
             }
         }
 

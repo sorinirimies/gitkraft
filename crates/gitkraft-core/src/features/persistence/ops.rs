@@ -181,12 +181,11 @@ pub fn load_tui_settings() -> Result<AppSettings> {
     let mut settings = load_from(&tui_json_path()?)?;
     // If the TUI has no editor configured, fall back to the GUI's editor
     // setting so the user only has to configure their editor once.
-    if settings.editor_name.is_none() {
-        if let Ok(gui) = load_from(&json_path()?) {
-            if gui.editor_name.is_some() {
-                settings.editor_name = gui.editor_name;
-            }
-        }
+    if settings.editor_name.is_none()
+        && let Ok(gui) = load_from(&json_path()?)
+        && gui.editor_name.is_some()
+    {
+        settings.editor_name = gui.editor_name;
     }
     Ok(settings)
 }

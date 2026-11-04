@@ -4,13 +4,7 @@ use iced::Settings;
 fn main() -> iced::Result {
     tracing_subscriber::fmt::init();
 
-    // Limit libgit2's in-memory object cache to 128 MB (default is unbounded).
-    // Without this, large repos can consume GBs of RAM as packfile objects
-    // are cached in memory across multiple Repository::discover() calls.
-    unsafe {
-        git2::opts::set_mwindow_size(64 * 1024 * 1024).ok(); // 64 MB mmap window
-        git2::opts::set_mwindow_mapped_limit(256 * 1024 * 1024).ok(); // 256 MB total mmap
-    }
+    gitkraft_core::limit_git_memory();
 
     // Read saved window geometry before starting the app.
     let saved_layout = gitkraft_core::features::persistence::ops::get_saved_layout()
@@ -179,7 +173,7 @@ fn git_watch_subscription(
 #[allow(clippy::ptr_arg)]
 fn git_watch_builder(
     path: &std::path::PathBuf,
-) -> impl futures::Stream<Item = gitkraft_gui::Message> {
+) -> impl futures::Stream<Item = gitkraft_gui::Message> + use<> {
     git_watch_stream(path.clone())
 }
 

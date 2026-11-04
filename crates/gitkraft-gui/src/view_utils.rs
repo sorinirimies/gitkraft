@@ -97,7 +97,7 @@ pub fn centered_placeholder<'a>(
     label_text: &str,
     muted: iced::Color,
 ) -> iced::Element<'a, crate::message::Message> {
-    use iced::widget::{column, container, text, Space};
+    use iced::widget::{Space, column, container, text};
     use iced::{Alignment, Length};
 
     let icon_widget = icon!(icon_char, icon_size, muted);
@@ -142,8 +142,8 @@ pub fn collapsible_header<'a>(
     on_toggle: crate::message::Message,
     muted: iced::Color,
 ) -> iced::Element<'a, crate::message::Message> {
-    use iced::widget::{button, row, text, Space};
     use iced::Alignment;
+    use iced::widget::{Space, button, row, text};
 
     let chevron_char = if expanded {
         crate::icons::CHEVRON_DOWN
@@ -178,8 +178,8 @@ pub fn toolbar_btn<'a>(
     label: &'a str,
     msg: crate::message::Message,
 ) -> iced::widget::Button<'a, crate::message::Message> {
-    use iced::widget::{button, row, text, Space};
     use iced::Alignment;
+    use iced::widget::{Space, button, row, text};
 
     button(
         row![

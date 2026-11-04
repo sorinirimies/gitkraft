@@ -1,7 +1,7 @@
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::widgets::Block;
-use ratatui::Frame;
 
 use crate::app::{App, AppScreen};
 use crate::features;

@@ -68,6 +68,7 @@ pub enum ContextMenu {
 // ── Per-repository tab state ──────────────────────────────────────────────────
 
 /// Per-repository state — one instance per open tab.
+#[derive(Debug)]
 pub struct RepoTab {
     // ── Repository ────────────────────────────────────────────────────────
     /// Path to the currently opened repository (workdir root).
@@ -453,10 +454,10 @@ impl RepoTab {
         // ── Restore multi-selection by OID ─────────────────────────────
         // Re-map the saved anchor and range selection from OIDs back to
         // indices in the (possibly reordered) new commit list.
-        if let Some(anchor_oid) = prev_anchor_oid {
-            if let Some(new_anchor) = self.commits.iter().position(|c| c.oid == anchor_oid) {
-                self.anchor_commit_index = Some(new_anchor);
-            }
+        if let Some(anchor_oid) = prev_anchor_oid
+            && let Some(new_anchor) = self.commits.iter().position(|c| c.oid == anchor_oid)
+        {
+            self.anchor_commit_index = Some(new_anchor);
         }
         if !prev_selected_oids.is_empty() {
             let restored: Vec<usize> = prev_selected_oids
@@ -499,6 +500,7 @@ impl RepoTab {
 // ── Top-level application state ───────────────────────────────────────────────
 
 /// Top-level application state for the GitKraft GUI.
+#[derive(Debug)]
 pub struct GitKraft {
     // ── Tabs ──────────────────────────────────────────────────────────────
     /// All open repository tabs.
@@ -821,14 +823,14 @@ impl GitKraft {
         let mut session_active: usize = 0;
         let mut found_active = false;
         for (i, tab) in self.tabs.iter().enumerate() {
-            if tab.repo_info.is_some() {
-                if let Some(ref p) = tab.repo_path {
-                    if i == self.active_tab {
-                        session_active = paths.len();
-                        found_active = true;
-                    }
-                    paths.push(p.clone());
+            if tab.repo_info.is_some()
+                && let Some(ref p) = tab.repo_path
+            {
+                if i == self.active_tab {
+                    session_active = paths.len();
+                    found_active = true;
                 }
+                paths.push(p.clone());
             }
         }
         // If the active tab wasn't in the saved set (e.g. it's an empty tab),
@@ -2265,11 +2267,13 @@ mod tests {
         // Should keep both tabs; the empty tab is now loading repo-b.
         assert_eq!(state.tabs.len(), 2);
         assert_eq!(state.active_tab, 1);
-        assert!(state.tabs[1]
-            .status_message
-            .as_deref()
-            .unwrap_or("")
-            .contains("repo-b"));
+        assert!(
+            state.tabs[1]
+                .status_message
+                .as_deref()
+                .unwrap_or("")
+                .contains("repo-b")
+        );
     }
 
     #[test]
@@ -2776,12 +2780,14 @@ mod tests {
         let _ = state.update(Message::FilePreviewLoaded(Err("No such file".to_string())));
 
         assert!(state.active_tab().error_message.is_some());
-        assert!(state
-            .active_tab()
-            .error_message
-            .as_ref()
-            .unwrap()
-            .contains("No such file"));
+        assert!(
+            state
+                .active_tab()
+                .error_message
+                .as_ref()
+                .unwrap()
+                .contains("No such file")
+        );
     }
 
     #[test]

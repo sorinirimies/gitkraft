@@ -22,7 +22,7 @@ use anyhow::Result;
 /// Each row is:  `Variant { "Label", prompt1, prompt2 }`
 /// where `prompt1` and `prompt2` are `Option<&'static str>` literals.
 macro_rules! define_commit_action_kinds {
-    ( $( $variant:ident { $label:literal, $prompt1:expr, $prompt2:expr } ),* $(,)? ) => {
+    ( $( $variant:ident { $label:literal, $prompt1:expr_2021, $prompt2:expr_2021 } ),* $(,)? ) => {
 
         /// Discriminant-only commit action — used for building menus before
         /// input values are known.  Every variant maps 1-to-1 to a
@@ -277,9 +277,11 @@ mod tests {
 
     #[test]
     fn as_simple_action_returns_none_for_input_kinds() {
-        assert!(CommitActionKind::CreateBranchHere
-            .as_simple_action()
-            .is_none());
+        assert!(
+            CommitActionKind::CreateBranchHere
+                .as_simple_action()
+                .is_none()
+        );
         assert!(CommitActionKind::CreateTag.as_simple_action().is_none());
     }
 

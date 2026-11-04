@@ -22,7 +22,7 @@ pub(crate) const MAX_CACHED_DIFFS: usize = 30;
 ///
 /// `$body` may use `?` – it is executed inside an immediately-invoked closure.
 macro_rules! bg_task {
-    ($self:expr, $status:expr, $variant:path, |$rp:ident| $body:expr) => {{
+    ($self:expr_2021, $status:expr_2021, $variant:path, |$rp:ident| $body:expr_2021) => {{
         let $rp = match $self.tab().repo_path.clone() {
             Some(p) => p,
             None => return,
@@ -44,13 +44,13 @@ macro_rules! bg_task {
 /// Use `staging` to trigger only a staging refresh on success, or `refresh`
 /// to trigger a full repo refresh.
 macro_rules! bg_op {
-    ($self:expr, $status:expr, staging, |$rp:ident| $body:expr) => {
+    ($self:expr_2021, $status:expr_2021, staging, |$rp:ident| $body:expr_2021) => {
         bg_op!(@inner $self, $status, false, true, |$rp| $body)
     };
-    ($self:expr, $status:expr, refresh, |$rp:ident| $body:expr) => {
+    ($self:expr_2021, $status:expr_2021, refresh, |$rp:ident| $body:expr_2021) => {
         bg_op!(@inner $self, $status, true, false, |$rp| $body)
     };
-    (@inner $self:expr, $status:expr, $nr:expr, $nsr:expr, |$rp:ident| $body:expr) => {{
+    (@inner $self:expr_2021, $status:expr_2021, $nr:expr_2021, $nsr:expr_2021, |$rp:ident| $body:expr_2021) => {{
         let $rp = match $self.tab().repo_path.clone() {
             Some(p) => p,
             None => return,
@@ -75,7 +75,7 @@ macro_rules! bg_op {
 ///
 /// Usage: `let idx = selected_idx!(self, list_state_field, vec_field, "error msg");`
 macro_rules! selected_idx {
-    ($self:expr, $state:ident, $vec:ident, $err:expr) => {{
+    ($self:expr_2021, $state:ident, $vec:ident, $err:expr_2021) => {{
         let idx = $self.tab().$state.selected().unwrap_or(0);
         if idx >= $self.tab().$vec.len() {
             $self.tab_mut().error_message = Some($err.into());
@@ -92,7 +92,7 @@ macro_rules! selected_idx {
 ///
 /// Usage: `let idx = require_selection!(self, list_state_field, "msg");`
 macro_rules! require_selection {
-    ($self:expr, $state:ident, $msg:expr) => {{
+    ($self:expr_2021, $state:ident, $msg:expr_2021) => {{
         match $self.tab().$state.selected() {
             Some(i) => i,
             None => {
@@ -224,6 +224,7 @@ pub enum DiffSubPane {
 // ── Per-repo tab state ────────────────────────────────────────────────────────────
 
 /// All state that belongs to a single repository tab.
+#[derive(Debug)]
 pub struct RepoTab {
     pub repo_path: Option<PathBuf>,
     pub repo_info: Option<RepoInfo>,
@@ -417,6 +418,7 @@ impl Default for RepoTab {
 
 // ── App State ───────────────────────────────────────────────────────────────────
 
+#[derive(Debug)]
 pub struct App {
     pub should_quit: bool,
     pub screen: AppScreen,
@@ -1104,11 +1106,11 @@ impl App {
             tab.unstaged_list_state.select(None);
         } else if tab.unstaged_list_state.selected().is_none() {
             tab.unstaged_list_state.select(Some(0));
-        } else if let Some(i) = tab.unstaged_list_state.selected() {
-            if i >= tab.unstaged_changes.len() {
-                tab.unstaged_list_state
-                    .select(Some(tab.unstaged_changes.len() - 1));
-            }
+        } else if let Some(i) = tab.unstaged_list_state.selected()
+            && i >= tab.unstaged_changes.len()
+        {
+            tab.unstaged_list_state
+                .select(Some(tab.unstaged_changes.len() - 1));
         }
 
         tab.staged_changes = payload.staged;
@@ -1116,11 +1118,11 @@ impl App {
             tab.staged_list_state.select(None);
         } else if tab.staged_list_state.selected().is_none() {
             tab.staged_list_state.select(Some(0));
-        } else if let Some(i) = tab.staged_list_state.selected() {
-            if i >= tab.staged_changes.len() {
-                tab.staged_list_state
-                    .select(Some(tab.staged_changes.len() - 1));
-            }
+        } else if let Some(i) = tab.staged_list_state.selected()
+            && i >= tab.staged_changes.len()
+        {
+            tab.staged_list_state
+                .select(Some(tab.staged_changes.len() - 1));
         }
     }
 
@@ -1677,12 +1679,13 @@ impl App {
     /// Load the combined diff for the currently selected commit range.
     pub fn load_commit_range_diff(&mut self) {
         let selected = self.tab().selected_commits.clone();
+        // selected is ascending; highest index = oldest commit (commits are newest-first)
+        let (Some(&newest_idx), Some(&oldest_idx)) = (selected.first(), selected.last()) else {
+            return;
+        };
         if selected.len() < 2 {
             return;
         }
-        // selected is ascending; highest index = oldest commit (commits are newest-first)
-        let oldest_idx = *selected.last().unwrap();
-        let newest_idx = selected[0];
 
         let oldest_oid = match self.tab().commits.get(oldest_idx).map(|c| c.oid.clone()) {
             Some(o) => o,
@@ -2588,10 +2591,10 @@ fn clamp_list_state(state: &mut ListState, len: usize) {
         state.select(None);
     } else if state.selected().is_none() {
         state.select(Some(0));
-    } else if let Some(i) = state.selected() {
-        if i >= len {
-            state.select(Some(len - 1));
-        }
+    } else if let Some(i) = state.selected()
+        && i >= len
+    {
+        state.select(Some(len - 1));
     }
 }
 
@@ -2949,7 +2952,7 @@ mod tests {
         let mut app = App::new();
         app.tabs[0].repo_path = Some(PathBuf::from("/tmp/repo-a"));
         app.new_tab(); // tab 1, no repo, screen = Welcome
-                       // go back to tab 0 (has repo) and set screen manually
+        // go back to tab 0 (has repo) and set screen manually
         app.active_tab_index = 0;
         app.screen = AppScreen::Main;
         // prev wraps to tab 1 which has no repo
@@ -4365,7 +4368,7 @@ mod tests {
         app.tab_mut().rename_branch_target = None;
         app.input_buffer = "new-name".into();
         app.do_rename_branch(); // must not panic
-                                // Returns before clearing input_buffer, so input_buffer is still set
+        // Returns before clearing input_buffer, so input_buffer is still set
         assert_eq!(app.input_buffer, "new-name");
     }
 

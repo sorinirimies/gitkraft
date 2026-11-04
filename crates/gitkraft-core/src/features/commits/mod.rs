@@ -4,6 +4,6 @@ pub mod actions;
 pub mod ops;
 pub mod types;
 
-pub use actions::{CommitAction, CommitActionKind, COMMIT_MENU_GROUPS};
+pub use actions::{COMMIT_MENU_GROUPS, CommitAction, CommitActionKind};
 pub use ops::*;
 pub use types::*;

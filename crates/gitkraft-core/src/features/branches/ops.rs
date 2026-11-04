@@ -1,6 +1,6 @@
 //! Branch operations — list, create, delete, checkout, and merge branches.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use git2::{BranchType as Git2BranchType, Repository};
 use tracing::debug;
 

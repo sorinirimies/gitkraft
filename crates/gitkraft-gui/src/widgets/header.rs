@@ -2,7 +2,7 @@
 //!
 //! Shows: repo name │ branch name │ fetch button │ toggle sidebar.
 
-use iced::widget::{button, container, row, text, Space};
+use iced::widget::{Space, button, container, row, text};
 use iced::{Alignment, Element, Length};
 
 use crate::features::editor::editor_selector;

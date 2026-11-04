@@ -17,7 +17,7 @@
 //! the `ButtonReleased` event arrives, so `CloseTab` never fires).  Keeping
 //! them as siblings at the same row level eliminates the race entirely.
 
-use iced::widget::{button, container, row, scrollable, text, Space};
+use iced::widget::{Space, button, container, row, scrollable, text};
 use iced::{Alignment, Element, Length};
 
 use crate::icons;

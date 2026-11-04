@@ -8,10 +8,10 @@
 //! empty).  Background watcher refreshes use the real content with the
 //! status-bar spinner instead.
 
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::widgets::{Block, Borders};
-use ratatui::Frame;
 use tui_skeleton::{AnimationMode, SkeletonBlock, SkeletonList, SkeletonTable};
 
 use crate::app::App;

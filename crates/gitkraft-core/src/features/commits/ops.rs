@@ -62,15 +62,14 @@ pub(crate) fn build_ref_map(repo: &Repository) -> HashMap<git2::Oid, Vec<RefLabe
     }
 
     // Detached HEAD: synthesise a label for the bare commit.
-    if head_branch.is_none() {
-        if let Ok(head) = repo.head() {
-            if let Ok(commit) = head.peel_to_commit() {
-                map.entry(commit.id()).or_default().push(RefLabel {
-                    name: "HEAD".to_string(),
-                    kind: RefKind::Head,
-                });
-            }
-        }
+    if head_branch.is_none()
+        && let Ok(head) = repo.head()
+        && let Ok(commit) = head.peel_to_commit()
+    {
+        map.entry(commit.id()).or_default().push(RefLabel {
+            name: "HEAD".to_string(),
+            kind: RefKind::Head,
+        });
     }
 
     // Sort each bucket: Head first, LocalBranch, RemoteBranch, Tag.
@@ -173,17 +172,20 @@ pub fn create_commit(repo: &Repository, message: &str) -> Result<CommitInfo> {
 
     // Collect parent commits (HEAD if it exists).
     let parent_commit;
-    let parents: Vec<&git2::Commit<'_>> = if let Ok(head_ref) = repo.head() {
-        let head_oid = head_ref
-            .target()
-            .context("HEAD is not a direct reference")?;
-        parent_commit = repo
-            .find_commit(head_oid)
-            .context("failed to find HEAD commit")?;
-        vec![&parent_commit]
-    } else {
-        // Initial commit — no parents.
-        vec![]
+    let parents: Vec<&git2::Commit<'_>> = match repo.head() {
+        Ok(head_ref) => {
+            let head_oid = head_ref
+                .target()
+                .context("HEAD is not a direct reference")?;
+            parent_commit = repo
+                .find_commit(head_oid)
+                .context("failed to find HEAD commit")?;
+            vec![&parent_commit]
+        }
+        _ => {
+            // Initial commit — no parents.
+            vec![]
+        }
     };
 
     let oid = repo

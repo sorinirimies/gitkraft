@@ -14,7 +14,7 @@
 //! ```
 //! All three scroll together because they share the same scrollable parent.
 
-use iced::widget::{button, column, container, mouse_area, row, scrollable, text, Row, Space};
+use iced::widget::{Row, Space, button, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Color, Element, Length, Theme};
 
 use crate::icons;
@@ -31,7 +31,7 @@ use crate::widgets::commit_graph::CommitGraph;
 /// Height of one commit row in pixels.
 const ROW_HEIGHT: f32 = 26.0;
 
-use crate::layout::{CommitColumns, AUTHOR_COLUMN_PX, DIVIDER_W, TIME_COLUMN_PX};
+use crate::layout::{AUTHOR_COLUMN_PX, CommitColumns, DIVIDER_W, TIME_COLUMN_PX};
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -84,32 +84,30 @@ fn ref_badges<'a>(
     }
 
     // Show ghost label when hovered OR selected (semi-transparent inherited branch name).
-    if show_ghost {
-        if let Some(label) = ghost_label {
-            let ghost_name = gitkraft_core::truncate_str(label, 14);
-            let fg = Color { a: 0.45, ..c.muted };
-            let bg = Color {
-                a: 0.15,
-                ..c.surface
-            };
-            let badge = container(
-                text(ghost_name)
-                    .size(10)
-                    .color(fg)
-                    .font(iced::Font::MONOSPACE),
-            )
-            .padding([1, 4])
-            .style(move |_: &Theme| iced::widget::container::Style {
-                background: Some(iced::Background::Color(bg)),
-                border: iced::Border {
-                    color: fg,
-                    width: 1.0,
-                    radius: 3.0.into(),
-                },
-                ..Default::default()
-            });
-            return badge.into();
-        }
+    if show_ghost && let Some(label) = ghost_label {
+        let ghost_name = gitkraft_core::truncate_str(label, 14);
+        let fg = Color { a: 0.45, ..c.muted };
+        let bg = Color {
+            a: 0.15,
+            ..c.surface
+        };
+        let badge = container(
+            text(ghost_name)
+                .size(10)
+                .color(fg)
+                .font(iced::Font::MONOSPACE),
+        )
+        .padding([1, 4])
+        .style(move |_: &Theme| iced::widget::container::Style {
+            background: Some(iced::Background::Color(bg)),
+            border: iced::Border {
+                color: fg,
+                width: 1.0,
+                radius: 3.0.into(),
+            },
+            ..Default::default()
+        });
+        return badge.into();
     }
 
     Space::new().into()

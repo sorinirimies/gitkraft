@@ -2,11 +2,12 @@
 name = "gitkraft-tui"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "GitKraft — Git IDE terminal application (Ratatui TUI)"
-readme = "README.md"
+readme = "../../README.md"
 categories = ["command-line-utilities", "development-tools"]
 keywords = ["git", "vcs", "ide", "tui"]
 
@@ -27,9 +28,10 @@ crossterm          = { workspace = true }
 dirs               = { workspace = true }
 anyhow             = { workspace = true }
 tracing            = { workspace = true }
-tracing-subscriber = { workspace = true }
-notify             = { workspace = true }
 tui-spinner        = { workspace = true }
 tui-skeleton       = { workspace = true }
 tui-file-explorer  = { workspace = true }
 tui-nuances        = { workspace = true }
+
+[lints]
+workspace = true
