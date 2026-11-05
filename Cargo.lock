@@ -1147,9 +1147,9 @@ checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
 name = "finl_unicode"
-version = "1.5.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80bb028c8b4148c9ee0cca68fcd9add6044e81d3619f48577ddf13a263d047a2"
+checksum = "09ded33109e99472f809cb7495544506eea45e366725dacf2a383e184f660456"
 
 [[package]]
 name = "fixedbitset"
@@ -4563,9 +4563,9 @@ dependencies = [
 
 [[package]]
 name = "tui-file-explorer"
-version = "4.0.0"
+version = "4.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32c0c5529ee2d8fa59fb5f9411f4f9add5c9f5606130fcc01cb9b7957aee2b67"
+checksum = "18c7bcc8953884a6f44c5b906e4902566a4231462ed73a6a90a63e8dd74b5d18"
 dependencies = [
  "crossterm",
  "libc",
@@ -5561,9 +5561,9 @@ dependencies = [
 
 [[package]]
 name = "winnow"
-version = "1.0.4"
+version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
+checksum = "8c3b93199df0ab874cdf0c6a94f0a0dc3423fe41f1cafb62b8bd7b1deb277aef"
 dependencies = [
  "memchr",
 ]
