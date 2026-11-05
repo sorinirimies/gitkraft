@@ -38,7 +38,7 @@ iced_fonts   = { version = "0.3", features = ["bootstrap"] }
 rfd          = "0.17"
 
 # TUI (Ratatui)
-arboard              = "3"
+arboard              = { version = "3", features = ["wayland-data-control"] }  # wl-clipboard: copy works on Wayland without XWayland
 ratatui              = "0.30"
 crossterm            = "0.29"
 tui-file-explorer    = { version = "4", default-features = false }

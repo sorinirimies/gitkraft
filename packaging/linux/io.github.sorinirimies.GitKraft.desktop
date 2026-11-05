@@ -7,4 +7,4 @@ Terminal=false
 Type=Application
 Categories=Development;RevisionControl;
 Keywords=git;vcs;repository;
-StartupWMClass=gitkraft
+StartupWMClass=io.github.sorinirimies.GitKraft

@@ -102,11 +102,7 @@ fn main() -> iced::Result {
             default_text_size: iced::Pixels(13.0),
             ..Default::default()
         })
-        .window(iced::window::Settings {
-            size: window_size,
-            position: window_position,
-            ..Default::default()
-        })
+        .window(gitkraft_gui::window::settings(window_size, window_position))
         .run()
 }
 
