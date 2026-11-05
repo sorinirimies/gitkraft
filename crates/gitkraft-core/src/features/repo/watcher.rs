@@ -41,6 +41,10 @@ where
     thread::spawn(move || {
         use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 
+        // macOS reports `/private/var/…` for a watched `/var/…` path.
+        let roots: Vec<PathBuf> = std::fs::canonicalize(&git_dir)
+            .map_or_else(|_| vec![git_dir.clone()], |c| vec![git_dir.clone(), c]);
+
         let (raw_tx, raw_rx) = mpsc::channel::<notify::Result<notify::Event>>();
 
         let mut watcher = RecommendedWatcher::new(
@@ -69,24 +73,11 @@ where
 
         loop {
             // Block until a relevant notify event arrives or fallback elapses.
-            // On Linux inotify reports Access/Open/Close-nowrite events when
-            // git2 merely READS files, which would cause a refresh loop
-            // (read → event → refresh → read), so ignore those and *.lock.
-            let is_relevant = |res: &notify::Result<notify::Event>| match res {
-                Ok(ev) => {
-                    !matches!(ev.kind, notify::EventKind::Access(_))
-                        && !ev
-                            .paths
-                            .iter()
-                            .all(|p| p.extension().is_some_and(|e| e == "lock"))
-                }
-                Err(_) => true,
-            };
             let deadline = std::time::Instant::now() + fallback;
             loop {
                 let left = deadline.saturating_duration_since(std::time::Instant::now());
                 match raw_rx.recv_timeout(left) {
-                    Ok(res) if !is_relevant(&res) => continue,
+                    Ok(res) if !is_relevant(&res, &roots) => continue,
                     _ => break,
                 }
             }
@@ -104,10 +95,56 @@ where
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
+/// Whether a notify event means the repository changed.
+///
+/// Ignored:
+/// - reads (Linux inotify reports Access/Open/Close-nowrite when git2 merely READS
+///   files, which would cause a read → event → refresh → read loop);
+/// - events touching only `*.lock` files;
+/// - events on the watched directory itself (`roots`): FSEvents on macOS delivers
+///   its creation late, after watching started. A real change also reports the
+///   file that changed.
+fn is_relevant(res: &notify::Result<notify::Event>, roots: &[PathBuf]) -> bool {
+    match res {
+        Ok(ev) => {
+            !matches!(ev.kind, notify::EventKind::Access(_))
+                && !ev
+                    .paths
+                    .iter()
+                    .all(|p| p.extension().is_some_and(|e| e == "lock") || roots.contains(p))
+        }
+        Err(_) => true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
+
+    fn event(kind: notify::EventKind, path: &str) -> notify::Result<notify::Event> {
+        Ok(notify::Event::new(kind).add_path(PathBuf::from(path)))
+    }
+
+    #[test]
+    fn an_event_on_the_watched_directory_itself_is_not_a_change() {
+        // FSEvents delivers the creation of the watched .git late, after the
+        // watcher started; that refreshed the UI for nothing (and failed CI).
+        let roots = [PathBuf::from("/r/.git")];
+        let created = notify::EventKind::Create(notify::event::CreateKind::Folder);
+        assert!(!is_relevant(&event(created, "/r/.git"), &roots));
+        assert!(is_relevant(&event(created, "/r/.git/refs"), &roots));
+    }
+
+    #[test]
+    fn reads_and_lock_files_are_not_changes() {
+        let roots = [PathBuf::from("/r/.git")];
+        let read = notify::EventKind::Access(notify::event::AccessKind::Any);
+        let write = notify::EventKind::Modify(notify::event::ModifyKind::Any);
+        assert!(!is_relevant(&event(read, "/r/.git/HEAD"), &roots));
+        assert!(!is_relevant(&event(write, "/r/.git/index.lock"), &roots));
+        assert!(is_relevant(&event(write, "/r/.git/HEAD"), &roots));
+    }
 
     fn wait_for<F: Fn() -> bool>(condition: F, timeout: Duration) -> bool {
         let deadline = std::time::Instant::now() + timeout;
