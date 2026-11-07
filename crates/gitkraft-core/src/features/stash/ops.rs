@@ -136,7 +136,7 @@ mod tests {
 
         stash_pop(&mut repo, 0).unwrap();
         let content = std::fs::read_to_string(dir.path().join("file.txt")).unwrap();
-        assert_eq!(content, "changed\n");
+        assert_eq!(content.replace("\r\n", "\n"), "changed\n");
     }
 
     fn setup_repo_with_stash() -> (TempDir, Repository) {
