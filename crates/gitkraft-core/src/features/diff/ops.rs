@@ -718,7 +718,7 @@ mod tests {
         // Restore using checkout_file_at_commit
         checkout_file_at_commit(&repo, &head_oid, "hello.txt").unwrap();
         let content = std::fs::read_to_string(dir.path().join("hello.txt")).unwrap();
-        assert_eq!(content, "Hello, world!\n");
+        assert_eq!(content.replace("\r\n", "\n"), "Hello, world!\n");
     }
 
     #[test]

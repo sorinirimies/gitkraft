@@ -132,7 +132,7 @@ mod tests {
 
         // File should be restored to committed state after stash
         let content = std::fs::read_to_string(dir.path().join("file.txt")).unwrap();
-        assert_eq!(content, "hello\n");
+        assert_eq!(content.replace("\r\n", "\n"), "hello\n");
 
         stash_pop(&mut repo, 0).unwrap();
         let content = std::fs::read_to_string(dir.path().join("file.txt")).unwrap();

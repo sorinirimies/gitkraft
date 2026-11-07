@@ -198,7 +198,7 @@ mod tests {
         discard_file_changes(&repo, "hello.txt").unwrap();
 
         let content = fs::read_to_string(&file_path).unwrap();
-        assert_eq!(content, "hello world\n");
+        assert_eq!(content.replace("\r\n", "\n"), "hello world\n");
     }
 
     #[test]
