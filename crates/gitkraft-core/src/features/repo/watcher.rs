@@ -241,9 +241,12 @@ mod tests {
         let _handle =
             spawn_git_watcher_with_fallback(git_dir.clone(), Duration::from_secs(5), move || {
                 *fired_clone.lock().unwrap() = true;
-                false
+                true
             });
-        thread::sleep(Duration::from_millis(200));
+        // macOS FSEvents may replay the setup write shortly after start; let it
+        // settle, then clear the flag so only the read phase is observed.
+        thread::sleep(Duration::from_millis(1200));
+        *fired.lock().unwrap() = false;
 
         // Pure reads (inotify Access/Open events) must not trigger a refresh.
         for _ in 0..5 {
