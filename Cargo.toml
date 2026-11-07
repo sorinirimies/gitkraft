@@ -36,6 +36,7 @@ tracing            = "0.1"
 iced         = { version = "0.14", features = ["advanced", "canvas"] }
 iced_fonts   = { version = "0.3", features = ["bootstrap"] }
 rfd          = "0.17"
+winresource  = { version = "0.1", default-features = false }  # gitkraft.exe icon (build script)
 
 # TUI (Ratatui)
 arboard              = { version = "3", features = ["wayland-data-control"] }  # wl-clipboard: copy works on Wayland without XWayland

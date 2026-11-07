@@ -1,12 +1,82 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <rect width="256" height="256" rx="48" fill="#1e1e2e"/>
-  <g stroke="#89b4fa" stroke-width="14" stroke-linecap="round" fill="none">
-    <path d="M88 64v128"/>
-    <path d="M88 108c0 36 80 4 80 44"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- GitKraft app icon: a commit graph that branches and merges, drawn over its own
+       construction geometry (craft as precision).
+       Master artwork. `just icons` derives every platform icon from this file:
+       the small sizes drop the construction block, macOS adds its margin and shadow. -->
+  <defs>
+    <clipPath id="gk-tile"><rect width="1024" height="1024" rx="228"/></clipPath>
+    <radialGradient id="gk-bg" cx="0.35" cy="0.25" r="1">
+      <stop offset="0" stop-color="#22252d"/>
+      <stop offset="1" stop-color="#0a0b0e"/>
+    </radialGradient>
+    <linearGradient id="gk-rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.03"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.06"/>
+    </linearGradient>
+    <linearGradient id="gk-ivory" gradientUnits="userSpaceOnUse" x1="0" y1="180" x2="0" y2="850">
+      <stop offset="0" stop-color="#fbf6ec"/>
+      <stop offset="1" stop-color="#d6cab4"/>
+    </linearGradient>
+    <linearGradient id="gk-copper" gradientUnits="userSpaceOnUse" x1="420" y1="360" x2="640" y2="720">
+      <stop offset="0" stop-color="#f0a46a"/>
+      <stop offset="0.5" stop-color="#d0632a"/>
+      <stop offset="1" stop-color="#a8461c"/>
+    </linearGradient>
+    <filter id="gk-lift" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+    <!-- fine grain: dithers the dark gradient so large sizes show no banding -->
+    <filter id="gk-grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="7"/>
+      <feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.9 -0.4"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" rx="228" fill="url(#gk-bg)"/>
+  <rect width="1024" height="1024" filter="url(#gk-grain)" clip-path="url(#gk-tile)" opacity="0.06"/>
+
+  <!-- construction:start -->
+  <g clip-path="url(#gk-tile)" fill="none" stroke="#e2b77e" stroke-width="2.5">
+    <circle cx="512" cy="512" r="400" stroke-opacity="0.22"/>
+    <circle cx="512" cy="512" r="300" stroke-opacity="0.12"/>
+    <path d="M420 40 V 984 M604 40 V 984 M40 250 H 984 M40 545 H 984 M40 774 H 984" stroke-opacity="0.13"/>
+    <path d="M40 360 H 984 M40 720 H 984" stroke-opacity="0.22" stroke-dasharray="6 10"/>
+    <!-- the branch curve's bezier handles -->
+    <g stroke-opacity="0.45">
+      <path d="M420 360 L 420 450 M604 530 L 604 440 M604 560 L 604 650 M420 720 L 420 640"/>
+      <rect x="413" y="443" width="14" height="14"/>
+      <rect x="597" y="433" width="14" height="14"/>
+      <rect x="597" y="643" width="14" height="14"/>
+      <rect x="413" y="633" width="14" height="14"/>
+    </g>
+    <!-- dimension: the lane spacing -->
+    <path d="M420 178 H 604 M420 166 V 190 M604 166 V 190" stroke-opacity="0.45"/>
   </g>
-  <g fill="#cba6f7">
-    <circle cx="88" cy="64" r="22"/>
-    <circle cx="88" cy="192" r="22"/>
-    <circle cx="168" cy="160" r="22"/>
+  <g fill="#e2b77e" fill-opacity="0.5">
+    <circle cx="512" cy="512" r="5"/>
+    <circle cx="420" cy="545" r="5"/>
+    <circle cx="604" cy="250" r="5"/>
+    <circle cx="604" cy="774" r="5"/>
   </g>
+  <!-- construction:end -->
+
+  <!-- mark:start -->
+  <g filter="url(#gk-lift)">
+    <path d="M420 250 V 774" fill="none" stroke="url(#gk-ivory)" stroke-width="64" stroke-linecap="round"/>
+    <path d="M420 360 C 420 450 604 440 604 530 V 560 C 604 650 420 640 420 720" fill="none" stroke="url(#gk-copper)" stroke-width="64" stroke-linecap="round"/>
+    <circle cx="420" cy="250" r="68" fill="url(#gk-ivory)"/>
+    <circle cx="420" cy="774" r="68" fill="url(#gk-ivory)"/>
+    <circle cx="604" cy="545" r="60" fill="url(#gk-copper)"/>
+  </g>
+  <g fill="#121419">
+    <circle cx="420" cy="250" r="26"/>
+    <circle cx="420" cy="774" r="26"/>
+    <circle cx="604" cy="545" r="22"/>
+  </g>
+  <!-- mark:end -->
+
+  <!-- rim:start -->
+  <rect x="5" y="5" width="1014" height="1014" rx="223" fill="none" stroke="url(#gk-rim)" stroke-width="10"/>
+  <!-- rim:end -->
 </svg>

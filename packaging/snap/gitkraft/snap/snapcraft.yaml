@@ -9,6 +9,7 @@ license: MIT
 grade: stable
 confinement: strict
 title: GitKraft
+icon: assets/icons/gitkraft-512.png
 
 apps:
   gitkraft:

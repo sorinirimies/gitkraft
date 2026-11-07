@@ -34,6 +34,7 @@ modules:
       - install -Dm644 packaging/linux/io.github.sorinirimies.GitKraft.desktop -t /app/share/applications
       - install -Dm644 packaging/linux/io.github.sorinirimies.GitKraft.metainfo.xml -t /app/share/metainfo
       - install -Dm644 assets/icons/gitkraft.svg /app/share/icons/hicolor/scalable/apps/io.github.sorinirimies.GitKraft.svg
+      - for n in 16 22 24 32 48 64 96 128 256 512; do install -Dm644 assets/icons/gitkraft-$n.png /app/share/icons/hicolor/${n}x${n}/apps/io.github.sorinirimies.GitKraft.png; done
     sources:
       - type: git
         url: https://github.com/sorinirimies/gitkraft.git

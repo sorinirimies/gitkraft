@@ -6,7 +6,7 @@ script for every binary in `scripts/project.nu` to `dist/installer.nsi` and comp
 shortcuts, the TUI, and the install folder on `PATH`.
 
 Build the binaries first (`nu scripts/ci/build_release.nu x86_64-pc-windows-msvc`), with NSIS
-installed (`nu scripts/ci/package_desktop.nu tools windows`). A `packaging/windows/gitkraft.ico`
-(classic BMP entries; NSIS rejects PNG-compressed ones) becomes the installer icon, e.g.:
-
-    magick assets/icons/gitkraft-256.png -define icon:auto-resize=256,128,64,48,32,16 packaging/windows/gitkraft.ico
+installed (`nu scripts/ci/package_desktop.nu tools windows`). `packaging/windows/gitkraft.ico`
+becomes the installer icon; `crates/gitkraft-gui/build.rs` embeds the same icon into
+`gitkraft.exe`, which the shortcuts show. Both come from `assets/icons/gitkraft.svg` via
+`just icons` (16–256 px, classic BMP entries: NSIS rejects PNG-compressed ones).

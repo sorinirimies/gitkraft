@@ -34,8 +34,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # itself uses, so nothing new is compiled.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2            = "0.6"
-objc2-app-kit    = { version = "0.3", features = ["NSApplication", "NSMenu", "NSMenuItem", "NSResponder"] }
-objc2-foundation = { version = "0.3", features = ["NSString", "NSObject"] }
+objc2-app-kit    = { version = "0.3", features = ["NSApplication", "NSImage", "NSMenu", "NSMenuItem", "NSResponder"] }
+objc2-foundation = { version = "0.3", features = ["NSData", "NSString", "NSObject"] }
+
+# Windows: `build.rs` embeds assets/gitkraft.ico into gitkraft.exe (Explorer, shortcuts).
+[target.'cfg(windows)'.build-dependencies]
+winresource = { workspace = true }
 
 [lints]
 workspace = true
