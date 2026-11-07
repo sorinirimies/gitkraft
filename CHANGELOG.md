@@ -4,6 +4,35 @@ All notable changes to this project are documented here. It is generated from
 [Conventional Commits](https://www.conventionalcommits.org) by
 [git-cliff](https://git-cliff.org) — do not edit it by hand.
 
+## [1.4.0](https://github.com/sorinirimies/gitkraft/compare/v1.3.0...v1.4.0) — 2026-11-07
+
+### ✨ Features
+
+- New app icon for macOS, Windows and Linux ([`34a5165`](https://github.com/sorinirimies/gitkraft/commit/34a5165f5909680bdb03562fa5826deaf65c18e4))
+
+### 🐛 Bug fixes
+
+- **watcher:** An event on the watched .git itself is not a change (macOS delivered its creation late) ([`c5da1c0`](https://github.com/sorinirimies/gitkraft/commit/c5da1c08ac814e8ea25e8c5d9609f6f489118575))
+
+### 🧪 Tests
+
+- Normalize CRLF in stash_pop assertion ([`5fb7c67`](https://github.com/sorinirimies/gitkraft/commit/5fb7c67e587af61514a3f8e45f35022510e5148c))
+- Normalize CRLF in restore tests for Windows ([`97bdc17`](https://github.com/sorinirimies/gitkraft/commit/97bdc1769a326c19084d373945adb4573dd2b6a2))
+- **watcher:** Tolerate macOS FSEvents replay of setup write ([`9f93188`](https://github.com/sorinirimies/gitkraft/commit/9f931885ce80ebf7be4fd69dcb0fabb063a2de55))
+
+### 📦 Dependencies
+
+- Nightly cargo update 2026-11-07 ([`8706965`](https://github.com/sorinirimies/gitkraft/commit/870696503269b16630fe1f6229ed56d2c4bd39ed))
+- Nightly cargo update 2026-11-06 ([`54ce31e`](https://github.com/sorinirimies/gitkraft/commit/54ce31ee4ae3e82d5b3b7531b1f02dbf666aa7ce))
+
+### 🔄 CI and release
+
+- **gitea:** Check the MSRV on Gitea too, with the same command as GitHub ([`36c05d7`](https://github.com/sorinirimies/gitkraft/commit/36c05d7df00ac48034e6fb9c329ae2d583c7db6c))
+- **release:** Each install line in the release notes says which binary it is (GUI, TUI, web) ([`1d14a2f`](https://github.com/sorinirimies/gitkraft/commit/1d14a2f9dfe92292de9b44b4df3ac9d91b9157a7))
+- **packages:** .deb and .rpm package names are valid Debian names (no underscores) ([`4487cb3`](https://github.com/sorinirimies/gitkraft/commit/4487cb332788f57095ee8514ae0e188943db8fe8))
+- **packages:** AppImages use the downloaded appimagetool; which also matched the script's own command ([`0c14472`](https://github.com/sorinirimies/gitkraft/commit/0c144720ba2089b1814b0afdce77cc2f61ec55c0))
+- **packages:** Alien gets an absolute .deb path, so the .rpm build finds it ([`937ba14`](https://github.com/sorinirimies/gitkraft/commit/937ba1446cef753e78b24dfbe23f20a868ff6f52))
+
 ## [1.3.0](https://github.com/sorinirimies/gitkraft/compare/v1.2.15...v1.3.0) — 2026-11-05
 
 ### 🐛 Bug fixes
