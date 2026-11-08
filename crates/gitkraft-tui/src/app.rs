@@ -3591,9 +3591,12 @@ mod tests {
             .unwrap();
         app.poll_background();
         // After GitStateChanged, a full refresh should have been enqueued
-        // (is_loading set true because refresh() calls load_repo_blocking).
+        // (is_loading set true). The refresh thread fails fast on the fake
+        // path and `poll_background` may drain its `RepoLoaded` error in the
+        // same loop, so a set `error_message` (cleared by the refresh) also
+        // proves the refresh ran.
         assert!(
-            app.tab().is_loading,
+            app.tab().is_loading || app.tab().error_message.is_some(),
             "GitStateChanged must trigger a full refresh (is_loading should be true)"
         );
     }
