@@ -4,6 +4,23 @@ All notable changes to this project are documented here. It is generated from
 [Conventional Commits](https://www.conventionalcommits.org) by
 [git-cliff](https://git-cliff.org) — do not edit it by hand.
 
+## [1.4.1](https://github.com/sorinirimies/gitkraft/compare/v1.4.0...v1.4.1) — 2026-11-10
+
+### 🐛 Bug fixes
+
+- **tui:** De-flake git_state_changed refresh test (refresh thread can finish before assert) ([`2a5e336`](https://github.com/sorinirimies/gitkraft/commit/2a5e33617480d1ce8a08a494e092397c53e6c8d1))
+
+### 📦 Dependencies
+
+- Bump tui-nuances to 0.1.11 ([`f682566`](https://github.com/sorinirimies/gitkraft/commit/f6825663ddb361efb82953962f0b33501db635f7))
+- Nightly cargo update 2026-11-10 ([`d2b8472`](https://github.com/sorinirimies/gitkraft/commit/d2b8472a6b5a370c1450efb42a659fea4ac8a788))
+- Nightly cargo update 2026-11-09 ([`eed33a2`](https://github.com/sorinirimies/gitkraft/commit/eed33a2e03524174665842814a757c4aacea22ea))
+- Nightly cargo update 2026-11-08 ([`2aa8e10`](https://github.com/sorinirimies/gitkraft/commit/2aa8e10ce9971560f11a1018e9a6f23b35852960))
+
+### 🔄 CI and release
+
+- Add Forgejo Actions workflows for Codeberg runners ([`f034149`](https://github.com/sorinirimies/gitkraft/commit/f034149b299fd25d8769b7f9fafce6ffe9c04887))
+
 ## [1.4.0](https://github.com/sorinirimies/gitkraft/compare/v1.3.0...v1.4.0) — 2026-11-07
 
 ### ✨ Features
