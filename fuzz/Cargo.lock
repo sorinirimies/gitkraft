@@ -325,9 +325,9 @@ dependencies = [
 
 [[package]]
 name = "libz-sys"
-version = "1.1.32"
+version = "1.1.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69965d2409bff8c8cea3829009fff66a86f05a0570656552ef70f616e8e4bd85"
+checksum = "fee3f59f4321dab0c78d828942e7aa09d0bd8ad6e78a501977e6bf3d02938045"
 dependencies = [
  "cc",
  "libc",
@@ -386,9 +386,9 @@ dependencies = [
 
 [[package]]
 name = "notify-types"
-version = "2.2.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a437a9308232ce794b1e7fdf540d38ea37efc3c73492640c13b4c8568b8f108"
+checksum = "8c491a384baf9fec20df565cdb8138a12809d4c7439763b566eb8114c5d59979"
 dependencies = [
  "bitflags",
 ]
