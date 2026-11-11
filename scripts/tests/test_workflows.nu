@@ -155,7 +155,7 @@ def "test workflows: the msrv job pins the toolchain from Cargo.toml without a v
     let msrv = $cargo | get -o workspace.package.rust-version | default ($cargo | get -o package.rust-version)
     let step = open (root | path join .github workflows ci.yml) | get jobs.msrv.steps
         | where {|s| ($s | get -o uses | default "") | str starts-with "dtolnay/rust-toolchain" } | first
-    # A version ref (@1.90) is something Dependabot bumps; @master + toolchain is not.
+    # A version ref (@1.91) is something Dependabot bumps; @master + toolchain is not.
     assert equal $step.uses "dtolnay/rust-toolchain@master"
     assert equal ($step.with.toolchain | into string) $msrv
 }

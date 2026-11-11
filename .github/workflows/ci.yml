@@ -98,14 +98,14 @@ jobs:
         run: nu scripts/ci/wayland_smoke.nu --build
 
   msrv:
-    name: MSRV (1.90)
+    name: MSRV (1.91)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # @master + toolchain, not @1.90: Dependabot would bump a version ref.
+      # @master + toolchain, not @1.91: Dependabot would bump a version ref.
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.90"
+          toolchain: "1.91"
       - uses: Swatinem/rust-cache@v2
       - uses: hustcer/setup-nu@v3
         with:
