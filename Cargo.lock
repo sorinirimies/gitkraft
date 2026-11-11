@@ -4606,9 +4606,9 @@ dependencies = [
 
 [[package]]
 name = "tui-file-explorer"
-version = "4.0.6"
+version = "4.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13a1e82351f518474565b36f0f5ff37a243c41fc54a1596eea29e3ea33bc15a5"
+checksum = "9da4d268c96557901ac492a89174e35d9f5cd6026097c3433b1b0c18674db3ee"
 dependencies = [
  "crossterm",
  "libc",
@@ -4638,9 +4638,9 @@ dependencies = [
 
 [[package]]
 name = "tui-spinner"
-version = "0.5.3"
+version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "937930e920bac1061afa9b23835cd2b30160438c7fc8afc2f06b5605b56746d6"
+checksum = "6e63e09be3aa0d8ef868b44f764829949c5873884f42e2fce714a3439ae586a3"
 dependencies = [
  "ratatui",
  "tui-nuances",
