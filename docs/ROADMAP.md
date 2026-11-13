@@ -38,12 +38,12 @@ Provider: a small `Llm` trait (fakeable, no network in tests) with two backends:
   servers (Ollama, LM Studio, vLLM), so private repos can stay on the machine.
 
 Key: env (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`), then the OS keyring via
-`gitkraft-tui auth ai`. Never a config file. The config holds provider, model, base URL and
-which features are on.
+`gitkraft-tui ai-key anthropic|openai` (key on stdin). Never a config file. The config holds provider, model, base URL and
+which features are on (today: `GITKRAFT_AI_PROVIDER`, `GITKRAFT_AI_MODEL`, `GITKRAFT_AI_BASE_URL`).
 
 Features, in order of value:
 
-1. **CI failure explainer.** Failing step's log tail (already located by `first_failure`) to
+1. **CI failure explainer.** *Done in `gitkraft-hub/src/ai.rs` and `gitkraft-tui explain RUN [JOB] [--dry-run]`; TUI/GUI/web buttons and an MCP tool are still to do.* Failing step's log tail (already located by `first_failure`) to
    cause and suggested fix. Smallest slice that proves the whole pipeline.
 2. **PR summary** and "what happened in this thread while I was away".
 3. **Review draft**: inline comment suggestions that land in the comment prompt for editing.

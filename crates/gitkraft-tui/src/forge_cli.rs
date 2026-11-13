@@ -79,6 +79,11 @@ pub enum Cmd {
         #[arg(num_args = 0.., trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Store an AI API key in the system keyring (read from stdin, never from an argument).
+    AiKey {
+        /// anthropic or openai.
+        provider: String,
+    },
     /// Print a shell completion script.
     Completions {
         /// bash, zsh, fish, elvish or powershell.
@@ -121,6 +126,8 @@ pub enum Forge {
     Comment(CommentArgs),
     /// Merge a pull request.
     Merge(MergeArgs),
+    /// Ask an AI why a CI run failed (needs a key, see `ai-key`; `--dry-run` shows what would be sent).
+    Explain(ExplainArgs),
     /// Run a CI run again (failed jobs by default).
     Rerun(RerunArgs),
 }
@@ -271,6 +278,20 @@ pub struct MergeArgs {
     pub queue: bool,
 }
 
+/// `explain`.
+#[derive(Debug, Args)]
+pub struct ExplainArgs {
+    #[command(flatten)]
+    pub common: Common,
+    /// Run id (from `runs`).
+    pub run_id: u64,
+    /// A job of that run; default: the first failed one.
+    pub job_id: Option<u64>,
+    /// Print the redacted prompt instead of sending it.
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
 /// `rerun`.
 #[derive(Debug, Args)]
 pub struct RerunArgs {
@@ -313,6 +334,7 @@ impl Forge {
             Self::Comment(a) => &a.common,
             Self::Merge(a) => &a.common,
             Self::Rerun(a) => &a.common,
+            Self::Explain(a) => &a.common,
         }
     }
 }
@@ -322,6 +344,7 @@ impl Forge {
 pub struct Session {
     hub: Hub<DynClient>,
     default_repo: Option<RepoId>,
+    client: DynClient,
 }
 
 fn state_filter(s: &str) -> Result<StateFilter> {
@@ -395,8 +418,12 @@ fn errors(out: &mut String, errs: &[String]) {
 impl Session {
     /// A session over `hub`; `default_repo` answers commands given no `-R`.
     #[must_use]
-    pub fn new(hub: Hub<DynClient>, default_repo: Option<RepoId>) -> Self {
-        Self { hub, default_repo }
+    pub fn new(hub: Hub<DynClient>, default_repo: Option<RepoId>, client: DynClient) -> Self {
+        Self {
+            hub,
+            default_repo,
+            client,
+        }
     }
 
     /// Finds the accounts the way the TUI does (env, keyring, `gh`/`glab`, git credentials).
@@ -416,7 +443,7 @@ impl Session {
         let client = DynClient::new(std::sync::Arc::new(gitkraft_platforms::CachedClient::new(
             gitkraft_platforms::ReqwestClient::new().map_err(|e| anyhow!(e.to_string()))?,
         )));
-        Ok(Self::new(Hub::new(accounts, &client), default_repo))
+        Ok(Self::new(Hub::new(accounts, &client), default_repo, client))
     }
 
     fn repo(&self, given: Option<&str>) -> Result<RepoId> {
@@ -701,6 +728,7 @@ impl Session {
                     .await?;
                 Ok(format!("{}\n", outcome.describe(a.number)))
             }
+            Forge::Explain(a) => self.explain(a, repo_flag, json).await,
             Forge::Rerun(a) => {
                 let repo = self.repo(repo_flag)?;
                 let ci = self.ci(&repo)?;
@@ -714,6 +742,43 @@ impl Session {
                 Ok(format!("run {} is starting again\n", a.run_id))
             }
         }
+    }
+
+    async fn explain(
+        &self,
+        a: &ExplainArgs,
+        repo_flag: Option<&str>,
+        json: bool,
+    ) -> Result<String> {
+        use gitkraft_hub::ai::{self, AiConfig, FailureContext, Remote};
+        let repo = self.repo(repo_flag)?;
+        let ci = self.ci(&repo)?;
+        let detail = ci.run_detail(&repo, a.run_id).await?;
+        let job = match a.job_id {
+            Some(id) => detail.jobs.iter().find(|j| j.id == id),
+            None => detail.jobs.iter().find(|j| j.status == Status::Failed),
+        }
+        .ok_or_else(|| anyhow!("no failed job in run {}: pass a job id", a.run_id))?;
+        let log = ci.job_log(&repo, job.id).await?;
+        let ctx = FailureContext {
+            repo: repo.key(),
+            workflow: detail.run.name.clone(),
+            job: job.name.clone(),
+            branch: detail.run.branch.clone(),
+            log: gitkraft_ci::log::strip_ansi(&log),
+        };
+        if a.dry_run {
+            return Ok(format!("{}\n", ai::failure_prompt(&ctx)));
+        }
+        let env = |n: &str| std::env::var(n).ok();
+        let config = AiConfig::from_env(&env);
+        let key = config.key(&env, &gitkraft_platforms::credentials::SystemKeyring)?;
+        let llm = Remote::new(self.client.clone(), config, key);
+        let text = ai::explain_failure(&llm, &ctx).await?;
+        if json {
+            return json_of(&serde_json::json!({"job": job.name, "explanation": text}));
+        }
+        Ok(format!("{} / {}\n\n{text}\n", ctx.workflow, ctx.job))
     }
 
     async fn accounts(&self, json: bool) -> Result<String> {
@@ -995,7 +1060,11 @@ mod tests {
         account.me = Some("me".into());
         let hub = Hub::new(vec![account], &DynClient::new(fake.clone()));
         (
-            Session::new(hub, Some(RepoId::new("github.com", "o", "r"))),
+            Session::new(
+                hub,
+                Some(RepoId::new("github.com", "o", "r")),
+                DynClient::new(fake.clone()),
+            ),
             fake,
         )
     }
@@ -1068,6 +1137,7 @@ mod tests {
         let s2 = Session::new(
             Hub::new(vec![account], &DynClient::new(fake2)),
             Some(RepoId::new("github.com", "o", "r")),
+            DynClient::new(FakeClient::new()),
         );
         let j = s2.run(&forge(&["runs", "--json"])).await.expect("json");
         let v: serde_json::Value = serde_json::from_str(&j).expect("valid json");
@@ -1106,8 +1176,52 @@ mod tests {
         );
         assert!(s.run(&forge(&["day", "tomorrow"])).await.is_err());
         let hub = Hub::new(vec![], &DynClient::new(FakeClient::new()));
-        let none = Session::new(hub, None);
+        let none = Session::new(hub, None, DynClient::new(FakeClient::new()));
         assert!(none.run(&forge(&["runs"])).await.is_err());
         assert!(none.run(&forge(&["runs", "-R", "o/r"])).await.is_err());
+    }
+
+    fn failed_run(fake: &FakeClient) {
+        fake.push_json(
+            &format!("{API}/actions/runs/101"),
+            r#"{"id":101,"name":"CI","status":"completed","conclusion":"failure","head_branch":"main","created_at":"2026-03-01T10:00:00Z","updated_at":"2026-03-01T10:05:05Z"}"#,
+        );
+        fake.push_json(
+            &format!("{API}/actions/runs/101/jobs"),
+            r#"{"jobs":[{"id":7,"name":"lint","status":"completed","conclusion":"success","steps":[]},{"id":8,"name":"test","status":"completed","conclusion":"failure","steps":[]}]}"#,
+        );
+        fake.push_status(
+            &format!("{API}/actions/jobs/8/logs"),
+            200,
+            "running tests\nerror: boom with ghp_abcdefghijklmnopqrstuvwxyz0123\n",
+        );
+    }
+
+    #[tokio::test]
+    async fn explain_dry_run_shows_the_redacted_prompt_of_the_first_failed_job() {
+        let (s, fake) = rig();
+        failed_run(&fake);
+        let out = s
+            .run(&forge(&["explain", "101", "--dry-run"]))
+            .await
+            .expect("prompt");
+        assert!(out.contains("Job: test") && out.contains("error: boom"));
+        assert!(!out.contains("ghp_abc"), "{out}");
+        assert!(
+            fake.requests().iter().all(|r| !r.url.contains("anthropic")),
+            "a dry run sends nothing to the model"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_run_without_a_failed_job_says_so() {
+        let (s, fake) = rig();
+        fake.push_json(
+            &format!("{API}/actions/runs/5"),
+            r#"{"id":5,"name":"CI","status":"completed","conclusion":"success","created_at":"2026-03-01T10:00:00Z"}"#,
+        );
+        fake.push_json(&format!("{API}/actions/runs/5/jobs"), r#"{"jobs":[]}"#);
+        let e = s.run(&forge(&["explain", "5"])).await.expect_err("none");
+        assert!(e.to_string().contains("no failed job"));
     }
 }

@@ -47,6 +47,7 @@ fn run_command(cmd: Cmd) -> anyhow::Result<()> {
             let c = gitkraft_tui::ssh_cli::parse(&args).unwrap_or_else(|e| usage(e));
             print(gitkraft_tui::ssh_cli::run(c))
         }
+        Cmd::AiKey { provider } => print(ai_key(&provider)),
         Cmd::Completions { shell } => {
             print!("{}", gitkraft_tui::forge_cli::completions(shell));
             Ok(())
@@ -61,6 +62,32 @@ fn run_command(cmd: Cmd) -> anyhow::Result<()> {
             }))
         }
     }
+}
+
+/// Reads a key from stdin and files it in the keyring.
+fn ai_key(provider: &str) -> anyhow::Result<String> {
+    use gitkraft_platforms::credentials::{SecretStore, SystemKeyring};
+    let p = gitkraft_hub::ai::Provider::parse(provider)
+        .ok_or_else(|| anyhow::anyhow!("provider must be anthropic or openai"))?;
+    let mut key = String::new();
+    std::io::stdin().read_line(&mut key)?;
+    let key = key.trim();
+    if key.is_empty() {
+        anyhow::bail!(
+            "no key on stdin: `pbpaste | gitkraft-tui ai-key {}`",
+            p.name()
+        );
+    }
+    SystemKeyring
+        .set(
+            &format!("ai.{}", p.name()),
+            &gitkraft_platforms::Secret::new(key),
+        )
+        .map_err(|e| anyhow::anyhow!(e))?;
+    Ok(format!(
+        "stored the {} key in the system keyring\n",
+        p.name()
+    ))
 }
 
 fn main() -> anyhow::Result<()> {

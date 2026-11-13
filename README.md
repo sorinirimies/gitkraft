@@ -197,6 +197,13 @@ gitkraft-tui comment 123 "looks good" ; merge 123 --method squash --when-green ;
 gitkraft-tui completions zsh > ~/.zfunc/_gitkraft-tui
 ```
 
+AI (drafts only, nothing is changed): `gitkraft-tui explain RUN [JOB]` asks a model why a CI job
+failed. The log is redacted (tokens, bearer headers, `password=…`) and cut to what matters before it
+leaves your machine; `--dry-run` prints exactly that prompt without sending it. Anthropic by default,
+or any OpenAI-compatible server (`GITKRAFT_AI_PROVIDER=openai GITKRAFT_AI_BASE_URL=http://localhost:11434/v1`
+for Ollama, no key needed locally). The key comes from `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`, or
+`pbpaste | gitkraft-tui ai-key anthropic` stores it in the keyring. Never a config file.
+
 A forced merge is not offered here; use the UI, where it is a deliberate act. `notify`, `login`,
 `logout`, `clone` and `ssh` are described under their own sections.
 
