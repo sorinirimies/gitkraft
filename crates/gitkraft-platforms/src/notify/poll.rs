@@ -1,5 +1,3 @@
-use gitkraft_settings::notify::Effective;
-
 use super::alert::Alert;
 use super::diff::{diff_snapshots, inbox_alerts, snapshot};
 use super::state::NotifyState;
