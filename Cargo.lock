@@ -1577,6 +1577,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "gitkraft-ci"
+version = "1.4.1"
+dependencies = [
+ "chrono",
+ "gitkraft-platforms",
+ "gitkraft-settings",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "gitkraft-core"
 version = "1.4.1"
 dependencies = [

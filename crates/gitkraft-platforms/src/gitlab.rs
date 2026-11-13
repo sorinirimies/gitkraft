@@ -13,7 +13,7 @@ use crate::model::{
     MergeMethod, Notification, NotificationReason, PullRequest, Review, ReviewVerdict, StateFilter,
     SubjectKind, User,
 };
-use crate::platform::RepoId;
+use crate::platform::{RepoId, url_encode};
 
 /// Adapter for gitlab.com and self-hosted GitLab.
 #[derive(Debug)]
@@ -32,20 +32,7 @@ pub enum ItemKind {
 }
 
 fn project(repo: &RepoId) -> String {
-    format!("/projects/{}", encode(&repo.full_name()))
-}
-
-fn encode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char)
-            }
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
+    format!("/projects/{}", url_encode(&repo.full_name()))
 }
 
 fn item_path(repo: &RepoId, kind: ItemKind, number: u64) -> String {
@@ -92,7 +79,7 @@ impl<C: HttpClient> GitLab<C> {
             ("labels", &q.label),
         ] {
             if let Some(v) = v {
-                p.push_str(&format!("&{name}={}", encode(v)));
+                p.push_str(&format!("&{name}={}", url_encode(v)));
             }
         }
         p
@@ -308,7 +295,11 @@ impl<C: HttpClient> GitLab<C> {
     }
 
     pub(crate) async fn contributions(&self, user: &str) -> Result<Vec<ActivityDay>> {
-        let url = format!("https://{}/users/{}/calendar.json", self.host, encode(user));
+        let url = format!(
+            "https://{}/users/{}/calendar.json",
+            self.host,
+            url_encode(user)
+        );
         let map: std::collections::HashMap<String, u32> = self.api.get(&url).await?;
         Ok(fold_days(map.into_iter().filter_map(|(d, c)| {
             Some((d.parse::<NaiveDate>().ok()?, c))

@@ -16,7 +16,7 @@
 //! The crate never creates an async runtime: the binary owns it.
 
 pub mod account;
-mod api;
+pub mod api;
 pub mod auth;
 pub mod backend;
 pub mod error;
@@ -34,4 +34,4 @@ pub use error::{PlatformError, Result};
 pub use github_like::GitHubLike;
 pub use gitlab::{GitLab, ItemKind};
 pub use http::{CachedClient, HttpClient, ReqwestClient};
-pub use platform::{HostMap, PlatformKind, RepoId, parse_remote_url};
+pub use platform::{HostMap, PlatformKind, RepoId, parse_remote_url, url_encode};

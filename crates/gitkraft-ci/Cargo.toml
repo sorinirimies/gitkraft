@@ -1,0 +1,24 @@
+[package]
+name = "gitkraft-ci"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CI/CD runs, jobs, steps and logs for GitHub Actions, Gitea/Forgejo Actions and GitLab CI"
+categories = ["development-tools", "api-bindings"]
+keywords = ["ci", "github-actions", "gitlab-ci", "gitea", "pipelines"]
+
+[dependencies]
+gitkraft-platforms = { workspace = true }
+gitkraft-settings  = { workspace = true }
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+chrono      = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+
+[lints]
+workspace = true

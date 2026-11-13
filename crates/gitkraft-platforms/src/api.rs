@@ -1,4 +1,5 @@
-//! Authenticated JSON calls with status-to-error mapping, shared by every adapter.
+//! Authenticated JSON calls with status-to-error mapping, shared by every adapter
+//! (also used by `gitkraft-ci`).
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -11,15 +12,20 @@ use crate::platform::PlatformKind;
 
 /// Base URL, credential and client for one account.
 #[derive(Debug)]
-pub(crate) struct Api<C> {
-    pub(crate) client: C,
-    pub(crate) base: String,
-    pub(crate) kind: PlatformKind,
-    pub(crate) token: Option<Secret>,
+pub struct Api<C> {
+    /// The HTTP client.
+    pub client: C,
+    /// REST base URL without trailing slash.
+    pub base: String,
+    /// Platform kind (decides the auth header).
+    pub kind: PlatformKind,
+    /// Credential.
+    pub token: Option<Secret>,
 }
 
 impl<C: HttpClient> Api<C> {
-    pub(crate) fn new(client: C, kind: PlatformKind, base: String, token: Option<Secret>) -> Self {
+    /// Builds an API handle.
+    pub fn new(client: C, kind: PlatformKind, base: String, token: Option<Secret>) -> Self {
         Self {
             client,
             base: base.trim_end_matches('/').to_string(),
@@ -60,7 +66,7 @@ impl<C: HttpClient> Api<C> {
     }
 
     /// Sends a request and maps non-2xx statuses to errors.
-    pub(crate) async fn send(
+    pub async fn send(
         &self,
         method: Method,
         path: &str,
@@ -70,13 +76,14 @@ impl<C: HttpClient> Api<C> {
         check(res)
     }
 
-    pub(crate) async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+    /// GET and parse JSON.
+    pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let res = self.send(Method::Get, path, None).await?;
         parse(&res)
     }
 
     /// GET with an `Accept` override, returning the body as text (diffs, logs).
-    pub(crate) async fn get_text(&self, path: &str, accept: &str) -> Result<String> {
+    pub async fn get_text(&self, path: &str, accept: &str) -> Result<String> {
         let mut req = self.request(Method::Get, path, None);
         req.headers.retain(|(k, _)| k != "Accept");
         req.headers.push(("Accept".into(), accept.into()));
@@ -84,18 +91,19 @@ impl<C: HttpClient> Api<C> {
         Ok(res.text())
     }
 
-    pub(crate) async fn post_json(&self, path: &str, body: &serde_json::Value) -> Result<Response> {
+    /// POST a JSON body.
+    pub async fn post_json(&self, path: &str, body: &serde_json::Value) -> Result<Response> {
         self.send(Method::Post, path, Some(body)).await
     }
 }
 
 /// Parses a JSON body.
-pub(crate) fn parse<T: DeserializeOwned>(res: &Response) -> Result<T> {
+pub fn parse<T: DeserializeOwned>(res: &Response) -> Result<T> {
     serde_json::from_slice(&res.body).map_err(|e| PlatformError::Parse(e.to_string()))
 }
 
 /// Maps a status to a result.
-pub(crate) fn check(res: Response) -> Result<Response> {
+pub fn check(res: Response) -> Result<Response> {
     match res.status {
         200..=299 => Ok(res),
         401 => Err(PlatformError::Auth(excerpt(&res))),

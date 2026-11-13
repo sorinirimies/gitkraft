@@ -110,6 +110,20 @@ pub fn parse_remote_url(url: &str) -> Option<RepoId> {
     Some(RepoId::new(host, owner, name))
 }
 
+/// Percent-encodes everything except unreserved characters (GitLab project paths, query values).
+pub fn url_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
 /// Maps hosts to platform kinds: the well-known ones plus the user's own.
 #[derive(Debug, Clone, Default)]
 pub struct HostMap {
@@ -200,6 +214,12 @@ mod tests {
         assert_eq!(map.detect("gitlab.internal"), Some(PlatformKind::GitLab));
         assert_eq!(map.detect("git.corp.example"), Some(PlatformKind::GitLab));
         assert_eq!(map.detect("example.com"), None);
+    }
+
+    #[test]
+    fn url_encode_escapes_reserved_characters() {
+        assert_eq!(url_encode("a/b c~d"), "a%2Fb%20c~d");
+        assert_eq!(url_encode("é"), "%C3%A9");
     }
 
     #[test]
