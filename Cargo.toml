@@ -59,7 +59,7 @@ tui-spinner          = "0.5.1"
 tui-skeleton         = "0.3.0"
 tui-nuances          = "0.1.11"
 tui-chart            = "0.6"
-ratatui-image        = { version = "11.1", default-features = false, features = ["crossterm", "image-defaults"] }
+ratatui-image        = { version = "11.1", default-features = false, features = ["crossterm"] }
 image                = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 
 # Internal crates
