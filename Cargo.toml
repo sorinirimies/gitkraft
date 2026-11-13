@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/gitkraft-hub",
     "crates/gitkraft-ci",
     "crates/gitkraft-platforms",
     "crates/gitkraft-settings",
@@ -57,6 +58,7 @@ tui-skeleton         = "0.3.0"
 tui-nuances          = "0.1.11"
 
 # Internal crates
+gitkraft-hub = { path = "crates/gitkraft-hub", version = "1.4.1" }
 gitkraft-ci = { path = "crates/gitkraft-ci", version = "1.4.1" }
 gitkraft-platforms = { path = "crates/gitkraft-platforms", version = "1.4.1" }
 gitkraft-settings = { path = "crates/gitkraft-settings", version = "1.4.1" }

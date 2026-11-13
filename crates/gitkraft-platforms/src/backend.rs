@@ -68,7 +68,12 @@ impl<C: HttpClient> Backend<C> {
     }
 
     /// Pull requests across every repo you can see, by relation to you. `me` is your login.
-    pub async fn search_pull_requests(&self, who: Involvement, state: StateFilter, me: &str) -> Result<Vec<PullRequest>> {
+    pub async fn search_pull_requests(
+        &self,
+        who: Involvement,
+        state: StateFilter,
+        me: &str,
+    ) -> Result<Vec<PullRequest>> {
         match self {
             Self::GitHubLike(b) => b.search_pull_requests(who, state, me).await,
             Self::GitLab(b) => b.search_pull_requests(who, state, me).await,
@@ -76,7 +81,12 @@ impl<C: HttpClient> Backend<C> {
     }
 
     /// Issues across every repo you can see, by relation to you.
-    pub async fn search_issues(&self, who: Involvement, state: StateFilter, me: &str) -> Result<Vec<Issue>> {
+    pub async fn search_issues(
+        &self,
+        who: Involvement,
+        state: StateFilter,
+        me: &str,
+    ) -> Result<Vec<Issue>> {
         match self {
             Self::GitHubLike(b) => b.search_issues(who, state, me).await,
             Self::GitLab(b) => b.search_issues(who, state, me).await,

@@ -1604,6 +1604,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "gitkraft-hub"
+version = "1.4.1"
+dependencies = [
+ "chrono",
+ "futures",
+ "gitkraft-ci",
+ "gitkraft-platforms",
+ "gitkraft-settings",
+ "serde",
+ "tokio",
+ "toml",
+]
+
+[[package]]
 name = "gitkraft-platforms"
 version = "1.4.1"
 dependencies = [

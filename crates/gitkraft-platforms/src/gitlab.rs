@@ -130,7 +130,10 @@ impl<C: HttpClient> GitLab<C> {
         state: StateFilter,
         me: &str,
     ) -> Result<Vec<PullRequest>> {
-        let path = format!("/merge_requests?{}", Self::scope_params(who, me, state, false));
+        let path = format!(
+            "/merge_requests?{}",
+            Self::scope_params(who, me, state, false)
+        );
         let dtos: Vec<MrDto> = self.api.get(&path).await?;
         Ok(dtos
             .into_iter()
@@ -143,7 +146,12 @@ impl<C: HttpClient> GitLab<C> {
     }
 
     /// Issues across all projects, by how you relate to them.
-    pub(crate) async fn search_issues(&self, who: Involvement, state: StateFilter, me: &str) -> Result<Vec<Issue>> {
+    pub(crate) async fn search_issues(
+        &self,
+        who: Involvement,
+        state: StateFilter,
+        me: &str,
+    ) -> Result<Vec<Issue>> {
         let path = format!("/issues?{}", Self::scope_params(who, me, state, true));
         let dtos: Vec<IssueDto> = self.api.get(&path).await?;
         Ok(dtos

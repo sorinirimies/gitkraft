@@ -116,7 +116,12 @@ impl Dashboard {
                     involvement: Some(Involvement::Assigned),
                     ..pr("", Involvement::Assigned)
                 },
-                Section { name: "Inbox".into(), kind: SectionKind::Inbox, involvement: None, ..pr("", Involvement::Assigned) },
+                Section {
+                    name: "Inbox".into(),
+                    kind: SectionKind::Inbox,
+                    involvement: None,
+                    ..pr("", Involvement::Assigned)
+                },
             ],
         }
     }
@@ -137,13 +142,19 @@ impl Dashboard {
             }
             let needs_scope = matches!(s.kind, SectionKind::Prs | SectionKind::Issues);
             if needs_scope && s.repos.is_empty() && s.involvement.is_none() {
-                return Err(format!("section \"{}\" needs `repos` or `involvement`", s.name));
+                return Err(format!(
+                    "section \"{}\" needs `repos` or `involvement`",
+                    s.name
+                ));
             }
             if s.kind == SectionKind::Ci && s.repos.is_empty() {
                 return Err(format!("CI section \"{}\" needs `repos`", s.name));
             }
             if let Some(bad) = s.repos.iter().find(|r| r.matches('/').count() < 2) {
-                return Err(format!("section \"{}\": \"{bad}\" is not host/owner/name", s.name));
+                return Err(format!(
+                    "section \"{}\": \"{bad}\" is not host/owner/name",
+                    s.name
+                ));
             }
         }
         Ok(self)
@@ -201,7 +212,10 @@ mod tests {
     fn empty_file_gives_the_starter() {
         let d = Dashboard::parse("  \n").expect("starter");
         assert_eq!(d, Dashboard::starter());
-        assert_eq!(d.sections[0].involvement, Some(Involvement::ReviewRequested));
+        assert_eq!(
+            d.sections[0].involvement,
+            Some(Involvement::ReviewRequested)
+        );
         assert!(d.sections.iter().any(|s| s.kind == SectionKind::Inbox));
     }
 
@@ -220,10 +234,16 @@ mod tests {
     #[test]
     fn validation_explains_what_is_wrong() {
         let err = |t: &str| Dashboard::parse(t).expect_err("invalid");
-        assert!(err("[[section]]\nname = \"x\"\nkind = \"prs\"").contains("needs `repos` or `involvement`"));
+        assert!(
+            err("[[section]]\nname = \"x\"\nkind = \"prs\"")
+                .contains("needs `repos` or `involvement`")
+        );
         assert!(err("[[section]]\nname = \"x\"\nkind = \"ci\"").contains("needs `repos`"));
         assert!(err("[[section]]\nname = \" \"\nkind = \"inbox\"").contains("no name"));
-        assert!(err("[[section]]\nname = \"x\"\nkind = \"prs\"\nrepos = [\"o/r\"]").contains("host/owner/name"));
+        assert!(
+            err("[[section]]\nname = \"x\"\nkind = \"prs\"\nrepos = [\"o/r\"]")
+                .contains("host/owner/name")
+        );
         assert!(err("[[section]]\nname = \"x\"\nkind = \"nope\"").len() > 5);
     }
 

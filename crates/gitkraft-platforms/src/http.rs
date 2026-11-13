@@ -150,6 +150,12 @@ impl HttpClient for ReqwestClient {
     }
 }
 
+impl<C: HttpClient> HttpClient for std::sync::Arc<C> {
+    fn send(&self, req: Request) -> impl Future<Output = Result<Response>> + Send {
+        self.as_ref().send(req)
+    }
+}
+
 /// Wraps a client with an in-memory ETag cache: unchanged GETs answer `304`,
 /// which does not count against rate limits, and the cached body is returned.
 #[derive(Debug)]

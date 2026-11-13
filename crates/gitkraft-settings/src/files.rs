@@ -52,10 +52,14 @@ pub fn read_optional(path: &Path) -> Result<Option<String>> {
 pub fn write_atomic(path: &Path, content: &str) -> Result<()> {
     use std::io::Write as _;
     let parent = path.parent().unwrap_or(Path::new("."));
-    std::fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
-    let mut tmp = tempfile::NamedTempFile::new_in(parent).context("failed to create temporary file")?;
-    tmp.write_all(content.as_bytes()).context("failed to write temporary file")?;
-    tmp.persist(path).map_err(|e| anyhow::anyhow!("failed to persist {}: {e}", path.display()))?;
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("failed to create {}", parent.display()))?;
+    let mut tmp =
+        tempfile::NamedTempFile::new_in(parent).context("failed to create temporary file")?;
+    tmp.write_all(content.as_bytes())
+        .context("failed to write temporary file")?;
+    tmp.persist(path)
+        .map_err(|e| anyhow::anyhow!("failed to persist {}: {e}", path.display()))?;
     Ok(())
 }
 
@@ -69,8 +73,17 @@ mod tests {
         let path = dir.path().join("a").join("b.toml");
         write_atomic(&path, "x = 1").expect("write");
         write_atomic(&path, "x = 2").expect("overwrite");
-        assert_eq!(read_optional(&path).expect("read").as_deref(), Some("x = 2"));
-        assert_eq!(std::fs::read_dir(path.parent().expect("parent")).expect("dir").count(), 1, "no temp files left");
+        assert_eq!(
+            read_optional(&path).expect("read").as_deref(),
+            Some("x = 2")
+        );
+        assert_eq!(
+            std::fs::read_dir(path.parent().expect("parent"))
+                .expect("dir")
+                .count(),
+            1,
+            "no temp files left"
+        );
     }
 
     #[test]

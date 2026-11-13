@@ -172,16 +172,33 @@ impl<C: HttpClient> GitHubLike<C> {
         me: &str,
     ) -> Result<Vec<PullRequest>> {
         let hits = self.search("pr", who, state, me).await?;
-        Ok(hits.into_iter().filter_map(|d| d.into_search_pr(&self.host)).collect())
+        Ok(hits
+            .into_iter()
+            .filter_map(|d| d.into_search_pr(&self.host))
+            .collect())
     }
 
     /// Issues across every repo you can see, by how you relate to them.
-    pub(crate) async fn search_issues(&self, who: Involvement, state: StateFilter, me: &str) -> Result<Vec<Issue>> {
+    pub(crate) async fn search_issues(
+        &self,
+        who: Involvement,
+        state: StateFilter,
+        me: &str,
+    ) -> Result<Vec<Issue>> {
         let hits = self.search("issue", who, state, me).await?;
-        Ok(hits.into_iter().filter_map(|d| d.into_search_issue(&self.host)).collect())
+        Ok(hits
+            .into_iter()
+            .filter_map(|d| d.into_search_issue(&self.host))
+            .collect())
     }
 
-    async fn search(&self, kind: &str, who: Involvement, state: StateFilter, _me: &str) -> Result<Vec<IssueDto>> {
+    async fn search(
+        &self,
+        kind: &str,
+        who: Involvement,
+        state: StateFilter,
+        _me: &str,
+    ) -> Result<Vec<IssueDto>> {
         if self.is_github() {
             let relation = match who {
                 Involvement::Authored => "author:@me",
@@ -193,7 +210,8 @@ impl<C: HttpClient> GitHubLike<C> {
                 StateFilter::Closed => "+is:closed",
                 StateFilter::All => "",
             };
-            let path = format!("/search/issues?q=is:{kind}{state}+{relation}&sort=updated&per_page=50");
+            let path =
+                format!("/search/issues?q=is:{kind}{state}+{relation}&sort=updated&per_page=50");
             let res: SearchResponse = self.api.get(&path).await?;
             Ok(res.items)
         } else {
@@ -580,7 +598,8 @@ impl IssueDto {
         let full = self.repo_full_name()?;
         let (owner, name) = full.rsplit_once('/')?;
         let repo = RepoId::new(host, owner, name);
-        let merged = pr.get("merged_at").is_some_and(|v| !v.is_null()) || pr.get("merged").and_then(|v| v.as_bool()).unwrap_or(false);
+        let merged = pr.get("merged_at").is_some_and(|v| !v.is_null())
+            || pr.get("merged").and_then(|v| v.as_bool()).unwrap_or(false);
         let draft = self.draft.unwrap_or(false);
         let mut model = self.into_model(&repo);
         if merged {
