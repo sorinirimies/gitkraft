@@ -43,11 +43,11 @@ which features are on (today: `GITKRAFT_AI_PROVIDER`, `GITKRAFT_AI_MODEL`, `GITK
 
 Features, in order of value:
 
-1. **CI failure explainer.** *Done in `gitkraft-hub/src/ai.rs` and `gitkraft-tui explain RUN [JOB] [--dry-run]`; TUI/GUI/web buttons and an MCP tool are still to do.* Failing step's log tail (already located by `first_failure`) to
+1. **CI failure explainer.** *Done in `gitkraft-hub/src/ai.rs` and `gitkraft-tui explain RUN [JOB] [--dry-run]`; TUI key `E` done; GUI and web buttons still to do (no MCP tool: an MCP client is already a model and can read `ci_job_log`).* Failing step's log tail (already located by `first_failure`) to
    cause and suggested fix. Smallest slice that proves the whole pipeline.
 2. **PR summary** and "what happened in this thread while I was away".
 3. **Review draft**: inline comment suggestions that land in the comment prompt for editing.
-4. **Commit message / PR description** from staged changes.
+4. **Commit message** from staged changes, in a per-project style (`.gitkraft/ai.toml`): *done* in `gitkraft-hub/src/commit_ai.rs`, `gitkraft-tui commit-message` and `g` in the TUI staging pane; GUI button and PR description still to do.
 5. **Inbox triage**: act now / FYI / ignore. Easiest to get wrong, so last.
 
 Code lives in one module, `gitkraft-hub/src/ai.rs`, shared by TUI, GUI and web.

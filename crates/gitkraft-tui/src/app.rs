@@ -109,6 +109,15 @@ macro_rules! require_selection {
 /// `BackgroundResult::RepoLoaded` variant.
 pub type RepoPayload = gitkraft_core::RepoSnapshot;
 
+/// Splits a message into its subject line and the body after the blank line.
+fn split_message(message: &str) -> (String, String) {
+    let message = message.trim();
+    match message.split_once('\n') {
+        Some((subject, body)) => (subject.trim().to_string(), body.trim().to_string()),
+        None => (message.to_string(), String::new()),
+    }
+}
+
 /// Results produced by background tasks and sent back to the main loop.
 #[derive(Debug)]
 pub enum BackgroundResult {
@@ -120,6 +129,8 @@ pub enum BackgroundResult {
     },
     /// A fetch completed.
     FetchDone(Result<(), String>),
+    /// An AI commit message draft arrived: the full message and rule warnings.
+    CommitDraft(Result<(String, Vec<String>), String>),
     /// A commit-diff load completed.
     CommitDiffLoaded(Result<Vec<DiffInfo>, String>),
     /// A staging-only refresh completed (unstaged + staged diffs reloaded).
@@ -427,6 +438,8 @@ pub struct App {
     pub active_pane: ActivePane,
     pub input_mode: InputMode,
     pub input_purpose: InputPurpose,
+    /// Body of an AI-drafted commit message; the input line holds the subject.
+    pub commit_body: String,
     pub tick_count: u64,
 
     /// Receiver for results from background tasks.
@@ -517,6 +530,7 @@ impl App {
             active_pane: ActivePane::Branches,
             input_mode: InputMode::Normal,
             input_purpose: InputPurpose::None,
+            commit_body: String::new(),
             tick_count: 0,
 
             bg_rx,
@@ -891,6 +905,28 @@ impl App {
                         }
                     }
                 }
+                BackgroundResult::CommitDraft(res) => {
+                    self.tab_mut().is_loading = false;
+                    match res {
+                        Ok((message, warnings)) => {
+                            let (subject, body) = split_message(&message);
+                            self.input_buffer = subject;
+                            self.commit_body = body;
+                            self.input_mode = InputMode::Input;
+                            self.input_purpose = InputPurpose::CommitMessage;
+                            let mut note =
+                                String::from("AI draft: edit the subject, Enter commits");
+                            if !self.commit_body.is_empty() {
+                                note.push_str(" (the body is kept)");
+                            }
+                            if !warnings.is_empty() {
+                                note.push_str(&format!(" ! {}", warnings.join("; ")));
+                            }
+                            self.tab_mut().status_message = Some(note);
+                        }
+                        Err(e) => self.tab_mut().error_message = Some(format!("AI: {e}")),
+                    }
+                }
                 BackgroundResult::FetchDone(res) => {
                     self.tab_mut().is_loading = false;
                     match res {
@@ -1263,8 +1299,27 @@ impl App {
 
     // ── Commit ───────────────────────────────────────────────────────────
 
+    /// Asks the model for a commit message for what is staged; the answer arrives as
+    /// [`BackgroundResult::CommitDraft`] and fills the commit input.
+    pub fn draft_commit_message(&mut self) {
+        bg_task!(
+            self,
+            "Drafting a commit message…",
+            BackgroundResult::CommitDraft,
+            |repo_path| {
+                let s = crate::ai_cli::draft(std::path::Path::new(&repo_path))
+                    .map_err(|e| format!("{e:#}"))?;
+                Ok::<_, String>((s.message, s.warnings))
+            }
+        );
+    }
+
     pub fn create_commit(&mut self) {
-        let msg = self.input_buffer.trim().to_string();
+        let mut msg = self.input_buffer.trim().to_string();
+        if !msg.is_empty() && !self.commit_body.trim().is_empty() {
+            msg = format!("{msg}\n\n{}", self.commit_body.trim());
+        }
+        self.commit_body.clear();
         if msg.is_empty() {
             self.tab_mut().error_message = Some("Commit message cannot be empty".into());
             return;
@@ -4686,5 +4741,49 @@ mod tests {
         assert!(!tab.commit_diffs.is_empty());
         tab.commit_diffs.clear();
         assert!(tab.commit_diffs.is_empty());
+    }
+
+    #[test]
+    fn a_message_splits_into_subject_and_body() {
+        assert_eq!(
+            split_message("fix: a\n\nwhy\nmore\n"),
+            ("fix: a".to_string(), "why\nmore".to_string())
+        );
+        assert_eq!(split_message(" only "), ("only".to_string(), String::new()));
+    }
+
+    #[test]
+    fn an_ai_draft_fills_the_commit_input_and_keeps_the_body() {
+        let mut app = App::new();
+        app.bg_tx
+            .send(BackgroundResult::CommitDraft(Ok((
+                "feat: x\n\nbody".into(),
+                vec!["subject is long".into()],
+            ))))
+            .expect("send");
+        app.poll_background();
+        assert_eq!(app.input_buffer, "feat: x");
+        assert_eq!(app.commit_body, "body");
+        assert_eq!(app.input_mode, InputMode::Input);
+        assert_eq!(app.input_purpose, InputPurpose::CommitMessage);
+        let status = app.tab().status_message.clone().unwrap_or_default();
+        assert!(status.contains("body is kept") && status.contains("subject is long"));
+    }
+
+    #[test]
+    fn a_failed_draft_is_an_error_not_an_input() {
+        let mut app = App::new();
+        app.bg_tx
+            .send(BackgroundResult::CommitDraft(Err("no key".into())))
+            .expect("send");
+        app.poll_background();
+        assert_eq!(app.input_mode, InputMode::Normal);
+        assert!(
+            app.tab()
+                .error_message
+                .clone()
+                .unwrap_or_default()
+                .contains("no key")
+        );
     }
 }

@@ -1766,7 +1766,7 @@ fn hints(hub: &HubState) -> &'static str {
         }
         Some(SectionKind::Issues) => "c comment · C close/reopen · r refresh · n bell · q back",
         Some(SectionKind::Ci) => {
-            "Enter log · f rerun failed · F rerun all · D run workflow · A artifacts · X cancel · r refresh · q back"
+            "Enter log · f rerun failed · F rerun all · D run workflow · A artifacts · E AI explain · X cancel · r refresh · q back"
         }
         _ => {
             "Tab section · : palette · {/} move section · p pulse · K ssh keys · r refresh · n bell · q back"

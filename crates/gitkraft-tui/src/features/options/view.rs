@@ -236,6 +236,11 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 Span::styled("staged changes", value_style),
             ]),
             Line::from(vec![
+                Span::styled(pad_right("g", 14), key_style),
+                Span::styled(pad_right("AI commit message", 18), desc_style),
+                Span::styled("project style", value_style),
+            ]),
+            Line::from(vec![
                 Span::styled(pad_right("b", 14), key_style),
                 Span::styled(pad_right("create branch", 18), desc_style),
                 Span::styled("from HEAD", value_style),

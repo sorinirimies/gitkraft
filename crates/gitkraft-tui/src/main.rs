@@ -47,6 +47,16 @@ fn run_command(cmd: Cmd) -> anyhow::Result<()> {
             let c = gitkraft_tui::ssh_cli::parse(&args).unwrap_or_else(|e| usage(e));
             print(gitkraft_tui::ssh_cli::run(c))
         }
+        Cmd::CommitMessage {
+            dry_run,
+            init,
+            json,
+        } => print(gitkraft_tui::ai_cli::run(
+            &std::env::current_dir()?,
+            dry_run,
+            init,
+            json,
+        )),
         Cmd::AiKey { provider } => print(ai_key(&provider)),
         Cmd::Completions { shell } => {
             print!("{}", gitkraft_tui::forge_cli::completions(shell));

@@ -204,6 +204,29 @@ or any OpenAI-compatible server (`GITKRAFT_AI_PROVIDER=openai GITKRAFT_AI_BASE_U
 for Ollama, no key needed locally). The key comes from `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`, or
 `pbpaste | gitkraft-tui ai-key anthropic` stores it in the keyring. Never a config file.
 
+Commit messages: `gitkraft-tui commit-message` drafts one for what is staged (`--dry-run` shows the prompt,
+`--json` gives message and warnings); in the TUI press `g` in the staging pane and the draft fills the commit
+input (subject on the line, body kept), ready to edit. In the hub, `E` on a CI run explains its failed job.
+Each project sets its own style in `.gitkraft/ai.toml` (over `<config dir>/gitkraft/ai.toml`, field by field):
+`gitkraft-tui commit-message --init` writes a starter.
+
+```toml
+[commit]
+format = "conventional"               # conventional | plain | template
+types = ["feat", "fix", "docs", "refactor", "test", "chore"]
+scopes = ["tui", "gui", "core"]       # optional
+max_subject = 72
+language = "English"
+instructions = "Mention the module in the body. No emoji."
+ticket_prefix = "MARIO-"              # MARIO-123 in the branch name becomes {ticket}
+examples_from_history = 8             # recent subjects shown to the model as style examples
+template = "{type}({scope}): {subject}\n\n{body}\n\nRefs: {ticket}"
+```
+
+The model fills type, scope, subject and body; the template decides the layout, and a template line whose
+placeholders are all empty is dropped. Breaking a rule (too long, type or scope not allowed) is reported next
+to the draft. It never commits for you: `git commit -e -m "$(gitkraft-tui commit-message)"` opens your editor.
+
 A forced merge is not offered here; use the UI, where it is a deliberate act. `notify`, `login`,
 `logout`, `clone` and `ssh` are described under their own sections.
 

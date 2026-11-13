@@ -403,6 +403,7 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
         KeyCode::Char('X') => hub.ask(Action::CancelRun),
         KeyCode::Char('D') => hub.open_dispatch_prompt(),
         KeyCode::Char('A') => hub.download_artifacts(),
+        KeyCode::Char('E') => hub.explain_job(),
         _ => {}
     }
     Outcome::Stay

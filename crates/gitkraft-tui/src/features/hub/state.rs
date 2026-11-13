@@ -960,6 +960,64 @@ impl HubState {
         });
     }
 
+    /// Asks the AI why the shown job failed (the selected job if it failed, else the first failed
+    /// one) and shows the answer in the log view. Only a draft; nothing is changed anywhere.
+    pub fn explain_job(&mut self) {
+        let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {
+            return;
+        };
+        let Some(run) = self.selected_run().cloned() else {
+            return;
+        };
+        let Some(detail) = self.detail.run.as_ref() else {
+            self.set_notice("open the run first".into(), false);
+            return;
+        };
+        let chosen = detail
+            .jobs
+            .get(self.detail.job)
+            .filter(|j| j.status == gitkraft_ci::Status::Failed)
+            .or_else(|| {
+                detail
+                    .jobs
+                    .iter()
+                    .find(|j| j.status == gitkraft_ci::Status::Failed)
+            })
+            .cloned();
+        let Some(job) = chosen else {
+            self.set_notice("no failed job to explain".into(), false);
+            return;
+        };
+        let tx = self.tx.clone();
+        let title = format!("AI · {} · {}", run.name, job.name);
+        self.set_notice(format!("asking the AI about {}…", job.name), true);
+        rt.spawn(async move {
+            let result = async {
+                let ci = api.ci(&run.repo.host).ok_or("no account")?;
+                let log = ci
+                    .job_log(&run.repo, job.id)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let ctx = gitkraft_hub::ai::FailureContext {
+                    repo: run.repo.key(),
+                    workflow: run.name.clone(),
+                    job: job.name.clone(),
+                    branch: run.branch.clone(),
+                    log: gitkraft_ci::log::strip_ansi(&log),
+                };
+                let llm = tokio::task::spawn_blocking(crate::ai_cli::real_llm)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .map_err(|e| format!("{e:#}"))?;
+                gitkraft_hub::ai::explain_failure(&llm, &ctx)
+                    .await
+                    .map_err(|e| e.to_string())
+            }
+            .await;
+            let _ = tx.send(Msg::Log { title, result });
+        });
+    }
+
     // ── Discussions and wiki ─────────────────────────────────────────────────
 
     /// The repo the Community view shows: the one picked, else the selection's, else the first watched.

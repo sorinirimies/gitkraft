@@ -84,6 +84,7 @@ pub fn entries_for(hub: &HubState) -> Vec<Entry> {
             e("CI run: re-run everything", 'F', d),
             e("CI run: run the workflow again with inputs", 'D', d),
             e("CI run: download artifacts", 'A', d),
+            e("CI run: ask the AI why it failed", 'E', d),
             e("CI run: cancel", 'X', d),
             e("CI run: copy link", 'y', d),
         ]);

@@ -9,6 +9,7 @@ pub mod ai;
 pub mod artifacts;
 pub mod checkout;
 pub mod clone;
+pub mod commit_ai;
 pub mod community;
 pub mod dispatch;
 pub mod fuzzy;

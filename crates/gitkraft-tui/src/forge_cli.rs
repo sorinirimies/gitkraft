@@ -84,6 +84,18 @@ pub enum Cmd {
         /// anthropic or openai.
         provider: String,
     },
+    /// Draft a commit message for what is staged, in the project's style (`.gitkraft/ai.toml`).
+    CommitMessage {
+        /// Print the redacted prompt instead of sending it.
+        #[arg(long)]
+        dry_run: bool,
+        /// Write a starter `.gitkraft/ai.toml` and exit.
+        #[arg(long)]
+        init: bool,
+        /// Print JSON (message and warnings).
+        #[arg(long)]
+        json: bool,
+    },
     /// Print a shell completion script.
     Completions {
         /// bash, zsh, fish, elvish or powershell.

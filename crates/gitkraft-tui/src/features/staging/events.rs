@@ -139,9 +139,16 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('c') => {
             app.tab_mut().confirm_discard = false;
             app.input_buffer.clear();
+            app.commit_body.clear();
             app.input_mode = InputMode::Input;
             app.input_purpose = InputPurpose::CommitMessage;
             app.tab_mut().status_message = Some("Enter commit message:".into());
+        }
+
+        // Draft the commit message with the AI, in the project's style
+        KeyCode::Char('g') => {
+            app.tab_mut().confirm_discard = false;
+            app.draft_commit_message();
         }
 
         // View diff of selected file
