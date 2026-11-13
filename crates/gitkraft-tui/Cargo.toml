@@ -32,6 +32,16 @@ tui-spinner        = { workspace = true }
 tui-skeleton       = { workspace = true }
 tui-file-explorer  = { workspace = true }
 tui-nuances        = { workspace = true }
+tui-chart          = { workspace = true }
+gitkraft-settings  = { workspace = true }
+gitkraft-platforms = { workspace = true, features = ["desktop"] }
+gitkraft-ci        = { workspace = true }
+gitkraft-hub       = { workspace = true }
+tokio              = { workspace = true }
+chrono             = { workspace = true }
+
+[dev-dependencies]
+tempfile           = { workspace = true }
 
 [lints]
 workspace = true

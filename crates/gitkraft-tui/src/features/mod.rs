@@ -3,6 +3,7 @@ pub mod branches;
 pub mod commits;
 pub mod diff;
 pub mod editor;
+pub mod hub;
 pub mod options;
 pub mod remotes;
 pub mod repo;

@@ -16,6 +16,11 @@ pub fn dashboard_path() -> Result<PathBuf> {
     Ok(settings_dir()?.join("dashboard.toml"))
 }
 
+/// `accounts.toml`: self-hosted platforms.
+pub fn accounts_path() -> Result<PathBuf> {
+    Ok(settings_dir()?.join("accounts.toml"))
+}
+
 /// Directory for state that is not config: poll snapshots, inbox, poller status.
 pub fn state_dir() -> Result<PathBuf> {
     let base = dirs::data_local_dir()

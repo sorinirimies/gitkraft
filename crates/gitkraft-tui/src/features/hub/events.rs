@@ -1,0 +1,709 @@
+//! Keys and mouse for the hub screen.
+
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use gitkraft_ci::RerunScope;
+use gitkraft_platforms::model::MergeMethod;
+use ratatui::layout::Rect;
+
+use super::drag::DragTarget;
+use super::state::{Action, DetailTab, Focus, HubState, Prompt, PromptPurpose, Target, View};
+use crate::app::{App, AppScreen};
+
+/// What the caller should do after an event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    /// Stay on the hub.
+    Stay,
+    /// Leave the hub.
+    Close,
+    /// Quit the whole app.
+    Quit,
+}
+
+/// Handles a key. Returns to the previous screen on `Close`.
+pub fn handle_key(app: &mut App, key: KeyEvent) {
+    let outcome = match app.hub.as_mut() {
+        Some(hub) => key_outcome(hub, key),
+        None => Outcome::Close,
+    };
+    match outcome {
+        Outcome::Stay => {}
+        Outcome::Close => {
+            app.screen = app.hub_return_screen.clone();
+            app.hub = None;
+        }
+        Outcome::Quit => app.should_quit = true,
+    }
+}
+
+/// Handles a mouse event.
+pub fn handle_mouse(app: &mut App, ev: MouseEvent) {
+    if let Some(hub) = app.hub.as_mut() {
+        mouse(hub, ev);
+    }
+}
+
+/// Key handling on the state alone, so tests need no `App`.
+pub fn key_outcome(hub: &mut HubState, key: KeyEvent) -> Outcome {
+    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        return Outcome::Quit;
+    }
+    if let Some(confirm) = hub.confirm.take() {
+        if matches!(key.code, KeyCode::Char('y' | 'Y') | KeyCode::Enter) {
+            hub.perform(confirm.action);
+        }
+        return Outcome::Stay;
+    }
+    if hub.prompt.is_some() {
+        prompt_key(hub, key);
+        return Outcome::Stay;
+    }
+    if key.code == KeyCode::Esc {
+        if hub.drag.is_dragging() {
+            hub.drag.cancel();
+            return Outcome::Stay;
+        }
+        if hub.log.is_some() {
+            hub.log = None;
+            return Outcome::Stay;
+        }
+        if hub.focus == Focus::Detail {
+            hub.focus = Focus::List;
+            return Outcome::Stay;
+        }
+        return Outcome::Close;
+    }
+    if hub.log.is_some() {
+        return log_key(hub, key);
+    }
+    match hub.view {
+        View::Pulse => pulse_key(hub, key),
+        View::Dashboard => dashboard_key(hub, key),
+    }
+}
+
+fn prompt_key(hub: &mut HubState, key: KeyEvent) {
+    let Some(p) = hub.prompt.as_mut() else { return };
+    match key.code {
+        KeyCode::Esc => hub.prompt = None,
+        KeyCode::Enter => hub.submit_prompt(),
+        KeyCode::Backspace => {
+            p.buffer.pop();
+        }
+        KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => p.buffer.push(c),
+        _ => {}
+    }
+}
+
+fn open_prompt(hub: &mut HubState, purpose: PromptPurpose) {
+    if hub.selected_pr().is_none() && hub.selected_issue().is_none() {
+        hub.set_notice("select a pull request or issue first".into(), false);
+        return;
+    }
+    if purpose != PromptPurpose::Comment && hub.selected_pr().is_none() {
+        hub.set_notice("reviews only apply to pull requests".into(), false);
+        return;
+    }
+    hub.prompt = Some(Prompt {
+        purpose,
+        buffer: String::new(),
+    });
+}
+
+fn log_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
+    let Some(log) = hub.log.as_mut() else {
+        return Outcome::Stay;
+    };
+    match key.code {
+        KeyCode::Char('q') => hub.log = None,
+        KeyCode::Down | KeyCode::Char('j') => log.move_cursor(1),
+        KeyCode::Up | KeyCode::Char('k') => log.move_cursor(-1),
+        KeyCode::PageDown => log.move_cursor(20),
+        KeyCode::PageUp => log.move_cursor(-20),
+        KeyCode::Char('g') | KeyCode::Home => log.top(),
+        KeyCode::Char('G') | KeyCode::End => log.bottom(),
+        KeyCode::Char(' ') | KeyCode::Enter => log.toggle_group(),
+        KeyCode::Char('n') => log.next_match(),
+        KeyCode::Char('N') => log.prev_match(),
+        KeyCode::Char('e') => {
+            if !log.jump_failure() {
+                hub.set_notice("no errors found in this log".into(), true);
+            }
+        }
+        KeyCode::Char('a') => log.show_annotations = !log.show_annotations,
+        KeyCode::Char('/') => {
+            hub.prompt = Some(Prompt {
+                purpose: PromptPurpose::LogSearch,
+                buffer: log.query.clone(),
+            })
+        }
+        _ => {}
+    }
+    Outcome::Stay
+}
+
+fn pulse_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
+    match key.code {
+        KeyCode::Char('q') | KeyCode::Tab | KeyCode::BackTab => hub.view = View::Dashboard,
+        KeyCode::Char('r') => hub.load_pulse(hub.pulse.days.max(30)),
+        KeyCode::Char('[') => hub.cycle_pulse_repo(-1),
+        KeyCode::Char(']') => hub.cycle_pulse_repo(1),
+        KeyCode::Char(c @ '1'..='4') => {
+            hub.load_pulse([7, 30, 90, 365][(c as usize) - ('1' as usize)])
+        }
+        KeyCode::Char('n') => hub.toggle_notifications(false),
+        KeyCode::Char('N') => hub.toggle_notifications(true),
+        _ => {}
+    }
+    Outcome::Stay
+}
+
+fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
+    let alt = key.modifiers.contains(KeyModifiers::ALT);
+    match key.code {
+        KeyCode::Char('q') => return Outcome::Close,
+        KeyCode::Tab => hub.next_section(1),
+        KeyCode::BackTab => hub.next_section(-1),
+        KeyCode::Right if alt => move_section(hub, 1),
+        KeyCode::Left if alt => move_section(hub, -1),
+        KeyCode::Char('}') => move_section(hub, 1),
+        KeyCode::Char('{') => move_section(hub, -1),
+        KeyCode::Char(c @ '1'..='9') => hub.select_section((c as usize) - ('1' as usize)),
+        KeyCode::Down | KeyCode::Char('j') => vertical(hub, 1),
+        KeyCode::Up | KeyCode::Char('k') => vertical(hub, -1),
+        KeyCode::PageDown => vertical(hub, 10),
+        KeyCode::PageUp => vertical(hub, -10),
+        KeyCode::Char('g') | KeyCode::Home => {
+            if hub.focus == Focus::List {
+                hub.set_row(0);
+            } else {
+                hub.detail.scroll = 0;
+            }
+        }
+        KeyCode::Char('G') | KeyCode::End => {
+            if hub.focus == Focus::List {
+                hub.set_row(usize::MAX);
+            } else {
+                hub.detail.scroll = u16::MAX;
+            }
+        }
+        KeyCode::Right | KeyCode::Char('l') => hub.focus = Focus::Detail,
+        KeyCode::Left | KeyCode::Char('h') => hub.focus = Focus::List,
+        KeyCode::Enter => {
+            if hub.selected_run().is_some() {
+                hub.open_job_log();
+            } else {
+                hub.focus = Focus::Detail;
+            }
+        }
+        KeyCode::Char('v') => cycle_tab(hub),
+        KeyCode::Char('r') => {
+            if let Some(i) = hub.active_index() {
+                hub.load_section(i);
+            }
+        }
+        KeyCode::Char('R') => hub.load_all(),
+        KeyCode::Char('p') => open_pulse(hub),
+        KeyCode::Char('n') => hub.toggle_notifications(false),
+        KeyCode::Char('N') => hub.toggle_notifications(true),
+        KeyCode::Char('z') => hub.toggle_snooze(),
+        KeyCode::Char('y') => copy_url(hub),
+        KeyCode::Char('a') => open_prompt(hub, PromptPurpose::Approve),
+        KeyCode::Char('x') => open_prompt(hub, PromptPurpose::RequestChanges),
+        KeyCode::Char('c') => open_prompt(hub, PromptPurpose::Comment),
+        KeyCode::Char('m') => hub.ask(Action::Merge(MergeMethod::Merge)),
+        KeyCode::Char('M') => hub.ask(Action::Merge(MergeMethod::Squash)),
+        KeyCode::Char('C') => hub.ask(Action::ToggleOpen),
+        KeyCode::Char('f') => hub.ask(Action::Rerun(RerunScope::Failed)),
+        KeyCode::Char('F') => hub.ask(Action::Rerun(RerunScope::All)),
+        KeyCode::Char('X') => hub.ask(Action::CancelRun),
+        _ => {}
+    }
+    Outcome::Stay
+}
+
+fn open_pulse(hub: &mut HubState) {
+    hub.view = View::Pulse;
+    if hub.pulse.data.is_none() && !hub.pulse.loading {
+        hub.load_pulse(30);
+    }
+}
+
+fn move_section(hub: &mut HubState, delta: isize) {
+    let to = hub.active as isize + delta;
+    if to >= 0 {
+        hub.reorder_sections(hub.active, to as usize);
+    }
+}
+
+fn cycle_tab(hub: &mut HubState) {
+    if hub.selected_pr().is_some() {
+        hub.detail.tab = Some(hub.detail.tab.unwrap_or(DetailTab::Overview).next());
+        hub.detail.scroll = 0;
+    }
+}
+
+fn vertical(hub: &mut HubState, delta: isize) {
+    match hub.focus {
+        Focus::List => hub.move_row(delta),
+        Focus::Detail => {
+            if hub.selected_run().is_some() {
+                let n = hub.detail.run.as_ref().map_or(0, |d| d.jobs.len());
+                hub.detail.job = super::list::step(hub.detail.job, n, delta);
+            } else {
+                hub.detail.scroll = hub.detail.scroll.saturating_add_signed(delta as i16);
+            }
+        }
+    }
+}
+
+fn copy_url(hub: &mut HubState) {
+    let Some(url) = hub.selected_url() else {
+        hub.set_notice("nothing to copy".into(), false);
+        return;
+    };
+    match arboard::Clipboard::new().and_then(|mut c| c.set_text(url.clone())) {
+        Ok(()) => hub.set_notice(format!("copied {url}"), true),
+        Err(e) => hub.set_notice(format!("clipboard: {e}"), false),
+    }
+}
+
+// ── Mouse ────────────────────────────────────────────────────────────────────
+
+/// The area list and detail share, from the last frame's hit regions.
+fn body_area(hub: &HubState) -> Rect {
+    let rect_of = |t: Target| hub.hits.iter().find(|h| h.target == t).map(|h| h.rect);
+    match (rect_of(Target::ListArea), rect_of(Target::DetailArea)) {
+        (Some(l), Some(d)) => Rect::new(l.x, l.y, (d.x + d.width).saturating_sub(l.x), l.height),
+        _ => Rect::default(),
+    }
+}
+
+/// Mouse handling on the state alone.
+pub fn mouse(hub: &mut HubState, ev: MouseEvent) {
+    let (x, y) = (ev.column, ev.row);
+    match ev.kind {
+        MouseEventKind::Down(MouseButton::Left) => on_press(hub, x, y),
+        MouseEventKind::Drag(MouseButton::Left) => {
+            let over = match hub.hit_at(x, y) {
+                Some(Target::Section(i)) => Some(i),
+                _ => None,
+            };
+            if hub.drag.motion(x, y, over)
+                && let Some(dx) = hub.drag.divider_x()
+            {
+                let area = body_area(hub);
+                hub.resize_to(dx, area);
+            }
+        }
+        MouseEventKind::Up(MouseButton::Left) => {
+            let outcome = hub.drag.release();
+            let area = body_area(hub);
+            hub.apply_drag(outcome, area);
+        }
+        MouseEventKind::ScrollDown => scroll(hub, x, y, 3),
+        MouseEventKind::ScrollUp => scroll(hub, x, y, -3),
+        _ => {}
+    }
+}
+
+fn on_press(hub: &mut HubState, x: u16, y: u16) {
+    let Some(target) = hub.hit_at(x, y) else {
+        return;
+    };
+    match target {
+        Target::ViewTab(v) => {
+            hub.view = v;
+            if v == View::Pulse {
+                open_pulse(hub);
+            }
+        }
+        Target::Section(i) => hub.drag.press(x, y, Some(DragTarget::Section(i))),
+        Target::Divider => hub.drag.press(x, y, Some(DragTarget::Divider)),
+        Target::Row(i) => {
+            let double = hub.register_click(target);
+            hub.focus = Focus::List;
+            hub.set_row(i);
+            if double {
+                if hub.selected_run().is_some() {
+                    hub.focus = Focus::Detail;
+                } else {
+                    hub.focus = Focus::Detail;
+                    hub.detail.tab = Some(DetailTab::Diff);
+                }
+            }
+        }
+        Target::Bell => hub.toggle_notifications(false),
+        Target::DetailTab(t) => {
+            hub.detail.tab = Some(t);
+            hub.detail.scroll = 0;
+            hub.focus = Focus::Detail;
+        }
+        Target::Job(i) => {
+            let double = hub.register_click(target);
+            hub.focus = Focus::Detail;
+            hub.detail.job = i;
+            if double {
+                hub.open_job_log();
+            }
+        }
+        Target::LogRow(v) => {
+            let double = hub.register_click(target);
+            if let Some(log) = hub.log.as_mut() {
+                log.cursor = v.min(log.visible.len().saturating_sub(1));
+                if double {
+                    log.toggle_group();
+                }
+            }
+        }
+        Target::Annotation(n) => {
+            if let Some(log) = hub.log.as_mut() {
+                log.jump_annotation(n);
+            }
+        }
+        Target::ListArea | Target::DetailArea => {}
+    }
+}
+
+fn scroll(hub: &mut HubState, x: u16, y: u16, delta: isize) {
+    if let Some(log) = hub.log.as_mut() {
+        log.move_cursor(delta);
+        return;
+    }
+    match hub.hit_at(x, y) {
+        Some(Target::ListArea | Target::Row(_)) => hub.move_row(delta),
+        Some(Target::DetailArea | Target::DetailTab(_) | Target::Job(_)) => {
+            if hub.selected_run().is_some() {
+                let n = hub.detail.run.as_ref().map_or(0, |d| d.jobs.len());
+                hub.detail.job = super::list::step(hub.detail.job, n, delta.signum());
+            } else {
+                hub.detail.scroll = hub.detail.scroll.saturating_add_signed(delta as i16);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Closing helper for the caller that owns the screen state.
+pub fn close(app: &mut App) {
+    app.screen = app.hub_return_screen.clone();
+    app.hub = None;
+}
+
+/// Opens the hub from `from`.
+pub fn open(app: &mut App) {
+    if app.hub.is_none() {
+        let repos = app.hub_repo_remotes();
+        app.hub = Some(Box::new(HubState::open(repos)));
+    }
+    if app.screen != AppScreen::Hub {
+        app.hub_return_screen = app.screen.clone();
+        app.screen = AppScreen::Hub;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::features::hub::state::Hit;
+    use crate::features::hub::state::fixtures::state;
+    use crossterm::event::{KeyEventKind, KeyEventState};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    fn ev(kind: MouseEventKind, x: u16, y: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column: x,
+            row: y,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    fn chars(hub: &mut HubState, text: &str) {
+        for c in text.chars() {
+            key_outcome(hub, key(KeyCode::Char(c)));
+        }
+    }
+
+    #[test]
+    fn tab_digits_and_movement() {
+        let mut s = state();
+        assert_eq!(key_outcome(&mut s, key(KeyCode::Tab)), Outcome::Stay);
+        assert_eq!(s.active, 1);
+        chars(&mut s, "1");
+        assert_eq!(s.active, 0);
+        chars(&mut s, "jjj");
+        assert_eq!(s.row, 3);
+        chars(&mut s, "k");
+        assert_eq!(s.row, 2);
+        chars(&mut s, "G");
+        assert_eq!(s.row, 4);
+        chars(&mut s, "g");
+        assert_eq!(s.row, 0);
+    }
+
+    #[test]
+    fn focus_moves_between_panes_and_detail_scrolls() {
+        let mut s = state();
+        chars(&mut s, "l");
+        assert_eq!(s.focus, Focus::Detail);
+        chars(&mut s, "jj");
+        assert_eq!(
+            (s.row, s.detail.scroll),
+            (0, 2),
+            "j scrolls the detail, not the list"
+        );
+        chars(&mut s, "k");
+        assert_eq!(s.detail.scroll, 1);
+        chars(&mut s, "h");
+        assert_eq!(s.focus, Focus::List);
+    }
+
+    #[test]
+    fn escape_unwinds_one_level_at_a_time() {
+        let mut s = state();
+        chars(&mut s, "l");
+        assert_eq!(key_outcome(&mut s, key(KeyCode::Esc)), Outcome::Stay);
+        assert_eq!(s.focus, Focus::List);
+        assert_eq!(key_outcome(&mut s, key(KeyCode::Esc)), Outcome::Close);
+        assert_eq!(key_outcome(&mut s, key(KeyCode::Char('q'))), Outcome::Close);
+        let ctrl_c = KeyEvent {
+            modifiers: KeyModifiers::CONTROL,
+            ..key(KeyCode::Char('c'))
+        };
+        assert_eq!(key_outcome(&mut s, ctrl_c), Outcome::Quit);
+    }
+
+    #[test]
+    fn a_comment_prompt_collects_text_and_escape_cancels_it() {
+        let mut s = state();
+        chars(&mut s, "c");
+        assert!(s.prompt.is_some());
+        chars(&mut s, "hi!");
+        key_outcome(&mut s, key(KeyCode::Backspace));
+        assert_eq!(s.prompt.as_ref().map(|p| p.buffer.as_str()), Some("hi"));
+        assert_eq!(key_outcome(&mut s, key(KeyCode::Esc)), Outcome::Stay);
+        assert!(s.prompt.is_none(), "Esc closed the prompt, not the hub");
+        // Keys inside a prompt are text, so `q` must not close anything.
+        chars(&mut s, "c");
+        assert_eq!(key_outcome(&mut s, key(KeyCode::Char('q'))), Outcome::Stay);
+        assert_eq!(s.prompt.as_ref().map(|p| p.buffer.as_str()), Some("q"));
+    }
+
+    #[test]
+    fn reviews_need_a_pull_request_but_comments_work_on_issues() {
+        let mut s = state();
+        s.select_section(1);
+        chars(&mut s, "a");
+        assert!(s.prompt.is_none());
+        chars(&mut s, "c");
+        assert!(
+            s.prompt.is_none(),
+            "an empty issue list has nothing to comment on"
+        );
+    }
+
+    #[test]
+    fn destructive_actions_ask_first_and_only_y_confirms() {
+        let mut s = state();
+        chars(&mut s, "m");
+        assert!(s.confirm.is_some());
+        chars(&mut s, "n");
+        assert!(s.confirm.is_none());
+        chars(&mut s, "C");
+        assert!(s.confirm.is_some());
+        assert_eq!(
+            key_outcome(&mut s, key(KeyCode::Esc)),
+            Outcome::Stay,
+            "Esc declines"
+        );
+        assert!(s.confirm.is_none());
+        assert_eq!(s.focus, Focus::List);
+    }
+
+    #[test]
+    fn moving_a_section_from_the_keyboard() {
+        let mut s = state();
+        chars(&mut s, "}");
+        assert_eq!(
+            (s.active, s.dashboard.sections[1].name.as_str()),
+            (1, "Mine")
+        );
+        chars(&mut s, "{");
+        assert_eq!(
+            (s.active, s.dashboard.sections[0].name.as_str()),
+            (0, "Mine")
+        );
+        chars(&mut s, "{");
+        assert_eq!(s.active, 0, "already first");
+        let alt_right = KeyEvent {
+            modifiers: KeyModifiers::ALT,
+            ..key(KeyCode::Right)
+        };
+        key_outcome(&mut s, alt_right);
+        assert_eq!(s.active, 1);
+    }
+
+    #[test]
+    fn pulse_view_keys() {
+        let mut s = state();
+        chars(&mut s, "p");
+        assert_eq!(s.view, View::Pulse);
+        assert_eq!(key_outcome(&mut s, key(KeyCode::Tab)), Outcome::Stay);
+        assert_eq!(s.view, View::Dashboard);
+    }
+
+    fn layout(s: &mut HubState) {
+        // Three section tabs on row 1, five rows from row 3, list 0..39, divider 40, detail 41..99.
+        let mut hits = vec![
+            Hit {
+                rect: Rect::new(0, 3, 40, 20),
+                target: Target::ListArea,
+            },
+            Hit {
+                rect: Rect::new(41, 3, 59, 20),
+                target: Target::DetailArea,
+            },
+            Hit {
+                rect: Rect::new(40, 3, 1, 20),
+                target: Target::Divider,
+            },
+        ];
+        for i in 0..3u16 {
+            hits.push(Hit {
+                rect: Rect::new(i * 10, 1, 9, 1),
+                target: Target::Section(i as usize),
+            });
+        }
+        for i in 0..5u16 {
+            hits.push(Hit {
+                rect: Rect::new(0, 3 + i, 40, 1),
+                target: Target::Row(i as usize),
+            });
+        }
+        s.set_hits(hits);
+    }
+
+    #[test]
+    fn clicking_a_row_selects_it_and_a_section_tab_switches() {
+        let mut s = state();
+        layout(&mut s);
+        mouse(&mut s, ev(MouseEventKind::Down(MouseButton::Left), 5, 5));
+        assert_eq!(s.row, 2);
+        mouse(&mut s, ev(MouseEventKind::Down(MouseButton::Left), 12, 1));
+        mouse(&mut s, ev(MouseEventKind::Up(MouseButton::Left), 12, 1));
+        assert_eq!(s.active, 1, "a press and release in place is a click");
+    }
+
+    #[test]
+    fn dragging_a_tab_over_another_reorders_the_sections() {
+        let mut s = state();
+        layout(&mut s);
+        mouse(&mut s, ev(MouseEventKind::Down(MouseButton::Left), 2, 1));
+        mouse(&mut s, ev(MouseEventKind::Drag(MouseButton::Left), 12, 1));
+        assert!(s.drag.is_dragging());
+        assert_eq!(s.drag.section_preview(), Some((0, Some(1))));
+        mouse(&mut s, ev(MouseEventKind::Drag(MouseButton::Left), 22, 1));
+        mouse(&mut s, ev(MouseEventKind::Up(MouseButton::Left), 22, 1));
+        assert_eq!(
+            s.dashboard
+                .sections
+                .iter()
+                .map(|x| x.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Issues", "CI", "Mine"]
+        );
+        assert_eq!(s.active, 2);
+    }
+
+    #[test]
+    fn escape_during_a_drag_leaves_the_order_alone() {
+        let mut s = state();
+        layout(&mut s);
+        mouse(&mut s, ev(MouseEventKind::Down(MouseButton::Left), 2, 1));
+        mouse(&mut s, ev(MouseEventKind::Drag(MouseButton::Left), 22, 1));
+        assert_eq!(key_outcome(&mut s, key(KeyCode::Esc)), Outcome::Stay);
+        mouse(&mut s, ev(MouseEventKind::Up(MouseButton::Left), 22, 1));
+        assert_eq!(s.dashboard.sections[0].name, "Mine");
+    }
+
+    #[test]
+    fn dragging_the_divider_resizes_live() {
+        let mut s = state();
+        layout(&mut s);
+        mouse(&mut s, ev(MouseEventKind::Down(MouseButton::Left), 40, 10));
+        mouse(&mut s, ev(MouseEventKind::Drag(MouseButton::Left), 70, 10));
+        assert_eq!(s.list_percent, 70);
+        mouse(&mut s, ev(MouseEventKind::Drag(MouseButton::Left), 99, 10));
+        assert_eq!(s.list_percent, 80, "clamped");
+        mouse(&mut s, ev(MouseEventKind::Up(MouseButton::Left), 99, 10));
+        assert!(!s.drag.is_dragging());
+    }
+
+    #[test]
+    fn the_wheel_scrolls_the_pane_under_the_pointer() {
+        let mut s = state();
+        layout(&mut s);
+        mouse(&mut s, ev(MouseEventKind::ScrollDown, 5, 5));
+        assert_eq!(s.row, 3);
+        mouse(&mut s, ev(MouseEventKind::ScrollUp, 5, 5));
+        assert_eq!(s.row, 0);
+        mouse(&mut s, ev(MouseEventKind::ScrollDown, 60, 5));
+        assert_eq!((s.row, s.detail.scroll), (0, 3));
+        mouse(&mut s, ev(MouseEventKind::ScrollDown, 500, 500));
+        assert_eq!(s.detail.scroll, 3, "outside everything: nothing happens");
+    }
+
+    #[test]
+    fn the_wheel_moves_through_an_open_log() {
+        let mut s = state();
+        s.log = Some(crate::features::hub::logview::LogView::new(
+            "job",
+            "a\nb\nc\nd\ne\nf",
+        ));
+        mouse(&mut s, ev(MouseEventKind::ScrollDown, 1, 1));
+        assert_eq!(s.log.as_ref().map(|l| l.cursor), Some(3));
+    }
+
+    #[test]
+    fn right_clicks_and_presses_on_nothing_do_nothing() {
+        let mut s = state();
+        layout(&mut s);
+        mouse(&mut s, ev(MouseEventKind::Down(MouseButton::Right), 5, 5));
+        mouse(
+            &mut s,
+            ev(MouseEventKind::Down(MouseButton::Left), 500, 500),
+        );
+        mouse(&mut s, ev(MouseEventKind::Up(MouseButton::Left), 500, 500));
+        assert_eq!((s.row, s.active), (0, 0));
+    }
+
+    #[test]
+    fn log_keys_search_fold_and_close() {
+        let mut s = state();
+        s.log = Some(crate::features::hub::logview::LogView::new(
+            "job",
+            "start\n##[group]G\nneedle one\n##[endgroup]\nneedle two",
+        ));
+        chars(&mut s, "/");
+        assert!(matches!(
+            s.prompt.as_ref().map(|p| p.purpose),
+            Some(PromptPurpose::LogSearch)
+        ));
+        chars(&mut s, "needle");
+        key_outcome(&mut s, key(KeyCode::Enter));
+        assert_eq!(s.log.as_ref().map(|l| l.matches.len()), Some(2));
+        chars(&mut s, "n");
+        assert_eq!(s.log.as_ref().and_then(|l| l.current_line()), Some(4));
+        assert_eq!(key_outcome(&mut s, key(KeyCode::Esc)), Outcome::Stay);
+        assert!(s.log.is_none(), "Esc closes the log, not the hub");
+    }
+}

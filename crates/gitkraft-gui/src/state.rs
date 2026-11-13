@@ -1048,6 +1048,7 @@ impl GitKraft {
             window_maximized: None, // not tracked
             commit_ref_width: Some(self.commit_ref_width),
             commit_graph_width: Some(self.commit_graph_width),
+            hub_list_percent: None, // TUI-only
         }
     }
 }

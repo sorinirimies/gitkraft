@@ -146,6 +146,11 @@ pub struct NotifySettings {
 }
 
 impl NotifySettings {
+    /// Parses a repo's own `.gitkraft/notifications.toml` (the keys of one layer, flat).
+    pub fn parse(text: &str) -> Result<Self, String> {
+        toml::from_str(text).map_err(|e| e.to_string())
+    }
+
     /// `self` over `base`: keys set here win.
     fn over(&self, base: &Self) -> Self {
         Self {
@@ -407,6 +412,16 @@ labels = { include = ["bug"], exclude = ["wip"] }
                 .expect("valid")
                 .contains(t(10, 0))
         );
+    }
+
+    #[test]
+    fn a_repo_file_is_one_flat_layer() {
+        let s = NotifySettings::parse("enabled = true\npoll_interval = \"2m\"\n").expect("valid");
+        assert_eq!(
+            (s.enabled, s.poll_interval.as_deref()),
+            (Some(true), Some("2m"))
+        );
+        assert!(NotifySettings::parse("enabled = \"yes\"").is_err());
     }
 
     #[test]

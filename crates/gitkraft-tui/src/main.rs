@@ -3,8 +3,21 @@ use std::path::PathBuf;
 fn main() -> anyhow::Result<()> {
     gitkraft_core::limit_git_memory();
 
+    // `gitkraft-tui notify …` runs the notification poller and its controls without the UI.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("notify") {
+        let cmd = gitkraft_tui::notify_cli::parse(&args[1..]).unwrap_or_else(|e| {
+            eprintln!("{e}");
+            std::process::exit(2);
+        });
+        print!("{}", gitkraft_tui::notify_cli::run(cmd)?);
+        return Ok(());
+    }
+
     let cli = gitkraft_tui::cli::parse_args(std::env::args().skip(1)).unwrap_or_else(|e| {
-        eprintln!("{e}\nusage: gitkraft-tui [REPO] [--theme NAME] [--list-themes]");
+        eprintln!(
+            "{e}\nusage: gitkraft-tui [REPO] [--theme NAME] [--list-themes] | gitkraft-tui notify …"
+        );
         std::process::exit(2);
     });
 

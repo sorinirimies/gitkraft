@@ -41,6 +41,9 @@ pub struct LayoutSettings {
     /// Width of the GRAPH column in the commit log (pixels).
     #[serde(default)]
     pub commit_graph_width: Option<f32>,
+    /// Width of the list pane in the TUI hub, in percent of the screen (20–80).
+    #[serde(default)]
+    pub hub_list_percent: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

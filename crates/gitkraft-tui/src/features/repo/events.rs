@@ -35,6 +35,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 app.open_repo(path);
             }
         }
+        KeyCode::Char('H') => crate::features::hub::events::open(app),
         KeyCode::Char('q') => {
             app.should_quit = true;
         }

@@ -1,4 +1,4 @@
-//! A fake [`HttpClient`](crate::http::HttpClient) that replays queued responses.
+//! A fake [`HttpClient`] that replays queued responses.
 //! Public so `gitkraft-ci` and the front-ends can test without a network.
 
 use std::collections::{HashMap, VecDeque};

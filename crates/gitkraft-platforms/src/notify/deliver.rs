@@ -8,7 +8,7 @@ use super::inbox::Inbox;
 
 /// Shows an alert to the user. The real one is [`desktop::DesktopNotifier`](super);
 /// tests use [`RecordingNotifier`].
-pub trait Notifier {
+pub trait Notifier: Send + Sync {
     /// Shows `alert`. Failures are the notifier's to swallow: the inbox still has the alert.
     fn show(&self, alert: &Alert, sound: bool);
 }

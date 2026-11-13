@@ -13,6 +13,7 @@ pub mod cli;
 pub mod events;
 pub mod features;
 pub mod layout;
+pub mod notify_cli;
 pub mod utils;
 pub mod widgets;
 
@@ -22,7 +23,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Result;
-use crossterm::event::{self, Event};
+use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -82,6 +83,7 @@ pub fn run(mut repo_path: Option<PathBuf>) -> Result<()> {
 
     // Always pop the keyboard enhancement flags so the terminal is left clean.
     let _ = execute!(io::stdout(), crossterm::event::PopKeyboardEnhancementFlags);
+    let _ = execute!(io::stdout(), DisableMouseCapture);
 
     restore_terminal()?;
     terminal.show_cursor()?;
@@ -127,6 +129,8 @@ where
         }
     }
 
+    let mut mouse_captured = false;
+
     // Watcher thread handle — restarted whenever it exits or the repo changes.
     let mut git_watcher_thread: Option<std::thread::JoinHandle<()>> = None;
 
@@ -135,6 +139,21 @@ where
 
         // Drain any results from background tasks before drawing.
         app.poll_background();
+        if let Some(hub) = app.hub.as_mut() {
+            hub.poll();
+        }
+
+        // The mouse is captured only on the hub screen: elsewhere the terminal
+        // keeps its own text selection.
+        let want_mouse = app.screen == crate::app::AppScreen::Hub;
+        if want_mouse != mouse_captured {
+            let _ = if want_mouse {
+                execute!(io::stdout(), EnableMouseCapture)
+            } else {
+                execute!(io::stdout(), DisableMouseCapture)
+            };
+            mouse_captured = want_mouse;
+        }
 
         // Track OS light/dark changes while the theme follows the system.
         app.refresh_system_theme();
@@ -166,12 +185,18 @@ where
         // Use a shorter poll interval (33 ms ≈ 30 fps) so background-task
         // results are picked up promptly and the loading indicator updates
         // without a noticeable lag.
-        if event::poll(Duration::from_millis(33))?
-            && let Event::Key(key) = event::read()?
-        {
-            // Ignore key-release events on platforms that send them
-            if key.kind == crossterm::event::KeyEventKind::Press {
-                events::handle_key(&mut app, key);
+        if event::poll(Duration::from_millis(33))? {
+            match event::read()? {
+                Event::Key(key) => {
+                    // Ignore key-release events on platforms that send them
+                    if key.kind == crossterm::event::KeyEventKind::Press {
+                        events::handle_key(&mut app, key);
+                    }
+                }
+                Event::Mouse(mouse) if app.screen == crate::app::AppScreen::Hub => {
+                    features::hub::events::handle_mouse(&mut app, mouse);
+                }
+                _ => {}
             }
         }
 

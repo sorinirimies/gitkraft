@@ -28,6 +28,9 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         AppScreen::Main => {
             render_main(app, frame);
         }
+        AppScreen::Hub => {
+            features::hub::view::render(app, frame, frame.area());
+        }
     }
 }
 

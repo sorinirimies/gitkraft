@@ -172,6 +172,8 @@ pub enum AppScreen {
     Welcome,
     DirBrowser,
     Main,
+    /// Pull requests, issues, CI and notifications across platforms.
+    Hub,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -465,6 +467,11 @@ pub struct App {
     /// Screen to return to when the directory browser is dismissed.
     pub browser_return_screen: AppScreen,
 
+    /// The hub screen's state while it is open.
+    pub hub: Option<Box<crate::features::hub::state::HubState>>,
+    /// Screen to return to when the hub closes.
+    pub hub_return_screen: AppScreen,
+
     /// Open repository tabs.
     pub tabs: Vec<RepoTab>,
     /// Index of the currently active tab.
@@ -556,6 +563,9 @@ impl App {
 
             browser: None,
             browser_return_screen: AppScreen::Welcome,
+
+            hub: None,
+            hub_return_screen: AppScreen::Welcome,
 
             tabs: vec![RepoTab::new()],
             active_tab_index: 0,
@@ -723,6 +733,23 @@ impl App {
     /// Return the `UiTheme` for the currently active preset.
     pub fn theme(&self) -> crate::features::theme::palette::UiTheme {
         crate::features::theme::palette::theme_for_index(self.current_theme_index)
+    }
+
+    /// Remote URLs of every open repository, for finding platform accounts.
+    pub fn hub_repo_remotes(&self) -> Vec<(std::path::PathBuf, Vec<String>)> {
+        self.tabs
+            .iter()
+            .filter_map(|t| t.repo_path.clone())
+            .filter_map(|path| {
+                let repo = git2::Repository::open(&path).ok()?;
+                let urls = gitkraft_core::features::remotes::list_remotes(&repo)
+                    .ok()?
+                    .into_iter()
+                    .filter_map(|r| r.url)
+                    .collect();
+                Some((path, urls))
+            })
+            .collect()
     }
 
     /// The active `tui-nuances` theme (used by embedded `tui-nuances`-aware widgets).

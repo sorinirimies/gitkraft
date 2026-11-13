@@ -1,0 +1,1828 @@
+//! The hub screen's state and everything that changes it: selection, section
+//! order, background loading, actions and the in-app notification poller.
+
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+use std::sync::{Arc, mpsc};
+use std::time::{Duration, Instant};
+
+use chrono::{Local, Utc};
+use gitkraft_ci::{RerunScope, Run, RunDetail};
+use gitkraft_hub::accounts::{AccountsFile, discover};
+use gitkraft_hub::poller::{Engine, run_cycle};
+use gitkraft_hub::pulse::{Pulse, pulse};
+use gitkraft_hub::{Hub, PrDetail, SectionData, SectionResult};
+use gitkraft_platforms::model::{
+    ActivityDay, Comment, Issue, ItemState, ListQuery, MergeMethod, Notification, PullRequest,
+    ReviewVerdict, StateFilter,
+};
+use gitkraft_platforms::notify::{Notifier, desktop::DesktopNotifier};
+use gitkraft_platforms::{CachedClient, ItemKind, RepoId, ReqwestClient};
+use gitkraft_settings::dashboard::{Dashboard, reorder};
+use gitkraft_settings::files;
+use gitkraft_settings::notify::{
+    NotifyConfig, NotifySettings, NotifyStatus, StatusInput, set_enabled, status,
+};
+use ratatui::layout::Rect;
+
+use super::drag::{Drag, DragOutcome, DragTarget};
+use super::list;
+use super::logview::LogView;
+
+/// The HTTP client every account shares.
+pub type Client = Arc<CachedClient<ReqwestClient>>;
+/// The hub over that client.
+pub type Api = Hub<Client>;
+
+/// Top-level views.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum View {
+    /// Sections with list and detail.
+    Dashboard,
+    /// Activity graphs.
+    Pulse,
+}
+
+/// Which pane keys act on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Focus {
+    /// The item list.
+    List,
+    /// The detail pane.
+    Detail,
+}
+
+/// Tabs of the PR detail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DetailTab {
+    /// Description, reviews, checks.
+    Overview,
+    /// The diff.
+    Diff,
+    /// Comments.
+    Comments,
+}
+
+impl DetailTab {
+    /// The next tab, wrapping.
+    pub fn next(self) -> Self {
+        match self {
+            Self::Overview => Self::Diff,
+            Self::Diff => Self::Comments,
+            Self::Comments => Self::Overview,
+        }
+    }
+}
+
+/// Something that reacts to the mouse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target {
+    /// A view tab.
+    ViewTab(View),
+    /// A section tab (visible index).
+    Section(usize),
+    /// A list row (absolute index).
+    Row(usize),
+    /// The divider between list and detail.
+    Divider,
+    /// The notification bell.
+    Bell,
+    /// A PR detail tab.
+    DetailTab(DetailTab),
+    /// A job row in a run's detail.
+    Job(usize),
+    /// The list area (for the scroll wheel).
+    ListArea,
+    /// The detail area (for the scroll wheel).
+    DetailArea,
+    /// A row of the log viewer (visible index).
+    LogRow(usize),
+    /// A row of the annotation list.
+    Annotation(usize),
+}
+
+/// A clickable region of the last frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Hit {
+    /// Screen area.
+    pub rect: Rect,
+    /// What it does.
+    pub target: Target,
+}
+
+/// One dashboard section's data.
+#[derive(Debug, Default)]
+pub struct Slot {
+    /// Loaded data, if any.
+    pub data: Option<SectionData>,
+    /// A load is running.
+    pub loading: bool,
+    generation: u64,
+}
+
+/// What the detail pane holds.
+#[derive(Debug, Default)]
+pub struct Detail {
+    /// Key of the item shown (`repo#number` or `repo run id`).
+    pub key: Option<String>,
+    /// PR with comments, reviews, diff.
+    pub pr: Option<PrDetail>,
+    /// Issue comments.
+    pub comments: Vec<Comment>,
+    /// Run with jobs.
+    pub run: Option<RunDetail>,
+    /// A request is running.
+    pub loading: bool,
+    /// Why it failed.
+    pub error: Option<String>,
+    /// Active PR tab.
+    pub tab: Option<DetailTab>,
+    /// Vertical scroll of the text.
+    pub scroll: u16,
+    /// Selected job of a run.
+    pub job: usize,
+}
+
+/// Text prompt (comment, review body).
+#[derive(Debug, Clone)]
+pub struct Prompt {
+    /// What the text is for.
+    pub purpose: PromptPurpose,
+    /// What was typed.
+    pub buffer: String,
+}
+
+/// Reasons for a prompt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptPurpose {
+    /// A comment on the item.
+    Comment,
+    /// Approve with an optional note.
+    Approve,
+    /// Request changes with a note.
+    RequestChanges,
+    /// Search text in the log viewer.
+    LogSearch,
+}
+
+/// Actions that ask for confirmation first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    /// Merge the PR.
+    Merge(MergeMethod),
+    /// Close an open item or reopen a closed one.
+    ToggleOpen,
+    /// Re-run CI.
+    Rerun(RerunScope),
+    /// Cancel a CI run.
+    CancelRun,
+}
+
+/// A pending confirmation.
+#[derive(Debug, Clone)]
+pub struct Confirm {
+    /// What will happen.
+    pub action: Action,
+    /// The question.
+    pub text: String,
+}
+
+/// State of the Pulse view.
+#[derive(Debug, Default)]
+pub struct PulseState {
+    /// Repo the numbers are for.
+    pub repo: Option<RepoId>,
+    /// The numbers.
+    pub data: Option<Pulse>,
+    /// Contribution calendar over all accounts.
+    pub contributions: Option<SectionResult<ActivityDay>>,
+    /// Days covered by `data`.
+    pub days: u32,
+    /// Something is loading.
+    pub loading: bool,
+}
+
+/// A repo to watch, with its local checkout when there is one.
+#[derive(Debug, Clone)]
+pub struct Watched {
+    /// The project.
+    pub repo: RepoId,
+    /// Checkout, for the repo's own `.gitkraft/notifications.toml`.
+    pub path: Option<PathBuf>,
+}
+
+enum Msg {
+    Ready {
+        api: Arc<Api>,
+        watched: Vec<Watched>,
+        accounts: usize,
+    },
+    SetupFailed(String),
+    Section {
+        idx: usize,
+        generation: u64,
+        data: SectionData,
+    },
+    Pr {
+        key: String,
+        result: Result<PrDetail, String>,
+    },
+    Run {
+        key: String,
+        result: Result<RunDetail, String>,
+    },
+    Comments {
+        key: String,
+        result: Result<Vec<Comment>, String>,
+    },
+    Log {
+        title: String,
+        result: Result<String, String>,
+    },
+    Pulse {
+        repo: String,
+        days: u32,
+        data: Pulse,
+    },
+    Contributions(SectionResult<ActivityDay>),
+    Done {
+        text: String,
+        ok: bool,
+        reload: bool,
+    },
+}
+
+/// Everything the hub screen needs.
+#[derive(Debug)]
+pub struct HubState {
+    /// Active view.
+    pub view: View,
+    /// Focused pane.
+    pub focus: Focus,
+    /// The dashboard being shown.
+    pub dashboard: Dashboard,
+    /// Data per section, parallel to `dashboard.sections`.
+    pub slots: Vec<Slot>,
+    /// Active section (visible index).
+    pub active: usize,
+    /// Selected row of the active section.
+    pub row: usize,
+    /// First visible row.
+    pub offset: usize,
+    /// List pane width in percent.
+    pub list_percent: u16,
+    /// Detail pane content.
+    pub detail: Detail,
+    /// Log viewer, when open.
+    pub log: Option<LogView>,
+    /// Text prompt, when open.
+    pub prompt: Option<Prompt>,
+    /// Confirmation, when asked.
+    pub confirm: Option<Confirm>,
+    /// Drag state.
+    pub drag: Drag,
+    /// Hit regions of the last frame.
+    pub hits: Vec<Hit>,
+    /// The last left click, to recognise a double click.
+    pub last_click: Option<(Instant, Target)>,
+    /// Pulse view.
+    pub pulse: PulseState,
+    /// Message for the status line.
+    pub notice: Option<(String, bool, Instant)>,
+    /// Setup finished: accounts are ready.
+    pub ready: bool,
+    /// Number of accounts found.
+    pub accounts: usize,
+    /// Watched projects.
+    pub watched: Vec<Watched>,
+    /// Shared poller state (bell, inbox).
+    pub engine: Arc<tokio::sync::Mutex<Engine>>,
+    /// Parsed `notifications.toml`, refreshed every few seconds.
+    pub notify_config: NotifyConfig,
+    config_loaded: Instant,
+    /// Where the dashboard order is saved; `None` in tests.
+    dashboard_file: Option<PathBuf>,
+    /// The notification config file; `None` in tests.
+    notify_file: Option<PathBuf>,
+    /// Save the list width to the TUI settings.
+    save_layout_on_resize: bool,
+    api: Option<Arc<Api>>,
+    runtime: Option<tokio::runtime::Runtime>,
+    tx: mpsc::Sender<Msg>,
+    rx: mpsc::Receiver<Msg>,
+}
+
+impl Drop for HubState {
+    fn drop(&mut self) {
+        // Do not wait for in-flight requests when the user leaves.
+        if let Some(rt) = self.runtime.take() {
+            rt.shutdown_background();
+        }
+    }
+}
+
+const CONFIG_REFRESH: Duration = Duration::from_secs(3);
+const NOTICE_FOR: Duration = Duration::from_secs(6);
+
+impl HubState {
+    /// A state with no network: for tests and before setup finishes.
+    pub fn detached(dashboard: Dashboard) -> Self {
+        let (tx, rx) = mpsc::channel();
+        let slots = dashboard.sections.iter().map(|_| Slot::default()).collect();
+        Self {
+            view: View::Dashboard,
+            focus: Focus::List,
+            dashboard,
+            slots,
+            active: 0,
+            row: 0,
+            offset: 0,
+            list_percent: 45,
+            detail: Detail::default(),
+            log: None,
+            prompt: None,
+            confirm: None,
+            drag: Drag::default(),
+            hits: Vec::new(),
+            last_click: None,
+            pulse: PulseState::default(),
+            notice: None,
+            ready: false,
+            accounts: 0,
+            watched: Vec::new(),
+            engine: Arc::new(tokio::sync::Mutex::new(Engine::default())),
+            notify_config: NotifyConfig::default(),
+            config_loaded: Instant::now(),
+            dashboard_file: None,
+            notify_file: None,
+            save_layout_on_resize: false,
+            api: None,
+            runtime: None,
+            tx,
+            rx,
+        }
+    }
+
+    /// Opens the hub: loads the dashboard file, then discovers accounts in the background.
+    pub fn open(repos: Vec<(PathBuf, Vec<String>)>) -> Self {
+        let mut notice = None;
+        let dashboard = match files::dashboard_path()
+            .ok()
+            .and_then(|p| files::read_optional(&p).ok().flatten())
+        {
+            Some(text) => Dashboard::parse(&text).unwrap_or_else(|e| {
+                notice = Some(format!("dashboard.toml: {e}; showing the default"));
+                Dashboard::starter()
+            }),
+            None => Dashboard::starter(),
+        };
+        let mut state = Self::detached(dashboard);
+        state.dashboard_file = files::dashboard_path().ok();
+        state.notify_file = files::notify_config_path().ok();
+        state.save_layout_on_resize = true;
+        if let Some(msg) = notice {
+            state.set_notice(msg, false);
+        }
+        if let Some(pct) = gitkraft_settings::persistence::load_tui_settings()
+            .ok()
+            .and_then(|s| s.layout)
+            .and_then(|l| l.hub_list_percent)
+        {
+            state.list_percent = (pct as u16).clamp(20, 80);
+        }
+        state.notify_config = load_notify_config_from(state.notify_file.as_deref());
+        state.runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .thread_name("gitkraft-hub")
+            .enable_all()
+            .build()
+            .ok();
+        if state.runtime.is_none() {
+            state.set_notice("could not start the network runtime".into(), false);
+            return state;
+        }
+        state.spawn_setup(repos);
+        state
+    }
+
+    // ── Setup ────────────────────────────────────────────────────────────────
+
+    fn handle(&self) -> Option<tokio::runtime::Handle> {
+        self.runtime.as_ref().map(|r| r.handle().clone())
+    }
+
+    fn spawn_setup(&mut self, repos: Vec<(PathBuf, Vec<String>)>) {
+        let Some(rt) = self.handle() else { return };
+        let tx = self.tx.clone();
+        let sections: Vec<String> = self
+            .dashboard
+            .sections
+            .iter()
+            .flat_map(|s| s.repos.clone())
+            .collect();
+        rt.spawn(async move {
+            // Token lookup may run `gh`, so keep it off the async workers.
+            let built = tokio::task::spawn_blocking(move || {
+                let file = files::accounts_path()
+                    .ok()
+                    .and_then(|p| files::read_optional(&p).ok().flatten())
+                    .map(|t| AccountsFile::parse(&t))
+                    .transpose()?
+                    .unwrap_or_default();
+                let urls: Vec<String> = repos.iter().flat_map(|(_, u)| u.clone()).collect();
+                let accounts = discover(&urls, &file, gitkraft_platforms::auth::resolve_token);
+                let mut watched: Vec<Watched> = Vec::new();
+                for (path, urls) in &repos {
+                    for url in urls {
+                        if let Some(repo) = gitkraft_platforms::parse_remote_url(url)
+                            && !watched.iter().any(|w| w.repo == repo)
+                        {
+                            watched.push(Watched {
+                                repo,
+                                path: Some(path.clone()),
+                            });
+                        }
+                    }
+                }
+                for key in &sections {
+                    if let Some(repo) = RepoId::from_key(key)
+                        && !watched.iter().any(|w| w.repo == repo)
+                    {
+                        watched.push(Watched { repo, path: None });
+                    }
+                }
+                Ok::<_, String>((accounts, watched))
+            })
+            .await;
+            let (accounts, watched) = match built {
+                Ok(Ok(v)) => v,
+                Ok(Err(e)) => {
+                    return drop(tx.send(Msg::SetupFailed(format!("accounts.toml: {e}"))));
+                }
+                Err(e) => return drop(tx.send(Msg::SetupFailed(e.to_string()))),
+            };
+            let client = match ReqwestClient::new() {
+                Ok(c) => Arc::new(CachedClient::new(c)),
+                Err(e) => return drop(tx.send(Msg::SetupFailed(e.to_string()))),
+            };
+            let count = accounts.len();
+            let api = Arc::new(Hub::new(accounts, &client));
+            let _ = tx.send(Msg::Ready {
+                api,
+                watched,
+                accounts: count,
+            });
+        });
+    }
+
+    fn spawn_poller(&self, api: Arc<Api>, watched: Vec<Watched>) {
+        let Some(rt) = self.handle() else { return };
+        let engine = self.engine.clone();
+        rt.spawn(async move {
+            {
+                let mut e = engine.lock().await;
+                *e = Engine::load();
+                e.status.mode = "in-app".into();
+            }
+            let notifier = DesktopNotifier;
+            loop {
+                let config = load_notify_config();
+                let repos: Vec<RepoId> = watched.iter().map(|w| w.repo.clone()).collect();
+                let locals: BTreeMap<String, NotifySettings> = watched
+                    .iter()
+                    .filter_map(|w| {
+                        let text = files::read_optional(
+                            &w.path
+                                .as_ref()?
+                                .join(".gitkraft")
+                                .join("notifications.toml"),
+                        )
+                        .ok()??;
+                        let s = NotifySettings::parse(&text).ok()?;
+                        Some((w.repo.key(), s))
+                    })
+                    .collect();
+                let now = Utc::now();
+                let mut e = engine.lock().await;
+                let report = run_cycle(
+                    &api,
+                    &mut e,
+                    &repos,
+                    &config,
+                    &locals,
+                    now,
+                    Local::now().time(),
+                    &notifier as &dyn Notifier,
+                )
+                .await;
+                if report.polled > 0 || report.alerts > 0 {
+                    let _ = e.save();
+                } else if e.status.repos.is_empty() {
+                    // Nothing enabled: still tell the UIs a poller is alive.
+                    let _ = files::write_atomic(
+                        &files::notify_status_path().unwrap_or_default(),
+                        &e.status.to_json(),
+                    );
+                }
+                drop(e);
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
+        });
+    }
+
+    // ── Selection and sections ───────────────────────────────────────────────
+
+    /// Indexes into `dashboard.sections` of the shown sections.
+    pub fn visible_sections(&self) -> Vec<usize> {
+        self.dashboard.visible().map(|(i, _)| i).collect()
+    }
+
+    /// The active section's index in `dashboard.sections`.
+    pub fn active_index(&self) -> Option<usize> {
+        self.visible_sections().get(self.active).copied()
+    }
+
+    /// Data of the active section.
+    pub fn active_data(&self) -> Option<&SectionData> {
+        self.slots.get(self.active_index()?)?.data.as_ref()
+    }
+
+    /// Number of rows in the active section.
+    pub fn row_count(&self) -> usize {
+        self.active_data().map_or(0, SectionData::len)
+    }
+
+    /// Switches to section `vis` (visible index) and loads it if needed.
+    pub fn select_section(&mut self, vis: usize) {
+        let n = self.visible_sections().len();
+        if n == 0 {
+            return;
+        }
+        self.active = vis.min(n - 1);
+        self.row = 0;
+        self.offset = 0;
+        self.focus = Focus::List;
+        self.detail = Detail::default();
+        if let Some(idx) = self.active_index()
+            && self.slots[idx].data.is_none()
+            && !self.slots[idx].loading
+        {
+            self.load_section(idx);
+        }
+        self.on_selection_changed();
+    }
+
+    /// Next section, wrapping.
+    pub fn next_section(&mut self, delta: isize) {
+        let n = self.visible_sections().len();
+        if n > 0 {
+            self.select_section((self.active as isize + delta).rem_euclid(n as isize) as usize);
+        }
+    }
+
+    /// Moves the selected row.
+    pub fn move_row(&mut self, delta: isize) {
+        self.set_row(list::step(self.row, self.row_count(), delta));
+    }
+
+    /// Selects row `row`.
+    pub fn set_row(&mut self, row: usize) {
+        let row = row.min(self.row_count().saturating_sub(1));
+        if row != self.row || self.detail.key.is_none() {
+            self.row = row;
+            self.detail.scroll = 0;
+            self.detail.job = 0;
+            self.on_selection_changed();
+        }
+    }
+
+    /// Moves the section at visible index `from` to `to` and saves the order.
+    pub fn reorder_sections(&mut self, from: usize, to: usize) -> bool {
+        let vis = self.visible_sections();
+        let (Some(&a), Some(&b)) = (vis.get(from), vis.get(to)) else {
+            return false;
+        };
+        if !self.dashboard.reorder(a, b) {
+            return false;
+        }
+        reorder(&mut self.slots, a, b);
+        self.active = to;
+        self.save_dashboard();
+        true
+    }
+
+    fn save_dashboard(&mut self) {
+        let Some(path) = self.dashboard_file.clone() else {
+            return;
+        };
+        let result = self
+            .dashboard
+            .to_toml()
+            .and_then(|t| files::write_atomic(&path, &t).map_err(|e| e.to_string()));
+        if let Err(e) = result {
+            self.set_notice(format!("could not save the section order: {e}"), false);
+        }
+    }
+
+    /// Applies a finished drag.
+    pub fn apply_drag(&mut self, outcome: DragOutcome, area: Rect) {
+        match outcome {
+            DragOutcome::Click(DragTarget::Section(i)) => self.select_section(i),
+            DragOutcome::Click(DragTarget::Divider)
+            | DragOutcome::None
+            | DragOutcome::Cancelled => {}
+            DragOutcome::Drop { from, to } => {
+                if self.reorder_sections(from, to) {
+                    self.set_notice("section moved".into(), true);
+                }
+            }
+            DragOutcome::Resized { x } => {
+                self.list_percent = list::percent_at(x, area.x, area.width);
+                self.save_layout();
+            }
+        }
+    }
+
+    /// Live resize while the divider is dragged.
+    pub fn resize_to(&mut self, x: u16, area: Rect) {
+        self.list_percent = list::percent_at(x, area.x, area.width);
+    }
+
+    fn save_layout(&mut self) {
+        if !self.save_layout_on_resize {
+            return;
+        }
+        let pct = f32::from(self.list_percent);
+        let _ = gitkraft_settings::persistence::update_tui_settings(|s| {
+            s.layout
+                .get_or_insert_with(Default::default)
+                .hub_list_percent = Some(pct);
+        });
+    }
+
+    // ── What is selected ─────────────────────────────────────────────────────
+
+    /// The selected PR.
+    pub fn selected_pr(&self) -> Option<&PullRequest> {
+        match self.active_data()? {
+            SectionData::Prs(r) => r.items.get(self.row),
+            _ => None,
+        }
+    }
+
+    /// The selected issue.
+    pub fn selected_issue(&self) -> Option<&Issue> {
+        match self.active_data()? {
+            SectionData::Issues(r) => r.items.get(self.row),
+            _ => None,
+        }
+    }
+
+    /// The selected CI run.
+    pub fn selected_run(&self) -> Option<&Run> {
+        match self.active_data()? {
+            SectionData::Runs(r) => r.items.get(self.row),
+            _ => None,
+        }
+    }
+
+    /// The selected notification.
+    pub fn selected_note(&self) -> Option<&Notification> {
+        match self.active_data()? {
+            SectionData::Inbox(r) => r.items.get(self.row),
+            _ => None,
+        }
+    }
+
+    /// Repo of the selected item, else the first watched repo.
+    pub fn current_repo(&self) -> Option<RepoId> {
+        self.selected_pr()
+            .map(|p| p.repo.clone())
+            .or_else(|| self.selected_issue().map(|i| i.repo.clone()))
+            .or_else(|| self.selected_run().map(|r| r.repo.clone()))
+            .or_else(|| self.selected_note().and_then(|n| n.repo.clone()))
+            .or_else(|| self.watched.first().map(|w| w.repo.clone()))
+    }
+
+    /// Web URL of the selected item.
+    pub fn selected_url(&self) -> Option<String> {
+        self.selected_pr()
+            .map(|p| p.url.clone())
+            .or_else(|| self.selected_issue().map(|i| i.url.clone()))
+            .or_else(|| self.selected_run().map(|r| r.url.clone()))
+            .or_else(|| self.selected_note().map(|n| n.url.clone()))
+            .filter(|u| !u.is_empty())
+    }
+
+    // ── Loading ──────────────────────────────────────────────────────────────
+
+    /// Loads (or reloads) section `idx`.
+    pub fn load_section(&mut self, idx: usize) {
+        let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {
+            return;
+        };
+        let Some(section) = self.dashboard.sections.get(idx).cloned() else {
+            return;
+        };
+        let Some(slot) = self.slots.get_mut(idx) else {
+            return;
+        };
+        slot.loading = true;
+        slot.generation += 1;
+        let generation = slot.generation;
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            let data = api.load_section(&section).await;
+            let _ = tx.send(Msg::Section {
+                idx,
+                generation,
+                data,
+            });
+        });
+    }
+
+    /// Reloads every visible section.
+    pub fn load_all(&mut self) {
+        for idx in self.visible_sections() {
+            self.load_section(idx);
+        }
+    }
+
+    fn on_selection_changed(&mut self) {
+        let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {
+            return;
+        };
+        let tx = self.tx.clone();
+        if let Some(pr) = self.selected_pr().cloned() {
+            let key = format!("{}#{}", pr.repo.key(), pr.number);
+            self.begin_detail(&key);
+            self.detail.tab = Some(DetailTab::Overview);
+            rt.spawn(async move {
+                let result = api
+                    .pr_detail(&pr.repo, pr.number)
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = tx.send(Msg::Pr { key, result });
+            });
+        } else if let Some(issue) = self.selected_issue().cloned() {
+            let key = format!("{}#{}", issue.repo.key(), issue.number);
+            self.begin_detail(&key);
+            rt.spawn(async move {
+                let result = match api.backend(&issue.repo.host) {
+                    Some(b) => b
+                        .comments(&issue.repo, ItemKind::Issue, issue.number)
+                        .await
+                        .map_err(|e| e.to_string()),
+                    None => Err("no account".to_string()),
+                };
+                let _ = tx.send(Msg::Comments { key, result });
+            });
+        } else if let Some(run) = self.selected_run().cloned() {
+            let key = format!("{}!{}", run.repo.key(), run.id);
+            self.begin_detail(&key);
+            rt.spawn(async move {
+                let result = match api.ci(&run.repo.host) {
+                    Some(ci) => ci
+                        .run_detail(&run.repo, run.id)
+                        .await
+                        .map_err(|e| e.to_string()),
+                    None => Err("no account".to_string()),
+                };
+                let _ = tx.send(Msg::Run { key, result });
+            });
+        } else {
+            self.detail = Detail::default();
+        }
+    }
+
+    fn begin_detail(&mut self, key: &str) {
+        if self.detail.key.as_deref() == Some(key) {
+            return;
+        }
+        self.detail = Detail {
+            key: Some(key.to_string()),
+            loading: true,
+            ..Detail::default()
+        };
+    }
+
+    /// Opens the log of the selected job of the shown run.
+    pub fn open_job_log(&mut self) {
+        let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {
+            return;
+        };
+        let Some(run) = self.selected_run().cloned() else {
+            return;
+        };
+        let Some(job) = self
+            .detail
+            .run
+            .as_ref()
+            .and_then(|d| d.jobs.get(self.detail.job))
+            .cloned()
+        else {
+            self.set_notice("no job selected yet".into(), false);
+            return;
+        };
+        let tx = self.tx.clone();
+        let title = format!("{} · {}", run.name, job.name);
+        self.set_notice(format!("loading log of {}…", job.name), true);
+        rt.spawn(async move {
+            let result = match api.ci(&run.repo.host) {
+                Some(ci) => ci
+                    .job_log(&run.repo, job.id)
+                    .await
+                    .map_err(|e| e.to_string()),
+                None => Err("no account".to_string()),
+            };
+            let _ = tx.send(Msg::Log { title, result });
+        });
+    }
+
+    /// Loads the Pulse view's numbers for the current repo.
+    pub fn load_pulse(&mut self, days: u32) {
+        let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {
+            return;
+        };
+        let Some(repo) = self.pulse.repo.clone().or_else(|| self.current_repo()) else {
+            self.set_notice("no repository to show a pulse for".into(), false);
+            return;
+        };
+        self.pulse.loading = true;
+        self.pulse.repo = Some(repo.clone());
+        self.pulse.days = days;
+        let tx = self.tx.clone();
+        let api2 = api.clone();
+        rt.spawn(async move {
+            let q = ListQuery {
+                state: StateFilter::All,
+                ..ListQuery::default()
+            };
+            let (prs, issues, runs) = match (api2.backend(&repo.host), api2.ci(&repo.host)) {
+                (Some(b), Some(ci)) => {
+                    let (p, i, r) = futures_join3(
+                        b.list_pull_requests(&repo, &q),
+                        b.list_issues(&repo, &q),
+                        ci.list_runs(&repo, &gitkraft_ci::RunQuery::default()),
+                    )
+                    .await;
+                    (
+                        p.unwrap_or_default(),
+                        i.unwrap_or_default(),
+                        r.unwrap_or_default(),
+                    )
+                }
+                _ => Default::default(),
+            };
+            let data = pulse(&prs, &issues, &runs, days, Utc::now());
+            let _ = tx.send(Msg::Pulse {
+                repo: repo.key(),
+                days,
+                data,
+            });
+        });
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            let c = api.contributions().await;
+            let _ = tx.send(Msg::Contributions(c));
+        });
+    }
+
+    // ── Actions ──────────────────────────────────────────────────────────────
+
+    /// Asks before doing `action` on the selected item.
+    pub fn ask(&mut self, action: Action) {
+        let text = match (
+            action,
+            self.selected_pr().is_some(),
+            self.selected_run().is_some(),
+        ) {
+            (Action::Merge(m), true, _) => format!("Merge PR ({m:?})? y/n"),
+            (Action::ToggleOpen, _, false)
+                if self.selected_pr().is_some() || self.selected_issue().is_some() =>
+            {
+                let open = self
+                    .selected_pr()
+                    .map(|p| p.state == ItemState::Open)
+                    .or_else(|| self.selected_issue().map(|i| i.state == ItemState::Open));
+                if open == Some(true) {
+                    "Close this item? y/n".into()
+                } else {
+                    "Reopen this item? y/n".into()
+                }
+            }
+            (Action::Rerun(RerunScope::All), _, true) => "Re-run every job? y/n".into(),
+            (Action::Rerun(RerunScope::Failed), _, true) => "Re-run the failed jobs? y/n".into(),
+            (Action::CancelRun, _, true) => "Cancel this run? y/n".into(),
+            _ => {
+                self.set_notice(
+                    "that action does not apply to the selected item".into(),
+                    false,
+                );
+                return;
+            }
+        };
+        self.confirm = Some(Confirm { action, text });
+    }
+
+    /// Runs a confirmed action.
+    pub fn perform(&mut self, action: Action) {
+        let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {
+            return;
+        };
+        let tx = self.tx.clone();
+        match action {
+            Action::Merge(method) => {
+                let Some(pr) = self.selected_pr().cloned() else {
+                    return;
+                };
+                rt.spawn(async move {
+                    let r = match api.backend(&pr.repo.host) {
+                        Some(b) => b
+                            .merge(&pr.repo, pr.number, method)
+                            .await
+                            .map_err(|e| e.to_string()),
+                        None => Err("no account".into()),
+                    };
+                    done(&tx, r, format!("merged #{}", pr.number), true);
+                });
+            }
+            Action::ToggleOpen => {
+                let target = self
+                    .selected_pr()
+                    .map(|p| {
+                        (
+                            p.repo.clone(),
+                            p.number,
+                            ItemKind::PullRequest,
+                            p.state == ItemState::Open,
+                        )
+                    })
+                    .or_else(|| {
+                        self.selected_issue().map(|i| {
+                            (
+                                i.repo.clone(),
+                                i.number,
+                                ItemKind::Issue,
+                                i.state == ItemState::Open,
+                            )
+                        })
+                    });
+                let Some((repo, number, kind, open)) = target else {
+                    return;
+                };
+                rt.spawn(async move {
+                    let r = match api.backend(&repo.host) {
+                        Some(b) => b
+                            .set_open(&repo, kind, number, !open)
+                            .await
+                            .map_err(|e| e.to_string()),
+                        None => Err("no account".into()),
+                    };
+                    done(
+                        &tx,
+                        r,
+                        format!("#{number} {}", if open { "closed" } else { "reopened" }),
+                        true,
+                    );
+                });
+            }
+            Action::Rerun(scope) => {
+                let Some(run) = self.selected_run().cloned() else {
+                    return;
+                };
+                rt.spawn(async move {
+                    let r = match api.ci(&run.repo.host) {
+                        Some(ci) => ci
+                            .rerun(&run.repo, &run, scope)
+                            .await
+                            .map_err(|e| e.to_string()),
+                        None => Err("no account".into()),
+                    };
+                    done(&tx, r, "re-run started".into(), true);
+                });
+            }
+            Action::CancelRun => {
+                let Some(run) = self.selected_run().cloned() else {
+                    return;
+                };
+                rt.spawn(async move {
+                    let r = match api.ci(&run.repo.host) {
+                        Some(ci) => ci
+                            .cancel(&run.repo, run.id)
+                            .await
+                            .map_err(|e| e.to_string()),
+                        None => Err("no account".into()),
+                    };
+                    done(&tx, r, "run cancelled".into(), true);
+                });
+            }
+        }
+    }
+
+    /// Sends the prompt's text.
+    pub fn submit_prompt(&mut self) {
+        let Some(prompt) = self.prompt.take() else {
+            return;
+        };
+        if prompt.purpose == PromptPurpose::LogSearch {
+            if let Some(log) = &mut self.log {
+                log.set_query(&prompt.buffer);
+            }
+            return;
+        }
+        let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {
+            return;
+        };
+        let tx = self.tx.clone();
+        let body = prompt.buffer.trim().to_string();
+        let target = self
+            .selected_pr()
+            .map(|p| (p.repo.clone(), p.number, ItemKind::PullRequest))
+            .or_else(|| {
+                self.selected_issue()
+                    .map(|i| (i.repo.clone(), i.number, ItemKind::Issue))
+            });
+        let Some((repo, number, kind)) = target else {
+            return;
+        };
+        match prompt.purpose {
+            PromptPurpose::Comment if !body.is_empty() => {
+                rt.spawn(async move {
+                    let r = match api.backend(&repo.host) {
+                        Some(b) => b
+                            .post_comment(&repo, kind, number, &body)
+                            .await
+                            .map_err(|e| e.to_string()),
+                        None => Err("no account".into()),
+                    };
+                    done(&tx, r, "comment posted".into(), true);
+                });
+            }
+            PromptPurpose::Approve | PromptPurpose::RequestChanges
+                if kind == ItemKind::PullRequest =>
+            {
+                let verdict = if prompt.purpose == PromptPurpose::Approve {
+                    ReviewVerdict::Approve
+                } else {
+                    ReviewVerdict::RequestChanges
+                };
+                if verdict == ReviewVerdict::RequestChanges && body.is_empty() {
+                    self.set_notice("requesting changes needs a note".into(), false);
+                    return;
+                }
+                rt.spawn(async move {
+                    let r = match api.backend(&repo.host) {
+                        Some(b) => b
+                            .submit_review(&repo, number, verdict, &body)
+                            .await
+                            .map_err(|e| e.to_string()),
+                        None => Err("no account".into()),
+                    };
+                    done(&tx, r, "review sent".into(), true);
+                });
+            }
+            _ => self.set_notice("nothing to send".into(), false),
+        }
+    }
+
+    // ── Notifications ────────────────────────────────────────────────────────
+
+    fn refresh_config(&mut self) {
+        if self.config_loaded.elapsed() >= CONFIG_REFRESH && self.notify_file.is_some() {
+            self.notify_config = load_notify_config_from(self.notify_file.as_deref());
+            self.config_loaded = Instant::now();
+        }
+    }
+
+    /// The bell for the current repo: `(repo key, status, unread count)`.
+    pub fn bell(&self) -> Option<(String, NotifyStatus, usize)> {
+        let repo = self.current_repo()?;
+        let key = repo.key();
+        let eff = self.notify_config.resolve(&key, None);
+        // Never block the UI on the poller: if it holds the lock, skip this frame's detail.
+        let engine = self.engine.try_lock().ok()?;
+        let st = engine.status.repos.get(&key).cloned().unwrap_or_default();
+        let input = StatusInput {
+            enabled: eff.enabled,
+            muted_until: engine.state.muted_until(&key),
+            last_poll: st.last_poll,
+            last_error: st.last_error,
+            poller_heartbeat: engine.status.heartbeat,
+            interval: eff.poll_interval,
+        };
+        Some((
+            key.clone(),
+            status(&input, Utc::now()),
+            engine.inbox.unread_for(&key),
+        ))
+    }
+
+    /// Turns notifications on or off for the current repo (or everything).
+    pub fn toggle_notifications(&mut self, global: bool) {
+        let repo_key = if global {
+            None
+        } else {
+            self.current_repo().map(|r| r.key())
+        };
+        if !global && repo_key.is_none() {
+            self.set_notice("no repository selected".into(), false);
+            return;
+        }
+        let key = repo_key.clone().unwrap_or_default();
+        let now_on = if global {
+            self.notify_config.defaults.enabled.unwrap_or(false)
+        } else {
+            self.notify_config.resolve(&key, None).enabled
+        };
+        let result = (|| {
+            let path = self
+                .notify_file
+                .clone()
+                .ok_or("no config file in this session")?;
+            let text = files::read_optional(&path)
+                .map_err(|e| e.to_string())?
+                .unwrap_or_default();
+            let edited = set_enabled(&text, repo_key.as_deref(), !now_on)?;
+            files::write_atomic(&path, &edited).map_err(|e| e.to_string())
+        })();
+        match result {
+            Ok(()) => {
+                self.notify_config = load_notify_config_from(self.notify_file.as_deref());
+                self.config_loaded = Instant::now();
+                let what = if global {
+                    "all projects".to_string()
+                } else {
+                    key
+                };
+                self.set_notice(
+                    format!(
+                        "notifications {} for {what}",
+                        if now_on { "off" } else { "on" }
+                    ),
+                    true,
+                );
+            }
+            Err(e) => self.set_notice(format!("could not change notifications: {e}"), false),
+        }
+    }
+
+    /// Snoozes the current repo for an hour, or ends the snooze.
+    pub fn toggle_snooze(&mut self) {
+        let Some(repo) = self.current_repo() else {
+            return;
+        };
+        let key = repo.key();
+        let engine = self.engine.clone();
+        let Ok(mut e) = engine.try_lock() else {
+            self.set_notice("poller is busy, try again".into(), false);
+            return;
+        };
+        if e.state.muted_until(&key).is_some_and(|u| u > Utc::now()) {
+            e.state.unmute(Some(&key));
+            self.set_notice(format!("{key}: snooze ended"), true);
+        } else {
+            e.state
+                .mute(Some(&key), Utc::now() + chrono::Duration::hours(1));
+            self.set_notice(format!("{key}: snoozed for 1 h"), true);
+        }
+        if self.notify_file.is_some() {
+            let _ = e.save();
+        }
+    }
+
+    // ── Messages ─────────────────────────────────────────────────────────────
+
+    /// Sets the line shown in the status bar.
+    pub fn set_notice(&mut self, text: String, ok: bool) {
+        self.notice = Some((text, ok, Instant::now()));
+    }
+
+    /// The notice while it is fresh.
+    pub fn fresh_notice(&self) -> Option<(&str, bool)> {
+        self.notice
+            .as_ref()
+            .filter(|(_, _, t)| t.elapsed() < NOTICE_FOR)
+            .map(|(s, ok, _)| (s.as_str(), *ok))
+    }
+
+    /// Handles finished background work. Call once per tick.
+    pub fn poll(&mut self) {
+        self.refresh_config();
+        while let Ok(msg) = self.rx.try_recv() {
+            self.apply(msg);
+        }
+    }
+
+    fn apply(&mut self, msg: Msg) {
+        match msg {
+            Msg::Ready {
+                api,
+                watched,
+                accounts,
+            } => {
+                self.ready = true;
+                self.accounts = accounts;
+                self.watched = watched.clone();
+                self.api = Some(api.clone());
+                if accounts == 0 {
+                    self.set_notice("no accounts: set GITHUB_TOKEN / GITLAB_TOKEN / CODEBERG_TOKEN or log in with `gh`".into(), false);
+                }
+                self.spawn_poller(api, watched);
+                for idx in self.visible_sections() {
+                    self.load_section(idx);
+                }
+            }
+            Msg::SetupFailed(e) => {
+                self.ready = true;
+                self.set_notice(e, false);
+            }
+            Msg::Section {
+                idx,
+                generation,
+                data,
+            } => {
+                let Some(slot) = self.slots.get_mut(idx) else {
+                    return;
+                };
+                if slot.generation != generation {
+                    return; // a newer load is on its way
+                }
+                slot.loading = false;
+                if let Some(first) = data.errors().first() {
+                    let n = data.errors().len();
+                    let text = if n > 1 {
+                        format!("{first} (+{} more)", n - 1)
+                    } else {
+                        first.clone()
+                    };
+                    self.set_notice(text, false);
+                }
+                let was_active = self.active_index() == Some(idx);
+                self.slots[idx].data = Some(data);
+                if was_active {
+                    self.row = self.row.min(self.row_count().saturating_sub(1));
+                    self.detail.key = None;
+                    self.on_selection_changed();
+                }
+            }
+            Msg::Pr { key, result } => {
+                if self.detail.key.as_deref() != Some(&key) {
+                    return;
+                }
+                self.detail.loading = false;
+                match result {
+                    Ok(d) => {
+                        if let Some(e) = d.errors.first() {
+                            self.set_notice(e.clone(), false);
+                        }
+                        self.detail.pr = Some(d);
+                    }
+                    Err(e) => self.detail.error = Some(e),
+                }
+            }
+            Msg::Comments { key, result } => {
+                if self.detail.key.as_deref() != Some(&key) {
+                    return;
+                }
+                self.detail.loading = false;
+                match result {
+                    Ok(c) => self.detail.comments = c,
+                    Err(e) => self.detail.error = Some(e),
+                }
+            }
+            Msg::Run { key, result } => {
+                if self.detail.key.as_deref() != Some(&key) {
+                    return;
+                }
+                self.detail.loading = false;
+                match result {
+                    Ok(d) => self.detail.run = Some(d),
+                    Err(e) => self.detail.error = Some(e),
+                }
+            }
+            Msg::Log { title, result } => match result {
+                Ok(raw) => {
+                    self.log = Some(LogView::new(title, &raw));
+                    self.notice = None;
+                }
+                Err(e) => self.set_notice(format!("log: {e}"), false),
+            },
+            Msg::Pulse { repo, days, data } => {
+                if self.pulse.repo.as_ref().map(RepoId::key).as_deref() == Some(&repo)
+                    && self.pulse.days == days
+                {
+                    self.pulse.data = Some(data);
+                    self.pulse.loading = false;
+                }
+            }
+            Msg::Contributions(c) => {
+                if let Some(e) = c.errors.first() {
+                    self.set_notice(e.clone(), false);
+                }
+                self.pulse.contributions = Some(c);
+            }
+            Msg::Done { text, ok, reload } => {
+                self.set_notice(text, ok);
+                if ok && reload {
+                    if let Some(idx) = self.active_index() {
+                        self.load_section(idx);
+                    }
+                    self.detail.key = None;
+                }
+            }
+        }
+    }
+
+    /// Switches the Pulse view to the next or previous watched repo and reloads it.
+    pub fn cycle_pulse_repo(&mut self, delta: isize) {
+        if self.watched.is_empty() {
+            return;
+        }
+        let cur = self
+            .pulse
+            .repo
+            .as_ref()
+            .and_then(|r| self.watched.iter().position(|w| &w.repo == r))
+            .unwrap_or(0);
+        let next = (cur as isize + delta).rem_euclid(self.watched.len() as isize) as usize;
+        self.pulse.repo = Some(self.watched[next].repo.clone());
+        self.pulse.data = None;
+        let days = self.pulse.days.max(30);
+        self.load_pulse(days);
+    }
+
+    /// Records whether this click completes a double click on `target`.
+    pub fn register_click(&mut self, target: Target) -> bool {
+        let double = self
+            .last_click
+            .is_some_and(|(t, last)| last == target && t.elapsed() < Duration::from_millis(450));
+        self.last_click = if double {
+            None
+        } else {
+            Some((Instant::now(), target))
+        };
+        double
+    }
+
+    /// Records the hit regions of the frame just drawn.
+    pub fn set_hits(&mut self, hits: Vec<Hit>) {
+        self.hits = hits;
+    }
+
+    /// The topmost target under `(x, y)`; later regions win.
+    pub fn hit_at(&self, x: u16, y: u16) -> Option<Target> {
+        self.hits
+            .iter()
+            .rev()
+            .find(|h| list::contains(h.rect, x, y))
+            .map(|h| h.target)
+    }
+}
+
+fn done(tx: &mpsc::Sender<Msg>, result: Result<(), String>, ok_text: String, reload: bool) {
+    let msg = match result {
+        Ok(()) => Msg::Done {
+            text: ok_text,
+            ok: true,
+            reload,
+        },
+        Err(e) => Msg::Done {
+            text: e,
+            ok: false,
+            reload: false,
+        },
+    };
+    let _ = tx.send(msg);
+}
+
+/// Joins three futures without pulling in a macro crate.
+async fn futures_join3<A, B, C>(
+    a: impl std::future::Future<Output = A>,
+    b: impl std::future::Future<Output = B>,
+    c: impl std::future::Future<Output = C>,
+) -> (A, B, C) {
+    let (a, b, c) = tokio::join!(a, b, c);
+    (a, b, c)
+}
+
+/// Reads `notifications.toml`; a missing or broken file means defaults.
+pub fn load_notify_config() -> NotifyConfig {
+    load_notify_config_from(files::notify_config_path().ok().as_deref())
+}
+
+fn load_notify_config_from(path: Option<&std::path::Path>) -> NotifyConfig {
+    path.and_then(|p| files::read_optional(p).ok().flatten())
+        .and_then(|t| NotifyConfig::parse(&t).ok())
+        .unwrap_or_default()
+}
+
+/// Fixtures for the hub tests.
+#[cfg(test)]
+pub(crate) mod fixtures {
+    use super::*;
+    use gitkraft_platforms::model::User;
+    use gitkraft_settings::dashboard::{Involvement, Section, SectionKind, SectionState};
+
+    pub(crate) fn section(name: &str, kind: SectionKind, hidden: bool) -> Section {
+        Section {
+            name: name.into(),
+            kind,
+            repos: if kind == SectionKind::Ci {
+                vec!["github.com/o/r".into()]
+            } else {
+                vec![]
+            },
+            involvement: Some(Involvement::Authored),
+            state: SectionState::Open,
+            label: None,
+            branch: None,
+            hidden,
+        }
+    }
+
+    pub(crate) fn pr(n: u64, title: &str) -> PullRequest {
+        PullRequest {
+            repo: RepoId::new("github.com", "o", "r"),
+            number: n,
+            title: title.into(),
+            author: User {
+                login: "alice".into(),
+                avatar_url: None,
+            },
+            source_branch: "feat".into(),
+            target_branch: "master".into(),
+            url: format!("https://github.com/o/r/pull/{n}"),
+            ..PullRequest::default()
+        }
+    }
+
+    /// Three sections (PRs, issues, CI) with PR rows in the first.
+    pub(crate) fn state() -> HubState {
+        let dashboard = Dashboard {
+            sections: vec![
+                section("Mine", SectionKind::Prs, false),
+                section("Issues", SectionKind::Issues, false),
+                section("CI", SectionKind::Ci, false),
+            ],
+        };
+        let mut s = HubState::detached(dashboard);
+        s.ready = true;
+        s.slots[0].data = Some(SectionData::Prs(SectionResult {
+            items: (1..=5).map(|n| pr(n, &format!("pr {n}"))).collect(),
+            errors: vec![],
+        }));
+        s.slots[1].data = Some(SectionData::Issues(SectionResult {
+            items: vec![],
+            errors: vec![],
+        }));
+        s
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fixtures::*;
+    use super::*;
+    use gitkraft_settings::dashboard::SectionKind;
+
+    #[test]
+    fn rows_clamp_and_selection_follows() {
+        let mut s = state();
+        s.move_row(2);
+        assert_eq!(s.selected_pr().map(|p| p.number), Some(3));
+        s.move_row(99);
+        assert_eq!(s.row, 4);
+        s.move_row(-99);
+        assert_eq!(s.row, 0);
+        s.set_row(usize::MAX);
+        assert_eq!(s.row, 4);
+        assert_eq!(s.row_count(), 5);
+    }
+
+    #[test]
+    fn switching_sections_wraps_and_resets_the_row() {
+        let mut s = state();
+        s.move_row(3);
+        s.next_section(1);
+        assert_eq!((s.active, s.row), (1, 0));
+        s.next_section(-1);
+        s.next_section(-1);
+        assert_eq!(s.active, 2, "wraps backwards");
+        s.select_section(99);
+        assert_eq!(s.active, 2, "clamped");
+    }
+
+    #[test]
+    fn reordering_moves_the_data_with_the_section_and_follows_it() {
+        let mut s = state();
+        assert!(s.reorder_sections(0, 2));
+        assert_eq!(
+            s.dashboard
+                .sections
+                .iter()
+                .map(|x| x.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Issues", "CI", "Mine"]
+        );
+        assert_eq!(s.active, 2);
+        assert!(
+            matches!(&s.slots[2].data, Some(SectionData::Prs(_))),
+            "the PR data moved along"
+        );
+        assert!(matches!(&s.slots[0].data, Some(SectionData::Issues(_))));
+        assert!(!s.reorder_sections(1, 1));
+        assert!(!s.reorder_sections(0, 9));
+    }
+
+    #[test]
+    fn reordering_uses_visible_positions_when_a_section_is_hidden() {
+        let mut s = state();
+        s.dashboard.sections[1].hidden = true;
+        assert_eq!(s.visible_sections(), vec![0, 2]);
+        assert!(s.reorder_sections(0, 1));
+        // Visible 0 → 1 means dashboard index 0 → 2.
+        assert_eq!(
+            s.dashboard
+                .sections
+                .iter()
+                .map(|x| x.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Issues", "CI", "Mine"]
+        );
+        assert!(
+            s.dashboard.sections[0].hidden,
+            "the hidden section keeps its flag"
+        );
+    }
+
+    #[test]
+    fn the_new_order_is_saved_when_a_file_is_set() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let path = dir.path().join("dashboard.toml");
+        let mut s = state();
+        s.dashboard_file = Some(path.clone());
+        assert!(s.reorder_sections(2, 0));
+        let text = std::fs::read_to_string(&path).expect("saved");
+        let back = Dashboard::parse(&text).expect("valid");
+        assert_eq!(back, s.dashboard);
+        assert_eq!(back.sections[0].name, "CI");
+    }
+
+    #[test]
+    fn resizing_is_clamped_and_never_persists_in_tests() {
+        let mut s = state();
+        let area = Rect::new(0, 3, 100, 20);
+        s.apply_drag(DragOutcome::Resized { x: 5 }, area);
+        assert_eq!(s.list_percent, 20);
+        s.apply_drag(DragOutcome::Resized { x: 99 }, area);
+        assert_eq!(s.list_percent, 80);
+        s.resize_to(50, area);
+        assert_eq!(s.list_percent, 50);
+    }
+
+    #[test]
+    fn a_drop_reorders_and_a_cancel_does_not() {
+        let mut s = state();
+        s.apply_drag(DragOutcome::Cancelled, Rect::default());
+        assert_eq!(s.dashboard.sections[0].name, "Mine");
+        s.apply_drag(DragOutcome::Drop { from: 0, to: 1 }, Rect::default());
+        assert_eq!(s.dashboard.sections[1].name, "Mine");
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, ok)| t == "section moved" && ok)
+        );
+    }
+
+    #[test]
+    fn double_click_needs_the_same_target_quickly() {
+        let mut s = state();
+        assert!(!s.register_click(Target::Row(1)));
+        assert!(s.register_click(Target::Row(1)));
+        assert!(!s.register_click(Target::Row(1)), "the pair is consumed");
+        assert!(!s.register_click(Target::Row(2)));
+        assert!(
+            !s.register_click(Target::Row(3)),
+            "a different target is not a double click"
+        );
+    }
+
+    #[test]
+    fn hit_testing_prefers_the_latest_region() {
+        let mut s = state();
+        s.set_hits(vec![
+            Hit {
+                rect: Rect::new(0, 0, 10, 10),
+                target: Target::ListArea,
+            },
+            Hit {
+                rect: Rect::new(2, 2, 4, 1),
+                target: Target::Row(0),
+            },
+        ]);
+        assert_eq!(s.hit_at(3, 2), Some(Target::Row(0)));
+        assert_eq!(s.hit_at(3, 5), Some(Target::ListArea));
+        assert_eq!(s.hit_at(30, 5), None);
+    }
+
+    #[test]
+    fn actions_need_a_matching_selection() {
+        let mut s = state();
+        s.ask(Action::Rerun(RerunScope::Failed));
+        assert!(s.confirm.is_none(), "a PR is not a CI run");
+        assert!(s.fresh_notice().is_some_and(|(_, ok)| !ok));
+        s.ask(Action::Merge(MergeMethod::Squash));
+        assert!(
+            s.confirm
+                .as_ref()
+                .is_some_and(|c| c.text.contains("Squash"))
+        );
+        s.confirm = None;
+        s.ask(Action::ToggleOpen);
+        assert!(
+            s.confirm
+                .as_ref()
+                .is_some_and(|c| c.text.starts_with("Close"))
+        );
+        s.confirm = None;
+        s.select_section(2);
+        s.ask(Action::Merge(MergeMethod::Merge));
+        assert!(s.confirm.is_none());
+    }
+
+    #[test]
+    fn current_repo_comes_from_the_selection_then_the_watch_list() {
+        let mut s = state();
+        assert_eq!(
+            s.current_repo().map(|r| r.key()),
+            Some("github.com/o/r".into())
+        );
+        s.select_section(1);
+        assert_eq!(s.current_repo(), None);
+        s.watched = vec![Watched {
+            repo: RepoId::new("codeberg.org", "a", "b"),
+            path: None,
+        }];
+        assert_eq!(
+            s.current_repo().map(|r| r.key()),
+            Some("codeberg.org/a/b".into())
+        );
+    }
+
+    #[test]
+    fn toggling_notifications_edits_the_file_and_flips_the_state() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let path = dir.path().join("notifications.toml");
+        std::fs::write(&path, "# mine\n[defaults]\npoll_interval = \"2m\"\n").expect("write");
+        let mut s = state();
+        s.notify_file = Some(path.clone());
+        s.toggle_notifications(false);
+        assert!(s.notify_config.resolve("github.com/o/r", None).enabled);
+        assert!(
+            !s.notify_config.resolve("github.com/o/other", None).enabled,
+            "only this project"
+        );
+        let text = std::fs::read_to_string(&path).expect("read");
+        assert!(text.contains("# mine") && text.contains("2m"), "{text}");
+        s.toggle_notifications(false);
+        assert!(!s.notify_config.resolve("github.com/o/r", None).enabled);
+        s.toggle_notifications(true);
+        assert!(
+            s.notify_config.resolve("github.com/o/other", None).enabled,
+            "global switch"
+        );
+    }
+
+    #[test]
+    fn toggling_without_a_repo_or_file_explains_itself() {
+        let mut s = state();
+        s.toggle_notifications(false);
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, ok)| t.contains("no config file") && !ok),
+            "{:?}",
+            s.fresh_notice()
+        );
+        s.select_section(1);
+        s.notify_file = None;
+        s.toggle_notifications(false);
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, _)| t.contains("no repository"))
+        );
+    }
+
+    #[test]
+    fn the_bell_reflects_config_and_a_missing_poller() {
+        let mut s = state();
+        let (key, st, unread) = s.bell().expect("bell");
+        assert_eq!(
+            (key.as_str(), st, unread),
+            ("github.com/o/r", NotifyStatus::Off, 0)
+        );
+        s.notify_config = NotifyConfig::parse("[defaults]\nenabled = true\n").expect("valid");
+        assert_eq!(s.bell().map(|b| b.1), Some(NotifyStatus::NoPoller));
+        s.engine.try_lock().expect("free").status.heartbeat = Some(Utc::now());
+        assert!(matches!(
+            s.bell().map(|b| b.1),
+            Some(NotifyStatus::On { .. })
+        ));
+    }
+
+    #[test]
+    fn snooze_toggles_per_repo() {
+        let mut s = state();
+        s.toggle_snooze();
+        assert!(
+            s.engine
+                .try_lock()
+                .expect("free")
+                .state
+                .muted_until("github.com/o/r")
+                .is_some()
+        );
+        s.toggle_snooze();
+        assert!(
+            s.engine
+                .try_lock()
+                .expect("free")
+                .state
+                .muted_until("github.com/o/r")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn messages_for_a_stale_selection_are_dropped() {
+        let mut s = state();
+        s.detail.key = Some("github.com/o/r#2".into());
+        s.detail.loading = true;
+        s.apply(Msg::Pr {
+            key: "github.com/o/r#1".into(),
+            result: Err("late".into()),
+        });
+        assert!(s.detail.loading && s.detail.error.is_none());
+        s.apply(Msg::Pr {
+            key: "github.com/o/r#2".into(),
+            result: Err("real".into()),
+        });
+        assert_eq!(s.detail.error.as_deref(), Some("real"));
+        assert!(!s.detail.loading);
+    }
+
+    #[test]
+    fn an_older_section_load_never_overwrites_a_newer_one() {
+        let mut s = state();
+        s.slots[0].generation = 5;
+        s.slots[0].loading = true;
+        let stale = SectionData::Prs(SectionResult {
+            items: vec![],
+            errors: vec![],
+        });
+        s.apply(Msg::Section {
+            idx: 0,
+            generation: 4,
+            data: stale,
+        });
+        assert!(s.slots[0].loading, "still waiting for generation 5");
+        assert_eq!(s.row_count(), 5);
+        let fresh = SectionData::Prs(SectionResult {
+            items: vec![pr(9, "new")],
+            errors: vec!["codeberg.org: down".into()],
+        });
+        s.apply(Msg::Section {
+            idx: 0,
+            generation: 5,
+            data: fresh,
+        });
+        assert_eq!((s.row_count(), s.slots[0].loading), (1, false));
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, ok)| t.contains("codeberg.org") && !ok)
+        );
+    }
+
+    #[test]
+    fn setup_failure_and_no_accounts_are_visible_not_silent() {
+        let mut s = state();
+        s.ready = false;
+        s.apply(Msg::SetupFailed("accounts.toml: bad".into()));
+        assert!(s.ready);
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, ok)| t.contains("accounts.toml") && !ok)
+        );
+    }
+
+    #[test]
+    fn hidden_only_dashboards_have_nothing_selected() {
+        let mut s = HubState::detached(Dashboard {
+            sections: vec![fixtures::section("x", SectionKind::Inbox, true)],
+        });
+        assert!(s.active_index().is_none());
+        s.select_section(0);
+        s.move_row(1);
+        assert_eq!(s.row_count(), 0);
+        assert!(s.selected_url().is_none());
+    }
+}

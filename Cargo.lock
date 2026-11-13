@@ -1656,12 +1656,20 @@ version = "1.4.1"
 dependencies = [
  "anyhow",
  "arboard",
+ "chrono",
  "crossterm",
  "dirs",
  "git2",
+ "gitkraft-ci",
  "gitkraft-core",
+ "gitkraft-hub",
+ "gitkraft-platforms",
+ "gitkraft-settings",
  "ratatui",
+ "tempfile",
+ "tokio",
  "tracing",
+ "tui-chart",
  "tui-file-explorer",
  "tui-nuances",
  "tui-skeleton",
@@ -5513,6 +5521,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tui-chart"
+version = "0.6.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3eb044159cfdbdb8806d48e4bbc0a7ac3c390e0ab4deb68d958d4852563a0ab0"
+dependencies = [
+ "ratatui",
+ "tui-nuances",
+ "tui-piechart",
+ "unicode-width",
+]
+
+[[package]]
 name = "tui-file-explorer"
 version = "4.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5532,6 +5552,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71a55e1ee7052a2409c91486005043da038bf44f72978a69747986dc64ca6068"
 dependencies = [
  "ratatui",
+]
+
+[[package]]
+name = "tui-piechart"
+version = "1.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d65272d25bb3799d827de6d07f7c4885eb40761693ea0db6eafe051fa63457ac"
+dependencies = [
+ "ratatui",
+ "tui-nuances",
 ]
 
 [[package]]

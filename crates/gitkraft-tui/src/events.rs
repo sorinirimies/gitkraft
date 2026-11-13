@@ -57,6 +57,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
     match app.screen {
         AppScreen::Welcome => features::repo::events::handle_key(app, key),
         AppScreen::DirBrowser => handle_browser_key(app, key),
+        AppScreen::Hub => features::hub::events::handle_key(app, key),
         AppScreen::Main => {
             if app.show_about_panel {
                 features::about::events::handle_key(app, key);
@@ -93,6 +94,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             // -- Global keys (available in Normal mode on the Main screen) --
             match key.code {
                 KeyCode::Char('q') => app.should_quit = true,
+                KeyCode::Char('H') => features::hub::events::open(app),
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     app.should_quit = true;
                 }
