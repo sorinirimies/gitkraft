@@ -52,7 +52,7 @@ serves the same on localhost.
 | Pull requests | description (Markdown), reviews, checks, diff, comments; approve, request changes, comment, merge, close |
 | Issues | list, comment, close / reopen |
 | CI | runs, jobs, steps, timeline, live log with errors extracted; re-run failed / all, cancel (GitHub / Gitea Actions, GitLab CI) |
-| Discussions & wiki | GitHub discussions (list, read, comment); the wiki of GitLab, Gitea, Forgejo and Codeberg repos (list, read). GitHub wikis are git repos (`<repo>.wiki.git`) with no API, so the tab says so. TUI key `T`, GUI tab, web `/community`, MCP tools `discussions` and `wiki` |
+| Discussions, wiki & boards | GitHub discussions (list, read, comment); the wiki of GitLab, Gitea, Forgejo and Codeberg repos (list, read); boards (GitHub Projects v2, GitLab issue boards: cards by column, opened as their issue; Gitea has no board API). GitHub wikis are git repos (`<repo>.wiki.git`) with no API, so the tab says so. TUI key `T`, GUI tab, web `/community`, MCP tools `discussions`, `wiki` and `boards` |
 | Pulse | contribution calendar over all accounts (click a day, or use the arrow keys, for what you did that day: commits per repository, PRs, issues, reviews, comments), PRs / issues / CI per period, activity per day |
 | Notifications | per-project settings, desktop notifications, a bell with its state on every project |
 | Mouse | click, wheel, drag a section tab to reorder, drag the divider to resize (TUI and GUI) |
@@ -202,6 +202,7 @@ the checkout it starts in is the default repository, so `repo` can be left out.
 | `ci_runs`, `ci_run`, `ci_job_log`, `list_workflows` | runs, jobs, and a job's log without colour codes: the tail, or only lines matching `grep` |
 | `pulse` | PRs, issues, green and red CI over the last days |
 | `discussions` | GitHub discussions: the latest, or one with its comments |
+| `boards` | GitHub Projects (v2) or GitLab issue boards: columns of cards |
 | `wiki` | the wiki of a GitLab / Gitea / Forgejo / Codeberg repo: page list or one page (GitHub wikis are git repos) |
 | `activity_day` | what you did on one calendar day, over every account |
 

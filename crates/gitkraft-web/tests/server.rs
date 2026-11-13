@@ -854,3 +854,40 @@ async fn the_wiki_tab_explains_that_github_has_no_wiki_api() {
     assert!(page.body.contains(".wiki.git"), "{}", page.body);
     assert!(h.fake.requests().is_empty());
 }
+
+#[tokio::test]
+async fn the_boards_tab_lists_cards_with_their_column_and_opens_one_as_its_issue() {
+    let h = start().await;
+    h.fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"repository":{"projectsV2":{"nodes":[{"title":"Roadmap","field":{"options":[{"name":"Todo"},{"name":"Done"}]},"items":{"nodes":[{"fieldValueByName":{"name":"Todo"},"content":{"number":4,"title":"Add <it>","url":"u","assignees":{"nodes":[{"login":"alice"}]}}}]}}]}}}}"#,
+    );
+    let page = get(h.addr, "/community?tab=boards").await;
+    assert_eq!(page.status, 200, "{}", page.body);
+    for needle in [
+        "#4 Add &lt;it&gt;",
+        "Roadmap · Todo · alice",
+        "tab=boards&amp;n=4",
+    ] {
+        assert!(page.body.contains(needle), "missing {needle:?}");
+    }
+    let h = start().await;
+    h.fake.push_json(
+        "https://api.github.com/repos/o/r/issues/4",
+        r#"{"number":4,"title":"Add it","body":"card text","state":"open","user":{"login":"alice"},"html_url":"u"}"#,
+    );
+    h.fake.push_json(
+        "https://api.github.com/repos/o/r/issues/4/comments",
+        r#"[{"id":1,"body":"on it","user":{"login":"bob"}}]"#,
+    );
+    let page = get(h.addr, "/community?repo=github.com%2Fo%2Fr&tab=boards&n=4").await;
+    assert!(
+        page.body.contains("card text") && page.body.contains("on it"),
+        "{}",
+        page.body
+    );
+    assert!(
+        !page.body.contains("discussion_comment"),
+        "cards are commented on in their issue"
+    );
+}

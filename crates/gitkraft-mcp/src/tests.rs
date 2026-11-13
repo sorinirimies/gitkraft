@@ -58,6 +58,7 @@ fn read_only_servers_have_no_write_tools_and_write_servers_have_all() {
         "pulse",
         "discussions",
         "wiki",
+        "boards",
     ] {
         assert!(names.iter().any(|n| n == t), "{t} in {names:?}");
     }
@@ -472,4 +473,20 @@ async fn discussions_list_slim_and_read_with_comments_and_wiki_says_why_not() {
         .await
         .expect_err("github has no wiki api");
     assert!(err.message.contains(".wiki.git"), "{err:?}");
+}
+
+#[tokio::test]
+async fn boards_come_back_as_columns_of_cards() {
+    let (s, fake) = rig(Policy::default());
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"repository":{"projectsV2":{"nodes":[{"title":"Roadmap","field":{"options":[{"name":"Todo"}]},"items":{"nodes":[{"fieldValueByName":{"name":"Todo"},"content":{"number":4,"title":"Add it","url":"u","assignees":{"nodes":[]}}}]}}]}}}}"#,
+    );
+    let v = json(
+        &s.boards(Parameters(RepoArgs::default()))
+            .await
+            .expect("tool"),
+    );
+    assert_eq!(v["boards"][0]["name"], "Roadmap");
+    assert_eq!(v["boards"][0]["columns"][0]["cards"][0]["number"], 4);
 }

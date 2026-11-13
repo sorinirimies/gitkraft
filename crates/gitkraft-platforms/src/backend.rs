@@ -7,7 +7,7 @@ use crate::github_like::GitHubLike;
 use crate::gitlab::{GitLab, ItemKind};
 use crate::http::HttpClient;
 use crate::model::{
-    ActivityDay, Capabilities, Comment, DayActivity, Discussion, DiscussionDetail, Issue,
+    ActivityDay, Board, Capabilities, Comment, DayActivity, Discussion, DiscussionDetail, Issue,
     ListQuery, MergeMethod, MergeOptions, MergeOutcome, Notification, PullRequest, Review,
     ReviewVerdict, StateFilter, UpdateStyle, User, WikiContent, WikiPage,
 };
@@ -370,6 +370,14 @@ impl<C: HttpClient> Backend<C> {
             Self::GitLab(_) => Err(PlatformError::Unsupported(
                 "discussions exist on GitHub only",
             )),
+        }
+    }
+
+    /// The kanban boards of a repository: GitHub Projects (v2), GitLab issue boards.
+    pub async fn boards(&self, repo: &RepoId) -> Result<Vec<Board>> {
+        match self {
+            Self::GitHubLike(b) => b.boards(repo).await,
+            Self::GitLab(b) => b.boards(repo).await,
         }
     }
 

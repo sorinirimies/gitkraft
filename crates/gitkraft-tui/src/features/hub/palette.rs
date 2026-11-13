@@ -114,6 +114,7 @@ pub fn entries_for(hub: &HubState) -> Vec<Entry> {
             'd',
             View::Community,
         ),
+        e("Discussions and wiki: show boards", 'b', View::Community),
         e("Refresh", 'r', d),
         e("Notifications: toggle for this project", 'n', d),
         e("Notifications: toggle for everything", 'N', d),

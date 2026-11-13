@@ -1275,3 +1275,74 @@ async fn gitlab_wiki_pages_and_content() {
         .unwrap_or_default();
     assert_eq!(page.content, "# Setup");
 }
+
+#[tokio::test]
+async fn github_projects_become_boards_with_the_status_order_and_unreadable_cards_skipped() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"repository":{"projectsV2":{"nodes":[{"title":"Roadmap",
+          "field":{"options":[{"name":"Todo"},{"name":"Doing"},{"name":"Done"}]},
+          "items":{"nodes":[
+            {"fieldValueByName":{"name":"Doing"},"content":{"number":3,"title":"Fix it","url":"u3","assignees":{"nodes":[{"login":"alice"}]}}},
+            {"fieldValueByName":{"name":"Todo"},"content":{"number":4,"title":"Add it","url":"u4","assignees":{"nodes":[]}}},
+            {"fieldValueByName":null,"content":{"title":"A draft"}},
+            {"fieldValueByName":{"name":"Todo"},"content":{}}]}}]}}}}"#,
+    );
+    let boards = github(&fake).boards(&repo()).await.unwrap_or_default();
+    assert_eq!(boards[0].name, "Roadmap");
+    let names: Vec<_> = boards[0].columns.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["Todo", "Doing", "Done", "No status"]);
+    assert_eq!(boards[0].columns[1].cards[0].assignees, ["alice"]);
+    assert_eq!(
+        boards[0].columns[0].cards.len(),
+        1,
+        "the unreadable card is skipped"
+    );
+    assert_eq!(
+        boards[0].columns[3].cards[0].number, None,
+        "a draft has no number"
+    );
+}
+
+#[tokio::test]
+async fn gitlab_boards_put_issues_in_the_column_of_their_list_label() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://gitlab.com/api/v4/projects/o%2Fr/boards",
+        r#"[{"id":1,"name":"Development","lists":[{"label":{"name":"doing"}},{"label":{"name":"review"}}]}]"#,
+    );
+    fake.push_json(
+        "https://gitlab.com/api/v4/projects/o%2Fr/issues",
+        r#"[{"iid":1,"title":"a","web_url":"u1","labels":["doing"],"assignees":[{"username":"bob"}]},
+            {"iid":2,"title":"b","web_url":"u2","labels":["bug"],"assignees":[]},
+            {"iid":3,"title":"c","web_url":"u3","labels":["review","bug"],"assignees":[]}]"#,
+    );
+    let boards = gitlab(&fake).boards(&repo()).await.unwrap_or_default();
+    let col = |n: &str| {
+        boards[0]
+            .columns
+            .iter()
+            .find(|c| c.name == n)
+            .map(|c| c.cards.iter().filter_map(|c| c.number).collect::<Vec<_>>())
+    };
+    assert_eq!(col("Open"), Some(vec![2]));
+    assert_eq!(col("doing"), Some(vec![1]));
+    assert_eq!(col("review"), Some(vec![3]));
+    // no board configured: nothing, and the issues are not even fetched
+    let fake = FakeClient::new();
+    fake.push_json("https://gitlab.com/api/v4/projects/o%2Fr/boards", "[]");
+    assert!(
+        gitlab(&fake)
+            .boards(&repo())
+            .await
+            .unwrap_or_default()
+            .is_empty()
+    );
+    assert_eq!(fake.requests().len(), 1);
+    // Gitea has no API for them
+    assert!(matches!(
+        gitea(&FakeClient::new()).boards(&repo()).await,
+        Err(PlatformError::Unsupported(_))
+    ));
+}

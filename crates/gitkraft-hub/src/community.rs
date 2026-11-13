@@ -12,6 +12,8 @@ pub enum Tab {
     Discussions,
     /// The repository wiki (GitLab, Gitea family).
     Wiki,
+    /// Kanban boards: GitHub Projects, GitLab issue boards.
+    Board,
 }
 
 impl Tab {
@@ -20,6 +22,7 @@ impl Tab {
         match self {
             Tab::Discussions => "discussions",
             Tab::Wiki => "wiki",
+            Tab::Board => "boards",
         }
     }
 }
@@ -77,6 +80,33 @@ pub async fn list<C: HttpClient + Clone>(
                     .collect()
             })
             .map_err(|e| e.to_string()),
+        Tab::Board => b
+            .boards(repo)
+            .await
+            .map(|boards| {
+                let mut items = Vec::new();
+                for board in boards {
+                    for col in board.columns {
+                        for card in col.cards {
+                            let who = if card.assignees.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" · {}", card.assignees.join(", "))
+                            };
+                            items.push(Item {
+                                key: card.number.map(|n| n.to_string()).unwrap_or_default(),
+                                title: match card.number {
+                                    Some(n) => format!("#{n} {}", card.title),
+                                    None => card.title,
+                                },
+                                meta: format!("{} · {}{who}", board.name, col.name),
+                            });
+                        }
+                    }
+                }
+                items
+            })
+            .map_err(|e| e.to_string()),
         Tab::Wiki => b
             .wiki_pages(repo)
             .await
@@ -113,7 +143,7 @@ pub async fn page<C: HttpClient + Clone>(
                 .await
                 .map(|d| Page {
                     key: item.key.clone(),
-                    title: item.title.clone(),
+                    title: format!("#{} {}", d.discussion.number, d.discussion.title),
                     text: d.discussion.body,
                     comments: d
                         .comments
@@ -123,6 +153,32 @@ pub async fn page<C: HttpClient + Clone>(
                 })
                 .map_err(|e| e.to_string())
         }
+        Tab::Board => match item.key.parse::<u64>() {
+            // a draft card is only a title
+            Err(_) => Ok(Page {
+                key: String::new(),
+                title: item.title.clone(),
+                text: String::new(),
+                comments: Vec::new(),
+            }),
+            Ok(n) => {
+                let issue = b.issue(repo, n).await.map_err(|e| e.to_string())?;
+                let comments = b
+                    .comments(repo, gitkraft_platforms::ItemKind::Issue, n)
+                    .await
+                    .unwrap_or_default();
+                Ok(Page {
+                    // not a discussion: comments go through the item, not this view
+                    key: String::new(),
+                    title: item.title.clone(),
+                    text: issue.body,
+                    comments: comments
+                        .into_iter()
+                        .map(|c| (c.author.login, c.body))
+                        .collect(),
+                })
+            }
+        },
         Tab::Wiki => b
             .wiki_page(repo, &item.key)
             .await
@@ -203,5 +259,31 @@ mod tests {
             .err()
             .unwrap_or_default();
         assert!(err.contains("no account"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn board_cards_list_with_their_column_and_open_as_the_issue() {
+        let (hub, fake) = hub(PlatformKind::GitLab, "gitlab.com");
+        let repo = RepoId::new("gitlab.com", "o", "r");
+        fake.push_json(
+            "https://gitlab.com/api/v4/projects/o%2Fr/boards",
+            r#"[{"id":1,"name":"Dev","lists":[{"label":{"name":"doing"}}]}]"#,
+        );
+        fake.push_json(
+            "https://gitlab.com/api/v4/projects/o%2Fr/issues",
+            r#"[{"iid":1,"title":"a","web_url":"u","labels":["doing"],"assignees":[{"username":"bob"}]}]"#,
+        );
+        let items = list(&hub, &repo, Tab::Board).await.unwrap_or_default();
+        assert_eq!(items[0].title, "#1 a");
+        assert_eq!(items[0].meta, "Dev · doing · bob");
+        let none = Item {
+            key: String::new(),
+            title: "Draft".into(),
+            meta: String::new(),
+        };
+        let p = page(&hub, &repo, Tab::Board, &none)
+            .await
+            .unwrap_or_default();
+        assert_eq!(p.title, "Draft");
     }
 }

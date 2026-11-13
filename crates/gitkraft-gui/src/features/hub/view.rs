@@ -1062,6 +1062,7 @@ fn community<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
     let header = row![
         tab_button("Discussions", Tab::Discussions),
         tab_button("Wiki", Tab::Wiki),
+        tab_button("Boards", Tab::Board),
         text(repo).size(13).color(c.text_secondary),
         Space::new().width(Length::Fill),
         button(text("‹ repo").size(12))

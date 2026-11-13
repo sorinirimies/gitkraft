@@ -1395,12 +1395,8 @@ fn render_community(
     theme: &UiTheme,
     hits: &mut Vec<Hit>,
 ) {
-    use super::state::CommunityTab;
     let c = &hub.community;
-    let what = match c.tab {
-        CommunityTab::Discussions => "discussions",
-        CommunityTab::Wiki => "wiki",
-    };
+    let what = c.tab.label();
     let repo = c.repo.as_ref().map(|r| r.key()).unwrap_or_default();
     let cols =
         Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)]).split(area);
@@ -1753,7 +1749,7 @@ fn hints(hub: &HubState) -> &'static str {
         return "j/k select · : palette · s set up this machine · t test · d remove key · r refresh · Tab dashboard · q back";
     }
     if hub.view == View::Community {
-        return "j/k select · Enter open · Esc close · d discussions · w wiki · c comment · [ ] repo · r refresh · Tab dashboard · q back";
+        return "j/k select · Enter open · Esc close · d discussions · w wiki · b boards · c comment · [ ] repo · r refresh · Tab dashboard · q back";
     }
     if hub.view == View::Pulse {
         return "click a day or ←→↑↓ · t today · r refresh · [ ] repo · 1-4 days · Tab dashboard · q back";

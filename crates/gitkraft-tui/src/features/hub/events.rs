@@ -277,6 +277,7 @@ fn community_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
         KeyCode::Char(']') => hub.cycle_community_repo(1),
         KeyCode::Char('d') => hub.set_community_tab(CommunityTab::Discussions),
         KeyCode::Char('w') => hub.set_community_tab(CommunityTab::Wiki),
+        KeyCode::Char('b') => hub.set_community_tab(CommunityTab::Board),
         KeyCode::Char('c') if hub.community.detail.is_some() => {
             if hub.community.tab == CommunityTab::Discussions {
                 hub.prompt = Some(Prompt {

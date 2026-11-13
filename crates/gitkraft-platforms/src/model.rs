@@ -583,3 +583,34 @@ pub struct DiscussionDetail {
     /// Its top-level comments, oldest first.
     pub comments: Vec<Comment>,
 }
+
+/// A card on a board: an issue, a pull request or a draft.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct BoardCard {
+    /// Issue or PR number; `None` for a draft that is not an issue yet.
+    pub number: Option<u64>,
+    /// Title.
+    pub title: String,
+    /// Web address.
+    pub url: String,
+    /// Assignee logins.
+    pub assignees: Vec<String>,
+}
+
+/// One column of a board.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct BoardColumn {
+    /// Column name (GitHub: the Status value; GitLab: the list's label).
+    pub name: String,
+    /// Cards, in the platform's order.
+    pub cards: Vec<BoardCard>,
+}
+
+/// A kanban board.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Board {
+    /// Board or project title.
+    pub name: String,
+    /// Columns, left to right.
+    pub columns: Vec<BoardColumn>,
+}

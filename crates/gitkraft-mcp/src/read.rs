@@ -405,6 +405,20 @@ impl GitkraftServer {
     }
 
     #[tool(
+        description = "Kanban boards of a repository: GitHub Projects (v2, columns from the Status field) or GitLab issue boards (one column per list label). Gitea has no board API.",
+        annotations(read_only_hint = true)
+    )]
+    pub(crate) async fn boards(&self, Parameters(a): Parameters<RepoArgs>) -> ToolResult {
+        let repo = self.repo(a.repo.as_deref())?;
+        let boards = self
+            .backend(&repo)?
+            .boards(&repo)
+            .await
+            .map_err(|e| failed("boards", e))?;
+        out(&json!({"repo": repo.key(), "boards": boards}))
+    }
+
+    #[tool(
         description = "A repository's wiki on GitLab, Gitea, Forgejo or Codeberg: the page list, or with `page` one page's Markdown. GitHub wikis are git repositories (<repo>.wiki.git) and not reachable here.",
         annotations(read_only_hint = true)
     )]
