@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use git2::Repository;
 use tracing::debug;
 
+use super::transport;
 use super::types::RemoteInfo;
 
 /// List all configured remotes in the repository.
@@ -40,23 +41,13 @@ pub fn list_remotes(repo: &Repository) -> Result<Vec<RemoteInfo>> {
     Ok(remotes)
 }
 
-/// Fetch from a remote by name.
-///
-/// This works for public repositories. Repositories requiring authentication
-/// will return an error — callers should handle auth setup via `git2` callbacks
-/// or credential helpers.
+/// Fetch from a remote by name, with the system `git` so ssh keys and credential helpers work.
 pub fn fetch_remote(repo: &Repository, remote_name: &str) -> Result<()> {
-    let mut remote = repo
-        .find_remote(remote_name)
+    repo.find_remote(remote_name)
         .with_context(|| format!("remote '{remote_name}' not found"))?;
-
     debug!("fetching from remote '{}'", remote_name);
-
-    remote
-        .fetch(&[] as &[&str], None, None)
-        .with_context(|| format!("failed to fetch from remote '{remote_name}'"))?;
-
-    Ok(())
+    transport::run_git(repo.path(), &["fetch", remote_name])
+        .with_context(|| format!("failed to fetch from remote '{remote_name}'"))
 }
 
 /// Pull from a remote: fetch + fast-forward merge of the given branch.
@@ -144,22 +135,12 @@ pub fn pull(repo: &Repository, remote_name: &str, branch: &str) -> Result<()> {
 /// This will fail without authentication for non-local remotes — that is
 /// expected. Callers should configure credential helpers or push callbacks.
 pub fn push(repo: &Repository, remote_name: &str, branch: &str) -> Result<()> {
-    let mut remote = repo
-        .find_remote(remote_name)
+    repo.find_remote(remote_name)
         .with_context(|| format!("remote '{remote_name}' not found"))?;
-
     let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
-
-    debug!(
-        "pushing '{}' to remote '{}' with refspec '{}'",
-        branch, remote_name, refspec
-    );
-
-    remote
-        .push(&[&refspec], None)
-        .with_context(|| format!("failed to push '{branch}' to remote '{remote_name}'"))?;
-
-    Ok(())
+    debug!("pushing '{branch}' to remote '{remote_name}' with refspec '{refspec}'");
+    transport::run_git(repo.path(), &["push", remote_name, &refspec])
+        .with_context(|| format!("failed to push '{branch}' to remote '{remote_name}'"))
 }
 
 #[cfg(test)]
@@ -231,5 +212,30 @@ mod tests {
         assert_eq!(r.name, "origin");
         assert_eq!(r.url.as_deref(), Some("git@github.com:user/repo.git"));
         assert!(!r.fetch_refspecs.is_empty());
+    }
+
+    #[test]
+    fn fetch_and_push_go_through_git_against_a_local_remote() {
+        let (origin_dir, origin) = setup_repo();
+        let (_work_dir, work) = setup_repo();
+        let url = origin_dir.path().to_str().unwrap();
+        work.remote("origin", url).unwrap();
+        fetch_remote(&work, "origin").unwrap();
+        assert!(
+            work.find_reference("refs/remotes/origin/master").is_ok()
+                || work.find_reference("refs/remotes/origin/main").is_ok()
+        );
+        let branch = work.head().unwrap().shorthand().unwrap().to_string();
+        // pushing to a non-bare repo's checked-out branch is refused by git; push a new branch
+        let head = work.head().unwrap().peel_to_commit().unwrap();
+        work.branch("feature", &head, false).unwrap();
+        push(&work, "origin", "feature").unwrap();
+        assert!(
+            origin
+                .find_branch("feature", git2::BranchType::Local)
+                .is_ok()
+        );
+        assert!(!branch.is_empty());
+        assert!(fetch_remote(&work, "missing").is_err());
     }
 }

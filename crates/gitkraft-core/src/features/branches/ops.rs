@@ -247,16 +247,7 @@ fn head_branch_name(repo: &Repository) -> Result<String> {
 // ── subprocess helper ─────────────────────────────────────────────────────────
 
 fn run_git(workdir: &std::path::Path, args: &[&str]) -> anyhow::Result<()> {
-    let output = std::process::Command::new("git")
-        .current_dir(workdir)
-        .args(args)
-        .output()
-        .context("failed to spawn git")?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("{}", stderr.trim());
-    }
-    Ok(())
+    crate::features::remotes::transport::run_git(workdir, args)
 }
 
 // ── new public functions ──────────────────────────────────────────────────────
