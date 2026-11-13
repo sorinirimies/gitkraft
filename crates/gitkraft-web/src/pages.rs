@@ -443,6 +443,7 @@ async fn pull_request(cx: &Cx) -> Result<impl View> {
                 " "(format!("{}#{number} by {} · {} → {}", repo.full_name(), pr.author.login, pr.source_branch, pr.target_branch))
                 " "<span>(checks)</span>
                 if pr.mergeable == Some(false) { " "<span class="err">"⚠ conflicts"</span> }
+                else if pr.behind == Some(true) { " "<span class="warn">"↓ behind target · update branch"</span> }
                 if let (Some(a), Some(d)) = (pr.additions, pr.deletions) { " "<span class="mu">(format!("+{a} −{d}"))</span> }
             </div>
             if !labels.is_empty() { <div class="meta small">"labels: "(labels.join(", "))</div> }

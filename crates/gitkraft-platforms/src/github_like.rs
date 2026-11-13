@@ -837,6 +837,9 @@ struct PullDto {
     deletions: Option<u32>,
     #[serde(default)]
     mergeable: Option<bool>,
+    /// Only the single-PR endpoint has it: `behind`, `dirty`, `blocked`, `clean`, ...
+    #[serde(default)]
+    mergeable_state: Option<String>,
     #[serde(default)]
     created_at: Option<DateTime<Utc>>,
     #[serde(default)]
@@ -879,6 +882,11 @@ impl PullDto {
             additions: self.additions,
             deletions: self.deletions,
             mergeable: self.mergeable,
+            behind: self
+                .mergeable_state
+                .as_deref()
+                .filter(|s| *s != "unknown")
+                .map(|s| s == "behind"),
             checks: None,
             created_at: self.created_at,
             updated_at: self.updated_at,

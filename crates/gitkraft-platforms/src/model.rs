@@ -93,6 +93,10 @@ pub struct PullRequest {
     pub deletions: Option<u32>,
     /// `Some(false)` when the PR has conflicts.
     pub mergeable: Option<bool>,
+    /// `Some(true)` when the target branch has commits the PR branch lacks, so "Update branch"
+    /// would change something. `None` when the platform does not say (Gitea, or GitHub's list
+    /// endpoint).
+    pub behind: Option<bool>,
     /// Combined check state, when known.
     pub checks: Option<ChecksState>,
     /// Creation time.

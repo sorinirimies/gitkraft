@@ -502,6 +502,11 @@ fn pr_detail<'a>(
     };
     let conflict: El<'a> = if pr.mergeable == Some(false) {
         text("⚠ conflicts").size(12).color(c.red).into()
+    } else if pr.behind == Some(true) {
+        text("↓ behind target · update branch")
+            .size(12)
+            .color(c.yellow)
+            .into()
     } else {
         Space::new().into()
     };

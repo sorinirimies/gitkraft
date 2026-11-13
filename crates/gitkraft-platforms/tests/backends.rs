@@ -1346,3 +1346,60 @@ async fn gitlab_boards_put_issues_in_the_column_of_their_list_label() {
         Err(PlatformError::Unsupported(_))
     ));
 }
+
+#[tokio::test]
+async fn a_pull_request_knows_when_its_branch_is_behind_its_target() {
+    let pr = |state: &str| {
+        let fake = FakeClient::new();
+        fake.push_json(
+            "https://api.github.com/repos/o/r/pulls/12",
+            &format!(
+                r#"{{"number":12,"title":"t","state":"open","head":{{"ref":"a","sha":"abc"}},"base":{{"ref":"m"}},"mergeable_state":"{state}","html_url":"u"}}"#
+            ),
+        );
+        fake.push_json(
+            "https://api.github.com/repos/o/r/commits/abc/status",
+            r#"{"state":"success"}"#,
+        );
+        async move {
+            github(&fake)
+                .pull_request(&repo(), 12)
+                .await
+                .map(|p| p.behind)
+        }
+    };
+    assert_eq!(pr("behind").await.ok(), Some(Some(true)));
+    assert_eq!(pr("clean").await.ok(), Some(Some(false)));
+    assert_eq!(
+        pr("unknown").await.ok(),
+        Some(None),
+        "unknown is not an answer"
+    );
+
+    let mr = |body: &str| {
+        let fake = FakeClient::new();
+        fake.push_json(
+            "https://gitlab.com/api/v4/projects/g%2Fp/merge_requests/3",
+            &format!(r#"{{"iid":3,"title":"t","state":"opened","source_branch":"a","target_branch":"m",{body}}}"#),
+        );
+        async move {
+            gitlab(&fake)
+                .pull_request(&RepoId::new("gitlab.com", "g", "p"), 3)
+                .await
+                .map(|p| p.behind)
+        }
+    };
+    assert_eq!(
+        mr(r#""diverged_commits_count":2"#).await.ok(),
+        Some(Some(true))
+    );
+    assert_eq!(
+        mr(r#""diverged_commits_count":0"#).await.ok(),
+        Some(Some(false))
+    );
+    assert_eq!(
+        mr(r#""detailed_merge_status":"need_rebase""#).await.ok(),
+        Some(Some(true))
+    );
+    assert_eq!(mr(r#""draft":false"#).await.ok(), Some(None));
+}

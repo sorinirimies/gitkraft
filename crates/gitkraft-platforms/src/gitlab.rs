@@ -742,6 +742,11 @@ struct MrDto {
     #[serde(default)]
     has_conflicts: Option<bool>,
     #[serde(default)]
+    detailed_merge_status: Option<String>,
+    /// Commits the target has that the source lacks (single-MR endpoint only).
+    #[serde(default)]
+    diverged_commits_count: Option<u32>,
+    #[serde(default)]
     head_pipeline: Option<PipelineDto>,
     #[serde(default)]
     created_at: Option<DateTime<Utc>>,
@@ -784,6 +789,14 @@ impl MrDto {
             additions: None,
             deletions: None,
             mergeable: self.has_conflicts.map(|c| !c),
+            behind: match (
+                self.diverged_commits_count,
+                self.detailed_merge_status.as_deref(),
+            ) {
+                (Some(n), _) => Some(n > 0),
+                (None, Some("need_rebase")) => Some(true),
+                _ => None,
+            },
             checks,
             created_at: self.created_at,
             updated_at: self.updated_at,

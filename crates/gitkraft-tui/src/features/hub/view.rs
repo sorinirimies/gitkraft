@@ -654,6 +654,8 @@ fn render_pr(
     };
     let conflict = if pr.mergeable == Some(false) {
         Span::styled("  ⚠ conflicts", Style::default().fg(theme.error))
+    } else if pr.behind == Some(true) {
+        Span::styled("  ↓ behind (u updates)", Style::default().fg(theme.warning))
     } else {
         Span::raw("")
     };
