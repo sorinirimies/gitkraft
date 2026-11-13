@@ -45,7 +45,7 @@ topcoat      = "0.10"
 toml_edit    = "0.25"
 
 # GUI (Iced)
-iced         = { version = "0.14", features = ["advanced", "canvas"] }
+iced         = { version = "0.14", features = ["advanced", "canvas", "tokio"] }
 iced_fonts   = { version = "0.3", features = ["bootstrap"] }
 rfd          = "0.17"
 winresource  = { version = "0.1", default-features = false }  # gitkraft.exe icon (build script)
@@ -63,7 +63,6 @@ ratatui-image        = { version = "11.1", default-features = false, features = 
 image                = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 
 # Internal crates
-gitkraft-web = { path = "crates/gitkraft-web", version = "1.4.1" }
 gitkraft-hub = { path = "crates/gitkraft-hub", version = "1.4.1" }
 gitkraft-ci = { path = "crates/gitkraft-ci", version = "1.4.1" }
 gitkraft-platforms = { path = "crates/gitkraft-platforms", version = "1.4.1" }

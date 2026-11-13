@@ -1800,14 +1800,21 @@ dependencies = [
 name = "gitkraft"
 version = "1.4.1"
 dependencies = [
+ "chrono",
  "futures",
+ "gitkraft-ci",
  "gitkraft-core",
+ "gitkraft-hub",
+ "gitkraft-platforms",
+ "gitkraft-settings",
  "iced",
  "iced_fonts",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
  "rfd",
+ "tempfile",
+ "tokio",
  "tracing-subscriber",
  "tui-spinner",
  "winresource",
@@ -2375,6 +2382,7 @@ dependencies = [
  "iced_core",
  "log",
  "rustc-hash 2.1.3",
+ "tokio",
  "wasm-bindgen-futures",
  "wasmtimer",
 ]

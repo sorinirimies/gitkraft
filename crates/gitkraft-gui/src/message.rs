@@ -34,6 +34,10 @@ pub struct CommitPage {
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    // ── Hub (pull requests, issues, CI, pulse, notifications) ─────────────
+    /// A message of the hub screen.
+    Hub(crate::features::hub::HubMessage),
+
     // ── Tabs ──────────────────────────────────────────────────────────────
     /// User clicked a tab in the tab bar.
     SwitchTab(usize),

@@ -21,6 +21,12 @@ path = "src/main.rs"
 
 [dependencies]
 gitkraft-core = { workspace = true }
+gitkraft-hub  = { workspace = true }
+gitkraft-ci   = { workspace = true }
+gitkraft-settings  = { workspace = true }
+gitkraft-platforms = { workspace = true, features = ["desktop"] }
+tokio      = { workspace = true }
+chrono     = { workspace = true }
 tui-spinner   = { workspace = true }
 iced       = { workspace = true }
 iced_fonts = { workspace = true }
@@ -40,6 +46,9 @@ objc2-foundation = { version = "0.3", features = ["NSData", "NSString", "NSObjec
 # Windows: `build.rs` embeds assets/gitkraft.ico into gitkraft.exe (Explorer, shortcuts).
 [target.'cfg(windows)'.build-dependencies]
 winresource = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

@@ -94,7 +94,21 @@ fn main() -> iced::Result {
             } else {
                 iced::Subscription::none()
             };
-            iced::Subscription::batch([keyboard, git_watcher, animation_ticker, system_theme])
+            // The hub polls for notifications and refreshes its bell every few seconds.
+            let hub_ticker = if state.hub.is_some() {
+                iced::time::every(std::time::Duration::from_secs(5)).map(|_| {
+                    gitkraft_gui::Message::Hub(gitkraft_gui::features::hub::HubMessage::Tick)
+                })
+            } else {
+                iced::Subscription::none()
+            };
+            iced::Subscription::batch([
+                keyboard,
+                git_watcher,
+                animation_ticker,
+                system_theme,
+                hub_ticker,
+            ])
         })
         .scale_factor(|state: &GitKraft| state.ui_scale)
         .settings(Settings {

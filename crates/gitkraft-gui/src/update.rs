@@ -18,6 +18,29 @@ impl GitKraft {
     /// task completing).
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match &message {
+            // ── Hub ───────────────────────────────────────────────────────
+            Message::Hub(crate::features::hub::HubMessage::Open) => {
+                if self.hub.is_none() {
+                    let remotes: Vec<Vec<String>> = self
+                        .tabs
+                        .iter()
+                        .map(|t| t.remotes.iter().filter_map(|r| r.url.clone()).collect())
+                        .collect();
+                    let (state, task) = crate::features::hub::HubState::open(remotes);
+                    self.hub = Some(Box::new(state));
+                    return task.map(Message::Hub);
+                }
+                Task::none()
+            }
+            Message::Hub(crate::features::hub::HubMessage::Close) => {
+                self.hub = None;
+                Task::none()
+            }
+            Message::Hub(m) => match self.hub.as_mut() {
+                Some(hub) => hub.update(m.clone()).map(Message::Hub),
+                None => Task::none(),
+            },
+
             // ── Tabs ──────────────────────────────────────────────────────
             Message::SwitchTab(index) => {
                 let index = *index;

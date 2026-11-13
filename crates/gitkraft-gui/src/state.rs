@@ -574,6 +574,8 @@ pub struct GitKraft {
     // ── About ─────────────────────────────────────────────────────────────
     /// Whether the About dialog is visible.
     pub show_about: bool,
+    /// The hub screen (pull requests, issues, CI, pulse), when open.
+    pub hub: Option<Box<crate::features::hub::HubState>>,
 
     // ── Search ────────────────────────────────────────────────────────────
     /// Whether the search overlay is visible.
@@ -695,6 +697,7 @@ impl GitKraft {
             recent_repos,
 
             show_about: false,
+            hub: None,
             search_visible: false,
             search_query: String::new(),
             search_results: Vec::new(),

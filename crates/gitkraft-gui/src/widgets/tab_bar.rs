@@ -109,6 +109,12 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
 
     // ── Right-hand version label (Settings / About live in the header) ──
     let mut menu = row![].align_y(Alignment::Center);
+    menu = menu.push(
+        button(text("Hub").size(12).color(c.accent))
+            .padding([vpad, 10])
+            .style(theme::ghost_button)
+            .on_press(Message::Hub(crate::features::hub::HubMessage::Open)),
+    );
     if !dims.minimal_toolbar {
         menu = menu.push(text(gitkraft_core::version_label()).size(11).color(c.muted));
     }
