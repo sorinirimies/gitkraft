@@ -39,4 +39,5 @@ pub use error::{PlatformError, Result};
 pub use github_like::GitHubLike;
 pub use gitlab::{GitLab, ItemKind};
 pub use http::{CachedClient, DynClient, HttpClient, ReqwestClient};
+pub use model::{MergeOptions, MergeOutcome, MergeTiming, UpdateStyle};
 pub use platform::{HostMap, PlatformKind, RepoId, Transport, parse_remote_url, url_encode};

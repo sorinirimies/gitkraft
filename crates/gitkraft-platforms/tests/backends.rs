@@ -1,8 +1,8 @@
 //! Adapter tests against recorded responses; nothing touches the network.
 
 use gitkraft_platforms::model::{
-    ChecksState, ItemState, ListQuery, MergeMethod, NotificationReason, ReviewVerdict, StateFilter,
-    SubjectKind,
+    ChecksState, ItemState, ListQuery, MergeMethod, MergeOptions, MergeOutcome, MergeTiming,
+    NotificationReason, ReviewVerdict, StateFilter, SubjectKind, UpdateStyle,
 };
 use gitkraft_platforms::testing::FakeClient;
 use gitkraft_platforms::{Account, Backend, ItemKind, PlatformError, PlatformKind, RepoId, Secret};
@@ -734,5 +734,246 @@ async fn labels_are_added_and_removed_by_name_or_id_depending_on_the_platform() 
             .await
             .expect("labels"),
         ["x"]
+    );
+}
+
+fn body_of(req: &gitkraft_platforms::http::Request) -> serde_json::Value {
+    serde_json::from_slice(req.body.as_deref().unwrap_or_default()).unwrap_or_default()
+}
+
+fn opts(timing: MergeTiming, force: bool) -> MergeOptions {
+    MergeOptions {
+        method: MergeMethod::Squash,
+        timing,
+        force,
+    }
+}
+
+#[tokio::test]
+async fn github_merges_now_schedules_auto_merge_and_queues_through_graphql() {
+    let fake = FakeClient::new();
+    let pr = "https://api.github.com/repos/o/r/pulls/5";
+    fake.push_json(&format!("{pr}/merge"), "{}");
+    fake.push_json(pr, r#"{"node_id":"PR_x"}"#);
+    fake.push_json("https://api.github.com/graphql", r#"{"data":{}}"#);
+    fake.push_json(pr, r#"{"node_id":"PR_x"}"#);
+    fake.push_json("https://api.github.com/graphql", r#"{"data":{}}"#);
+    let b = github(&fake);
+
+    assert_eq!(
+        b.merge_with(&repo(), 5, &opts(MergeTiming::Now, true))
+            .await,
+        Ok(MergeOutcome::Merged)
+    );
+    assert_eq!(
+        b.merge_with(&repo(), 5, &opts(MergeTiming::WhenGreen, false))
+            .await,
+        Ok(MergeOutcome::Scheduled)
+    );
+    assert_eq!(
+        b.merge_with(&repo(), 5, &opts(MergeTiming::Queue, true))
+            .await,
+        Ok(MergeOutcome::Queued)
+    );
+    let sent = fake.requests();
+    assert_eq!(
+        body_of(&sent[0]),
+        serde_json::json!({"merge_method": "squash"})
+    );
+    let auto = body_of(&sent[2]);
+    assert!(
+        auto["query"]
+            .as_str()
+            .is_some_and(|q| q.contains("enablePullRequestAutoMerge"))
+    );
+    assert_eq!(
+        auto["variables"],
+        serde_json::json!({"id": "PR_x", "m": "SQUASH"})
+    );
+    let queue = body_of(&sent[4]);
+    assert!(
+        queue["query"]
+            .as_str()
+            .is_some_and(|q| q.contains("enqueuePullRequest"))
+    );
+    assert_eq!(
+        queue["variables"],
+        serde_json::json!({"id": "PR_x", "jump": true})
+    );
+}
+
+#[tokio::test]
+async fn graphql_errors_inside_a_200_are_reported() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/repos/o/r/pulls/5",
+        r#"{"node_id":"PR_x"}"#,
+    );
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"errors":[{"message":"Pull request is not in the correct state to enable auto-merge"}]}"#,
+    );
+    let err = github(&fake)
+        .merge_with(&repo(), 5, &opts(MergeTiming::WhenGreen, false))
+        .await
+        .expect_err("refused");
+    assert!(
+        err.to_string().contains("not in the correct state"),
+        "{err}"
+    );
+}
+
+#[tokio::test]
+async fn a_refused_force_merge_says_what_force_needs_and_nonsense_is_rejected() {
+    let fake = FakeClient::new();
+    fake.push_status(
+        "https://api.github.com/repos/o/r/pulls/5/merge",
+        405,
+        "Required status check is expected",
+    );
+    let b = github(&fake);
+    let err = b
+        .merge_with(&repo(), 5, &opts(MergeTiming::Now, true))
+        .await
+        .expect_err("refused");
+    assert!(err.to_string().contains("admin rights"), "{err}");
+    assert!(matches!(
+        b.merge_with(&repo(), 5, &opts(MergeTiming::WhenGreen, true))
+            .await,
+        Err(PlatformError::Unsupported(_))
+    ));
+}
+
+#[tokio::test]
+async fn enterprise_graphql_lives_under_api_graphql() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://ghe.corp/api/v3/repos/o/r/pulls/5",
+        r#"{"node_id":"PR_x"}"#,
+    );
+    fake.push_json("https://ghe.corp/api/graphql", r#"{"data":{}}"#);
+    let account = Account::new(PlatformKind::GitHub, "ghe.corp");
+    let b = Backend::new(&account, fake.clone());
+    b.merge_with(
+        &RepoId::new("ghe.corp", "o", "r"),
+        5,
+        &opts(MergeTiming::Queue, false),
+    )
+    .await
+    .expect("queued");
+    assert_eq!(fake.requests()[1].url, "https://ghe.corp/api/graphql");
+}
+
+#[tokio::test]
+async fn gitea_force_schedule_and_update_use_their_own_fields() {
+    let fake = FakeClient::new();
+    let base = "https://codeberg.org/api/v1/repos/o/r/pulls/2";
+    fake.push_json(&format!("{base}/merge"), "{}");
+    fake.push_json(&format!("{base}/merge"), "{}");
+    fake.push_json(&format!("{base}/update?style=rebase"), "{}");
+    fake.push_json(&format!("{base}/update?style=merge"), "{}");
+    fake.push_json(&format!("{base}/merge"), "{}");
+    let r = RepoId::new("codeberg.org", "o", "r");
+    let b = gitea(&fake);
+
+    assert_eq!(
+        b.merge_with(&r, 2, &opts(MergeTiming::Now, true)).await,
+        Ok(MergeOutcome::Merged)
+    );
+    assert_eq!(
+        b.merge_with(&r, 2, &opts(MergeTiming::WhenGreen, false))
+            .await,
+        Ok(MergeOutcome::Scheduled)
+    );
+    assert!(b.update_branch(&r, 2, UpdateStyle::Rebase).await.is_ok());
+    assert!(b.update_branch(&r, 2, UpdateStyle::Default).await.is_ok());
+    assert!(b.cancel_auto_merge(&r, 2).await.is_ok());
+    assert!(matches!(
+        b.merge_with(&r, 2, &opts(MergeTiming::Queue, true)).await,
+        Err(PlatformError::Unsupported(_))
+    ));
+    let sent = fake.requests();
+    assert_eq!(
+        body_of(&sent[0]),
+        serde_json::json!({"Do": "squash", "force_merge": true})
+    );
+    assert_eq!(
+        body_of(&sent[1]),
+        serde_json::json!({"Do": "squash", "merge_when_checks_succeed": true})
+    );
+    assert_eq!(sent[4].method, gitkraft_platforms::http::Method::Delete);
+}
+
+#[tokio::test]
+async fn gitlab_schedules_queues_rebases_and_cancels() {
+    let fake = FakeClient::new();
+    let mr = "https://gitlab.com/api/v4/projects/g%2Fp/merge_requests/3";
+    fake.push_json(&format!("{mr}/merge"), r#"{"state":"merged"}"#);
+    fake.push_json(&format!("{mr}/merge"), r#"{"state":"opened"}"#);
+    fake.push_json(&format!("{mr}/merge"), r#"{"state":"opened"}"#);
+    fake.push_json(&format!("{mr}/rebase"), r#"{"rebase_in_progress":true}"#);
+    fake.push_json(&format!("{mr}/cancel_merge_when_pipeline_succeeds"), "{}");
+    let r = RepoId::new("gitlab.com", "g", "p");
+    let b = gitlab(&fake);
+
+    assert_eq!(
+        b.merge_with(&r, 3, &opts(MergeTiming::Now, false)).await,
+        Ok(MergeOutcome::Merged)
+    );
+    assert_eq!(
+        b.merge_with(&r, 3, &opts(MergeTiming::WhenGreen, false))
+            .await,
+        Ok(MergeOutcome::Scheduled)
+    );
+    assert_eq!(
+        b.merge_with(&r, 3, &opts(MergeTiming::Queue, false)).await,
+        Ok(MergeOutcome::Queued)
+    );
+    assert!(b.update_branch(&r, 3, UpdateStyle::Default).await.is_ok());
+    assert!(b.cancel_auto_merge(&r, 3).await.is_ok());
+    assert!(matches!(
+        b.update_branch(&r, 3, UpdateStyle::Merge).await,
+        Err(PlatformError::Unsupported(_))
+    ));
+    assert!(matches!(
+        b.merge_with(&r, 3, &opts(MergeTiming::Now, true)).await,
+        Err(PlatformError::Unsupported(_))
+    ));
+    let sent = fake.requests();
+    assert_eq!(body_of(&sent[0]), serde_json::json!({"squash": true}));
+    assert_eq!(body_of(&sent[1])["merge_when_pipeline_succeeds"], true);
+    assert_eq!(sent[3].method, gitkraft_platforms::http::Method::Put);
+}
+
+#[tokio::test]
+async fn github_updates_its_branch_and_cancels_auto_merge_falling_back_to_dequeue() {
+    let fake = FakeClient::new();
+    let pr = "https://api.github.com/repos/o/r/pulls/5";
+    fake.push_json(
+        &format!("{pr}/update-branch"),
+        r#"{"message":"Updating pull request branch."}"#,
+    );
+    fake.push_json(pr, r#"{"node_id":"PR_x"}"#);
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"errors":[{"message":"not auto-merging"}]}"#,
+    );
+    fake.push_json("https://api.github.com/graphql", r#"{"data":{}}"#);
+    let b = github(&fake);
+    assert!(
+        b.update_branch(&repo(), 5, UpdateStyle::Default)
+            .await
+            .is_ok()
+    );
+    assert!(matches!(
+        b.update_branch(&repo(), 5, UpdateStyle::Rebase).await,
+        Err(PlatformError::Unsupported(_))
+    ));
+    assert!(b.cancel_auto_merge(&repo(), 5).await.is_ok());
+    let sent = fake.requests();
+    assert!(
+        body_of(&sent[3])["query"]
+            .as_str()
+            .is_some_and(|q| q.contains("dequeuePullRequest"))
     );
 }

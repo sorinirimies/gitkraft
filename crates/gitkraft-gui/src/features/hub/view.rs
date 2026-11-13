@@ -5,7 +5,9 @@ use gitkraft_ci::log::{AnsiColor, LineKind};
 use gitkraft_ci::model::Status;
 use gitkraft_ci::timing::{format_seconds, job_seconds};
 use gitkraft_hub::SectionData;
-use gitkraft_platforms::model::{ChecksState, ItemState, NotificationReason, ReviewVerdict};
+use gitkraft_platforms::model::{
+    ChecksState, ItemState, MergeMethod, MergeTiming, NotificationReason, ReviewVerdict,
+};
 use gitkraft_settings::notify::NotifyStatus;
 use iced::widget::{
     Space, button, canvas, column, container, mouse_area, row, scrollable, text, text_input,
@@ -467,7 +469,7 @@ fn action_row<'a>(c: &ThemeColors, buttons: Vec<(&'static str, HubMessage)>) -> 
                 .padding([4, 10]),
         );
     }
-    r.into()
+    r.wrap().into()
 }
 
 fn note_input<'a>(hub: &'a HubState, placeholder: &'static str) -> El<'a> {
@@ -563,6 +565,29 @@ fn pr_detail<'a>(
         buttons.push((
             "Squash",
             HubMessage::Merge(gitkraft_platforms::model::MergeMethod::Squash),
+        ));
+        buttons.push((
+            "When green",
+            HubMessage::MergeWith(MergeTiming::WhenGreen, false),
+        ));
+        buttons.push(("Queue", HubMessage::MergeWith(MergeTiming::Queue, false)));
+        buttons.push((
+            if hub.force_armed {
+                "Really force merge?"
+            } else {
+                "Force merge"
+            },
+            HubMessage::MergeWith(MergeTiming::Now, true),
+        ));
+        buttons.push(("Update branch", HubMessage::UpdateBranch));
+        buttons.push(("Cancel auto-merge", HubMessage::CancelAutoMerge));
+        buttons.push((
+            match hub.merge_method {
+                MergeMethod::Merge => "Method: merge",
+                MergeMethod::Squash => "Method: squash",
+                MergeMethod::Rebase => "Method: rebase",
+            },
+            HubMessage::CycleMethod,
         ));
     }
     buttons.push((

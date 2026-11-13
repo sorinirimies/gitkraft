@@ -1,7 +1,9 @@
 //! Actions the pages send as JSON: comment, review, merge, close, CI re-run, notification switch.
 
 use gitkraft_ci::{RerunScope, Run};
-use gitkraft_platforms::model::{MergeMethod, ReviewVerdict};
+use gitkraft_platforms::model::{
+    MergeMethod, MergeOptions, MergeTiming, ReviewVerdict, UpdateStyle,
+};
 use gitkraft_platforms::{ItemKind, RepoId};
 use gitkraft_settings::files;
 use gitkraft_settings::notify::set_enabled;
@@ -43,6 +45,29 @@ pub enum ActionRequest {
         /// `merge`, `squash` or `rebase`.
         #[serde(default)]
         method: Option<String>,
+        /// `now` (default), `when_green` or `queue`.
+        #[serde(default)]
+        when: Option<String>,
+        /// Merge past branch rules (admin), or jump the queue.
+        #[serde(default)]
+        force: bool,
+    },
+    /// Bring a PR's branch up to date with its target.
+    UpdateBranch {
+        /// `host/owner/name`.
+        repo: String,
+        /// Number.
+        number: u64,
+        /// `merge`, `rebase`, or absent for the platform's own way.
+        #[serde(default)]
+        style: Option<String>,
+    },
+    /// Cancel a scheduled auto-merge or leave the merge queue.
+    CancelAutoMerge {
+        /// `host/owner/name`.
+        repo: String,
+        /// Number.
+        number: u64,
     },
     /// Review a PR.
     Review {
@@ -146,6 +171,8 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
             repo,
             number,
             method,
+            when,
+            force,
         } => {
             let repo = repo_of(&repo)?;
             let backend = hub.backend(&repo.host).ok_or("no account for this host")?;
@@ -155,10 +182,47 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
                 Some("rebase") => MergeMethod::Rebase,
                 Some(other) => return Err(format!("unknown merge method '{other}'")),
             };
+            let timing = match when.as_deref() {
+                None | Some("now") => MergeTiming::Now,
+                Some("when_green") => MergeTiming::WhenGreen,
+                Some("queue") => MergeTiming::Queue,
+                Some(other) => return Err(format!("unknown merge timing '{other}'")),
+            };
+            let options = MergeOptions {
+                method,
+                timing,
+                force,
+            };
             backend
-                .merge(&repo, number, method)
+                .merge_with(&repo, number, &options)
                 .await
-                .map(|()| format!("#{number} merged"))
+                .map(|o| o.describe(number))
+        }
+        ActionRequest::UpdateBranch {
+            repo,
+            number,
+            style,
+        } => {
+            let repo = repo_of(&repo)?;
+            let backend = hub.backend(&repo.host).ok_or("no account for this host")?;
+            let style = match style.as_deref() {
+                None | Some("default") => UpdateStyle::Default,
+                Some("merge") => UpdateStyle::Merge,
+                Some("rebase") => UpdateStyle::Rebase,
+                Some(other) => return Err(format!("unknown update style '{other}'")),
+            };
+            backend
+                .update_branch(&repo, number, style)
+                .await
+                .map(|()| format!("#{number} is being updated"))
+        }
+        ActionRequest::CancelAutoMerge { repo, number } => {
+            let repo = repo_of(&repo)?;
+            let backend = hub.backend(&repo.host).ok_or("no account for this host")?;
+            backend
+                .cancel_auto_merge(&repo, number)
+                .await
+                .map(|()| format!("#{number} will no longer auto-merge"))
         }
         ActionRequest::Review {
             repo,

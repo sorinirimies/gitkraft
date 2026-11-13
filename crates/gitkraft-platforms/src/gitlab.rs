@@ -10,8 +10,8 @@ use crate::github_like::fold_days;
 use crate::http::{HttpClient, Method};
 use crate::model::{
     ActivityDay, Capabilities, ChecksState, Comment, Issue, ItemState, Label, ListQuery,
-    MergeMethod, Notification, NotificationReason, PullRequest, Review, ReviewVerdict, StateFilter,
-    SubjectKind, User,
+    MergeMethod, MergeOptions, MergeOutcome, MergeTiming, Notification, NotificationReason,
+    PullRequest, Review, ReviewVerdict, StateFilter, SubjectKind, UpdateStyle, User,
 };
 use crate::platform::{RepoId, url_encode};
 use gitkraft_settings::dashboard::Involvement;
@@ -317,21 +317,79 @@ impl<C: HttpClient> GitLab<C> {
             .map(|_| ())
     }
 
-    pub(crate) async fn merge(
+    pub(crate) async fn merge_with(
         &self,
         repo: &RepoId,
         number: u64,
-        method: MergeMethod,
-    ) -> Result<()> {
-        if method == MergeMethod::Rebase {
+        options: &MergeOptions,
+    ) -> Result<MergeOutcome> {
+        if options.method == MergeMethod::Rebase {
             return Err(PlatformError::Unsupported("rebase merge on GitLab"));
         }
-        let squash = method == MergeMethod::Squash;
-        self.api
+        if options.force {
+            return Err(PlatformError::Unsupported(
+                "force merge on GitLab (change the project's merge checks or ask an owner)",
+            ));
+        }
+        let mut body = json!({ "squash": options.method == MergeMethod::Squash });
+        if options.timing != MergeTiming::Now {
+            // `auto_merge` is the current name; older servers only know the other one.
+            // With merge trains enabled on the project, both land in the train.
+            body["auto_merge"] = json!(true);
+            body["merge_when_pipeline_succeeds"] = json!(true);
+        }
+        let res = self
+            .api
             .send(
                 Method::Put,
                 &format!("{}/merge", item_path(repo, ItemKind::PullRequest, number)),
-                Some(&json!({ "squash": squash })),
+                Some(&body),
+            )
+            .await?;
+        #[derive(Deserialize)]
+        struct S {
+            state: Option<String>,
+        }
+        let merged = crate::api::parse::<S>(&res)
+            .ok()
+            .and_then(|s| s.state)
+            .is_some_and(|s| s == "merged");
+        Ok(match (merged, options.timing) {
+            (true, _) | (false, MergeTiming::Now) => MergeOutcome::Merged,
+            (false, MergeTiming::WhenGreen) => MergeOutcome::Scheduled,
+            (false, MergeTiming::Queue) => MergeOutcome::Queued,
+        })
+    }
+
+    pub(crate) async fn update_branch(
+        &self,
+        repo: &RepoId,
+        number: u64,
+        style: UpdateStyle,
+    ) -> Result<()> {
+        if style == UpdateStyle::Merge {
+            return Err(PlatformError::Unsupported(
+                "merging the target into a branch on GitLab (it can only rebase)",
+            ));
+        }
+        self.api
+            .send(
+                Method::Put,
+                &format!("{}/rebase", item_path(repo, ItemKind::PullRequest, number)),
+                None,
+            )
+            .await
+            .map(|_| ())
+    }
+
+    pub(crate) async fn cancel_auto_merge(&self, repo: &RepoId, number: u64) -> Result<()> {
+        self.api
+            .post_json(
+                &format!(
+                    "{}/cancel_merge_when_pipeline_succeeds",
+                    item_path(repo, ItemKind::PullRequest, number)
+                ),
+                &json!({}),
             )
             .await
             .map(|_| ())

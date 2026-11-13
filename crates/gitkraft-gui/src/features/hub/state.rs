@@ -12,7 +12,10 @@ use gitkraft_hub::accounts::{AccountsFile, discover};
 use gitkraft_hub::poller::{Engine, run_cycle};
 use gitkraft_hub::pulse::Pulse;
 use gitkraft_hub::{Hub, PrDetail, SectionData, SectionResult};
-use gitkraft_platforms::model::{ActivityDay, Comment, ItemState, MergeMethod, ReviewVerdict};
+use gitkraft_platforms::model::{
+    ActivityDay, Comment, ItemState, MergeMethod, MergeOptions, MergeTiming, ReviewVerdict,
+    UpdateStyle,
+};
 use gitkraft_platforms::notify::{Notifier, desktop::DesktopNotifier};
 use gitkraft_platforms::{CachedClient, ItemKind, RepoId, ReqwestClient};
 use gitkraft_settings::dashboard::{Dashboard, reorder};
@@ -133,6 +136,14 @@ pub enum HubMessage {
     RequestChanges,
     /// Merge.
     Merge(MergeMethod),
+    /// Merge when the checks pass, through the queue, or forced (two clicks).
+    MergeWith(MergeTiming, bool),
+    /// Bring the branch up to date with its target.
+    UpdateBranch,
+    /// Cancel a scheduled auto-merge or leave the merge queue.
+    CancelAutoMerge,
+    /// Cycle the method used by the auto-merge, queue and force buttons.
+    CycleMethod,
     /// Close or reopen.
     ToggleOpen,
     /// Re-run CI.
@@ -307,6 +318,10 @@ pub struct HubState {
     pub log: Option<LogState>,
     /// Comment / note input.
     pub note: String,
+    /// Method for the auto-merge, queue and force buttons.
+    pub merge_method: MergeMethod,
+    /// The Force merge button was clicked once and waits for a second click.
+    pub force_armed: bool,
     /// Section drag: `(from, over)`.
     pub drag: Option<(usize, usize)>,
     /// Pulse view.
@@ -349,6 +364,8 @@ impl HubState {
             tab: PrTab::Overview,
             log: None,
             note: String::new(),
+            merge_method: MergeMethod::Merge,
+            force_armed: false,
             drag: None,
             pulse: PulseState::default(),
             keys: KeysState::default(),
@@ -438,6 +455,10 @@ impl HubState {
 
     /// Updates the state; returns follow-up work.
     pub fn update(&mut self, msg: HubMessage) -> Task<HubMessage> {
+        // A forced merge is armed by one click and fired by the next; anything else disarms it.
+        if !matches!(msg, HubMessage::MergeWith(_, true)) {
+            self.force_armed = false;
+        }
         match msg {
             // Open and Close are handled by the app, which owns the screen.
             HubMessage::Open | HubMessage::Close => Task::none(),
@@ -583,6 +604,13 @@ impl HubState {
             HubMessage::Approve => self.review(ReviewVerdict::Approve),
             HubMessage::RequestChanges => self.review(ReviewVerdict::RequestChanges),
             HubMessage::Merge(m) => self.merge(m),
+            HubMessage::MergeWith(timing, force) => self.merge_with(timing, force),
+            HubMessage::UpdateBranch => self.update_branch(),
+            HubMessage::CancelAutoMerge => self.cancel_auto_merge(),
+            HubMessage::CycleMethod => {
+                self.merge_method = self.merge_method.next();
+                Task::none()
+            }
             HubMessage::ToggleOpen => self.toggle_open(),
             HubMessage::Rerun(scope) => self.rerun(scope),
             HubMessage::CancelRun => self.cancel_run(),
@@ -1178,6 +1206,63 @@ impl HubState {
         })
     }
 
+    fn merge_with(&mut self, timing: MergeTiming, force: bool) -> Task<HubMessage> {
+        let Some((repo, number, ItemKind::PullRequest, _)) = self.target() else {
+            return Task::none();
+        };
+        let options = MergeOptions {
+            method: self.merge_method,
+            timing,
+            force,
+        };
+        if let Some(problem) = options.problem() {
+            self.notice = Some((problem.into(), false));
+            return Task::none();
+        }
+        if force && !self.force_armed {
+            self.force_armed = true;
+            self.notice = Some((
+                format!("{}: click Force merge again to confirm", options.describe()),
+                false,
+            ));
+            return Task::none();
+        }
+        self.force_armed = false;
+        self.act(move |api| async move {
+            let b = api.backend(&repo.host).ok_or("no account")?;
+            b.merge_with(&repo, number, &options)
+                .await
+                .map(|o| o.describe(number))
+                .map_err(|e| e.to_string())
+        })
+    }
+
+    fn update_branch(&mut self) -> Task<HubMessage> {
+        let Some((repo, number, ItemKind::PullRequest, _)) = self.target() else {
+            return Task::none();
+        };
+        self.act(move |api| async move {
+            let b = api.backend(&repo.host).ok_or("no account")?;
+            b.update_branch(&repo, number, UpdateStyle::Default)
+                .await
+                .map(|()| format!("#{number} is being updated"))
+                .map_err(|e| e.to_string())
+        })
+    }
+
+    fn cancel_auto_merge(&mut self) -> Task<HubMessage> {
+        let Some((repo, number, ItemKind::PullRequest, _)) = self.target() else {
+            return Task::none();
+        };
+        self.act(move |api| async move {
+            let b = api.backend(&repo.host).ok_or("no account")?;
+            b.cancel_auto_merge(&repo, number)
+                .await
+                .map(|()| format!("#{number} will no longer auto-merge"))
+                .map_err(|e| e.to_string())
+        })
+    }
+
     fn toggle_open(&mut self) -> Task<HubMessage> {
         let Some((repo, number, kind, open)) = self.target() else {
             return Task::none();
@@ -1235,6 +1320,24 @@ impl HubState {
                 "Pull request: squash and merge",
                 HubMessage::Merge(MergeMethod::Squash),
             );
+            add(
+                "Pull request: merge when the checks pass",
+                HubMessage::MergeWith(MergeTiming::WhenGreen, false),
+            );
+            add(
+                "Pull request: add to the merge queue",
+                HubMessage::MergeWith(MergeTiming::Queue, false),
+            );
+            add(
+                "Pull request: force merge (admin, asks twice)",
+                HubMessage::MergeWith(MergeTiming::Now, true),
+            );
+            add(
+                "Pull request: cancel auto-merge or leave the queue",
+                HubMessage::CancelAutoMerge,
+            );
+            add("Pull request: update branch", HubMessage::UpdateBranch);
+            add("Pull request: cycle merge method", HubMessage::CycleMethod);
             add("Pull request: close or reopen", HubMessage::ToggleOpen);
             add(
                 "Pull request: check out in a worktree",
@@ -1975,6 +2078,63 @@ mod tests {
                 .any(|l| l == "Pull request: check out in a worktree")
         );
         assert!(!labels(&s).iter().any(|l| l.starts_with("CI run:")));
+    }
+
+    fn with_pr(s: &mut HubState) {
+        let pr = gitkraft_platforms::model::PullRequest {
+            repo: RepoId::new("github.com", "o", "r"),
+            ..Default::default()
+        };
+        s.slots[0].data = Some(Arc::new(SectionData::Prs(SectionResult {
+            items: vec![pr],
+            errors: vec![],
+        })));
+        let _ = s.update(HubMessage::SelectSection(0));
+        let _ = s.update(HubMessage::SelectRow(0));
+    }
+
+    #[test]
+    fn a_forced_merge_needs_two_clicks_and_anything_else_disarms_it() {
+        let mut s = state();
+        with_pr(&mut s);
+        let _ = s.update(HubMessage::MergeWith(MergeTiming::Now, true));
+        assert!(s.force_armed);
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, _)| t.contains("FORCE") && t.contains("again"))
+        );
+        // another action in between cancels the arming
+        let _ = s.update(HubMessage::CycleMethod);
+        assert!(!s.force_armed);
+        assert_eq!(s.merge_method, MergeMethod::Squash);
+        let _ = s.update(HubMessage::MergeWith(MergeTiming::Now, true));
+        assert!(s.force_armed);
+        // the second click fires (no API in a test, so nothing is sent) and disarms
+        let _ = s.update(HubMessage::MergeWith(MergeTiming::Now, true));
+        assert!(!s.force_armed);
+        // the ordinary variants never arm
+        let _ = s.update(HubMessage::MergeWith(MergeTiming::Queue, false));
+        assert!(!s.force_armed);
+    }
+
+    #[test]
+    fn the_palette_lists_the_merge_family() {
+        let mut s = state();
+        with_pr(&mut s);
+        let labels: Vec<String> = s.palette_entries().into_iter().map(|(l, _)| l).collect();
+        for want in [
+            "merge queue",
+            "checks pass",
+            "force merge",
+            "update branch",
+            "leave the queue",
+        ] {
+            assert!(
+                labels.iter().any(|l| l.contains(want)),
+                "{want}: {labels:?}"
+            );
+        }
     }
 
     #[test]

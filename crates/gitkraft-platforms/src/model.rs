@@ -183,6 +183,122 @@ pub enum MergeMethod {
     Rebase,
 }
 
+/// When a merge happens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MergeTiming {
+    /// Right now.
+    #[default]
+    Now,
+    /// As soon as the required checks pass (auto-merge, "merge when pipeline succeeds").
+    WhenGreen,
+    /// Through the platform's merge queue or merge train.
+    Queue,
+}
+
+/// Everything a merge can ask for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MergeOptions {
+    /// How the commits are combined.
+    pub method: MergeMethod,
+    /// When the merge happens.
+    pub timing: MergeTiming,
+    /// Merge past unmet branch rules. Needs admin rights; with [`MergeTiming::Queue`] it jumps the queue.
+    pub force: bool,
+}
+
+impl From<MergeMethod> for MergeOptions {
+    fn from(method: MergeMethod) -> Self {
+        Self {
+            method,
+            ..Self::default()
+        }
+    }
+}
+
+impl MergeOptions {
+    /// Why these options contradict themselves, if they do.
+    pub fn problem(&self) -> Option<&'static str> {
+        (self.force && self.timing == MergeTiming::WhenGreen)
+            .then_some("force merges now; it cannot wait for the checks")
+    }
+}
+
+impl MergeMethod {
+    /// The next method when cycling merge, squash, rebase.
+    pub fn next(self) -> Self {
+        match self {
+            Self::Merge => Self::Squash,
+            Self::Squash => Self::Rebase,
+            Self::Rebase => Self::Merge,
+        }
+    }
+
+    /// Lower-case name.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Merge => "merge",
+            Self::Squash => "squash",
+            Self::Rebase => "rebase",
+        }
+    }
+}
+
+impl MergeOptions {
+    /// What will happen, for a confirmation line.
+    pub fn describe(&self) -> String {
+        let m = self.method.label();
+        match (self.timing, self.force) {
+            (MergeTiming::Now, false) => format!("Merge this pull request ({m})"),
+            (MergeTiming::Now, true) => {
+                format!("FORCE merge this pull request ({m}) past branch rules")
+            }
+            (MergeTiming::WhenGreen, _) => {
+                format!("Merge this pull request ({m}) when the checks pass")
+            }
+            (MergeTiming::Queue, false) => {
+                format!("Add this pull request to the merge queue ({m})")
+            }
+            (MergeTiming::Queue, true) => {
+                format!("Put this pull request at the FRONT of the merge queue ({m})")
+            }
+        }
+    }
+}
+
+/// What a merge call did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MergeOutcome {
+    /// The pull request is merged.
+    Merged,
+    /// It will merge once the checks pass.
+    Scheduled,
+    /// It is in the merge queue.
+    Queued,
+}
+
+impl MergeOutcome {
+    /// A sentence for the status line.
+    pub fn describe(self, number: u64) -> String {
+        match self {
+            Self::Merged => format!("#{number} merged"),
+            Self::Scheduled => format!("#{number} will merge when the checks pass"),
+            Self::Queued => format!("#{number} added to the merge queue"),
+        }
+    }
+}
+
+/// How to bring a pull request's branch up to date with its target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum UpdateStyle {
+    /// What the platform does natively: merge on GitHub and Gitea, rebase on GitLab.
+    #[default]
+    Default,
+    /// Merge the target into the branch (GitHub, Gitea).
+    Merge,
+    /// Rebase the branch onto the target (GitLab, Gitea).
+    Rebase,
+}
+
 /// What a notification is about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SubjectKind {

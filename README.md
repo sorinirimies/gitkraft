@@ -81,6 +81,21 @@ application's client id: `--client-id`, `GITKRAFT_OAUTH_CLIENT_ID` or `oauth_cli
 system keyring (macOS `security`, Linux `secret-tool`); `logout HOST` removes it. Lookup order: environment,
 keyring, `gh` / `glab`, git's credential helper.
 
+**Merging.** Besides review (approve, request changes, inline comments) and `m`/`M` merge or squash, a PR can
+be updated, auto-merged, queued or force-merged from the TUI, the GUI and the web page:
+
+| TUI | What | GitHub | GitLab | Gitea / Codeberg |
+|---|---|---|---|---|
+| `u` | update branch | `update-branch` (merge) | `rebase` | `update?style=merge\|rebase` |
+| `W` | merge when checks pass | GraphQL auto-merge | `merge_when_pipeline_succeeds` | `merge_when_checks_succeed` |
+| `Q` | add to merge queue | GraphQL `enqueuePullRequest` | merge train (same call as `W`) | same as `W` (no queue) |
+| `!` | force merge (capital `Y` to confirm; GUI and web ask twice) | admin bypass if the branch rule allows it; with `Q` it jumps the queue | not available | `force_merge` |
+| `Z` | cancel auto-merge / leave queue | disable auto-merge, else dequeue | cancel merge-when-pipeline-succeeds | delete scheduled merge |
+| `S` | cycle the method used by `W`, `Q`, `!` | | | |
+
+GitLab cannot merge by rebase through the merge call or force past its checks, and GitHub can only update a
+branch by merging; those combinations say so instead of guessing.
+
 **Labels.** `L` in the TUI (or the GUI's Labels button, text from the note box) edits labels of a PR or issue:
 `+bug -wontfix \"good first issue\"`; GitHub, Gitea / Codeberg and GitLab.
 

@@ -10,8 +10,8 @@ use crate::error::{PlatformError, Result};
 use crate::http::{HttpClient, Method};
 use crate::model::{
     ActivityDay, Capabilities, ChecksState, Comment, Issue, ItemState, Label, ListQuery,
-    MergeMethod, Notification, NotificationReason, PullRequest, Review, ReviewVerdict, StateFilter,
-    SubjectKind, User,
+    MergeMethod, MergeOptions, MergeOutcome, MergeTiming, Notification, NotificationReason,
+    PullRequest, Review, ReviewVerdict, StateFilter, SubjectKind, UpdateStyle, User,
 };
 use crate::platform::{PlatformKind, RepoId};
 use gitkraft_settings::dashboard::Involvement;
@@ -333,29 +333,167 @@ impl<C: HttpClient> GitHubLike<C> {
             .map(|_| ())
     }
 
-    pub(crate) async fn merge(
+    pub(crate) async fn merge_with(
         &self,
         repo: &RepoId,
         number: u64,
-        method: MergeMethod,
-    ) -> Result<()> {
-        let name = match method {
+        options: &MergeOptions,
+    ) -> Result<MergeOutcome> {
+        let name = match options.method {
             MergeMethod::Merge => "merge",
             MergeMethod::Squash => "squash",
             MergeMethod::Rebase => "rebase",
         };
         let path = format!("{}/pulls/{number}/merge", Self::repo_path(repo));
         if self.is_github() {
-            self.api
-                .send(Method::Put, &path, Some(&json!({ "merge_method": name })))
-                .await
-                .map(|_| ())
-        } else {
-            self.api
-                .post_json(&path, &json!({ "Do": name }))
-                .await
-                .map(|_| ())
+            return match options.timing {
+                MergeTiming::Now => self
+                    .api
+                    .send(Method::Put, &path, Some(&json!({ "merge_method": name })))
+                    .await
+                    .map(|_| MergeOutcome::Merged)
+                    .map_err(|e| if options.force { force_hint(e) } else { e }),
+                MergeTiming::WhenGreen => {
+                    let id = self.node_id(repo, number).await?;
+                    self.graphql(
+                        "mutation($id: ID!, $m: PullRequestMergeMethod!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: $m}) { clientMutationId } }",
+                        &json!({ "id": id, "m": name.to_uppercase() }),
+                    )
+                    .await?;
+                    Ok(MergeOutcome::Scheduled)
+                }
+                MergeTiming::Queue => {
+                    let id = self.node_id(repo, number).await?;
+                    self.graphql(
+                        "mutation($id: ID!, $jump: Boolean) { enqueuePullRequest(input: {pullRequestId: $id, jump: $jump}) { clientMutationId } }",
+                        &json!({ "id": id, "jump": options.force }),
+                    )
+                    .await?;
+                    Ok(MergeOutcome::Queued)
+                }
+            };
         }
+        let mut body = json!({ "Do": name });
+        match options.timing {
+            MergeTiming::Now => {
+                if options.force {
+                    body["force_merge"] = json!(true);
+                }
+            }
+            MergeTiming::WhenGreen | MergeTiming::Queue => {
+                if options.force {
+                    return Err(PlatformError::Unsupported("jumping a queue on Gitea"));
+                }
+                body["merge_when_checks_succeed"] = json!(true);
+            }
+        }
+        self.api.post_json(&path, &body).await?;
+        Ok(match options.timing {
+            MergeTiming::Now => MergeOutcome::Merged,
+            MergeTiming::WhenGreen => MergeOutcome::Scheduled,
+            // Gitea has no queue: it schedules the merge for when checks pass.
+            MergeTiming::Queue => MergeOutcome::Scheduled,
+        })
+    }
+
+    pub(crate) async fn update_branch(
+        &self,
+        repo: &RepoId,
+        number: u64,
+        style: UpdateStyle,
+    ) -> Result<()> {
+        let base = format!("{}/pulls/{number}", Self::repo_path(repo));
+        if self.is_github() {
+            if style == UpdateStyle::Rebase {
+                return Err(PlatformError::Unsupported("rebasing a branch on GitHub"));
+            }
+            return self
+                .api
+                .send(
+                    Method::Put,
+                    &format!("{base}/update-branch"),
+                    Some(&json!({})),
+                )
+                .await
+                .map(|_| ());
+        }
+        let style = if style == UpdateStyle::Rebase {
+            "rebase"
+        } else {
+            "merge"
+        };
+        self.api
+            .post_json(&format!("{base}/update?style={style}"), &json!({}))
+            .await
+            .map(|_| ())
+    }
+
+    pub(crate) async fn cancel_auto_merge(&self, repo: &RepoId, number: u64) -> Result<()> {
+        if !self.is_github() {
+            return self
+                .api
+                .send(
+                    Method::Delete,
+                    &format!("{}/pulls/{number}/merge", Self::repo_path(repo)),
+                    None,
+                )
+                .await
+                .map(|_| ());
+        }
+        let id = self.node_id(repo, number).await?;
+        let vars = json!({ "id": id });
+        let disable = self
+            .graphql(
+                "mutation($id: ID!) { disablePullRequestAutoMerge(input: {pullRequestId: $id}) { clientMutationId } }",
+                &vars,
+            )
+            .await;
+        let Err(first) = disable else { return Ok(()) };
+        // Not auto-merging: it may be in the queue instead.
+        self.graphql(
+            "mutation($id: ID!) { dequeuePullRequest(input: {id: $id}) { clientMutationId } }",
+            &vars,
+        )
+        .await
+        .map(|_| ())
+        .map_err(|_| first)
+    }
+
+    async fn node_id(&self, repo: &RepoId, number: u64) -> Result<String> {
+        #[derive(Deserialize)]
+        struct N {
+            node_id: String,
+        }
+        let n: N = self
+            .api
+            .get(&format!("{}/pulls/{number}", Self::repo_path(repo)))
+            .await?;
+        Ok(n.node_id)
+    }
+
+    /// One GraphQL call; GraphQL reports failures inside a 200, so `errors` is checked here.
+    async fn graphql(
+        &self,
+        query: &str,
+        variables: &serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        let url = graphql_url(&self.api.base);
+        let res = self
+            .api
+            .post_json(&url, &json!({ "query": query, "variables": variables }))
+            .await?;
+        let v: serde_json::Value = parse(&res)?;
+        if let Some(msg) = v["errors"]
+            .as_array()
+            .and_then(|e| e.first())
+            .and_then(|e| e["message"].as_str())
+        {
+            return Err(PlatformError::Http {
+                status: 422,
+                message: msg.to_string(),
+            });
+        }
+        Ok(v)
     }
 
     pub(crate) async fn submit_review(
@@ -962,4 +1100,25 @@ struct GraphDay {
     date: String,
     #[serde(rename = "contributionCount")]
     contribution_count: u32,
+}
+
+/// The GraphQL endpoint for a REST base: `api.github.com` has `/graphql`, Enterprise swaps `/api/v3` for `/api/graphql`.
+fn graphql_url(base: &str) -> String {
+    match base.strip_suffix("/api/v3") {
+        Some(root) => format!("{root}/api/graphql"),
+        None => format!("{base}/graphql"),
+    }
+}
+
+/// Explains why a forced merge can still be refused.
+fn force_hint(e: PlatformError) -> PlatformError {
+    const HINT: &str = " (forcing needs admin rights and a branch rule that lets admins bypass)";
+    match e {
+        PlatformError::Http { status, message } => PlatformError::Http {
+            status,
+            message: format!("{message}{HINT}"),
+        },
+        PlatformError::Forbidden(m) => PlatformError::Forbidden(format!("{m}{HINT}")),
+        other => other,
+    }
 }

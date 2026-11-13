@@ -13,10 +13,11 @@ use gitkraft_hub::poller::{Engine, run_cycle};
 use gitkraft_hub::pulse::Pulse;
 use gitkraft_hub::{Hub, PrDetail, SectionData, SectionResult};
 use gitkraft_platforms::model::{
-    ActivityDay, Comment, Issue, ItemState, MergeMethod, Notification, PullRequest, ReviewVerdict,
+    ActivityDay, Comment, Issue, ItemState, MergeMethod, MergeOptions, Notification, PullRequest,
+    ReviewVerdict,
 };
 use gitkraft_platforms::notify::{Notifier, desktop::DesktopNotifier};
-use gitkraft_platforms::{CachedClient, ItemKind, RepoId, ReqwestClient};
+use gitkraft_platforms::{CachedClient, ItemKind, RepoId, ReqwestClient, UpdateStyle};
 use gitkraft_settings::dashboard::{Dashboard, reorder};
 use gitkraft_settings::files;
 use gitkraft_settings::notify::{
@@ -183,6 +184,12 @@ pub enum PromptPurpose {
 pub enum Action {
     /// Merge the PR.
     Merge(MergeMethod),
+    /// Merge now, when green, through the queue, or forced.
+    MergeWith(MergeOptions),
+    /// Bring the PR's branch up to date with its target.
+    UpdateBranch,
+    /// Cancel a scheduled auto-merge or leave the merge queue.
+    CancelAutoMerge,
     /// Close an open item or reopen a closed one.
     ToggleOpen,
     /// Re-run CI.
@@ -325,6 +332,8 @@ pub struct HubState {
     pub palette: Option<super::palette::Palette>,
     /// Where the pending inline comment goes: `(path, line)`.
     pub inline_anchor: Option<gitkraft_platforms::diffpos::Anchor>,
+    /// Method used by "merge when green", "queue" and "force merge" (cycled with `S`).
+    pub merge_method: MergeMethod,
     /// Image overlay.
     pub images: Images,
     /// Terminal graphics protocol for images.
@@ -392,6 +401,7 @@ impl HubState {
             keys: KeysState::default(),
             palette: None,
             inline_anchor: None,
+            merge_method: MergeMethod::Merge,
             images: Images::default(),
             picker: Picker::halfblocks(),
             client: None,
@@ -1306,6 +1316,26 @@ impl HubState {
             self.selected_run().is_some(),
         ) {
             (Action::Merge(m), true, _) => format!("Merge PR ({m:?})? y/n"),
+            (Action::MergeWith(o), true, _) => {
+                if let Some(problem) = o.problem() {
+                    self.set_notice(problem.into(), false);
+                    return;
+                }
+                if o.force {
+                    format!(
+                        "{}? Type Y (capital) to confirm, anything else cancels",
+                        o.describe()
+                    )
+                } else {
+                    format!("{}? y/n", o.describe())
+                }
+            }
+            (Action::UpdateBranch, true, _) => {
+                "Update this branch with its target branch? y/n".into()
+            }
+            (Action::CancelAutoMerge, true, _) => {
+                "Cancel the scheduled merge / leave the merge queue? y/n".into()
+            }
             (Action::ToggleOpen, _, false)
                 if self.selected_pr().is_some() || self.selected_issue().is_some() =>
             {
@@ -1353,6 +1383,60 @@ impl HubState {
                         None => Err("no account".into()),
                     };
                     done(&tx, r, format!("merged #{}", pr.number), true);
+                });
+            }
+            Action::MergeWith(options) => {
+                let Some(pr) = self.selected_pr().cloned() else {
+                    return;
+                };
+                rt.spawn(async move {
+                    let r = match api.backend(&pr.repo.host) {
+                        Some(b) => b
+                            .merge_with(&pr.repo, pr.number, &options)
+                            .await
+                            .map(|o| o.describe(pr.number))
+                            .map_err(|e| e.to_string()),
+                        None => Err("no account".into()),
+                    };
+                    match r {
+                        Ok(text) => done(&tx, Ok(()), text, true),
+                        Err(e) => done(&tx, Err(e), String::new(), true),
+                    }
+                });
+            }
+            Action::UpdateBranch => {
+                let Some(pr) = self.selected_pr().cloned() else {
+                    return;
+                };
+                rt.spawn(async move {
+                    let r = match api.backend(&pr.repo.host) {
+                        Some(b) => b
+                            .update_branch(&pr.repo, pr.number, UpdateStyle::Default)
+                            .await
+                            .map_err(|e| e.to_string()),
+                        None => Err("no account".into()),
+                    };
+                    done(&tx, r, format!("#{} is being updated", pr.number), true);
+                });
+            }
+            Action::CancelAutoMerge => {
+                let Some(pr) = self.selected_pr().cloned() else {
+                    return;
+                };
+                rt.spawn(async move {
+                    let r = match api.backend(&pr.repo.host) {
+                        Some(b) => b
+                            .cancel_auto_merge(&pr.repo, pr.number)
+                            .await
+                            .map_err(|e| e.to_string()),
+                        None => Err("no account".into()),
+                    };
+                    done(
+                        &tx,
+                        r,
+                        format!("#{} will no longer auto-merge", pr.number),
+                        true,
+                    );
                 });
             }
             Action::ToggleOpen => {

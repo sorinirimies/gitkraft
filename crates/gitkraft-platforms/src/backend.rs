@@ -2,13 +2,13 @@
 
 use crate::account::Account;
 use crate::api::Api;
-use crate::error::Result;
+use crate::error::{PlatformError, Result};
 use crate::github_like::GitHubLike;
 use crate::gitlab::{GitLab, ItemKind};
 use crate::http::HttpClient;
 use crate::model::{
-    ActivityDay, Capabilities, Comment, Issue, ListQuery, MergeMethod, Notification, PullRequest,
-    Review, ReviewVerdict, StateFilter, User,
+    ActivityDay, Capabilities, Comment, Issue, ListQuery, MergeMethod, MergeOptions, MergeOutcome,
+    Notification, PullRequest, Review, ReviewVerdict, StateFilter, UpdateStyle, User,
 };
 use crate::platform::{PlatformKind, RepoId};
 use gitkraft_settings::dashboard::Involvement;
@@ -224,11 +224,47 @@ impl<C: HttpClient> Backend<C> {
         }
     }
 
-    /// Merges a pull request.
+    /// Merges a pull request right now.
     pub async fn merge(&self, repo: &RepoId, number: u64, method: MergeMethod) -> Result<()> {
+        self.merge_with(repo, number, &method.into())
+            .await
+            .map(|_| ())
+    }
+
+    /// Merges, schedules (auto-merge) or queues a pull request, optionally forcing past branch rules.
+    pub async fn merge_with(
+        &self,
+        repo: &RepoId,
+        number: u64,
+        options: &MergeOptions,
+    ) -> Result<MergeOutcome> {
+        if let Some(problem) = options.problem() {
+            return Err(PlatformError::Unsupported(problem));
+        }
         match self {
-            Self::GitHubLike(b) => b.merge(repo, number, method).await,
-            Self::GitLab(b) => b.merge(repo, number, method).await,
+            Self::GitHubLike(b) => b.merge_with(repo, number, options).await,
+            Self::GitLab(b) => b.merge_with(repo, number, options).await,
+        }
+    }
+
+    /// Brings the pull request's branch up to date with its target.
+    pub async fn update_branch(
+        &self,
+        repo: &RepoId,
+        number: u64,
+        style: UpdateStyle,
+    ) -> Result<()> {
+        match self {
+            Self::GitHubLike(b) => b.update_branch(repo, number, style).await,
+            Self::GitLab(b) => b.update_branch(repo, number, style).await,
+        }
+    }
+
+    /// Cancels a scheduled auto-merge or takes the pull request out of the merge queue.
+    pub async fn cancel_auto_merge(&self, repo: &RepoId, number: u64) -> Result<()> {
+        match self {
+            Self::GitHubLike(b) => b.cancel_auto_merge(repo, number).await,
+            Self::GitLab(b) => b.cancel_auto_merge(repo, number).await,
         }
     }
 

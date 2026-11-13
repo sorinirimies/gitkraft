@@ -2,7 +2,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use gitkraft_ci::RerunScope;
-use gitkraft_platforms::model::MergeMethod;
+use gitkraft_platforms::model::{MergeMethod, MergeOptions, MergeTiming};
 use ratatui::layout::Rect;
 
 use super::drag::DragTarget;
@@ -50,7 +50,14 @@ pub fn key_outcome(hub: &mut HubState, key: KeyEvent) -> Outcome {
         return Outcome::Quit;
     }
     if let Some(confirm) = hub.confirm.take() {
-        if matches!(key.code, KeyCode::Char('y' | 'Y') | KeyCode::Enter) {
+        // A forced merge needs a deliberate capital Y; Enter or y cannot do it by habit.
+        let forced = matches!(confirm.action, Action::MergeWith(o) if o.force);
+        let yes = if forced {
+            key.code == KeyCode::Char('Y')
+        } else {
+            matches!(key.code, KeyCode::Char('y' | 'Y') | KeyCode::Enter)
+        };
+        if yes {
             hub.perform(confirm.action);
         }
         return Outcome::Stay;
@@ -308,6 +315,21 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
         KeyCode::Char('L') => open_prompt(hub, PromptPurpose::Labels),
         KeyCode::Char('m') => hub.ask(Action::Merge(MergeMethod::Merge)),
         KeyCode::Char('M') => hub.ask(Action::Merge(MergeMethod::Squash)),
+        KeyCode::Char('W') => hub.ask(merge_with(hub, MergeTiming::WhenGreen, false)),
+        KeyCode::Char('Q') => hub.ask(merge_with(hub, MergeTiming::Queue, false)),
+        KeyCode::Char('!') => hub.ask(merge_with(hub, MergeTiming::Now, true)),
+        KeyCode::Char('u') => hub.ask(Action::UpdateBranch),
+        KeyCode::Char('Z') => hub.ask(Action::CancelAutoMerge),
+        KeyCode::Char('S') => {
+            hub.merge_method = hub.merge_method.next();
+            hub.set_notice(
+                format!(
+                    "merge method for queue, auto-merge and force: {}",
+                    hub.merge_method.label()
+                ),
+                true,
+            );
+        }
         KeyCode::Char('C') => hub.ask(Action::ToggleOpen),
         KeyCode::Char('f') => hub.ask(Action::Rerun(RerunScope::Failed)),
         KeyCode::Char('F') => hub.ask(Action::Rerun(RerunScope::All)),
@@ -317,6 +339,14 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
         _ => {}
     }
     Outcome::Stay
+}
+
+fn merge_with(hub: &HubState, timing: MergeTiming, force: bool) -> Action {
+    Action::MergeWith(MergeOptions {
+        method: hub.merge_method,
+        timing,
+        force,
+    })
 }
 
 fn open_pulse(hub: &mut HubState) {
@@ -853,6 +883,62 @@ mod tests {
         chars(&mut s, "+bug");
         key_outcome(&mut s, key(KeyCode::Esc));
         assert!(s.prompt.is_none());
+    }
+
+    #[test]
+    fn merge_keys_ask_with_the_chosen_method_and_a_forced_merge_needs_a_capital_y() {
+        let mut s = state();
+        let asked = |s: &HubState| {
+            s.confirm
+                .as_ref()
+                .map(|c| c.text.clone())
+                .unwrap_or_default()
+        };
+
+        chars(&mut s, "W");
+        assert!(asked(&s).contains("when the checks pass") && asked(&s).contains("(merge)"));
+        s.confirm = None;
+        chars(&mut s, "S");
+        chars(&mut s, "Q");
+        assert!(
+            asked(&s).contains("merge queue") && asked(&s).contains("(squash)"),
+            "{}",
+            asked(&s)
+        );
+        s.confirm = None;
+        chars(&mut s, "u");
+        assert!(asked(&s).contains("Update this branch"));
+        s.confirm = None;
+        chars(&mut s, "Z");
+        assert!(asked(&s).contains("leave the merge queue"));
+        s.confirm = None;
+
+        chars(&mut s, "!");
+        assert!(asked(&s).contains("FORCE") && asked(&s).contains("capital"));
+        // Enter and lower-case y do not confirm a forced merge
+        for k in [key(KeyCode::Enter), key(KeyCode::Char('y'))] {
+            key_outcome(&mut s, k);
+            assert!(s.confirm.is_none());
+            chars(&mut s, "!");
+        }
+        assert!(s.confirm.is_some());
+        key_outcome(&mut s, key(KeyCode::Char('Y')));
+        assert!(s.confirm.is_none());
+    }
+
+    #[test]
+    fn merge_keys_do_not_apply_to_issues_and_the_palette_lists_them() {
+        let mut s = state();
+        assert!(
+            palette::entries_for(&s)
+                .iter()
+                .any(|e| e.label.contains("merge queue"))
+        );
+        s.select_section(2);
+        for k in ["W", "Q", "!", "u", "Z"] {
+            chars(&mut s, k);
+            assert!(s.confirm.is_none(), "{k}");
+        }
     }
 
     #[test]

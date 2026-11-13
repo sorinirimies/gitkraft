@@ -420,6 +420,14 @@ async fn pull_request(cx: &Cx) -> Result<impl View> {
     let comment = with(serde_json::json!({"action": "comment", "kind": "pr"}));
     let merge = with(serde_json::json!({"action": "merge", "method": "merge"}));
     let squash = with(serde_json::json!({"action": "merge", "method": "squash"}));
+    let with_method = |when: &str, force: bool| {
+        with(serde_json::json!({"action": "merge", "when": when, "force": force}))
+    };
+    let when_green = with_method("when_green", false);
+    let queue = with_method("queue", false);
+    let force = with_method("now", true);
+    let update = with(serde_json::json!({"action": "update_branch"}));
+    let cancel_auto = with(serde_json::json!({"action": "cancel_auto_merge"}));
     let toggle = with(serde_json::json!({"action": "set_open", "kind": "pr", "open": !open}));
     let toggle_label = if open { "Close" } else { "Reopen" };
     let labels: Vec<String> = pr.labels.iter().map(|l| l.name.clone()).collect();
@@ -441,6 +449,16 @@ async fn pull_request(cx: &Cx) -> Result<impl View> {
                 if open {
                     <button data-act=(merge) data-confirm="Merge this pull request?" onclick="actBtn(this)">"Merge"</button>
                     <button data-act=(squash) data-confirm="Squash and merge?" onclick="actBtn(this)">"Squash"</button>
+                    <select id="mm" title="Method for the buttons that follow">
+                        <option value="merge">"merge commit"</option>
+                        <option value="squash">"squash"</option>
+                        <option value="rebase">"rebase"</option>
+                    </select>
+                    <button data-act=(when_green) data-method="mm" data-confirm="Merge when the checks pass?" onclick="actBtn(this)">"When green"</button>
+                    <button data-act=(queue) data-method="mm" data-confirm="Add to the merge queue?" onclick="actBtn(this)">"Queue"</button>
+                    <button class="danger" data-act=(force) data-method="mm" data-confirm="FORCE merge past branch rules? This needs admin rights and skips required checks and reviews." onclick="actBtn(this)">"Force merge"</button>
+                    <button data-act=(update) data-confirm="Update this branch with its target branch?" onclick="actBtn(this)">"Update branch"</button>
+                    <button data-act=(cancel_auto) data-confirm="Cancel the scheduled merge or leave the merge queue?" onclick="actBtn(this)">"Cancel auto-merge"</button>
                 }
                 <button class="danger" data-act=(toggle) data-confirm=(format!("{toggle_label} this pull request?")) onclick="actBtn(this)">(toggle_label)</button>
             </div>

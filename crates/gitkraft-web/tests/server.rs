@@ -235,6 +235,12 @@ async fn the_pr_page_has_tabs_actions_images_and_escaped_text() {
         "data-act=",
         "Approve",
         "Squash",
+        "When green",
+        "Queue",
+        "Force merge",
+        "Update branch",
+        "Cancel auto-merge",
+        "data-method=\"mm\"",
         "src=\"https://img.example/a.png\"",
         "feat → master",
     ] {
@@ -593,4 +599,70 @@ async fn the_keys_page_lists_keys_and_a_key_can_be_removed() {
     )
     .await;
     assert!(r.body.contains("no account"), "{}", r.body);
+}
+
+#[tokio::test]
+async fn merge_when_green_queue_update_and_cancel_reach_the_platform() {
+    let h = start().await;
+    let pr = "https://api.github.com/repos/o/r/pulls/7";
+    h.fake.push_json(pr, r#"{"node_id":"PR_7"}"#);
+    h.fake
+        .push_json("https://api.github.com/graphql", r#"{"data":{}}"#);
+    h.fake.push_json(pr, r#"{"node_id":"PR_7"}"#);
+    h.fake
+        .push_json("https://api.github.com/graphql", r#"{"data":{}}"#);
+    h.fake.push_json(&format!("{pr}/update-branch"), "{}");
+    h.fake.push_json(pr, r#"{"node_id":"PR_7"}"#);
+    h.fake
+        .push_json("https://api.github.com/graphql", r#"{"data":{}}"#);
+    let post = |body: &'static str| request(h.addr, "POST", "/api/action", body);
+
+    let r = post(r#"{"action":"merge","repo":"github.com/o/r","number":7,"when":"when_green","method":"squash"}"#).await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    assert!(
+        r.body.contains("will merge when the checks pass"),
+        "{}",
+        r.body
+    );
+    let r = post(
+        r#"{"action":"merge","repo":"github.com/o/r","number":7,"when":"queue","force":true}"#,
+    )
+    .await;
+    assert!(r.body.contains("merge queue"), "{}", r.body);
+    let r = post(r#"{"action":"update_branch","repo":"github.com/o/r","number":7}"#).await;
+    assert!(r.body.contains("being updated"), "{}", r.body);
+    let r = post(r#"{"action":"cancel_auto_merge","repo":"github.com/o/r","number":7}"#).await;
+    assert!(r.body.contains("no longer auto-merge"), "{}", r.body);
+
+    let sent = h.fake.requests();
+    let sent_body = |i: usize| {
+        String::from_utf8_lossy(sent[i].body.as_deref().unwrap_or_default()).into_owned()
+    };
+    assert!(sent_body(1).contains("enablePullRequestAutoMerge") && sent_body(1).contains("SQUASH"));
+    assert!(sent_body(3).contains("enqueuePullRequest") && sent_body(3).contains("\"jump\":true"));
+    assert!(sent_body(6).contains("disablePullRequestAutoMerge"));
+}
+
+#[tokio::test]
+async fn nonsense_merge_requests_are_refused_before_any_call() {
+    let h = start().await;
+    for (body, needle) in [
+        (
+            r#"{"action":"merge","repo":"github.com/o/r","number":7,"when":"soon"}"#,
+            "unknown merge timing",
+        ),
+        (
+            r#"{"action":"merge","repo":"github.com/o/r","number":7,"when":"when_green","force":true}"#,
+            "cannot wait",
+        ),
+        (
+            r#"{"action":"update_branch","repo":"github.com/o/r","number":7,"style":"squash"}"#,
+            "unknown update style",
+        ),
+    ] {
+        let r = request(h.addr, "POST", "/api/action", body).await;
+        assert_eq!(r.status, 400, "{body}");
+        assert!(r.body.contains(needle), "{}", r.body);
+    }
+    assert!(h.fake.requests().is_empty());
 }

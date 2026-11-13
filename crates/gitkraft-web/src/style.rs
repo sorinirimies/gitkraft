@@ -52,6 +52,7 @@ async function act(p){
 function actBtn(b){
   const p=JSON.parse(b.dataset.act);
   if(b.dataset.from){p.body=document.getElementById(b.dataset.from).value;}
+  if(b.dataset.method){p.method=document.getElementById(b.dataset.method).value;}
   if(b.dataset.confirm&&!confirm(b.dataset.confirm))return;
   act(p);
 }
