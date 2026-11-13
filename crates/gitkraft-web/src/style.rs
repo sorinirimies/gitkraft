@@ -37,6 +37,8 @@ pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospa
 img.shot{max-width:100%;border:1px solid var(--border);border-radius:6px;margin:6px 0}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .stat{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px}.stat b{display:block;font-size:22px}
+svg rect.day{cursor:pointer;outline:none}svg rect.day:hover,svg rect.day:focus{stroke:var(--text);stroke-width:1.5}svg rect.day.sel{stroke:var(--accent);stroke-width:2}
+#day h3{margin:10px 0 4px;font-size:14px}#day ul{margin:0;padding-left:18px}#day li{margin:2px 0}#day .repo{color:var(--muted)}
 svg .lbl{font:10px sans-serif;fill:var(--muted)}svg.heat{max-width:100%;height:auto}
 #gk-pal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;justify-content:center;align-items:flex-start;padding-top:12vh;z-index:50}
 #gk-pal[hidden]{display:none}
@@ -125,6 +127,45 @@ document.addEventListener('keydown',e=>{
 document.addEventListener('DOMContentLoaded',()=>{
   const top=document.querySelector('header.top');
   if(top){const b=document.createElement('button');b.className='pal-hint';b.title='Command palette (Ctrl/Cmd+K or :)';b.textContent='⌘K';b.onclick=gkPalette;top.appendChild(b);}
+});
+/* Calendar: a day opens what you did that day, like GitHub's panel; arrows move the cursor. */
+function gkDay(rect){
+  const panel=document.getElementById('day');if(!panel||!rect)return;
+  document.querySelectorAll('svg.heat rect.sel').forEach(r=>r.classList.remove('sel'));
+  rect.classList.add('sel');
+  panel.hidden=false;panel.textContent='Loading '+rect.dataset.date+'…';
+  fetch('/api/day?date='+encodeURIComponent(rect.dataset.date)).then(r=>r.ok?r.json():r.text().then(t=>{throw new Error(t);})).then(d=>{
+    if(!rect.classList.contains('sel'))return;
+    panel.textContent='';
+    const h=document.createElement('b');h.textContent=d.headline;panel.appendChild(h);
+    d.errors.forEach(e=>{const n=document.createElement('div');n.className='note warn';n.textContent=e;panel.appendChild(n);});
+    d.groups.forEach(g=>{
+      const t=document.createElement('h3');t.textContent=g.heading+' · '+g.count;panel.appendChild(t);
+      const ul=document.createElement('ul');
+      g.items.forEach(i=>{
+        const li=document.createElement('li');
+        const label=(i.number?'#'+i.number+' ':'')+i.title;
+        if(/^https?:\/\//.test(i.url)){const a=document.createElement('a');a.href=i.url;a.textContent=label;a.target='_blank';a.rel='noopener';li.appendChild(a);}
+        else li.appendChild(document.createTextNode(label));
+        const r=document.createElement('span');r.className='repo';r.textContent=' · '+i.repo;li.appendChild(r);
+        ul.appendChild(li);
+      });
+      panel.appendChild(ul);
+    });
+    if(!d.groups.length&&!d.errors.length){const n=document.createElement('div');n.className='dim';n.textContent='Nothing to show for this day.';panel.appendChild(n);}
+  }).catch(e=>{panel.textContent='';const n=document.createElement('div');n.className='note err';n.textContent=String(e.message||e);panel.appendChild(n);});
+}
+function gkDayStep(rect,dx,dy){
+  const d=new Date(rect.dataset.date+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+dx*7+dy);
+  const next=document.querySelector('svg.heat rect.day[data-date="'+d.toISOString().slice(0,10)+'"]');
+  if(next)next.focus();
+}
+document.addEventListener('click',e=>{const r=e.target.closest&&e.target.closest('svg.heat rect.day');if(r)gkDay(r);});
+document.addEventListener('keydown',e=>{
+  const r=e.target.closest&&e.target.closest('svg.heat rect.day');if(!r)return;
+  const step={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];
+  if(step){e.preventDefault();gkDayStep(r,step[0],step[1]);}
+  else if(e.key==='Enter'||e.key===' '){e.preventDefault();gkDay(r);}
 });
 function actBtn(b){
   const p=JSON.parse(b.dataset.act);

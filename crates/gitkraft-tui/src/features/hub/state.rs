@@ -103,6 +103,8 @@ pub enum Target {
     LogRow(usize),
     /// A row of the annotation list.
     Annotation(usize),
+    /// A day of the contribution calendar.
+    Day(chrono::NaiveDate),
 }
 
 /// A clickable region of the last frame.
@@ -222,6 +224,10 @@ pub struct PulseState {
     pub days: u32,
     /// Something is loading.
     pub loading: bool,
+    /// The calendar day picked with the mouse or the arrow keys.
+    pub day: Option<chrono::NaiveDate>,
+    /// What was done that day, once loaded.
+    pub day_data: Option<gitkraft_hub::DayResult>,
 }
 
 /// State of the SSH keys view.
@@ -283,6 +289,7 @@ enum Msg {
         data: Pulse,
     },
     Contributions(SectionResult<ActivityDay>),
+    Day(gitkraft_hub::DayResult),
     Keys(gitkraft_hub::keys::KeysData),
     Done {
         text: String,
@@ -900,6 +907,31 @@ impl HubState {
             };
             let _ = tx.send(Msg::Log { title, result });
         });
+    }
+
+    /// Shows what was done on `date`.
+    pub fn pick_day(&mut self, date: chrono::NaiveDate) {
+        self.pulse.day = Some(date);
+        self.pulse.day_data = None;
+        let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {
+            return;
+        };
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            let _ = tx.send(Msg::Day(api.day_activity(date).await));
+        });
+    }
+
+    /// Moves the picked day by `days` (a week is a column of the calendar), within the calendar's year.
+    /// With no day picked yet it starts from today.
+    pub fn step_day(&mut self, days: i64) {
+        let today = Utc::now().date_naive();
+        let from = self.pulse.day.unwrap_or(today);
+        let to = (from + chrono::Duration::days(days)).min(today);
+        if (today - to).num_days() > 370 {
+            return;
+        }
+        self.pick_day(to);
     }
 
     /// Loads the Pulse view's numbers for the current repo.
@@ -1900,6 +1932,15 @@ impl HubState {
                 }
                 self.keys.row = self.keys.row.min(data.rows.len().saturating_sub(1));
                 self.keys.data = Some(data);
+            }
+            Msg::Day(r) => {
+                // an answer for a day that is no longer picked is dropped
+                if self.pulse.day == Some(r.activity.date) {
+                    if let Some(e) = r.errors.first() {
+                        self.set_notice(e.clone(), false);
+                    }
+                    self.pulse.day_data = Some(r);
+                }
             }
             Msg::Contributions(c) => {
                 if let Some(e) = c.errors.first() {

@@ -365,6 +365,112 @@ pub struct ActivityDay {
     pub count: u32,
 }
 
+/// What a contribution was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum ActivityKind {
+    /// Commits pushed.
+    Commits,
+    /// A pull / merge request opened, merged or closed.
+    PullRequest,
+    /// An issue opened or closed.
+    Issue,
+    /// A pull request reviewed.
+    Review,
+    /// A comment.
+    Comment,
+    /// Anything else (tags, repositories created, …).
+    Other,
+}
+
+impl ActivityKind {
+    /// Heading for a group of this kind.
+    pub fn heading(self) -> &'static str {
+        match self {
+            Self::Commits => "Commits",
+            Self::PullRequest => "Pull requests",
+            Self::Issue => "Issues",
+            Self::Review => "Code reviews",
+            Self::Comment => "Comments",
+            Self::Other => "Other",
+        }
+    }
+}
+
+/// One thing done on a day.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActivityEntry {
+    /// What it was.
+    pub kind: ActivityKind,
+    /// `host/owner/name` or `owner/name` when the platform only gives that.
+    pub repo: String,
+    /// Title, or the branch for commits.
+    pub title: String,
+    /// Pull request or issue number.
+    pub number: Option<u64>,
+    /// How many contributions it stands for (commits in a push, else 1).
+    pub count: u32,
+    /// Web address; may be empty.
+    pub url: String,
+}
+
+/// What one user did on one day, like GitHub's panel under the contribution calendar.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DayActivity {
+    /// The day (UTC).
+    pub date: NaiveDate,
+    /// Contributions the platform counts that day.
+    pub total: u32,
+    /// What they were.
+    pub entries: Vec<ActivityEntry>,
+}
+
+impl DayActivity {
+    /// An empty day.
+    pub fn empty(date: NaiveDate) -> Self {
+        Self {
+            date,
+            total: 0,
+            entries: Vec::new(),
+        }
+    }
+
+    /// Adds the work of another account.
+    pub fn merge(&mut self, other: Self) {
+        self.total += other.total;
+        self.entries.extend(other.entries);
+    }
+
+    /// Entries grouped by kind in a fixed order, with the contributions each group stands for.
+    pub fn groups(&self) -> Vec<(ActivityKind, u32, Vec<&ActivityEntry>)> {
+        let mut out: Vec<(ActivityKind, u32, Vec<&ActivityEntry>)> = Vec::new();
+        for kind in [
+            ActivityKind::Commits,
+            ActivityKind::PullRequest,
+            ActivityKind::Issue,
+            ActivityKind::Review,
+            ActivityKind::Comment,
+            ActivityKind::Other,
+        ] {
+            let items: Vec<&ActivityEntry> =
+                self.entries.iter().filter(|e| e.kind == kind).collect();
+            if !items.is_empty() {
+                let n = items.iter().map(|e| e.count).sum();
+                out.push((kind, n, items));
+            }
+        }
+        out
+    }
+
+    /// "3 contributions on 2026-03-10", singular for one, "No contributions on …" for none.
+    pub fn headline(&self) -> String {
+        match self.total {
+            0 => format!("No contributions on {}", self.date),
+            1 => format!("1 contribution on {}", self.date),
+            n => format!("{n} contributions on {}", self.date),
+        }
+    }
+}
+
 /// Paging for list calls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Page {

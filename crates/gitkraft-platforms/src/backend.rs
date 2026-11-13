@@ -7,8 +7,8 @@ use crate::github_like::GitHubLike;
 use crate::gitlab::{GitLab, ItemKind};
 use crate::http::HttpClient;
 use crate::model::{
-    ActivityDay, Capabilities, Comment, Issue, ListQuery, MergeMethod, MergeOptions, MergeOutcome,
-    Notification, PullRequest, Review, ReviewVerdict, StateFilter, UpdateStyle, User,
+    ActivityDay, Capabilities, Comment, DayActivity, Issue, ListQuery, MergeMethod, MergeOptions,
+    MergeOutcome, Notification, PullRequest, Review, ReviewVerdict, StateFilter, UpdateStyle, User,
 };
 use crate::platform::{PlatformKind, RepoId};
 use gitkraft_settings::dashboard::Involvement;
@@ -313,6 +313,15 @@ impl<C: HttpClient> Backend<C> {
     }
 
     /// Daily contribution counts for `user`, oldest first.
+    /// What `user` did on `date`, for the panel under the contribution calendar.
+    pub async fn day_activity(&self, user: &str, date: chrono::NaiveDate) -> Result<DayActivity> {
+        match self {
+            Self::GitHubLike(b) => b.day_activity(user, date).await,
+            Self::GitLab(b) => b.day_activity(user, date).await,
+        }
+    }
+
+    /// Contributions per day over the last year.
     pub async fn contributions(&self, user: &str) -> Result<Vec<ActivityDay>> {
         match self {
             Self::GitHubLike(b) => b.contributions(user).await,

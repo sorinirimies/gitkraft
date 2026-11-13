@@ -36,6 +36,23 @@ pub fn calendar_cells(today: NaiveDate) -> Vec<(usize, usize, NaiveDate)> {
     cells
 }
 
+/// The day under a point of the calendar (`x`, `y` relative to the canvas), if it is a cell of the calendar.
+pub fn cell_at(x: f32, y: f32, today: NaiveDate) -> Option<NaiveDate> {
+    let (cx, cy) = (x - LEFT, y - TOP);
+    if cx < 0.0 || cy < 0.0 {
+        return None;
+    }
+    let (week, dow) = ((cx / (CELL + GAP)) as usize, (cy / (CELL + GAP)) as usize);
+    // the gap between cells belongs to no day
+    if cx - week as f32 * (CELL + GAP) > CELL || cy - dow as f32 * (CELL + GAP) > CELL {
+        return None;
+    }
+    calendar_cells(today)
+        .into_iter()
+        .find(|(w, d, _)| *w == week && *d == dow)
+        .map(|(_, _, date)| date)
+}
+
 /// GitHub-style calendar of contributions.
 #[derive(Debug)]
 pub struct Heatmap {
@@ -47,6 +64,10 @@ pub struct Heatmap {
     pub palette: [Color; 5],
     /// Label colour.
     pub label: Color,
+    /// The day whose details are shown, outlined.
+    pub selected: Option<NaiveDate>,
+    /// Outline colour of the selected day.
+    pub outline: Color,
 }
 
 impl Heatmap {
@@ -58,6 +79,33 @@ impl Heatmap {
 
 impl canvas::Program<HubMessage> for Heatmap {
     type State = ();
+
+    fn update(
+        &self,
+        _state: &mut (),
+        event: &iced::Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<canvas::Action<HubMessage>> {
+        if let iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) = event {
+            let p = cursor.position_in(bounds)?;
+            let date = cell_at(p.x, p.y, self.today)?;
+            return Some(canvas::Action::publish(HubMessage::PickDay(date)).and_capture());
+        }
+        None
+    }
+
+    fn mouse_interaction(
+        &self,
+        _state: &(),
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> mouse::Interaction {
+        match cursor.position_in(bounds) {
+            Some(p) if cell_at(p.x, p.y, self.today).is_some() => mouse::Interaction::Pointer,
+            _ => mouse::Interaction::default(),
+        }
+    }
 
     fn draw(
         &self,
@@ -80,6 +128,17 @@ impl canvas::Program<HubMessage> for Heatmap {
                 &Path::rectangle(Point::new(x, y), Size::new(CELL, CELL)),
                 self.palette[level(count, max)],
             );
+            if self.selected == Some(date) {
+                frame.stroke(
+                    &Path::rectangle(
+                        Point::new(x - 1.0, y - 1.0),
+                        Size::new(CELL + 2.0, CELL + 2.0),
+                    ),
+                    canvas::Stroke::default()
+                        .with_color(self.outline)
+                        .with_width(2.0),
+                );
+            }
             if dow == 0 && date.month() != last_month && date.day() <= 7 {
                 last_month = date.month();
                 frame.fill_text(Text {
@@ -184,5 +243,26 @@ mod tests {
     fn the_heatmap_has_a_fixed_pixel_size() {
         let s = Heatmap::size();
         assert!(s.width > 700.0 && s.height > 100.0);
+    }
+
+    #[test]
+    fn a_click_finds_the_day_under_it_and_the_gaps_and_margins_find_none() {
+        let today = NaiveDate::from_ymd_opt(2026, 3, 10).expect("date"); // a Tuesday
+        let cells = calendar_cells(today);
+        // every cell's own middle gives back its own date
+        for (week, dow, date) in &cells {
+            let x = LEFT + *week as f32 * (CELL + GAP) + CELL / 2.0;
+            let y = TOP + *dow as f32 * (CELL + GAP) + CELL / 2.0;
+            assert_eq!(cell_at(x, y, today), Some(*date));
+        }
+        // the gap between two cells, the margins, and the days after today
+        assert_eq!(cell_at(LEFT + CELL + 1.0, TOP + 2.0, today), None);
+        assert_eq!(cell_at(LEFT + 2.0, TOP + CELL + 1.0, today), None);
+        assert_eq!(cell_at(2.0, 2.0, today), None);
+        assert_eq!(cell_at(LEFT - 1.0, TOP + 2.0, today), None);
+        let last = cells.last().expect("cells");
+        let x = LEFT + last.0 as f32 * (CELL + GAP) + 2.0;
+        let y = TOP + (last.1 + 1) as f32 * (CELL + GAP) + 2.0;
+        assert_eq!(cell_at(x, y, today), None, "Wednesday has not happened");
     }
 }

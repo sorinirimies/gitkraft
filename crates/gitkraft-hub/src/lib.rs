@@ -17,4 +17,4 @@ pub mod markdown;
 pub mod poller;
 pub mod pulse;
 
-pub use hub::{Hub, PrDetail, SectionData, SectionResult, is_open, shared};
+pub use hub::{DayResult, Hub, PrDetail, SectionData, SectionResult, is_open, shared};

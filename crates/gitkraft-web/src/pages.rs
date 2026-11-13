@@ -755,6 +755,8 @@ async fn pulse(cx: &Cx) -> Result<impl View> {
             <div class="meta">(format!("{total} contributions in the last year, all accounts"))</div>
             for e in errors { <div class="note warn">(e)</div> }
             <div class="panel">(heat)</div>
+            <div class="meta small dim">"Click a day (or move with the arrow keys and press Enter) to see what you did."</div>
+            <div id="day" class="panel" hidden="hidden"></div>
             <h1>"Pulse"</h1>
             <nav class="tabs">for (href, label, on) in repo_links { <a href=(href) class=(if on { "on" } else { "" })>(label)</a> }</nav>
             <nav class="tabs">for (href, label, on) in range_links { <a href=(href) class=(if on { "on" } else { "" })>(label)</a> }</nav>

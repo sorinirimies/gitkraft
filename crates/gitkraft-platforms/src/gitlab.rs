@@ -9,9 +9,10 @@ use crate::error::{PlatformError, Result};
 use crate::github_like::fold_days;
 use crate::http::{HttpClient, Method};
 use crate::model::{
-    ActivityDay, Capabilities, ChecksState, Comment, Issue, ItemState, Label, ListQuery,
-    MergeMethod, MergeOptions, MergeOutcome, MergeTiming, Notification, NotificationReason,
-    PullRequest, Review, ReviewVerdict, StateFilter, SubjectKind, UpdateStyle, User,
+    ActivityDay, ActivityEntry, ActivityKind, Capabilities, ChecksState, Comment, DayActivity,
+    Issue, ItemState, Label, ListQuery, MergeMethod, MergeOptions, MergeOutcome, MergeTiming,
+    Notification, NotificationReason, PullRequest, Review, ReviewVerdict, StateFilter, SubjectKind,
+    UpdateStyle, User,
 };
 use crate::platform::{RepoId, url_encode};
 use gitkraft_settings::dashboard::Involvement;
@@ -493,6 +494,51 @@ impl<C: HttpClient> GitLab<C> {
             .map(|_| ())
     }
 
+    /// What `user` did on `date`, from the user's events (`after`/`before` are exclusive days).
+    pub(crate) async fn day_activity(&self, user: &str, date: NaiveDate) -> Result<DayActivity> {
+        let users: Vec<IdDto> = self
+            .api
+            .get(&format!("/users?username={}", url_encode(user)))
+            .await?;
+        let id = users
+            .first()
+            .map(|u| u.id)
+            .ok_or_else(|| PlatformError::NotFound(format!("user {user}")))?;
+        let after = date.pred_opt().unwrap_or(date);
+        let before = date.succ_opt().unwrap_or(date);
+        let events: Vec<EventDto> = self
+            .api
+            .get(&format!(
+                "/users/{id}/events?after={after}&before={before}&per_page=100"
+            ))
+            .await?;
+        let mut paths: std::collections::HashMap<u64, String> = std::collections::HashMap::new();
+        let mut entries = Vec::new();
+        for e in events {
+            let Some(project_id) = e.project_id else {
+                continue;
+            };
+            let path = match paths.get(&project_id) {
+                Some(p) => p.clone(),
+                None => {
+                    let p: ProjectPathDto =
+                        self.api.get(&format!("/projects/{project_id}")).await?;
+                    paths.insert(project_id, p.path_with_namespace.clone());
+                    p.path_with_namespace
+                }
+            };
+            if let Some(entry) = e.into_entry(&self.host, path) {
+                entries.push(entry);
+            }
+        }
+        let total = entries.iter().map(|e| e.count).sum();
+        Ok(DayActivity {
+            date,
+            total,
+            entries,
+        })
+    }
+
     pub(crate) async fn contributions(&self, user: &str) -> Result<Vec<ActivityDay>> {
         let url = format!(
             "https://{}/users/{}/calendar.json",
@@ -507,6 +553,119 @@ impl<C: HttpClient> GitLab<C> {
 }
 
 // ── DTOs ────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+struct IdDto {
+    id: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProjectPathDto {
+    #[serde(default)]
+    path_with_namespace: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct EventDto {
+    #[serde(default)]
+    project_id: Option<u64>,
+    #[serde(default)]
+    action_name: String,
+    #[serde(default)]
+    target_type: Option<String>,
+    #[serde(default)]
+    target_iid: Option<u64>,
+    #[serde(default)]
+    target_title: Option<String>,
+    #[serde(default)]
+    push_data: Option<PushDataDto>,
+    #[serde(default)]
+    note: Option<EventNoteDto>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PushDataDto {
+    #[serde(default)]
+    commit_count: u32,
+    #[serde(default, rename = "ref")]
+    branch: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct EventNoteDto {
+    #[serde(default)]
+    noteable_type: String,
+    #[serde(default)]
+    noteable_iid: Option<u64>,
+}
+
+impl EventDto {
+    fn into_entry(self, host: &str, repo: String) -> Option<ActivityEntry> {
+        let project = format!("https://{host}/{repo}");
+        if let Some(p) = self.push_data {
+            if p.commit_count == 0 {
+                return None;
+            }
+            let n = p.commit_count;
+            return Some(ActivityEntry {
+                kind: ActivityKind::Commits,
+                title: format!(
+                    "{n} commit{} to {}",
+                    if n == 1 { "" } else { "s" },
+                    p.branch
+                ),
+                number: None,
+                count: n,
+                url: project,
+                repo,
+            });
+        }
+        let link = |kind: &str, n: Option<u64>| match n {
+            Some(n) => format!("{project}/-/{kind}/{n}"),
+            None => project.clone(),
+        };
+        let title = self.target_title.unwrap_or_default();
+        let action = self.action_name.as_str();
+        let (kind, number, url) = match (self.target_type.as_deref(), action) {
+            (Some("MergeRequest"), "approved") => (
+                ActivityKind::Review,
+                self.target_iid,
+                link("merge_requests", self.target_iid),
+            ),
+            (Some("MergeRequest"), _) => (
+                ActivityKind::PullRequest,
+                self.target_iid,
+                link("merge_requests", self.target_iid),
+            ),
+            (Some("Issue"), _) => (
+                ActivityKind::Issue,
+                self.target_iid,
+                link("issues", self.target_iid),
+            ),
+            (Some("Note" | "DiffNote" | "DiscussionNote"), _) | (None, "commented on") => {
+                let n = self.note.as_ref().and_then(|n| n.noteable_iid);
+                let dir = match self.note.as_ref().map(|n| n.noteable_type.as_str()) {
+                    Some("MergeRequest") => "merge_requests",
+                    _ => "issues",
+                };
+                (ActivityKind::Comment, n, link(dir, n))
+            }
+            _ => (ActivityKind::Other, None, project.clone()),
+        };
+        Some(ActivityEntry {
+            kind,
+            repo,
+            title: if title.is_empty() {
+                action.to_string()
+            } else {
+                title
+            },
+            number,
+            count: 1,
+            url,
+        })
+    }
+}
 
 #[derive(Debug, Deserialize, Default)]
 struct UserDto {

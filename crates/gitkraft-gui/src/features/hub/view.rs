@@ -1176,6 +1176,80 @@ fn keys<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
 
 // ── Pulse ────────────────────────────────────────────────────────────────────
 
+/// What was done on the picked day, like GitHub's panel under the calendar.
+fn day_panel<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
+    let mut col = column![].spacing(6);
+    let Some(day) = hub.pulse.day else {
+        return col
+            .push(
+                text("Click a day to see what you did. ‹ › step by one day.")
+                    .size(12)
+                    .color(c.text_secondary),
+            )
+            .push(day_steps(false, c))
+            .into();
+    };
+    col = col.push(day_steps(true, c));
+    match &hub.pulse.day_data {
+        None => {
+            col = col.push(
+                text(format!("Loading {day}…"))
+                    .size(12)
+                    .color(c.text_secondary),
+            )
+        }
+        Some(r) => {
+            col = col.push(text(r.activity.headline()).size(14).color(c.text_primary));
+            for (kind, count, items) in r.activity.groups() {
+                col = col.push(
+                    text(format!("{} · {count}", kind.heading()))
+                        .size(13)
+                        .color(c.accent),
+                );
+                for e in items {
+                    let label = match e.number {
+                        Some(n) => format!("#{n} {}", e.title),
+                        None => e.title.clone(),
+                    };
+                    col = col.push(
+                        row![
+                            text(label).size(12).color(c.text_primary),
+                            text(format!("· {}", e.repo))
+                                .size(12)
+                                .color(c.text_secondary),
+                        ]
+                        .spacing(6),
+                    );
+                }
+            }
+            if r.activity.entries.is_empty() && r.errors.is_empty() {
+                col = col.push(
+                    text("Nothing to show for this day.")
+                        .size(12)
+                        .color(c.text_secondary),
+                );
+            }
+        }
+    }
+    col.into()
+}
+
+/// Previous day / next day / today: the keyboard-friendly way to move over the calendar.
+fn day_steps<'a>(has_day: bool, c: &ThemeColors) -> El<'a> {
+    let small = |label: &'static str, msg: HubMessage| {
+        button(text(label).size(12).color(c.text_primary))
+            .padding([2, 8])
+            .on_press(msg)
+    };
+    let mut r = row![].spacing(6);
+    r = r.push(small("‹", HubMessage::StepDay(-1)));
+    if has_day {
+        r = r.push(small("›", HubMessage::StepDay(1)));
+    }
+    r = r.push(small("Today", HubMessage::StepDay(0)));
+    r.into()
+}
+
 fn pulse<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
     let mut col = column![].spacing(12).padding(14);
     let today = Utc::now().date_naive();
@@ -1212,6 +1286,8 @@ fn pulse<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
                         today,
                         palette,
                         label: c.text_secondary,
+                        selected: hub.pulse.day,
+                        outline: c.accent,
                     })
                     .width(Length::Fixed(size.width))
                     .height(Length::Fixed(size.height)),
@@ -1220,6 +1296,7 @@ fn pulse<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
                     scrollable::Scrollbar::new(),
                 )),
             );
+            col = col.push(day_panel(hub, c));
         }
         None => {
             col = col.push(

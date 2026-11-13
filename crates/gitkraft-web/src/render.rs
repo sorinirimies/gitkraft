@@ -116,7 +116,7 @@ pub fn heatmap_svg(days: &[ActivityDay], today: NaiveDate) -> String {
                 "contributions"
             };
             svg.push_str(&format!(
-                "<rect x=\"{}\" y=\"{}\" width=\"{CELL}\" height=\"{CELL}\" rx=\"2\" fill=\"{}\"><title>{count} {noun} on {date}</title></rect>",
+                "<rect class=\"day\" data-date=\"{date}\" tabindex=\"0\" role=\"button\" x=\"{}\" y=\"{}\" width=\"{CELL}\" height=\"{CELL}\" rx=\"2\" fill=\"{}\"><title>{count} {noun} on {date}</title></rect>",
                 LEFT + week * (CELL + GAP),
                 TOP + dow * (CELL + GAP),
                 GREENS[level(count, max)]

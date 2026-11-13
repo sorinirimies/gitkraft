@@ -7,11 +7,20 @@ use chrono::NaiveDate;
 use futures::future::join_all;
 use gitkraft_ci::{CiBackend, Run, RunQuery};
 use gitkraft_platforms::model::{
-    ActivityDay, Comment, Issue, ItemState, ListQuery, Notification, PullRequest, Review,
-    StateFilter,
+    ActivityDay, Comment, DayActivity, Issue, ItemState, ListQuery, Notification, PullRequest,
+    Review, StateFilter,
 };
 use gitkraft_platforms::{Account, Backend, HttpClient, PlatformError, RepoId};
 use gitkraft_settings::dashboard::{Involvement, Section, SectionKind, SectionState};
+
+/// One day of activity over all accounts.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DayResult {
+    /// What was done.
+    pub activity: DayActivity,
+    /// One line per failed account.
+    pub errors: Vec<String>,
+}
 
 /// Everything one section shows, plus the accounts that failed (a section can be partly filled).
 #[derive(Debug, Clone, PartialEq)]
@@ -369,6 +378,36 @@ impl<C: HttpClient + Clone> Hub<C> {
             _ => Default::default(),
         };
         crate::pulse::pulse(&prs, &issues, &runs, days, chrono::Utc::now())
+    }
+
+    /// What you did on `date` on every account, merged (each account asks for its own login), plus the accounts that failed.
+    pub async fn day_activity(&self, date: NaiveDate) -> DayResult {
+        let calls = self.entries.iter().map(|e| async move {
+            let host = e.account.host.clone();
+            let me = self.me(&host).await.map_err(|err| describe(&err, &host))?;
+            e.backend
+                .day_activity(&me, date)
+                .await
+                .map_err(|err| describe(&err, &host))
+                .map(|mut a| {
+                    // name the platform, so two accounts with the same repo name stay apart
+                    for entry in &mut a.entries {
+                        if !entry.repo.starts_with(&host) {
+                            entry.repo = format!("{host}/{}", entry.repo);
+                        }
+                    }
+                    a
+                })
+        });
+        let mut activity = DayActivity::empty(date);
+        let mut errors = Vec::new();
+        for r in join_all(calls).await {
+            match r {
+                Ok(a) => activity.merge(a),
+                Err(e) => errors.push(e),
+            }
+        }
+        DayResult { activity, errors }
     }
 
     /// Daily contributions summed over every account, oldest first, plus per-account errors.

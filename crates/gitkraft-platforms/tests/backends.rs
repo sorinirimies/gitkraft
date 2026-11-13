@@ -1,8 +1,8 @@
 //! Adapter tests against recorded responses; nothing touches the network.
 
 use gitkraft_platforms::model::{
-    ChecksState, ItemState, ListQuery, MergeMethod, MergeOptions, MergeOutcome, MergeTiming,
-    NotificationReason, ReviewVerdict, StateFilter, SubjectKind, UpdateStyle,
+    ActivityKind, ChecksState, ItemState, ListQuery, MergeMethod, MergeOptions, MergeOutcome,
+    MergeTiming, NotificationReason, ReviewVerdict, StateFilter, SubjectKind, UpdateStyle,
 };
 use gitkraft_platforms::testing::FakeClient;
 use gitkraft_platforms::{Account, Backend, ItemKind, PlatformError, PlatformKind, RepoId, Secret};
@@ -976,4 +976,157 @@ async fn github_updates_its_branch_and_cancels_auto_merge_falling_back_to_dequeu
             .as_str()
             .is_some_and(|q| q.contains("dequeuePullRequest"))
     );
+}
+
+fn day(y: i32, m: u32, d: u32) -> chrono::NaiveDate {
+    chrono::NaiveDate::from_ymd_opt(y, m, d).expect("date")
+}
+
+#[tokio::test]
+async fn github_day_activity_asks_for_that_day_and_groups_what_was_done() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"user":{"contributionsCollection":{
+          "contributionCalendar":{"totalContributions":6},
+          "commitContributionsByRepository":[
+            {"repository":{"nameWithOwner":"o/r","url":"https://github.com/o/r"},"contributions":{"totalCount":3}},
+            {"repository":{"nameWithOwner":"o/none","url":"u"},"contributions":{"totalCount":0}}],
+          "pullRequestContributions":{"nodes":[{"pullRequest":{"number":7,"title":"Add pulse","url":"https://github.com/o/r/pull/7","repository":{"nameWithOwner":"o/r"}}}]},
+          "issueContributions":{"nodes":[{"issue":{"number":2,"title":"Bug","url":"i","repository":{"nameWithOwner":"o/r"}}}]},
+          "pullRequestReviewContributions":{"nodes":[{"pullRequest":{"number":9,"title":"Theirs","url":"p","repository":{"nameWithOwner":"x/y"}}}]}}}}}"#,
+    );
+    let a = github(&fake)
+        .day_activity("me", day(2026, 3, 10))
+        .await
+        .expect("activity");
+    let body = String::from_utf8_lossy(fake.requests()[0].body.as_deref().unwrap_or_default())
+        .into_owned();
+    assert!(
+        body.contains("2026-03-10T00:00:00Z") && body.contains("2026-03-10T23:59:59Z"),
+        "{body}"
+    );
+    assert_eq!(a.total, 6);
+    assert_eq!(a.headline(), "6 contributions on 2026-03-10");
+    let groups = a.groups();
+    assert_eq!(
+        groups.iter().map(|g| (g.0, g.1)).collect::<Vec<_>>(),
+        [
+            (ActivityKind::Commits, 3),
+            (ActivityKind::PullRequest, 1),
+            (ActivityKind::Issue, 1),
+            (ActivityKind::Review, 1)
+        ],
+        "a repo with no commits is left out"
+    );
+    assert_eq!(a.entries[1].number, Some(7));
+    assert_eq!(a.entries[1].repo, "o/r");
+}
+
+#[tokio::test]
+async fn github_day_activity_needs_a_token_and_a_user() {
+    let fake = FakeClient::new();
+    let anon = Backend::new(
+        &Account::new(PlatformKind::GitHub, "github.com"),
+        fake.clone(),
+    );
+    assert!(matches!(
+        anon.day_activity("me", day(2026, 3, 10)).await,
+        Err(PlatformError::Auth(_))
+    ));
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"user":null}}"#,
+    );
+    assert!(matches!(
+        github(&fake).day_activity("ghost", day(2026, 3, 10)).await,
+        Err(PlatformError::NotFound(_))
+    ));
+}
+
+#[tokio::test]
+async fn gitea_day_activity_reads_the_feed_of_that_day() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://codeberg.org/api/v1/users/me/activities/feeds?only-performed-by=true&date=2026-03-10&limit=50",
+        r#"[
+          {"op_type":"commit_repo","ref_name":"refs/heads/main","content":"{\"Len\":4}","repo":{"full_name":"o/r"}},
+          {"op_type":"create_pull_request","content":"12|Add thing","repo":{"full_name":"o/r"}},
+          {"op_type":"close_issue","content":"3|Old","repo":{"full_name":"o/r"}},
+          {"op_type":"approve_pull_request","content":"5|Theirs","repo":{"full_name":"x/y"}},
+          {"op_type":"comment_issue","content":"3|Old","repo":{"full_name":"o/r"}},
+          {"op_type":"create_repo","content":"","repo":{"full_name":"o/new"}}]"#,
+    );
+    let a = gitea(&fake)
+        .day_activity("me", day(2026, 3, 10))
+        .await
+        .expect("activity");
+    assert_eq!(a.total, 9);
+    let kinds: Vec<_> = a.entries.iter().map(|e| e.kind).collect();
+    assert_eq!(
+        kinds,
+        [
+            ActivityKind::Commits,
+            ActivityKind::PullRequest,
+            ActivityKind::Issue,
+            ActivityKind::Review,
+            ActivityKind::Comment,
+            ActivityKind::Other
+        ]
+    );
+    assert_eq!(a.entries[0].title, "4 commits to main");
+    assert_eq!(a.entries[1].url, "https://codeberg.org/o/r/pulls/12");
+    assert_eq!(a.entries[2].url, "https://codeberg.org/o/r/issues/3");
+}
+
+#[tokio::test]
+async fn gitlab_day_activity_resolves_projects_once_and_skips_empty_pushes() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://gitlab.com/api/v4/users?username=me",
+        r#"[{"id":42}]"#,
+    );
+    fake.push_json(
+        "https://gitlab.com/api/v4/users/42/events?after=2026-03-09&before=2026-03-11&per_page=100",
+        r#"[
+          {"project_id":5,"action_name":"pushed to","push_data":{"commit_count":2,"ref":"main"}},
+          {"project_id":5,"action_name":"pushed to","push_data":{"commit_count":0,"ref":"gone"}},
+          {"project_id":5,"action_name":"opened","target_type":"MergeRequest","target_iid":8,"target_title":"Add x"},
+          {"project_id":5,"action_name":"approved","target_type":"MergeRequest","target_iid":9,"target_title":"Theirs"},
+          {"project_id":5,"action_name":"opened","target_type":"Issue","target_iid":3,"target_title":"Bug"},
+          {"project_id":5,"action_name":"commented on","target_type":"Note","note":{"noteable_type":"MergeRequest","noteable_iid":8},"target_title":"hi"}]"#,
+    );
+    fake.push_json(
+        "https://gitlab.com/api/v4/projects/5",
+        r#"{"path_with_namespace":"g/s"}"#,
+    );
+    let a = gitlab(&fake)
+        .day_activity("me", day(2026, 3, 10))
+        .await
+        .expect("activity");
+    assert_eq!(a.total, 6);
+    assert_eq!(fake.requests().len(), 3, "the project is looked up once");
+    assert_eq!(a.entries[0].title, "2 commits to main");
+    assert_eq!(a.entries[0].repo, "g/s");
+    assert_eq!(
+        a.entries[1].url,
+        "https://gitlab.com/g/s/-/merge_requests/8"
+    );
+    assert_eq!(a.entries[2].kind, ActivityKind::Review);
+    assert_eq!(a.entries[3].url, "https://gitlab.com/g/s/-/issues/3");
+    assert_eq!(a.entries[4].kind, ActivityKind::Comment);
+    assert_eq!(
+        a.entries[4].url,
+        "https://gitlab.com/g/s/-/merge_requests/8"
+    );
+}
+
+#[test]
+fn headlines_are_singular_for_one_and_say_so_for_none() {
+    use gitkraft_platforms::model::DayActivity;
+    let mut d = DayActivity::empty(day(2026, 3, 10));
+    assert_eq!(d.headline(), "No contributions on 2026-03-10");
+    d.total = 1;
+    assert_eq!(d.headline(), "1 contribution on 2026-03-10");
+    assert!(d.groups().is_empty());
 }

@@ -762,3 +762,51 @@ async fn every_page_carries_the_command_palette_and_the_pr_page_a_check_out_butt
         pr.body.contains("&quot;action&quot;:&quot;worktree&quot;") || pr.body.contains("worktree")
     );
 }
+
+#[tokio::test]
+async fn a_day_of_the_calendar_answers_with_what_was_done_and_refuses_nonsense() {
+    let h = start().await;
+    let today = chrono::Utc::now().date_naive();
+    h.fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"user":{"contributionsCollection":{"contributionCalendar":{"totalContributions":4},"commitContributionsByRepository":[{"repository":{"nameWithOwner":"o/r","url":"https://github.com/o/r"},"contributions":{"totalCount":3}}],"pullRequestContributions":{"nodes":[{"pullRequest":{"number":7,"title":"Add <b>pulse</b>","url":"https://github.com/o/r/pull/7","repository":{"nameWithOwner":"o/r"}}}]},"issueContributions":{"nodes":[]},"pullRequestReviewContributions":{"nodes":[]}}}}}"#,
+    );
+    let ok = get(h.addr, &format!("/api/day?date={today}")).await;
+    assert_eq!(ok.status, 200, "{}", ok.body);
+    let v: serde_json::Value = serde_json::from_str(&ok.body).expect("json");
+    assert_eq!(v["total"], 4);
+    assert_eq!(v["headline"], format!("4 contributions on {today}"));
+    assert_eq!(v["groups"][0]["heading"], "Commits");
+    assert_eq!(v["groups"][1]["items"][0]["title"], "Add <b>pulse</b>");
+    assert_eq!(v["groups"][1]["items"][0]["repo"], "github.com/o/r");
+
+    let before = h.fake.requests().len();
+    for bad in ["nonsense", "2999-01-01", "2001-01-01"] {
+        let r = get(h.addr, &format!("/api/day?date={bad}")).await;
+        assert_eq!(r.status, 400, "{bad}: {}", r.body);
+    }
+    assert_eq!(get(h.addr, "/api/day").await.status, 400);
+    assert_eq!(
+        h.fake.requests().len(),
+        before,
+        "refused before any platform call"
+    );
+}
+
+#[tokio::test]
+async fn the_calendar_cells_are_focusable_days_and_the_page_has_the_day_panel() {
+    let h = start().await;
+    h.fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"user":{"contributionsCollection":{"contributionCalendar":{"weeks":[]}}}}}"#,
+    );
+    let page = get(h.addr, "/pulse").await;
+    for needle in [
+        "class=\"day\" data-date=\"",
+        "tabindex=\"0\"",
+        "id=\"day\"",
+        "function gkDay",
+    ] {
+        assert!(page.body.contains(needle), "{needle} missing");
+    }
+}

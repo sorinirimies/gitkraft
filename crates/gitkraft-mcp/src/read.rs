@@ -101,6 +101,13 @@ pub(crate) struct PulseArgs {
     pub days: Option<u32>,
 }
 
+/// One day of the contribution calendar.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub(crate) struct DayArgs {
+    /// `YYYY-MM-DD` (UTC), within the last year. Default: today.
+    pub date: Option<String>,
+}
+
 fn state_filter(s: Option<&str>) -> Result<StateFilter, rmcp::ErrorData> {
     match s {
         None | Some("open") => Ok(StateFilter::Open),
@@ -440,6 +447,38 @@ impl GitkraftServer {
             .await
             .map_err(|e| failed("list_workflows", e))?;
         out(&json!({"repo": repo.key(), "workflows": w}))
+    }
+
+    #[tool(
+        description = "What you did on one day over every account, like the panel under GitHub's contribution calendar: contributions, commits per repository, pull requests, issues, reviews, comments.",
+        annotations(read_only_hint = true)
+    )]
+    pub(crate) async fn activity_day(&self, Parameters(a): Parameters<DayArgs>) -> ToolResult {
+        let today = chrono::Utc::now().date_naive();
+        let date = match a.date.as_deref() {
+            None => today,
+            Some(t) => t
+                .parse::<chrono::NaiveDate>()
+                .map_err(|_| invalid("date must be YYYY-MM-DD"))?,
+        };
+        if date > today || (today - date).num_days() > 370 {
+            return Err(invalid(
+                "date must be within the last year and not in the future",
+            ));
+        }
+        let r = self.hub.day_activity(date).await;
+        let groups: Vec<_> = r
+            .activity
+            .groups()
+            .into_iter()
+            .map(|(kind, count, items)| json!({"heading": kind.heading(), "count": count, "items": items}))
+            .collect();
+        out(&json!({
+            "headline": r.activity.headline(),
+            "total": r.activity.total,
+            "groups": groups,
+            "errors": r.errors,
+        }))
     }
 
     #[tool(

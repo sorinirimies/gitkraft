@@ -9,9 +9,10 @@ use crate::api::{Api, parse};
 use crate::error::{PlatformError, Result};
 use crate::http::{HttpClient, Method};
 use crate::model::{
-    ActivityDay, Capabilities, ChecksState, Comment, Issue, ItemState, Label, ListQuery,
-    MergeMethod, MergeOptions, MergeOutcome, MergeTiming, Notification, NotificationReason,
-    PullRequest, Review, ReviewVerdict, StateFilter, SubjectKind, UpdateStyle, User,
+    ActivityDay, ActivityEntry, ActivityKind, Capabilities, ChecksState, Comment, DayActivity,
+    Issue, ItemState, Label, ListQuery, MergeMethod, MergeOptions, MergeOutcome, MergeTiming,
+    Notification, NotificationReason, PullRequest, Review, ReviewVerdict, StateFilter, SubjectKind,
+    UpdateStyle, User,
 };
 use crate::platform::{PlatformKind, RepoId};
 use gitkraft_settings::dashboard::Involvement;
@@ -593,6 +594,118 @@ impl<C: HttpClient> GitHubLike<C> {
         }
     }
 
+    /// What `user` did on `date`: GitHub's own breakdown through GraphQL, Gitea's activity feed otherwise.
+    pub(crate) async fn day_activity(&self, user: &str, date: NaiveDate) -> Result<DayActivity> {
+        if self.is_github() {
+            self.github_day(user, date).await
+        } else {
+            self.gitea_day(user, date).await
+        }
+    }
+
+    async fn github_day(&self, user: &str, date: NaiveDate) -> Result<DayActivity> {
+        if self.api.token.is_none() {
+            return Err(PlatformError::Auth(
+                "GitHub's daily activity needs a token".into(),
+            ));
+        }
+        let query = "query($u:String!,$from:DateTime!,$to:DateTime!){user(login:$u){contributionsCollection(from:$from,to:$to){\
+             contributionCalendar{totalContributions}\
+             commitContributionsByRepository(maxRepositories:25){repository{nameWithOwner url} contributions{totalCount}}\
+             pullRequestContributions(first:50){nodes{pullRequest{NODE}}}\
+             issueContributions(first:50){nodes{issue{NODE}}}\
+             pullRequestReviewContributions(first:50){nodes{pullRequest{NODE}}}\
+             }}}"
+            .replace("NODE", "number title url repository{nameWithOwner}");
+        let v = self
+            .graphql(
+                &query,
+                &json!({
+                    "u": user,
+                    "from": format!("{date}T00:00:00Z"),
+                    "to": format!("{date}T23:59:59Z"),
+                }),
+            )
+            .await?;
+        let c = &v["data"]["user"]["contributionsCollection"];
+        if c.is_null() {
+            return Err(PlatformError::NotFound(format!("user {user}")));
+        }
+        let mut entries = Vec::new();
+        for r in c["commitContributionsByRepository"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            let count = r["contributions"]["totalCount"].as_u64().unwrap_or(0) as u32;
+            if count > 0 {
+                entries.push(ActivityEntry {
+                    kind: ActivityKind::Commits,
+                    repo: r["repository"]["nameWithOwner"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .into(),
+                    title: format!("{count} commit{}", if count == 1 { "" } else { "s" }),
+                    number: None,
+                    count,
+                    url: r["repository"]["url"].as_str().unwrap_or_default().into(),
+                });
+            }
+        }
+        for (field, key, kind) in [
+            (
+                "pullRequestContributions",
+                "pullRequest",
+                ActivityKind::PullRequest,
+            ),
+            ("issueContributions", "issue", ActivityKind::Issue),
+            (
+                "pullRequestReviewContributions",
+                "pullRequest",
+                ActivityKind::Review,
+            ),
+        ] {
+            for n in c[field]["nodes"].as_array().into_iter().flatten() {
+                let i = &n[key];
+                entries.push(ActivityEntry {
+                    kind,
+                    repo: i["repository"]["nameWithOwner"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .into(),
+                    title: i["title"].as_str().unwrap_or_default().into(),
+                    number: i["number"].as_u64(),
+                    count: 1,
+                    url: i["url"].as_str().unwrap_or_default().into(),
+                });
+            }
+        }
+        Ok(DayActivity {
+            date,
+            total: c["contributionCalendar"]["totalContributions"]
+                .as_u64()
+                .unwrap_or(0) as u32,
+            entries,
+        })
+    }
+
+    async fn gitea_day(&self, user: &str, date: NaiveDate) -> Result<DayActivity> {
+        let feed: Vec<GiteaActivity> = self
+            .api
+            .get(&format!(
+                "/users/{user}/activities/feeds?only-performed-by=true&date={date}&limit=50"
+            ))
+            .await?;
+        let entries: Vec<ActivityEntry> =
+            feed.into_iter().map(|a| a.into_entry(&self.host)).collect();
+        let total = entries.iter().map(|e| e.count).sum();
+        Ok(DayActivity {
+            date,
+            total,
+            entries,
+        })
+    }
+
     async fn github_contributions(&self, user: &str) -> Result<Vec<ActivityDay>> {
         if self.api.token.is_none() {
             return Err(PlatformError::Auth(
@@ -1058,6 +1171,79 @@ impl NotificationDto {
             unread: self.unread,
             updated_at: self.updated_at,
             url,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct GiteaActivity {
+    #[serde(default)]
+    op_type: String,
+    #[serde(default)]
+    content: String,
+    #[serde(default)]
+    ref_name: String,
+    #[serde(default)]
+    repo: Option<GiteaActivityRepo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GiteaActivityRepo {
+    #[serde(default)]
+    full_name: String,
+}
+
+impl GiteaActivity {
+    fn into_entry(self, host: &str) -> ActivityEntry {
+        use ActivityKind::*;
+        let repo = self.repo.map(|r| r.full_name).unwrap_or_default();
+        // issue and PR activities carry "number|title"
+        let (number, title) = match self.content.split_once('|') {
+            Some((n, t)) => (n.trim().parse::<u64>().ok(), t.to_string()),
+            None => (None, self.content.clone()),
+        };
+        let (kind, count, title) = match self.op_type.as_str() {
+            "commit_repo" | "mirror_sync_push" => {
+                let len = serde_json::from_str::<serde_json::Value>(&self.content)
+                    .ok()
+                    .and_then(|v| v["Len"].as_u64())
+                    .unwrap_or(1) as u32;
+                let branch = self.ref_name.trim_start_matches("refs/heads/");
+                (
+                    Commits,
+                    len,
+                    format!(
+                        "{len} commit{} to {branch}",
+                        if len == 1 { "" } else { "s" }
+                    ),
+                )
+            }
+            "create_issue" | "close_issue" | "reopen_issue" => (Issue, 1, title),
+            "create_pull_request"
+            | "merge_pull_request"
+            | "close_pull_request"
+            | "reopen_pull_request"
+            | "auto_merge_pull_request" => (PullRequest, 1, title),
+            "approve_pull_request" | "reject_pull_request" => (Review, 1, title),
+            "comment_issue" | "comment_pull" => (Comment, 1, title),
+            other => (Other, 1, other.replace('_', " ")),
+        };
+        let path = match (kind, number) {
+            (PullRequest | Review, Some(n)) => format!("/pulls/{n}"),
+            (Issue | Comment, Some(n)) => format!("/issues/{n}"),
+            _ => String::new(),
+        };
+        ActivityEntry {
+            kind,
+            url: if repo.is_empty() {
+                String::new()
+            } else {
+                format!("https://{host}/{repo}{path}")
+            },
+            repo,
+            title,
+            number,
+            count,
         }
     }
 }

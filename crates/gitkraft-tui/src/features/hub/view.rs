@@ -49,7 +49,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
             }
         }
         View::Pulse => {
-            render_pulse(hub, frame, rows[2], &theme);
+            render_pulse(hub, frame, rows[2], &theme, &mut hits);
         }
         View::Keys => render_keys(hub, frame, rows[2], &theme, &mut hits),
     }
@@ -1386,13 +1386,22 @@ fn render_keys(
 
 // ── Pulse ────────────────────────────────────────────────────────────────────
 
-fn render_pulse(hub: &mut HubState, frame: &mut Frame, area: Rect, theme: &UiTheme) {
-    let rows = Layout::vertical([
+fn render_pulse(
+    hub: &mut HubState,
+    frame: &mut Frame,
+    area: Rect,
+    theme: &UiTheme,
+    hits_out: &mut Vec<Hit>,
+) {
+    let day_h = if hub.pulse.day.is_some() { 9 } else { 1 };
+    let all = Layout::vertical([
         Constraint::Length(12),
+        Constraint::Length(day_h),
         Constraint::Length(8),
         Constraint::Min(0),
     ])
     .split(area);
+    let (cal_area, day_area, rows) = (all[0], all[1], [all[0], all[2], all[3]]);
     // Contribution calendar over the last 53 weeks.
     let today = Utc::now().date_naive();
     let start =
@@ -1423,7 +1432,26 @@ fn render_pulse(hub: &mut HubState, frame: &mut Frame, area: Rect, theme: &UiThe
             .block(heat_block(format!(
                 " Contributions · {total} in the last year "
             )));
-            frame.render_widget(&chart, rows[0]);
+            // drawing through the hit map also tells where every day landed, for the mouse
+            let hits = tui_chart::HitMap::capture(&chart, cal_area, frame.buffer_mut());
+            for h in hits.hits() {
+                if h.kind != tui_chart::HitKind::Point {
+                    continue;
+                }
+                let date = start + ChronoDuration::days(h.index as i64);
+                if Some(date) == hub.pulse.day {
+                    for x in h.rect.x..h.rect.x + h.rect.width {
+                        for y in h.rect.y..h.rect.y + h.rect.height {
+                            let cell = &mut frame.buffer_mut()[(x, y)];
+                            cell.set_style(cell.style().add_modifier(Modifier::REVERSED));
+                        }
+                    }
+                }
+                hits_out.push(Hit {
+                    rect: h.rect,
+                    target: Target::Day(date),
+                });
+            }
         }
         None => frame.render_widget(
             Paragraph::new(" loading contributions… (press r)")
@@ -1432,6 +1460,7 @@ fn render_pulse(hub: &mut HubState, frame: &mut Frame, area: Rect, theme: &UiThe
             rows[0],
         ),
     }
+    render_day(hub, frame, day_area, theme);
     // Numbers.
     let repo_name = hub
         .pulse
@@ -1527,6 +1556,69 @@ fn render_pulse(hub: &mut HubState, frame: &mut Frame, area: Rect, theme: &UiThe
     }
 }
 
+/// What was done on the picked calendar day, like GitHub's panel under the calendar.
+fn render_day(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme) {
+    let Some(day) = hub.pulse.day else {
+        frame.render_widget(
+            Paragraph::new(" click a day, or ←→ weeks · ↑↓ days · t today").style(muted(theme)),
+            area,
+        );
+        return;
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.border_inactive))
+        .title(format!(" {day} · Esc closes "));
+    let Some(r) = &hub.pulse.day_data else {
+        frame.render_widget(
+            Paragraph::new(" loading…").style(muted(theme)).block(block),
+            area,
+        );
+        return;
+    };
+    let mut lines = vec![Line::from(Span::styled(
+        r.activity.headline(),
+        Style::default()
+            .fg(theme.text_primary)
+            .add_modifier(Modifier::BOLD),
+    ))];
+    for (kind, count, items) in r.activity.groups() {
+        lines.push(Line::from(Span::styled(
+            format!("{} · {count}", kind.heading()),
+            Style::default().fg(theme.accent),
+        )));
+        for e in items {
+            let label = match e.number {
+                Some(n) => format!("  #{n} {}", e.title),
+                None => format!("  {}", e.title),
+            };
+            lines.push(Line::from(vec![
+                Span::styled(label, Style::default().fg(theme.text_primary)),
+                Span::styled(format!(" · {}", e.repo), muted(theme)),
+            ]));
+        }
+    }
+    for e in &r.errors {
+        lines.push(Line::from(Span::styled(
+            format!(" ✘ {e}"),
+            Style::default().fg(theme.error),
+        )));
+    }
+    if r.activity.entries.is_empty() && r.errors.is_empty() {
+        lines.push(Line::from(Span::styled("  nothing to show", muted(theme))));
+    }
+    // a day can hold more than the panel does; the head of the list is what matters
+    let room = block.inner(area).height as usize;
+    if lines.len() > room && room > 0 {
+        lines.truncate(room - 1);
+        lines.push(Line::from(Span::styled(
+            "  … (more than fits)",
+            muted(theme),
+        )));
+    }
+    frame.render_widget(Paragraph::new(lines).block(block), area);
+}
+
 // ── Status line ──────────────────────────────────────────────────────────────
 
 fn hints(hub: &HubState) -> &'static str {
@@ -1540,7 +1632,7 @@ fn hints(hub: &HubState) -> &'static str {
         return "j/k select · : palette · s set up this machine · t test · d remove key · r refresh · Tab dashboard · q back";
     }
     if hub.view == View::Pulse {
-        return "r refresh · [ ] repo · 1/2/3/4 = 7/30/90/365 days · Tab dashboard · q back";
+        return "click a day or ←→↑↓ · t today · r refresh · [ ] repo · 1-4 days · Tab dashboard · q back";
     }
     match hub
         .active_index()
@@ -1933,6 +2025,88 @@ mod tests {
         ] {
             assert!(text.contains(needle), "missing {needle:?} in\n{text}");
         }
+    }
+
+    #[test]
+    fn a_calendar_day_is_clickable_outlined_and_its_activity_shown_below() {
+        use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+        let mut hub = state();
+        hub.view = View::Pulse;
+        let today = Utc::now().date_naive();
+        hub.pulse.contributions = Some(SectionResult {
+            items: (0..60)
+                .map(|i| gitkraft_platforms::model::ActivityDay {
+                    date: today - ChronoDuration::days(i),
+                    count: 1 + i as u32 % 4,
+                })
+                .collect(),
+            errors: vec![],
+        });
+        let mut app = app_with(hub);
+        let _ = draw(&mut app, 120, 40);
+        let hub = app.hub.as_mut().expect("hub");
+        let days: Vec<_> = hub
+            .hits
+            .iter()
+            .filter_map(|h| match h.target {
+                Target::Day(d) => Some((d, h.rect)),
+                _ => None,
+            })
+            .collect();
+        assert!(days.len() >= 360, "one hit per day, got {}", days.len());
+        let (date, rect) = *days
+            .iter()
+            .find(|(d, _)| *d == today)
+            .expect("today is on the calendar");
+        let click = |hub: &mut HubState, x: u16, y: u16| {
+            crate::features::hub::events::mouse(
+                hub,
+                MouseEvent {
+                    kind: MouseEventKind::Down(MouseButton::Left),
+                    column: x,
+                    row: y,
+                    modifiers: KeyModifiers::NONE,
+                },
+            );
+        };
+        click(hub, rect.x, rect.y);
+        assert_eq!(hub.pulse.day, Some(date));
+        assert!(hub.pulse.day_data.is_none(), "loading until it arrives");
+        assert!(draw(&mut app, 120, 40).contains("loading…"));
+
+        let hub = app.hub.as_mut().expect("hub");
+        hub.pulse.day_data = Some(gitkraft_hub::DayResult {
+            activity: gitkraft_platforms::model::DayActivity {
+                date,
+                total: 3,
+                entries: vec![gitkraft_platforms::model::ActivityEntry {
+                    kind: gitkraft_platforms::model::ActivityKind::PullRequest,
+                    repo: "github.com/o/r".into(),
+                    title: "Add pulse".into(),
+                    number: Some(7),
+                    count: 1,
+                    url: String::new(),
+                }],
+            },
+            errors: vec![],
+        });
+        let text = draw(&mut app, 120, 40);
+        for needle in [
+            format!("3 contributions on {date}"),
+            "Pull requests · 1".into(),
+            "#7 Add pulse".into(),
+            "github.com/o/r".into(),
+        ] {
+            assert!(text.contains(&needle), "missing {needle:?} in\n{text}");
+        }
+        // the picked cell is drawn reversed
+        let mut term = Terminal::new(TestBackend::new(120, 40)).expect("terminal");
+        term.draw(|f| render(&mut app, f, f.area())).expect("draw");
+        assert!(
+            term.backend().buffer()[(rect.x, rect.y)]
+                .modifier
+                .contains(Modifier::REVERSED)
+        );
     }
 
     #[test]

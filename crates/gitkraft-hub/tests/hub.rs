@@ -228,3 +228,32 @@ fn starter_dashboard_is_loadable_by_the_hub_types() {
             .all(|s| !s.name.is_empty())
     );
 }
+
+#[tokio::test]
+async fn a_day_is_merged_over_accounts_and_a_failing_one_is_reported() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"user":{"contributionsCollection":{"contributionCalendar":{"totalContributions":3},"commitContributionsByRepository":[{"repository":{"nameWithOwner":"o/r","url":"u"},"contributions":{"totalCount":3}}],"pullRequestContributions":{"nodes":[]},"issueContributions":{"nodes":[]},"pullRequestReviewContributions":{"nodes":[]}}}}}"#,
+    );
+    fake.push_json(
+        "https://codeberg.org/api/v1/users/me/activities/feeds?only-performed-by=true&date=2026-01-01&limit=50",
+        r#"[{"op_type":"create_issue","content":"1|Bug","repo":{"full_name":"o/r"}}]"#,
+    );
+    fake.push_status("https://gitlab.com/api/v4/users?username=me", 500, "down");
+    let mut gh = Account::new(PlatformKind::GitHub, "github.com");
+    gh.me = Some("me".into());
+    gh.token = Some(gitkraft_platforms::Secret::new("t"));
+    let mut cb = Account::new(PlatformKind::Gitea, "codeberg.org");
+    cb.me = Some("me".into());
+    let mut gl = Account::new(PlatformKind::GitLab, "gitlab.com");
+    gl.me = Some("me".into());
+    let h = Hub::new(vec![gh, cb, gl], &fake);
+    let day = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).expect("date");
+    let r = h.day_activity(day).await;
+    assert_eq!(r.activity.total, 4);
+    let repos: Vec<_> = r.activity.entries.iter().map(|e| e.repo.as_str()).collect();
+    assert_eq!(repos, ["github.com/o/r", "codeberg.org/o/r"]);
+    assert_eq!(r.errors.len(), 1, "{:?}", r.errors);
+    assert!(r.errors[0].contains("gitlab.com"));
+}

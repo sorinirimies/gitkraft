@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use chrono::Utc;
+use chrono::{NaiveDate, Utc};
 use gitkraft_ci::annotations::{Annotation, extract};
 use gitkraft_ci::log::{LogLine, first_failure, parse_log};
 use gitkraft_ci::{RerunScope, RunDetail};
@@ -194,6 +194,12 @@ pub enum HubMessage {
         days: u32,
         data: Box<Pulse>,
     },
+    /// A day of the contribution calendar was clicked (or stepped to).
+    PickDay(NaiveDate),
+    /// Step the selected day by this many days (the keyboard route to the calendar).
+    StepDay(i64),
+    /// What was done on a day arrived.
+    DayLoaded(Arc<gitkraft_hub::DayResult>),
     /// Contributions arrived.
     ContributionsLoaded(Arc<SectionResult<ActivityDay>>),
     /// Load the pulse for another repo.
@@ -271,6 +277,10 @@ pub struct PulseState {
     pub contributions: Option<Arc<SectionResult<ActivityDay>>>,
     /// Days covered.
     pub days: u32,
+    /// The day picked on the calendar.
+    pub day: Option<NaiveDate>,
+    /// What was done that day, once loaded.
+    pub day_data: Option<Arc<gitkraft_hub::DayResult>>,
 }
 
 /// SSH keys view state.
@@ -782,6 +792,29 @@ impl HubState {
                 self.pulse.contributions = Some(c);
                 Task::none()
             }
+            HubMessage::PickDay(date) => self.pick_day(date),
+            HubMessage::StepDay(n) => {
+                let today = Utc::now().date_naive();
+                let to = if n == 0 {
+                    today
+                } else {
+                    let from = self.pulse.day.unwrap_or(today);
+                    (from + chrono::Duration::days(n)).min(today)
+                };
+                if (today - to).num_days() > 370 {
+                    return Task::none();
+                }
+                self.pick_day(to)
+            }
+            HubMessage::DayLoaded(r) => {
+                if self.pulse.day == Some(r.activity.date) {
+                    if let Some(e) = r.errors.first() {
+                        self.notice = Some((e.clone(), false));
+                    }
+                    self.pulse.day_data = Some(r);
+                }
+                Task::none()
+            }
             HubMessage::PulseRepo(i) => {
                 if let Some(r) = self.watched.get(i).cloned() {
                     self.pulse.repo = Some(r);
@@ -982,6 +1015,17 @@ impl HubState {
             },
             HubMessage::LogLoaded,
         )
+    }
+
+    fn pick_day(&mut self, date: NaiveDate) -> Task<HubMessage> {
+        self.pulse.day = Some(date);
+        self.pulse.day_data = None;
+        let Some(api) = self.handle() else {
+            return Task::none();
+        };
+        Task::perform(async move { api.day_activity(date).await }, |r| {
+            HubMessage::DayLoaded(Arc::new(r))
+        })
     }
 
     fn load_pulse(&mut self, days: u32) -> Task<HubMessage> {
@@ -2262,6 +2306,56 @@ mod tests {
             s.notice
                 .as_ref()
                 .is_some_and(|(t, _)| t.contains("key=value"))
+        );
+    }
+
+    #[test]
+    fn a_picked_day_is_remembered_and_its_details_are_cleared_until_they_arrive() {
+        let mut s = state();
+        let today = Utc::now().date_naive();
+        let _ = s.update(HubMessage::PickDay(today));
+        assert_eq!(s.pulse.day, Some(today));
+        let other = today - chrono::Duration::days(3);
+        let _ = s.update(HubMessage::PickDay(other));
+        assert_eq!(s.pulse.day, Some(other));
+        assert!(s.pulse.day_data.is_none());
+        // an answer for a day that is no longer picked is dropped
+        let stale = Arc::new(gitkraft_hub::DayResult {
+            activity: gitkraft_platforms::model::DayActivity::empty(today),
+            errors: vec![],
+        });
+        let _ = s.update(HubMessage::DayLoaded(stale));
+        assert!(s.pulse.day_data.is_none());
+        let fresh = Arc::new(gitkraft_hub::DayResult {
+            activity: gitkraft_platforms::model::DayActivity::empty(other),
+            errors: vec!["codeberg.org: down".into()],
+        });
+        let _ = s.update(HubMessage::DayLoaded(fresh));
+        assert!(s.pulse.day_data.is_some());
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, _)| t.contains("codeberg.org"))
+        );
+    }
+
+    #[test]
+    fn stepping_days_stays_between_the_calendar_start_and_today() {
+        let mut s = state();
+        let today = Utc::now().date_naive();
+        let _ = s.update(HubMessage::StepDay(-1));
+        assert_eq!(s.pulse.day, Some(today - chrono::Duration::days(1)));
+        let _ = s.update(HubMessage::StepDay(5));
+        assert_eq!(s.pulse.day, Some(today), "never into the future");
+        let _ = s.update(HubMessage::StepDay(-10));
+        let _ = s.update(HubMessage::StepDay(0));
+        assert_eq!(s.pulse.day, Some(today), "0 is the Today button");
+        s.pulse.day = Some(today - chrono::Duration::days(370));
+        let _ = s.update(HubMessage::StepDay(-1));
+        assert_eq!(
+            s.pulse.day,
+            Some(today - chrono::Duration::days(370)),
+            "not past the calendar's year"
         );
     }
 }

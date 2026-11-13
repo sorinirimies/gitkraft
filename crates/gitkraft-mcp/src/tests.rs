@@ -419,3 +419,32 @@ async fn write_arguments_are_validated_first() {
     );
     assert!(fake.requests().is_empty());
 }
+
+#[tokio::test]
+async fn activity_day_groups_the_day_and_refuses_days_outside_the_calendar() {
+    let (s, fake) = rig(Policy::default());
+    let today = chrono::Utc::now().date_naive();
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"user":{"contributionsCollection":{"contributionCalendar":{"totalContributions":2},"commitContributionsByRepository":[{"repository":{"nameWithOwner":"o/r","url":"u"},"contributions":{"totalCount":2}}],"pullRequestContributions":{"nodes":[]},"issueContributions":{"nodes":[]},"pullRequestReviewContributions":{"nodes":[]}}}}}"#,
+    );
+    let v = json(
+        &s.activity_day(Parameters(DayArgs { date: None }))
+            .await
+            .expect("tool"),
+    );
+    assert_eq!(v["headline"], format!("2 contributions on {today}"));
+    assert_eq!(v["groups"][0]["items"][0]["repo"], "github.com/o/r");
+    let before = fake.requests().len();
+    for bad in ["soon", "2999-01-01", "2001-01-01"] {
+        assert!(
+            s.activity_day(Parameters(DayArgs {
+                date: Some(bad.into())
+            }))
+            .await
+            .is_err(),
+            "{bad}"
+        );
+    }
+    assert_eq!(fake.requests().len(), before);
+}

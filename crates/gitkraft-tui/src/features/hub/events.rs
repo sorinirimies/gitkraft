@@ -187,6 +187,16 @@ fn pulse_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
         }
         KeyCode::Char('n') => hub.toggle_notifications(false),
         KeyCode::Char('N') => hub.toggle_notifications(true),
+        // the calendar: a column is a week, a row a weekday
+        KeyCode::Left => hub.step_day(-7),
+        KeyCode::Right => hub.step_day(7),
+        KeyCode::Up => hub.step_day(-1),
+        KeyCode::Down => hub.step_day(1),
+        KeyCode::Char('t') => hub.pick_day(chrono::Utc::now().date_naive()),
+        KeyCode::Esc if hub.pulse.day.is_some() => {
+            hub.pulse.day = None;
+            hub.pulse.day_data = None;
+        }
         _ => {}
     }
     Outcome::Stay
@@ -508,6 +518,7 @@ fn on_press(hub: &mut HubState, x: u16, y: u16) {
                 log.jump_annotation(n);
             }
         }
+        Target::Day(date) => hub.pick_day(date),
         Target::ListArea | Target::DetailArea => {}
     }
 }
@@ -1278,5 +1289,35 @@ mod tests {
         assert_eq!(s.images.current(), Some("b"));
         mouse(&mut s, ev(MouseEventKind::Down(MouseButton::Left), 1, 1));
         assert!(!s.images.open);
+    }
+
+    #[test]
+    fn the_arrow_keys_walk_the_calendar_and_t_and_esc_jump_and_close() {
+        let mut s = state();
+        s.view = View::Pulse;
+        let today = chrono::Utc::now().date_naive();
+        let key = |s: &mut HubState, code: KeyCode| {
+            let _ = pulse_key(s, KeyEvent::new(code, KeyModifiers::NONE));
+        };
+        key(&mut s, KeyCode::Up);
+        assert_eq!(s.pulse.day, Some(today - chrono::Duration::days(1)));
+        key(&mut s, KeyCode::Left);
+        assert_eq!(s.pulse.day, Some(today - chrono::Duration::days(8)));
+        key(&mut s, KeyCode::Right);
+        key(&mut s, KeyCode::Right);
+        key(&mut s, KeyCode::Down);
+        assert_eq!(s.pulse.day, Some(today), "never into the future");
+        s.pulse.day = Some(today - chrono::Duration::days(370));
+        key(&mut s, KeyCode::Left);
+        assert_eq!(
+            s.pulse.day,
+            Some(today - chrono::Duration::days(370)),
+            "not past the calendar's year"
+        );
+        key(&mut s, KeyCode::Char('t'));
+        assert_eq!(s.pulse.day, Some(today));
+        key(&mut s, KeyCode::Esc);
+        assert_eq!(s.pulse.day, None);
+        assert!(s.pulse.day_data.is_none());
     }
 }

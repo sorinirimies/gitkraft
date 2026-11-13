@@ -52,7 +52,7 @@ serves the same on localhost.
 | Pull requests | description (Markdown), reviews, checks, diff, comments; approve, request changes, comment, merge, close |
 | Issues | list, comment, close / reopen |
 | CI | runs, jobs, steps, timeline, live log with errors extracted; re-run failed / all, cancel (GitHub / Gitea Actions, GitLab CI) |
-| Pulse | contribution calendar over all accounts, PRs / issues / CI per period, activity per day |
+| Pulse | contribution calendar over all accounts (click a day, or use the arrow keys, for what you did that day: commits per repository, PRs, issues, reviews, comments), PRs / issues / CI per period, activity per day |
 | Notifications | per-project settings, desktop notifications, a bell with its state on every project |
 | Mouse | click, wheel, drag a section tab to reorder, drag the divider to resize (TUI and GUI) |
 | Images | PR and issue pictures in the TUI (Kitty, iTerm2, Sixel or half blocks) |
@@ -200,6 +200,7 @@ the checkout it starts in is the default repository, so `repo` can be left out.
 | `list_issues`, `get_issue`, `list_labels` | |
 | `ci_runs`, `ci_run`, `ci_job_log`, `list_workflows` | runs, jobs, and a job's log without colour codes: the tail, or only lines matching `grep` |
 | `pulse` | PRs, issues, green and red CI over the last days |
+| `activity_day` | what you did on one calendar day, over every account |
 
 | Write (`--write`) | |
 |---|---|

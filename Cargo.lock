@@ -1880,6 +1880,7 @@ name = "gitkraft-mcp"
 version = "1.4.1"
 dependencies = [
  "anyhow",
+ "chrono",
  "gitkraft-ci",
  "gitkraft-hub",
  "gitkraft-platforms",
