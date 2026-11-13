@@ -213,6 +213,10 @@ the checkout it starts in is the default repository, so `repo` can be left out.
 | `update_branch`, `cancel_auto_merge` | |
 | `ci_rerun`, `ci_cancel`, `dispatch_workflow` | inputs are checked against the workflow file |
 
+Prompts (slash commands in clients that show them): `fix_failing_ci`, `review_queue`,
+`review_pull_request`, `catch_up`, `triage_issues`, and `release_notes` with `--write`. They only tell the
+model which tools to call and what to produce.
+
 Tools carry the MCP `readOnlyHint` / `destructiveHint` annotations, so a client can ask before a merge.
 Options: `--write`, `--allow-force`, `--repo host/owner/name` (env `GITKRAFT_MCP_WRITE`, `GITKRAFT_MCP_FORCE`,
 `GITKRAFT_MCP_REPO`). Add `--write` to the client entry only for sessions where it should be able to act.

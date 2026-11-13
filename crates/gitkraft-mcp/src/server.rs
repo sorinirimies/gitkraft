@@ -5,8 +5,13 @@ use std::sync::Arc;
 use gitkraft_ci::CiBackend;
 use gitkraft_hub::Hub;
 use gitkraft_platforms::{Backend, DynClient, ItemKind, RepoId};
+use rmcp::RoleServer;
 use rmcp::handler::server::router::tool::ToolRouter;
-use rmcp::model::{Implementation, ServerCapabilities, ServerConfig};
+use rmcp::model::{
+    GetPromptRequestParams, GetPromptResponse, Implementation, ListPromptsResult,
+    PaginatedRequestParams, ServerCapabilities, ServerConfig,
+};
+use rmcp::service::RequestContext;
 use rmcp::{ErrorData as McpError, ServerHandler, tool_handler};
 use serde_json::Value as Json;
 
@@ -148,16 +153,40 @@ impl GitkraftServer {
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for GitkraftServer {
     fn get_info(&self) -> ServerConfig {
-        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new(
-                "gitkraft-mcp",
-                env!("CARGO_PKG_VERSION"),
-            ))
-            .with_instructions(if self.policy.write {
-                format!("{INSTRUCTIONS} Writes are ON.")
-            } else {
-                format!("{INSTRUCTIONS} Read-only.")
-            })
+        ServerConfig::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_prompts()
+                .build(),
+        )
+        .with_server_info(Implementation::new(
+            "gitkraft-mcp",
+            env!("CARGO_PKG_VERSION"),
+        ))
+        .with_instructions(if self.policy.write {
+            format!("{INSTRUCTIONS} Writes are ON.")
+        } else {
+            format!("{INSTRUCTIONS} Read-only.")
+        })
+    }
+
+    async fn list_prompts(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListPromptsResult, McpError> {
+        Ok(ListPromptsResult::with_all_items(crate::prompts::catalog(
+            self.policy.write,
+        )))
+    }
+
+    async fn get_prompt(
+        &self,
+        request: GetPromptRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<GetPromptResponse, McpError> {
+        crate::prompts::render(&request.name, request.arguments.as_ref(), self.policy.write)
+            .map(Into::into)
     }
 }
 

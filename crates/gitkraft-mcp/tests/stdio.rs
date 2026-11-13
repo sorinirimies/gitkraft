@@ -175,3 +175,35 @@ fn a_tool_call_answers_and_an_unsound_one_is_an_error() {
         a[2]
     );
 }
+
+#[test]
+fn prompts_are_listed_and_rendered_over_the_wire() {
+    let answers = session(
+        &[],
+        &[
+            json!({"jsonrpc":"2.0","id":2,"method":"prompts/list"}),
+            json!({"jsonrpc":"2.0","id":3,"method":"prompts/get",
+                   "params":{"name":"review_pull_request","arguments":{"number":"7","repo":"github.com/o/r"}}}),
+            json!({"jsonrpc":"2.0","id":4,"method":"prompts/get","params":{"name":"nope"}}),
+        ],
+    );
+    let listed: Vec<&str> = answers[0]["result"]["prompts"]
+        .as_array()
+        .expect("prompts")
+        .iter()
+        .filter_map(|p| p["name"].as_str())
+        .collect();
+    assert!(listed.contains(&"fix_failing_ci") && listed.contains(&"review_queue"));
+    assert!(
+        !listed.contains(&"release_notes"),
+        "release notes need --write"
+    );
+    let text = answers[1]["result"]["messages"][0]["content"]["text"]
+        .as_str()
+        .expect("text");
+    assert!(text.contains("#7") && text.contains("github.com/o/r"));
+    assert!(
+        answers[2].get("error").is_some(),
+        "unknown prompt is an error"
+    );
+}

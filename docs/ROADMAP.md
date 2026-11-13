@@ -23,8 +23,8 @@ and fix what differs:
 
 ## MCP
 
-- Resources: a PR, a CI run and a log as readable resources.
-- Prompts: "turn this failing run into a fix plan", "summarise my review queue".
+- Resources: a PR, a CI run and a log as readable resources (prompts are done; resources mostly
+  repeat the tools, so only worth it for clients that attach them as context).
 
 ## AI features (last)
 

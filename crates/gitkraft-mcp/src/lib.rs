@@ -7,7 +7,8 @@
 //! Stdout carries the protocol, so nothing but MCP is ever printed there.
 
 pub mod config;
-pub mod server;
+pub mod prompts;
+mod server;
 
 mod read;
 mod write;
