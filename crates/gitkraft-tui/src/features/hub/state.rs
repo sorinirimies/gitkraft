@@ -45,6 +45,8 @@ pub enum View {
     Pulse,
     /// SSH keys of every account.
     Keys,
+    /// Discussions and the wiki of one repository.
+    Community,
 }
 
 /// Which pane keys act on.
@@ -179,6 +181,8 @@ pub enum PromptPurpose {
     Inline,
     /// Labels to add and remove: `+bug -wontfix`.
     Labels,
+    /// A comment on the open discussion.
+    DiscussionComment,
 }
 
 /// Actions that ask for confirmation first.
@@ -228,6 +232,40 @@ pub struct PulseState {
     pub day: Option<chrono::NaiveDate>,
     /// What was done that day, once loaded.
     pub day_data: Option<gitkraft_hub::DayResult>,
+}
+
+/// Which half of the Community view is shown.
+pub use gitkraft_hub::community::Tab as CommunityTab;
+
+/// One line of the Community list.
+pub use gitkraft_hub::community::Item as CommunityItem;
+
+/// An open discussion or wiki page, with how far it is scrolled.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CommunityDetail {
+    /// The page.
+    pub page: gitkraft_hub::community::Page,
+    /// Lines scrolled.
+    pub scroll: u16,
+}
+
+/// State of the Community view.
+#[derive(Debug, Default)]
+pub struct CommunityState {
+    /// Repo shown.
+    pub repo: Option<RepoId>,
+    /// Discussions or wiki.
+    pub tab: CommunityTab,
+    /// The list, once loaded.
+    pub items: Option<Vec<CommunityItem>>,
+    /// Selected row.
+    pub row: usize,
+    /// The open item.
+    pub detail: Option<CommunityDetail>,
+    /// Why the last load failed (GitHub has no wiki API, the others no discussions).
+    pub error: Option<String>,
+    /// Something is loading.
+    pub loading: bool,
 }
 
 /// State of the SSH keys view.
@@ -291,6 +329,16 @@ enum Msg {
     Contributions(SectionResult<ActivityDay>),
     Day(gitkraft_hub::DayResult),
     Keys(gitkraft_hub::keys::KeysData),
+    Community {
+        repo: String,
+        tab: CommunityTab,
+        result: Result<Vec<CommunityItem>, String>,
+    },
+    CommunityDetail {
+        repo: String,
+        tab: CommunityTab,
+        result: Result<CommunityDetail, String>,
+    },
     Done {
         text: String,
         ok: bool,
@@ -335,6 +383,8 @@ pub struct HubState {
     pub pulse: PulseState,
     /// SSH keys view.
     pub keys: KeysState,
+    /// Discussions and wiki.
+    pub community: CommunityState,
     /// The command palette, while open.
     pub palette: Option<super::palette::Palette>,
     /// Where the pending inline comment goes: `(path, line)`.
@@ -406,6 +456,7 @@ impl HubState {
             last_click: None,
             pulse: PulseState::default(),
             keys: KeysState::default(),
+            community: CommunityState::default(),
             palette: None,
             inline_anchor: None,
             merge_method: MergeMethod::Merge,
@@ -907,6 +958,132 @@ impl HubState {
             };
             let _ = tx.send(Msg::Log { title, result });
         });
+    }
+
+    // ── Discussions and wiki ─────────────────────────────────────────────────
+
+    /// The repo the Community view shows: the one picked, else the selection's, else the first watched.
+    fn community_repo(&self) -> Option<RepoId> {
+        self.community.repo.clone().or_else(|| self.current_repo())
+    }
+
+    /// Loads the list for the current repo and tab.
+    pub fn load_community(&mut self) {
+        let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {
+            return;
+        };
+        let Some(repo) = self.community_repo() else {
+            self.set_notice("no repository: add one to a section".into(), false);
+            return;
+        };
+        let tab = self.community.tab;
+        self.community.repo = Some(repo.clone());
+        self.community.loading = true;
+        self.community.items = None;
+        self.community.detail = None;
+        self.community.error = None;
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            let result = gitkraft_hub::community::list(&api, &repo, tab).await;
+            let _ = tx.send(Msg::Community {
+                repo: repo.key(),
+                tab,
+                result,
+            });
+        });
+    }
+
+    /// Opens the selected discussion or wiki page.
+    pub fn open_community_item(&mut self) {
+        let (Some(api), Some(rt), Some(repo)) =
+            (self.api.clone(), self.handle(), self.community.repo.clone())
+        else {
+            return;
+        };
+        let Some(item) = self
+            .community
+            .items
+            .as_ref()
+            .and_then(|i| i.get(self.community.row))
+            .cloned()
+        else {
+            return;
+        };
+        let tab = self.community.tab;
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            let result = gitkraft_hub::community::page(&api, &repo, tab, &item)
+                .await
+                .map(|page| CommunityDetail { page, scroll: 0 });
+            let _ = tx.send(Msg::CommunityDetail {
+                repo: repo.key(),
+                tab,
+                result,
+            });
+        });
+    }
+
+    /// Moves the list selection.
+    pub fn move_community(&mut self, delta: isize) {
+        let n = self.community.items.as_ref().map_or(0, Vec::len);
+        if n > 0 {
+            self.community.row =
+                (self.community.row as isize + delta).clamp(0, n as isize - 1) as usize;
+        }
+    }
+
+    /// Shows the other watched repository.
+    pub fn cycle_community_repo(&mut self, delta: isize) {
+        if self.watched.is_empty() {
+            return;
+        }
+        let cur = self
+            .community
+            .repo
+            .as_ref()
+            .and_then(|r| self.watched.iter().position(|w| &w.repo == r))
+            .unwrap_or(0);
+        let next = (cur as isize + delta).rem_euclid(self.watched.len() as isize) as usize;
+        self.community.repo = Some(self.watched[next].repo.clone());
+        self.load_community();
+    }
+
+    /// Switches between discussions and the wiki.
+    pub fn set_community_tab(&mut self, tab: CommunityTab) {
+        if self.community.tab != tab {
+            self.community.tab = tab;
+            self.community.row = 0;
+            self.load_community();
+        }
+    }
+
+    fn submit_discussion_comment(&mut self, body: &str) {
+        let (Some(api), Some(rt), Some(repo), Some(d)) = (
+            self.api.clone(),
+            self.handle(),
+            self.community.repo.clone(),
+            self.community.detail.as_ref(),
+        ) else {
+            return;
+        };
+        if body.is_empty() || self.community.tab != CommunityTab::Discussions {
+            return;
+        }
+        let (Ok(number), body, tx) = (d.page.key.parse::<u64>(), body.to_string(), self.tx.clone())
+        else {
+            return;
+        };
+        rt.spawn(async move {
+            let r = match api.backend(&repo.host) {
+                Some(b) => b
+                    .comment_on_discussion(&repo, number, &body)
+                    .await
+                    .map_err(|e| e.to_string()),
+                None => Err("no account".into()),
+            };
+            done(&tx, r, "comment posted".into(), false);
+        });
+        self.open_community_item();
     }
 
     /// Shows what was done on `date`.
@@ -1627,6 +1804,10 @@ impl HubState {
             self.submit_inline(prompt.buffer.trim());
             return;
         }
+        if prompt.purpose == PromptPurpose::DiscussionComment {
+            self.submit_discussion_comment(prompt.buffer.trim());
+            return;
+        }
         if prompt.purpose == PromptPurpose::Labels {
             self.submit_labels(&prompt.buffer);
             return;
@@ -1932,6 +2113,35 @@ impl HubState {
                 }
                 self.keys.row = self.keys.row.min(data.rows.len().saturating_sub(1));
                 self.keys.data = Some(data);
+            }
+            Msg::Community { repo, tab, result } => {
+                if self.community.repo.as_ref().map(RepoId::key) == Some(repo)
+                    && self.community.tab == tab
+                {
+                    self.community.loading = false;
+                    match result {
+                        Ok(items) => {
+                            self.community.error = None;
+                            self.community.row =
+                                self.community.row.min(items.len().saturating_sub(1));
+                            self.community.items = Some(items);
+                        }
+                        Err(e) => {
+                            self.community.items = None;
+                            self.community.error = Some(e);
+                        }
+                    }
+                }
+            }
+            Msg::CommunityDetail { repo, tab, result } => {
+                if self.community.repo.as_ref().map(RepoId::key) == Some(repo)
+                    && self.community.tab == tab
+                {
+                    match result {
+                        Ok(d) => self.community.detail = Some(d),
+                        Err(e) => self.set_notice(e, false),
+                    }
+                }
             }
             Msg::Day(r) => {
                 // an answer for a day that is no longer picked is dropped
@@ -2471,5 +2681,45 @@ mod tests {
         s.move_row(1);
         assert_eq!(s.row_count(), 0);
         assert!(s.selected_url().is_none());
+    }
+
+    #[test]
+    fn community_answers_for_another_repo_or_tab_are_dropped_and_errors_are_kept() {
+        let mut s = state();
+        s.community.repo = Some(RepoId::new("github.com", "o", "r"));
+        let item = |n: &str| CommunityItem {
+            key: n.into(),
+            title: format!("#{n} T"),
+            meta: String::new(),
+        };
+        s.apply(Msg::Community {
+            repo: "github.com/o/other".into(),
+            tab: CommunityTab::Discussions,
+            result: Ok(vec![item("1")]),
+        });
+        assert!(s.community.items.is_none(), "another repo");
+        s.apply(Msg::Community {
+            repo: "github.com/o/r".into(),
+            tab: CommunityTab::Wiki,
+            result: Ok(vec![item("1")]),
+        });
+        assert!(s.community.items.is_none(), "another tab");
+        s.community.row = 9;
+        s.apply(Msg::Community {
+            repo: "github.com/o/r".into(),
+            tab: CommunityTab::Discussions,
+            result: Ok(vec![item("1"), item("2")]),
+        });
+        assert_eq!(s.community.row, 1, "the selection stays inside the list");
+        s.apply(Msg::Community {
+            repo: "github.com/o/r".into(),
+            tab: CommunityTab::Discussions,
+            result: Err("not supported by this platform".into()),
+        });
+        assert!(s.community.items.is_none());
+        assert_eq!(
+            s.community.error.as_deref(),
+            Some("not supported by this platform")
+        );
     }
 }

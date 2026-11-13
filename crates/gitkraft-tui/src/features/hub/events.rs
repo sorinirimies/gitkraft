@@ -7,7 +7,9 @@ use ratatui::layout::Rect;
 
 use super::drag::DragTarget;
 use super::palette::{self, Palette};
-use super::state::{Action, DetailTab, Focus, HubState, Prompt, PromptPurpose, Target, View};
+use super::state::{
+    Action, CommunityTab, DetailTab, Focus, HubState, Prompt, PromptPurpose, Target, View,
+};
 use crate::app::{App, AppScreen};
 
 /// What the caller should do after an event.
@@ -98,6 +100,16 @@ pub fn key_outcome(hub: &mut HubState, key: KeyEvent) -> Outcome {
             hub.log = None;
             return Outcome::Stay;
         }
+        // an open day or discussion closes before the whole hub does
+        if hub.view == View::Community && hub.community.detail.is_some() {
+            hub.community.detail = None;
+            return Outcome::Stay;
+        }
+        if hub.view == View::Pulse && hub.pulse.day.is_some() {
+            hub.pulse.day = None;
+            hub.pulse.day_data = None;
+            return Outcome::Stay;
+        }
         if hub.focus == Focus::Detail {
             hub.focus = Focus::List;
             return Outcome::Stay;
@@ -110,6 +122,7 @@ pub fn key_outcome(hub: &mut HubState, key: KeyEvent) -> Outcome {
     match hub.view {
         View::Pulse => pulse_key(hub, key),
         View::Keys => keys_key(hub, key),
+        View::Community => community_key(hub, key),
         View::Dashboard => dashboard_key(hub, key),
     }
 }
@@ -243,6 +256,48 @@ fn open_keys(hub: &mut HubState) {
     }
 }
 
+fn open_community(hub: &mut HubState) {
+    hub.view = View::Community;
+    if hub.community.items.is_none() && !hub.community.loading && hub.community.error.is_none() {
+        hub.load_community();
+    }
+}
+
+fn community_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
+    match key.code {
+        KeyCode::Char('q') | KeyCode::Tab | KeyCode::BackTab => hub.view = View::Dashboard,
+        KeyCode::Esc => hub.community.detail = None,
+        KeyCode::Down | KeyCode::Char('j') => hub.move_community(1),
+        KeyCode::Up | KeyCode::Char('k') => hub.move_community(-1),
+        KeyCode::PageDown => scroll_community(hub, 10),
+        KeyCode::PageUp => scroll_community(hub, -10),
+        KeyCode::Enter => hub.open_community_item(),
+        KeyCode::Char('r') => hub.load_community(),
+        KeyCode::Char('[') => hub.cycle_community_repo(-1),
+        KeyCode::Char(']') => hub.cycle_community_repo(1),
+        KeyCode::Char('d') => hub.set_community_tab(CommunityTab::Discussions),
+        KeyCode::Char('w') => hub.set_community_tab(CommunityTab::Wiki),
+        KeyCode::Char('c') if hub.community.detail.is_some() => {
+            if hub.community.tab == CommunityTab::Discussions {
+                hub.prompt = Some(Prompt {
+                    purpose: PromptPurpose::DiscussionComment,
+                    buffer: String::new(),
+                });
+            } else {
+                hub.set_notice("wiki pages cannot be commented on".into(), false);
+            }
+        }
+        _ => {}
+    }
+    Outcome::Stay
+}
+
+fn scroll_community(hub: &mut HubState, delta: i16) {
+    if let Some(d) = hub.community.detail.as_mut() {
+        d.scroll = d.scroll.saturating_add_signed(delta);
+    }
+}
+
 fn keys_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
     match key.code {
         KeyCode::Char('q') | KeyCode::Tab | KeyCode::BackTab => hub.view = View::Dashboard,
@@ -268,6 +323,7 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
         KeyCode::Right if alt => move_section(hub, 1),
         KeyCode::Left if alt => move_section(hub, -1),
         KeyCode::Char('K') => open_keys(hub),
+        KeyCode::Char('T') => open_community(hub),
         KeyCode::Char('w') => hub.checkout_pr_worktree(),
         KeyCode::Char('}') => move_section(hub, 1),
         KeyCode::Char('{') => move_section(hub, -1),
@@ -471,12 +527,19 @@ fn on_press(hub: &mut HubState, x: u16, y: u16) {
             match v {
                 View::Pulse => open_pulse(hub),
                 View::Keys => open_keys(hub),
+                View::Community => open_community(hub),
                 View::Dashboard => {}
             }
         }
         Target::Section(i) => hub.drag.press(x, y, Some(DragTarget::Section(i))),
         Target::Divider => hub.drag.press(x, y, Some(DragTarget::Divider)),
         Target::Row(i) if hub.view == View::Keys => hub.keys.row = i,
+        Target::Row(i) if hub.view == View::Community => {
+            hub.community.row = i;
+            if hub.register_click(target) {
+                hub.open_community_item();
+            }
+        }
         Target::Row(i) => {
             let double = hub.register_click(target);
             hub.focus = Focus::List;
@@ -530,6 +593,14 @@ fn scroll(hub: &mut HubState, x: u16, y: u16, delta: isize) {
     }
     if hub.view == View::Keys {
         hub.move_key(delta);
+        return;
+    }
+    if hub.view == View::Community {
+        if hub.community.detail.is_some() {
+            scroll_community(hub, delta as i16);
+        } else {
+            hub.move_community(delta);
+        }
         return;
     }
     match hub.hit_at(x, y) {
@@ -1319,5 +1390,35 @@ mod tests {
         key(&mut s, KeyCode::Esc);
         assert_eq!(s.pulse.day, None);
         assert!(s.pulse.day_data.is_none());
+    }
+
+    #[test]
+    fn t_opens_discussions_and_the_view_has_its_own_keys() {
+        let mut s = state();
+        let press = |s: &mut HubState, c: KeyCode| {
+            let _ = key_outcome(s, KeyEvent::new(c, KeyModifiers::NONE));
+        };
+        press(&mut s, KeyCode::Char('T'));
+        assert_eq!(s.view, View::Community);
+        press(&mut s, KeyCode::Char('c'));
+        assert!(s.prompt.is_none(), "nothing is open to comment on");
+        s.community.detail = Some(Default::default());
+        press(&mut s, KeyCode::Char('c'));
+        assert_eq!(
+            s.prompt.as_ref().map(|p| p.purpose),
+            Some(PromptPurpose::DiscussionComment)
+        );
+        s.prompt = None;
+        s.community.tab = CommunityTab::Wiki;
+        press(&mut s, KeyCode::Char('c'));
+        assert!(s.prompt.is_none(), "wiki pages take no comments");
+        press(&mut s, KeyCode::Esc);
+        assert!(
+            s.community.detail.is_none(),
+            "Esc closes the discussion first"
+        );
+        assert_eq!(s.view, View::Community, "and not the whole hub");
+        press(&mut s, KeyCode::Char('q'));
+        assert_eq!(s.view, View::Dashboard);
     }
 }

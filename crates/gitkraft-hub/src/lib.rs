@@ -8,6 +8,7 @@ pub mod accounts;
 pub mod artifacts;
 pub mod checkout;
 pub mod clone;
+pub mod community;
 pub mod dispatch;
 pub mod fuzzy;
 mod hub;

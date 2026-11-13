@@ -52,6 +52,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
             render_pulse(hub, frame, rows[2], &theme, &mut hits);
         }
         View::Keys => render_keys(hub, frame, rows[2], &theme, &mut hits),
+        View::Community => render_community(hub, frame, rows[2], &theme, &mut hits),
     }
     render_status(hub, frame, rows[3], &theme);
     render_palette(hub, frame, area, &theme);
@@ -230,6 +231,7 @@ fn render_title(
         (View::Dashboard, " Dashboard "),
         (View::Pulse, " Pulse "),
         (View::Keys, " SSH keys "),
+        (View::Community, " Discussions & wiki "),
     ] {
         let w = label.len() as u16;
         if x + w > area.x + area.width {
@@ -1384,6 +1386,125 @@ fn render_keys(
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
+// ── Discussions and wiki ─────────────────────────────────────────────────────
+
+fn render_community(
+    hub: &mut HubState,
+    frame: &mut Frame,
+    area: Rect,
+    theme: &UiTheme,
+    hits: &mut Vec<Hit>,
+) {
+    use super::state::CommunityTab;
+    let c = &hub.community;
+    let what = match c.tab {
+        CommunityTab::Discussions => "discussions",
+        CommunityTab::Wiki => "wiki",
+    };
+    let repo = c.repo.as_ref().map(|r| r.key()).unwrap_or_default();
+    let cols =
+        Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)]).split(area);
+    let block = |title: String| {
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.border_inactive))
+            .title(title)
+    };
+    let list_block = block(format!(" {what} · {repo} "));
+    let inner = list_block.inner(cols[0]);
+    frame.render_widget(list_block, cols[0]);
+    let mut lines: Vec<Line> = Vec::new();
+    match (&c.items, &c.error) {
+        (_, Some(e)) => lines.push(Line::from(Span::styled(
+            format!(" {e}"),
+            Style::default().fg(theme.warning),
+        ))),
+        (None, None) => lines.push(Line::from(Span::styled(
+            if c.loading {
+                " loading…"
+            } else {
+                " press r to load"
+            },
+            muted(theme),
+        ))),
+        (Some(items), None) if items.is_empty() => lines.push(Line::from(Span::styled(
+            format!(" no {what}"),
+            muted(theme),
+        ))),
+        (Some(items), None) => {
+            // keep the selected row in view
+            let h = inner.height.max(1) as usize;
+            let top = c.row.saturating_sub(h - 1);
+            for (n, (i, it)) in items.iter().enumerate().skip(top).take(h).enumerate() {
+                let _ = n;
+                let sel = i == c.row;
+                let style = if sel {
+                    Style::default().fg(theme.bg).bg(theme.accent)
+                } else {
+                    Style::default().fg(theme.text_primary)
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(format!(" {}", it.title), style),
+                    Span::styled(
+                        if it.meta.is_empty() {
+                            String::new()
+                        } else {
+                            format!("  {}", it.meta)
+                        },
+                        if sel { style } else { muted(theme) },
+                    ),
+                ]));
+                hits.push(Hit {
+                    rect: Rect::new(inner.x, inner.y + (i - top) as u16, inner.width, 1),
+                    target: Target::Row(i),
+                });
+            }
+        }
+    }
+    // rows stay one line each so the click rectangles match; only a message wraps
+    let list = Paragraph::new(lines);
+    frame.render_widget(
+        if c.error.is_some() {
+            list.wrap(Wrap { trim: false })
+        } else {
+            list
+        },
+        inner,
+    );
+
+    let title = c
+        .detail
+        .as_ref()
+        .map(|d| format!(" {} ", d.page.title))
+        .unwrap_or_else(|| " Enter opens the selected one ".into());
+    let detail_block = block(title);
+    let inner = detail_block.inner(cols[1]);
+    frame.render_widget(detail_block, cols[1]);
+    let Some(d) = &c.detail else { return };
+    let mut lines: Vec<Line> = d
+        .page
+        .text
+        .lines()
+        .map(|l| Line::from(l.to_string()))
+        .collect();
+    for (who, body) in &d.page.comments {
+        lines.push(Line::default());
+        lines.push(Line::from(Span::styled(
+            format!("── {who}"),
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.extend(body.lines().map(|l| Line::from(l.to_string())));
+    }
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .scroll((d.scroll, 0)),
+        inner,
+    );
+}
+
 // ── Pulse ────────────────────────────────────────────────────────────────────
 
 fn render_pulse(
@@ -1631,6 +1752,9 @@ fn hints(hub: &HubState) -> &'static str {
     if hub.view == View::Keys {
         return "j/k select · : palette · s set up this machine · t test · d remove key · r refresh · Tab dashboard · q back";
     }
+    if hub.view == View::Community {
+        return "j/k select · Enter open · Esc close · d discussions · w wiki · c comment · [ ] repo · r refresh · Tab dashboard · q back";
+    }
     if hub.view == View::Pulse {
         return "click a day or ←→↑↓ · t today · r refresh · [ ] repo · 1-4 days · Tab dashboard · q back";
     }
@@ -1673,6 +1797,7 @@ fn render_status(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme)
             PromptPurpose::Dispatch => "run workflow: WORKFLOW REF key=value…",
             PromptPurpose::Inline => "inline comment",
             PromptPurpose::Labels => "labels: +add -remove \"two words\"",
+            PromptPurpose::DiscussionComment => "comment on the discussion",
         };
         Line::from(vec![
             Span::styled(format!(" {label} › "), Style::default().fg(theme.accent)),
@@ -1749,7 +1874,7 @@ mod tests {
         assert_eq!(count(|t| matches!(t, Target::Row(_))), 5);
         assert_eq!(count(|t| matches!(t, Target::Divider)), 1);
         assert_eq!(count(|t| matches!(t, Target::Bell)), 1);
-        assert_eq!(count(|t| matches!(t, Target::ViewTab(_))), 3);
+        assert_eq!(count(|t| matches!(t, Target::ViewTab(_))), 4);
     }
 
     fn keys_data() -> gitkraft_hub::keys::KeysData {
@@ -2107,6 +2232,61 @@ mod tests {
                 .modifier
                 .contains(Modifier::REVERSED)
         );
+    }
+
+    #[test]
+    fn the_community_view_lists_opens_and_explains_an_unsupported_tab() {
+        use crate::features::hub::state::{CommunityDetail, CommunityItem, CommunityTab};
+        let mut hub = state();
+        hub.view = View::Community;
+        hub.community.repo = Some(gitkraft_platforms::RepoId::new("github.com", "o", "r"));
+        hub.community.items = Some(vec![
+            CommunityItem {
+                key: "5".into(),
+                title: "#5 How do I clone?".into(),
+                meta: "Q&A · alice · 2 comments · answered".into(),
+            },
+            CommunityItem {
+                key: "6".into(),
+                title: "#6 Ideas".into(),
+                meta: String::new(),
+            },
+        ]);
+        hub.community.detail = Some(CommunityDetail {
+            page: gitkraft_hub::community::Page {
+                key: "5".into(),
+                title: "#5 How do I clone?".into(),
+                text: "the question".into(),
+                comments: vec![("bob".into(), "git clone it".into())],
+            },
+            scroll: 0,
+        });
+        let mut app = app_with(hub);
+        let text = draw(&mut app, 120, 24);
+        for needle in [
+            "Discussions & wiki",
+            "discussions · github.com/o/r",
+            "#6 Ideas",
+            "Q&A · alice",
+            "the question",
+            "── bob",
+            "git clone it",
+        ] {
+            assert!(text.contains(needle), "missing {needle:?} in\n{text}");
+        }
+        let hub = app.hub.as_mut().expect("hub");
+        assert!(
+            hub.hits
+                .iter()
+                .any(|h| h.target == Target::Row(1) && h.rect.width > 10),
+            "rows are clickable"
+        );
+        hub.community.tab = CommunityTab::Wiki;
+        hub.community.items = None;
+        hub.community.detail = None;
+        hub.community.error = Some("not supported by this platform: GitHub wikis are git repositories: clone <repo>.wiki.git".into());
+        let text = draw(&mut app, 120, 24);
+        assert!(text.contains(".wiki.git"), "{text}");
     }
 
     #[test]

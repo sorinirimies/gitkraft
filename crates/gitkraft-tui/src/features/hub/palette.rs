@@ -107,6 +107,13 @@ pub fn entries_for(hub: &HubState) -> Vec<Entry> {
         e("Section: move right", '}', d),
         e("Go to pulse", 'p', d),
         e("Go to SSH keys", 'K', d),
+        e("Go to discussions and wiki", 'T', d),
+        e("Discussions and wiki: show the wiki", 'w', View::Community),
+        e(
+            "Discussions and wiki: show discussions",
+            'd',
+            View::Community,
+        ),
         e("Refresh", 'r', d),
         e("Notifications: toggle for this project", 'n', d),
         e("Notifications: toggle for everything", 'N', d),
