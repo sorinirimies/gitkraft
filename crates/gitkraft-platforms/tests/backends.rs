@@ -478,3 +478,91 @@ async fn gitlab_search_derives_the_project_from_references() {
         "{url}"
     );
 }
+
+#[tokio::test]
+async fn inline_comments_anchor_to_the_head_commit_on_each_platform() {
+    let body = |req: &gitkraft_platforms::http::Request| {
+        String::from_utf8_lossy(req.body.as_deref().unwrap_or_default()).into_owned()
+    };
+
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/repos/o/r/pulls/3",
+        r#"{"number":3,"head":{"ref":"f","sha":"abc123"},"base":{"ref":"main"}}"#,
+    );
+    fake.push_json("https://api.github.com/repos/o/r/pulls/3/comments", "{}");
+    github(&fake)
+        .comment_on_line(&repo(), 3, "src/a.rs", 12, "nit")
+        .await
+        .expect("github");
+    let sent = fake.requests();
+    assert_eq!(
+        sent[1].url,
+        "https://api.github.com/repos/o/r/pulls/3/comments"
+    );
+    let v: serde_json::Value = serde_json::from_str(&body(&sent[1])).expect("json");
+    assert_eq!(
+        (
+            v["commit_id"].as_str(),
+            v["path"].as_str(),
+            v["line"].as_u64(),
+            v["side"].as_str()
+        ),
+        (Some("abc123"), Some("src/a.rs"), Some(12), Some("RIGHT"))
+    );
+
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://codeberg.org/api/v1/repos/o/r/pulls/3",
+        r#"{"number":3,"head":{"ref":"f","sha":"def456"},"base":{"ref":"main"}}"#,
+    );
+    fake.push_json(
+        "https://codeberg.org/api/v1/repos/o/r/pulls/3/reviews",
+        "{}",
+    );
+    gitea(&fake)
+        .comment_on_line(&repo(), 3, "a.rs", 4, "why")
+        .await
+        .expect("gitea");
+    let v: serde_json::Value = serde_json::from_str(&body(&fake.requests()[1])).expect("json");
+    assert_eq!(v["event"], "COMMENT");
+    assert_eq!(v["comments"][0]["new_position"], 4);
+    assert_eq!(v["comments"][0]["path"], "a.rs");
+
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://gitlab.com/api/v4/projects/g%2Fp/merge_requests/3",
+        r#"{"iid":3,"diff_refs":{"base_sha":"b","start_sha":"s","head_sha":"h"}}"#,
+    );
+    fake.push_json(
+        "https://gitlab.com/api/v4/projects/g%2Fp/merge_requests/3/discussions",
+        "{}",
+    );
+    let r = RepoId::new("gitlab.com", "g", "p");
+    gitlab(&fake)
+        .comment_on_line(&r, 3, "x.rs", 9, "hm")
+        .await
+        .expect("gitlab");
+    let v: serde_json::Value = serde_json::from_str(&body(&fake.requests()[1])).expect("json");
+    assert_eq!(
+        (
+            v["position"]["head_sha"].as_str(),
+            v["position"]["new_line"].as_u64(),
+            v["position"]["new_path"].as_str()
+        ),
+        (Some("h"), Some(9), Some("x.rs"))
+    );
+}
+
+#[tokio::test]
+async fn inline_comments_explain_a_missing_head_commit() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/repos/o/r/pulls/3",
+        r#"{"number":3}"#,
+    );
+    assert!(matches!(
+        github(&fake).comment_on_line(&repo(), 3, "a", 1, "x").await,
+        Err(PlatformError::Unsupported(_))
+    ));
+}

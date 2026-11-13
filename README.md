@@ -90,7 +90,8 @@ passphrase (`--passphrase` lets `ssh-keygen` ask). The Hub's **SSH keys** view (
 
 **Palette and more.** `:` or Ctrl+P opens a fuzzy command palette with every action that applies to the
 selection. `w` checks the selected pull request out into a worktree next to your checkout; `D` starts a workflow
-by hand (`ci.yml main level=debug`).
+by hand (`ci.yml main level=debug`); `A` downloads a run's artifacts. On a pull request's **Diff** tab (focus the
+detail pane), `j`/`k` move a line cursor and `c` posts an inline review comment on that added or unchanged line.
 
 **Dashboard** (`~/.config/gitkraft/dashboard.toml`; drag the tabs and it is rewritten):
 

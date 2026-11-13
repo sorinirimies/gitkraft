@@ -338,6 +338,52 @@ impl<C: HttpClient> GitLab<C> {
         }
     }
 
+    pub(crate) async fn comment_on_line(
+        &self,
+        repo: &RepoId,
+        number: u64,
+        path: &str,
+        line: u32,
+        body: &str,
+    ) -> Result<()> {
+        #[derive(Deserialize)]
+        struct Refs {
+            #[serde(default)]
+            base_sha: String,
+            #[serde(default)]
+            start_sha: String,
+            #[serde(default)]
+            head_sha: String,
+        }
+        #[derive(Deserialize)]
+        struct Mr {
+            diff_refs: Option<Refs>,
+        }
+        let item = item_path(repo, ItemKind::PullRequest, number);
+        let mr: Mr = self.api.get(&item).await?;
+        let r = mr.diff_refs.ok_or(PlatformError::Unsupported(
+            "this merge request has no diff refs yet",
+        ))?;
+        self.api
+            .post_json(
+                &format!("{item}/discussions"),
+                &json!({
+                    "body": body,
+                    "position": {
+                        "position_type": "text",
+                        "base_sha": r.base_sha,
+                        "start_sha": r.start_sha,
+                        "head_sha": r.head_sha,
+                        "old_path": path,
+                        "new_path": path,
+                        "new_line": line,
+                    },
+                }),
+            )
+            .await
+            .map(|_| ())
+    }
+
     pub(crate) async fn notifications(&self) -> Result<Vec<Notification>> {
         let todos: Vec<TodoDto> = self.api.get("/todos?state=pending&per_page=50").await?;
         Ok(todos

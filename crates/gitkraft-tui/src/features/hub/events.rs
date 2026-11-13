@@ -295,6 +295,13 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
         KeyCode::Char('i') => hub.open_images(),
         KeyCode::Char('a') => open_prompt(hub, PromptPurpose::Approve),
         KeyCode::Char('x') => open_prompt(hub, PromptPurpose::RequestChanges),
+        KeyCode::Char('c')
+            if hub.focus == Focus::Detail
+                && hub.selected_pr().is_some()
+                && hub.detail.tab == Some(DetailTab::Diff) =>
+        {
+            hub.open_inline_prompt()
+        }
         KeyCode::Char('c') => open_prompt(hub, PromptPurpose::Comment),
         KeyCode::Char('m') => hub.ask(Action::Merge(MergeMethod::Merge)),
         KeyCode::Char('M') => hub.ask(Action::Merge(MergeMethod::Squash)),
@@ -337,6 +344,8 @@ fn vertical(hub: &mut HubState, delta: isize) {
             if hub.selected_run().is_some() {
                 let n = hub.detail.run.as_ref().map_or(0, |d| d.jobs.len());
                 hub.detail.job = super::list::step(hub.detail.job, n, delta);
+            } else if hub.selected_pr().is_some() && hub.detail.tab == Some(DetailTab::Diff) {
+                hub.move_diff_cursor(delta);
             } else {
                 hub.detail.scroll = hub.detail.scroll.saturating_add_signed(delta as i16);
             }
@@ -766,6 +775,50 @@ mod tests {
             },
         );
         assert_eq!(s.keys.row, 0);
+    }
+
+    #[test]
+    fn c_on_the_diff_tab_comments_on_the_line_under_the_cursor() {
+        let mut s = state();
+        let pr = s.selected_pr().cloned().expect("pr");
+        s.detail.pr = Some(gitkraft_hub::PrDetail {
+            pr,
+            comments: vec![],
+            reviews: vec![],
+            diff: "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +5 @@\n-old\n+new".into(),
+            errors: vec![],
+        });
+        s.detail.tab = Some(DetailTab::Diff);
+        s.focus = Focus::Detail;
+        chars(&mut s, "c");
+        assert!(s.prompt.is_none(), "cursor 0 is a header line");
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, ok)| t.contains("added or unchanged") && !ok)
+        );
+        for _ in 0..5 {
+            chars(&mut s, "j");
+        }
+        assert_eq!(
+            s.detail.diff_cursor, 5,
+            "j moves the cursor, not the scroll"
+        );
+        assert_eq!(s.detail.scroll, 0);
+        chars(&mut s, "c");
+        assert_eq!(
+            s.prompt.as_ref().map(|p| p.purpose),
+            Some(PromptPurpose::Inline)
+        );
+        assert_eq!(s.inline_anchor, Some(("a".to_string(), 5)));
+        for _ in 0..30 {
+            chars(&mut s, "j");
+        }
+        assert_eq!(
+            s.detail.diff_cursor, 5,
+            "stops at the last line while typing"
+        );
+        key_outcome(&mut s, key(KeyCode::Esc));
+        assert!(s.prompt.is_none());
     }
 
     #[test]

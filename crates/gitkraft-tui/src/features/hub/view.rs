@@ -786,7 +786,20 @@ fn render_pr(
             if detail.diff.is_empty() {
                 vec![Line::from(Span::styled("No diff available.", muted(theme)))]
             } else {
-                detail.diff.lines().map(|l| diff_line(l, theme)).collect()
+                let cursor = (hub.focus == Focus::Detail).then_some(hub.detail.diff_cursor);
+                detail
+                    .diff
+                    .lines()
+                    .enumerate()
+                    .map(|(i, l)| {
+                        let line = diff_line(l, theme);
+                        if cursor == Some(i) {
+                            line.patch_style(Modifier::REVERSED)
+                        } else {
+                            line
+                        }
+                    })
+                    .collect()
             }
         }
         DetailTab::Comments => {
@@ -818,6 +831,15 @@ fn render_pr(
         }
     };
     let wrap = tab != DetailTab::Diff;
+    hub.detail.body_rows = body.height;
+    if tab == DetailTab::Diff && hub.focus == Focus::Detail && body.height > 0 {
+        let (c, h) = (hub.detail.diff_cursor, body.height as usize);
+        if c < hub.detail.scroll as usize {
+            hub.detail.scroll = c as u16;
+        } else if c >= hub.detail.scroll as usize + h {
+            hub.detail.scroll = (c + 1 - h) as u16;
+        }
+    }
     let max_scroll = lines.len().saturating_sub(body.height as usize) as u16;
     hub.detail.scroll = hub
         .detail
@@ -1557,6 +1579,7 @@ fn render_status(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme)
             PromptPurpose::RequestChanges => "what must change",
             PromptPurpose::LogSearch => "search",
             PromptPurpose::Dispatch => "run workflow: WORKFLOW REF key=value…",
+            PromptPurpose::Inline => "inline comment",
         };
         Line::from(vec![
             Span::styled(format!(" {label} › "), Style::default().fg(theme.accent)),
@@ -1730,6 +1753,27 @@ mod tests {
         for (w, h) in [(1, 1), (10, 3), (22, 6), (300, 80)] {
             draw(&mut app, w, h);
         }
+    }
+
+    #[test]
+    fn the_diff_cursor_stays_in_view_and_is_highlighted() {
+        let mut hub = state();
+        let pr = hub.selected_pr().cloned().expect("pr");
+        let diff: String = (0..80).map(|i| format!("+line {i}\n")).collect();
+        hub.detail.pr = Some(gitkraft_hub::PrDetail {
+            pr,
+            comments: vec![],
+            reviews: vec![],
+            diff,
+            errors: vec![],
+        });
+        hub.detail.tab = Some(DetailTab::Diff);
+        hub.focus = Focus::Detail;
+        hub.detail.diff_cursor = 70;
+        let mut app = app_with(hub);
+        let text = draw(&mut app, 120, 24);
+        assert!(text.contains("+line 70"), "{text}");
+        assert!(app.hub.as_ref().expect("hub").detail.scroll > 0);
     }
 
     #[test]

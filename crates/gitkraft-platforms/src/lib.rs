@@ -21,6 +21,7 @@ pub mod api;
 pub mod auth;
 pub mod backend;
 pub mod credentials;
+pub mod diffpos;
 pub mod error;
 mod github_like;
 mod gitlab;

@@ -223,6 +223,21 @@ impl<C: HttpClient> Backend<C> {
         }
     }
 
+    /// Comments on one line of the new version of a file in a pull request.
+    pub async fn comment_on_line(
+        &self,
+        repo: &RepoId,
+        number: u64,
+        path: &str,
+        line: u32,
+        body: &str,
+    ) -> Result<()> {
+        match self {
+            Self::GitHubLike(b) => b.comment_on_line(repo, number, path, line, body).await,
+            Self::GitLab(b) => b.comment_on_line(repo, number, path, line, body).await,
+        }
+    }
+
     /// The notification inbox.
     pub async fn notifications(&self) -> Result<Vec<Notification>> {
         match self {

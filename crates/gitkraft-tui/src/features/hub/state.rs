@@ -144,6 +144,10 @@ pub struct Detail {
     pub scroll: u16,
     /// Selected job of a run.
     pub job: usize,
+    /// Cursor line of the diff tab (index into the diff's lines).
+    pub diff_cursor: usize,
+    /// Rows the text area had when last drawn.
+    pub body_rows: u16,
 }
 
 /// Text prompt (comment, review body).
@@ -168,6 +172,8 @@ pub enum PromptPurpose {
     LogSearch,
     /// Start a workflow: `WORKFLOW REF [key=value …]`.
     Dispatch,
+    /// A comment on the diff line in [`HubState::inline_anchor`].
+    Inline,
 }
 
 /// Actions that ask for confirmation first.
@@ -315,6 +321,8 @@ pub struct HubState {
     pub keys: KeysState,
     /// The command palette, while open.
     pub palette: Option<super::palette::Palette>,
+    /// Where the pending inline comment goes: `(path, line)`.
+    pub inline_anchor: Option<(String, u32)>,
     /// Image overlay.
     pub images: Images,
     /// Terminal graphics protocol for images.
@@ -381,6 +389,7 @@ impl HubState {
             pulse: PulseState::default(),
             keys: KeysState::default(),
             palette: None,
+            inline_anchor: None,
             images: Images::default(),
             picker: Picker::halfblocks(),
             client: None,
@@ -632,6 +641,7 @@ impl HubState {
         if row != self.row || self.detail.key.is_none() {
             self.row = row;
             self.detail.scroll = 0;
+            self.detail.diff_cursor = 0;
             self.detail.job = 0;
             self.on_selection_changed();
         }
@@ -946,6 +956,41 @@ impl HubState {
                 ok,
                 reload: false,
             });
+        });
+    }
+
+    // ── Inline review comments ───────────────────────────────────────────────
+
+    /// Moves the diff cursor.
+    pub fn move_diff_cursor(&mut self, delta: isize) {
+        let n = self
+            .detail
+            .pr
+            .as_ref()
+            .map_or(0, |d| d.diff.lines().count());
+        self.detail.diff_cursor = super::list::step(self.detail.diff_cursor, n, delta);
+    }
+
+    /// Opens a prompt for a comment on the diff line under the cursor.
+    pub fn open_inline_prompt(&mut self) {
+        let diff = self
+            .detail
+            .pr
+            .as_ref()
+            .map(|d| d.diff.as_str())
+            .unwrap_or_default();
+        let pos = gitkraft_platforms::diffpos::positions(diff);
+        let Some((path, line)) = pos.get(self.detail.diff_cursor).and_then(|p| p.anchor()) else {
+            self.set_notice(
+                "move the cursor (j/k) onto an added or unchanged line first".into(),
+                false,
+            );
+            return;
+        };
+        self.inline_anchor = Some((path.to_string(), line));
+        self.prompt = Some(Prompt {
+            purpose: PromptPurpose::Inline,
+            buffer: String::new(),
         });
     }
 
@@ -1398,6 +1443,31 @@ impl HubState {
         }
     }
 
+    fn submit_inline(&mut self, body: &str) {
+        let (Some(api), Some(rt), Some((path, line)), Some(pr)) = (
+            self.api.clone(),
+            self.handle(),
+            self.inline_anchor.take(),
+            self.selected_pr().cloned(),
+        ) else {
+            return;
+        };
+        if body.is_empty() {
+            return;
+        }
+        let (tx, body) = (self.tx.clone(), body.to_string());
+        rt.spawn(async move {
+            let r = match api.backend(&pr.repo.host) {
+                Some(b) => b
+                    .comment_on_line(&pr.repo, pr.number, &path, line, &body)
+                    .await
+                    .map_err(|e| e.to_string()),
+                None => Err("no account".into()),
+            };
+            done(&tx, r, format!("commented on {path}:{line}"), true);
+        });
+    }
+
     /// Sends the prompt's text.
     pub fn submit_prompt(&mut self) {
         let Some(prompt) = self.prompt.take() else {
@@ -1411,6 +1481,10 @@ impl HubState {
         }
         if prompt.purpose == PromptPurpose::Dispatch {
             self.dispatch_from(&prompt.buffer);
+            return;
+        }
+        if prompt.purpose == PromptPurpose::Inline {
+            self.submit_inline(prompt.buffer.trim());
             return;
         }
         let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {

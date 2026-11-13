@@ -319,6 +319,48 @@ impl<C: HttpClient> GitHubLike<C> {
             .map(|_| ())
     }
 
+    pub(crate) async fn comment_on_line(
+        &self,
+        repo: &RepoId,
+        number: u64,
+        path: &str,
+        line: u32,
+        body: &str,
+    ) -> Result<()> {
+        let pr: PullDto = self
+            .api
+            .get(&format!("{}/pulls/{number}", Self::repo_path(repo)))
+            .await?;
+        let sha = pr
+            .head
+            .and_then(|h| h.sha)
+            .ok_or(PlatformError::Unsupported(
+                "this pull request has no head commit",
+            ))?;
+        if self.is_github() {
+            self.api
+                .post_json(
+                    &format!("{}/pulls/{number}/comments", Self::repo_path(repo)),
+                    &json!({ "body": body, "commit_id": sha, "path": path, "line": line, "side": "RIGHT" }),
+                )
+                .await
+                .map(|_| ())
+        } else {
+            self.api
+                .post_json(
+                    &format!("{}/pulls/{number}/reviews", Self::repo_path(repo)),
+                    &json!({
+                        "event": "COMMENT",
+                        "body": "",
+                        "commit_id": sha,
+                        "comments": [{ "path": path, "body": body, "new_position": line }],
+                    }),
+                )
+                .await
+                .map(|_| ())
+        }
+    }
+
     pub(crate) async fn notifications(&self) -> Result<Vec<Notification>> {
         let dtos: Vec<NotificationDto> = self.api.get("/notifications?per_page=50").await?;
         Ok(dtos.into_iter().map(|d| d.into_model(&self.host)).collect())
