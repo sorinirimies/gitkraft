@@ -33,6 +33,8 @@ tui-skeleton       = { workspace = true }
 tui-file-explorer  = { workspace = true }
 tui-nuances        = { workspace = true }
 tui-chart          = { workspace = true }
+ratatui-image      = { workspace = true }
+image              = { workspace = true }
 gitkraft-settings  = { workspace = true }
 gitkraft-platforms = { workspace = true, features = ["desktop"] }
 gitkraft-ci        = { workspace = true }

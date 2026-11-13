@@ -58,6 +58,21 @@ pub fn key_outcome(hub: &mut HubState, key: KeyEvent) -> Outcome {
         prompt_key(hub, key);
         return Outcome::Stay;
     }
+    if hub.images.open {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q' | 'i') => hub.images.close(),
+            KeyCode::Right | KeyCode::Char('l' | 'n') => {
+                hub.images.step(1);
+                hub.fetch_current_image();
+            }
+            KeyCode::Left | KeyCode::Char('h' | 'p') => {
+                hub.images.step(-1);
+                hub.fetch_current_image();
+            }
+            _ => {}
+        }
+        return Outcome::Stay;
+    }
     if key.code == KeyCode::Esc {
         if hub.drag.is_dragging() {
             hub.drag.cancel();
@@ -208,6 +223,7 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
         KeyCode::Char('N') => hub.toggle_notifications(true),
         KeyCode::Char('z') => hub.toggle_snooze(),
         KeyCode::Char('y') => copy_url(hub),
+        KeyCode::Char('i') => hub.open_images(),
         KeyCode::Char('a') => open_prompt(hub, PromptPurpose::Approve),
         KeyCode::Char('x') => open_prompt(hub, PromptPurpose::RequestChanges),
         KeyCode::Char('c') => open_prompt(hub, PromptPurpose::Comment),
@@ -282,6 +298,21 @@ fn body_area(hub: &HubState) -> Rect {
 /// Mouse handling on the state alone.
 pub fn mouse(hub: &mut HubState, ev: MouseEvent) {
     let (x, y) = (ev.column, ev.row);
+    if hub.images.open {
+        match ev.kind {
+            MouseEventKind::Down(MouseButton::Left) => hub.images.close(),
+            MouseEventKind::ScrollDown | MouseEventKind::ScrollUp => {
+                hub.images.step(if ev.kind == MouseEventKind::ScrollDown {
+                    1
+                } else {
+                    -1
+                });
+                hub.fetch_current_image();
+            }
+            _ => {}
+        }
+        return;
+    }
     match ev.kind {
         MouseEventKind::Down(MouseButton::Left) => on_press(hub, x, y),
         MouseEventKind::Drag(MouseButton::Left) => {
@@ -705,5 +736,45 @@ mod tests {
         assert_eq!(s.log.as_ref().and_then(|l| l.current_line()), Some(4));
         assert_eq!(key_outcome(&mut s, key(KeyCode::Esc)), Outcome::Stay);
         assert!(s.log.is_none(), "Esc closes the log, not the hub");
+    }
+
+    #[test]
+    fn the_image_key_needs_images_and_the_overlay_has_its_own_keys() {
+        let mut s = state();
+        chars(&mut s, "i");
+        assert!(!s.images.open);
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, ok)| t.contains("no images") && !ok)
+        );
+
+        if let Some(gitkraft_hub::SectionData::Prs(r)) = s.slots[0].data.as_mut() {
+            r.items[0].body = "![a](https://x/1.png) and ![b](https://x/2.png)".into();
+        }
+        s.set_row(1);
+        s.set_row(0);
+        chars(&mut s, "i");
+        assert!(s.images.open);
+        assert_eq!(s.images.urls.len(), 2);
+        // Not connected in tests: the fetch fails cleanly instead of hanging.
+        assert!(matches!(
+            s.images.entry("https://x/1.png"),
+            Some(crate::features::hub::images::Entry::Failed(_))
+        ));
+        chars(&mut s, "l");
+        assert_eq!(s.images.current(), Some("https://x/2.png"));
+        chars(&mut s, "q");
+        assert!(!s.images.open, "q closes the overlay, not the hub");
+        assert_eq!(key_outcome(&mut s, key(KeyCode::Char('q'))), Outcome::Close);
+    }
+
+    #[test]
+    fn clicking_or_scrolling_in_the_overlay() {
+        let mut s = state();
+        s.images.open_on(vec!["a".into(), "b".into()]);
+        mouse(&mut s, ev(MouseEventKind::ScrollDown, 1, 1));
+        assert_eq!(s.images.current(), Some("b"));
+        mouse(&mut s, ev(MouseEventKind::Down(MouseButton::Left), 1, 1));
+        assert!(!s.images.open);
     }
 }

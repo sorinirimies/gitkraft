@@ -16,10 +16,13 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use tui_chart::{BarChart, BarGroup, CalendarHeatmap, Gantt, Task, days_from_civil};
 
+use super::images::Entry;
 use super::list;
+use super::markdown;
 use super::state::{DetailTab, Focus, Hit, HubState, PromptPurpose, Target, View};
 use crate::app::App;
 use crate::features::theme::palette::UiTheme;
+use ratatui_image::{Resize, StatefulImage};
 
 /// Draws the hub.
 pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
@@ -37,7 +40,9 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     match hub.view {
         View::Dashboard => {
             render_section_tabs(hub, frame, rows[1], &theme, &mut hits);
-            if hub.log.is_some() {
+            if hub.images.open {
+                render_images(hub, frame, rows[2], &theme);
+            } else if hub.log.is_some() {
                 render_log(hub, frame, rows[2], &theme, &mut hits);
             } else {
                 render_dashboard(hub, frame, rows[2], &theme, &mut hits);
@@ -570,6 +575,15 @@ fn render_pr(
         (Some(a), Some(d)) => Span::styled(format!("  +{a} −{d}"), muted(theme)),
         _ => Span::raw(""),
     };
+    let images = hub.item_image_urls().len();
+    let image_hint = if images > 0 {
+        Span::styled(
+            format!("  🖼 {images} (i)"),
+            Style::default().fg(theme.diff_hunk),
+        )
+    } else {
+        Span::raw("")
+    };
     let header = vec![
         Line::from(Span::styled(
             pr.title.clone(),
@@ -598,7 +612,7 @@ fn render_pr(
                 Style::default().fg(theme.accent),
             ),
         ]),
-        Line::from(vec![checks, conflict, size]),
+        Line::from(vec![checks, conflict, size, image_hint]),
         labels_line(&pr.labels, theme),
     ];
     let rows = Layout::vertical([
@@ -681,7 +695,7 @@ fn render_pr(
             } else {
                 pr.body.as_str()
             };
-            v.extend(text.lines().map(|l| Line::from(l.to_string())));
+            v.extend(markdown::render(text, &md_palette(theme)));
             v
         }
         DetailTab::Diff => {
@@ -703,7 +717,11 @@ fn render_pr(
                     ),
                     Span::styled(format!("  {}", age(c.created_at)), muted(theme)),
                 ]));
-                v.extend(c.body.lines().map(|l| Line::from(format!("  {l}"))));
+                v.extend(
+                    markdown::render(&c.body, &md_palette(theme))
+                        .into_iter()
+                        .map(indent),
+                );
                 v.push(Line::from(""));
             }
             if v.is_empty() {
@@ -726,6 +744,11 @@ fn render_pr(
         p = p.wrap(Wrap { trim: false });
     }
     frame.render_widget(p, body);
+}
+
+fn indent(mut line: Line<'static>) -> Line<'static> {
+    line.spans.insert(0, Span::raw("  "));
+    line
 }
 
 fn diff_line(l: &str, theme: &UiTheme) -> Line<'static> {
@@ -789,7 +812,7 @@ fn render_issue(hub: &mut HubState, frame: &mut Frame, area: Rect, theme: &UiThe
     } else {
         it.body.as_str()
     };
-    lines.extend(body.lines().map(|l| Line::from(l.to_string())));
+    lines.extend(markdown::render(body, &md_palette(theme)));
     for c in &hub.detail.comments {
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
@@ -960,6 +983,51 @@ fn render_run(
         )
         .block(Block::default().borders(Borders::TOP).title(" Timeline "));
         frame.render_widget(&g, parts[1]);
+    }
+}
+
+// ── Images and markdown ──────────────────────────────────────────────────────
+
+fn md_palette(theme: &UiTheme) -> markdown::Palette {
+    markdown::Palette {
+        text: theme.text_primary,
+        accent: theme.accent,
+        muted: theme.text_muted,
+        code: theme.warning,
+        link: theme.diff_hunk,
+    }
+}
+
+fn render_images(hub: &mut HubState, frame: &mut Frame, area: Rect, theme: &UiTheme) {
+    let (index, total) = (hub.images.index, hub.images.urls.len());
+    let url = hub.images.current().unwrap_or_default().to_string();
+    let rows = Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).split(area);
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                format!(" Image {}/{total} ", index + 1),
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(clip(&url, rows[0].width as usize), muted(theme)),
+        ])),
+        rows[0],
+    );
+    match hub.images.entry_mut(&url) {
+        Some(Entry::Ready(p)) => frame.render_stateful_widget(
+            StatefulImage::default().resize(Resize::Scale(None)),
+            rows[1],
+            &mut p.0,
+        ),
+        Some(Entry::Failed(why)) => frame.render_widget(
+            Paragraph::new(format!(" {why}")).style(Style::default().fg(theme.error)),
+            rows[1],
+        ),
+        _ => frame.render_widget(
+            Paragraph::new(" loading image…").style(muted(theme)),
+            rows[1],
+        ),
     }
 }
 
@@ -1264,6 +1332,9 @@ fn render_pulse(hub: &mut HubState, frame: &mut Frame, area: Rect, theme: &UiThe
 // ── Status line ──────────────────────────────────────────────────────────────
 
 fn hints(hub: &HubState) -> &'static str {
+    if hub.images.open {
+        return "←/→ previous / next image · Esc close";
+    }
     if hub.log.is_some() {
         return "j/k scroll · / search · n/N next · e first error · a errors · space fold · g/G ends · Esc close";
     }
@@ -1561,5 +1632,69 @@ mod tests {
             text: "Cancel this run? y/n".into(),
         });
         assert!(draw(&mut app, 100, 12).contains("Cancel this run?"));
+    }
+
+    #[test]
+    fn the_image_overlay_draws_loading_failed_and_decoded_images() {
+        let mut hub = state();
+        hub.images.open_on(vec![
+            "https://x/1.png".into(),
+            "https://x/2.png".into(),
+            "https://x/3.png".into(),
+        ]);
+        hub.images.mark_loading("https://x/1.png");
+        hub.images.set_failed("https://x/2.png", "HTTP 404".into());
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            64,
+            64,
+            image::Rgba([220, 40, 40, 255]),
+        ));
+        hub.set_image("https://x/3.png", img);
+        let mut app = app_with(hub);
+        let text = draw(&mut app, 80, 20);
+        assert!(
+            text.contains("Image 1/3") && text.contains("loading image"),
+            "{text}"
+        );
+        app.hub.as_mut().expect("hub").images.step(1);
+        assert!(draw(&mut app, 80, 20).contains("HTTP 404"));
+        app.hub.as_mut().expect("hub").images.step(1);
+        let text = draw(&mut app, 80, 20);
+        assert!(text.contains("Image 3/3"));
+        // The half-block fallback paints the picture as coloured cells.
+        let mut term = Terminal::new(TestBackend::new(80, 20)).expect("terminal");
+        term.draw(|f| render(&mut app, f, f.area())).expect("draw");
+        let red = Color::Rgb(220, 40, 40);
+        let painted = term
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .filter(|c| c.fg == red || c.bg == red)
+            .count();
+        assert!(painted > 50, "only {painted} image cells");
+    }
+
+    #[test]
+    fn markdown_bodies_and_the_image_count_show_in_the_detail() {
+        let mut hub = state();
+        if let Some(gitkraft_hub::SectionData::Prs(r)) = hub.slots[0].data.as_mut() {
+            r.items[0].body = "# Plan\n- [x] done\n![shot](https://x/a.png)".into();
+        }
+        hub.detail.tab = Some(DetailTab::Overview);
+        hub.detail.pr = Some(PrDetail {
+            pr: hub.selected_pr().cloned().expect("pr"),
+            comments: vec![],
+            reviews: vec![],
+            diff: String::new(),
+            errors: vec![],
+        });
+        hub.detail.key = Some("github.com/o/r#1".into());
+        let mut app = app_with(hub);
+        let text = draw(&mut app, 140, 30);
+        for needle in ["Plan", "• ☑ done", "🖼 shot", "🖼 1 (i)"] {
+            assert!(text.contains(needle), "missing {needle:?} in\n{text}");
+        }
+        assert!(!text.contains("# Plan") && !text.contains("[x]"));
     }
 }

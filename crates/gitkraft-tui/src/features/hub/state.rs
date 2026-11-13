@@ -24,8 +24,10 @@ use gitkraft_settings::notify::{
     NotifyConfig, NotifySettings, NotifyStatus, StatusInput, set_enabled, status,
 };
 use ratatui::layout::Rect;
+use ratatui_image::picker::Picker;
 
 use super::drag::{Drag, DragOutcome, DragTarget};
+use super::images::{Images, decode};
 use super::list;
 use super::logview::LogView;
 
@@ -214,8 +216,13 @@ pub struct Watched {
 enum Msg {
     Ready {
         api: Arc<Api>,
+        client: Client,
         watched: Vec<Watched>,
         accounts: usize,
+    },
+    Image {
+        url: String,
+        result: Result<image::DynamicImage, String>,
     },
     SetupFailed(String),
     Section {
@@ -287,6 +294,10 @@ pub struct HubState {
     pub last_click: Option<(Instant, Target)>,
     /// Pulse view.
     pub pulse: PulseState,
+    /// Image overlay.
+    pub images: Images,
+    /// Terminal graphics protocol for images.
+    pub picker: Picker,
     /// Message for the status line.
     pub notice: Option<(String, bool, Instant)>,
     /// Setup finished: accounts are ready.
@@ -307,6 +318,7 @@ pub struct HubState {
     /// Save the list width to the TUI settings.
     save_layout_on_resize: bool,
     api: Option<Arc<Api>>,
+    client: Option<Client>,
     runtime: Option<tokio::runtime::Runtime>,
     tx: mpsc::Sender<Msg>,
     rx: mpsc::Receiver<Msg>,
@@ -346,6 +358,9 @@ impl HubState {
             hits: Vec::new(),
             last_click: None,
             pulse: PulseState::default(),
+            images: Images::default(),
+            picker: Picker::halfblocks(),
+            client: None,
             notice: None,
             ready: false,
             accounts: 0,
@@ -377,6 +392,8 @@ impl HubState {
             None => Dashboard::starter(),
         };
         let mut state = Self::detached(dashboard);
+        // Ask the terminal which graphics protocol it speaks (once, in raw mode, before events are read).
+        state.picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
         state.dashboard_file = files::dashboard_path().ok();
         state.notify_file = files::notify_config_path().ok();
         state.save_layout_on_resize = true;
@@ -469,6 +486,7 @@ impl HubState {
             let api = Arc::new(Hub::new(accounts, &client));
             let _ = tx.send(Msg::Ready {
                 api,
+                client,
                 watched,
                 accounts: count,
             });
@@ -888,6 +906,69 @@ impl HubState {
         });
     }
 
+    // ── Images ───────────────────────────────────────────────────────────────
+
+    /// Image URLs in the selected item's description and comments.
+    pub fn item_image_urls(&self) -> Vec<String> {
+        let mut text = String::new();
+        if let Some(pr) = self.selected_pr() {
+            text.push_str(
+                self.detail
+                    .pr
+                    .as_ref()
+                    .map_or(pr.body.as_str(), |d| d.pr.body.as_str()),
+            );
+            for c in self.detail.pr.iter().flat_map(|d| d.comments.iter()) {
+                text.push('\n');
+                text.push_str(&c.body);
+            }
+        } else if let Some(issue) = self.selected_issue() {
+            text.push_str(&issue.body);
+            for c in &self.detail.comments {
+                text.push('\n');
+                text.push_str(&c.body);
+            }
+        }
+        gitkraft_hub::markdown::image_urls(&text)
+    }
+
+    /// Opens the image overlay for the selected item.
+    pub fn open_images(&mut self) {
+        let urls = self.item_image_urls();
+        if urls.is_empty() {
+            self.set_notice("no images in this item".into(), false);
+            return;
+        }
+        self.images.open_on(urls);
+        self.fetch_current_image();
+    }
+
+    /// Starts fetching the image on screen, unless it is cached.
+    pub fn fetch_current_image(&mut self) {
+        let Some(url) = self.images.current().map(str::to_string) else {
+            return;
+        };
+        if !self.images.needs_fetch(&url) {
+            return;
+        }
+        let (Some(client), Some(rt)) = (self.client.clone(), self.handle()) else {
+            self.images.set_failed(&url, "not connected".into());
+            return;
+        };
+        self.images.mark_loading(&url);
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            let result = fetch_image(&client, &url).await;
+            let _ = tx.send(Msg::Image { url, result });
+        });
+    }
+
+    /// Puts an already decoded image into the overlay's cache (tests and previews).
+    pub fn set_image(&mut self, url: &str, img: image::DynamicImage) {
+        let protocol = self.picker.new_resize_protocol(img);
+        self.images.set_ready(url, protocol);
+    }
+
     // ── Actions ──────────────────────────────────────────────────────────────
 
     /// Asks before doing `action` on the selected item.
@@ -1218,9 +1299,11 @@ impl HubState {
         match msg {
             Msg::Ready {
                 api,
+                client,
                 watched,
                 accounts,
             } => {
+                self.client = Some(client);
                 self.ready = true;
                 self.accounts = accounts;
                 self.watched = watched.clone();
@@ -1301,6 +1384,13 @@ impl HubState {
                     Err(e) => self.detail.error = Some(e),
                 }
             }
+            Msg::Image { url, result } => match result {
+                Ok(img) => {
+                    let protocol = self.picker.new_resize_protocol(img);
+                    self.images.set_ready(&url, protocol);
+                }
+                Err(e) => self.images.set_failed(&url, e),
+            },
             Msg::Log { title, result } => match result {
                 Ok(raw) => {
                     self.log = Some(LogView::new(title, &raw));
@@ -1378,6 +1468,20 @@ impl HubState {
             .find(|h| list::contains(h.rect, x, y))
             .map(|h| h.target)
     }
+}
+
+async fn fetch_image(client: &Client, url: &str) -> Result<image::DynamicImage, String> {
+    use gitkraft_platforms::http::{HttpClient, Request};
+    let res = client
+        .send(Request::get(url))
+        .await
+        .map_err(|e| e.to_string())?;
+    if !(200..300).contains(&res.status) {
+        return Err(format!("HTTP {}", res.status));
+    }
+    tokio::task::spawn_blocking(move || decode(&res.body))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 fn done(tx: &mpsc::Sender<Msg>, result: Result<(), String>, ok_text: String, reload: bool) {
