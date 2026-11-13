@@ -14,6 +14,7 @@ use crate::model::{
     SubjectKind, User,
 };
 use crate::platform::{PlatformKind, RepoId};
+use gitkraft_settings::dashboard::Involvement;
 
 /// Adapter for GitHub (and Enterprise) and Gitea-family hosts.
 #[derive(Debug)]
@@ -161,6 +162,53 @@ impl<C: HttpClient> GitHubLike<C> {
             .get(&format!("{}/issues/{number}", Self::repo_path(repo)))
             .await?;
         Ok(dto.into_model(repo))
+    }
+
+    /// Pull requests across every repo you can see, by how you relate to them.
+    pub(crate) async fn search_pull_requests(
+        &self,
+        who: Involvement,
+        state: StateFilter,
+        me: &str,
+    ) -> Result<Vec<PullRequest>> {
+        let hits = self.search("pr", who, state, me).await?;
+        Ok(hits.into_iter().filter_map(|d| d.into_search_pr(&self.host)).collect())
+    }
+
+    /// Issues across every repo you can see, by how you relate to them.
+    pub(crate) async fn search_issues(&self, who: Involvement, state: StateFilter, me: &str) -> Result<Vec<Issue>> {
+        let hits = self.search("issue", who, state, me).await?;
+        Ok(hits.into_iter().filter_map(|d| d.into_search_issue(&self.host)).collect())
+    }
+
+    async fn search(&self, kind: &str, who: Involvement, state: StateFilter, _me: &str) -> Result<Vec<IssueDto>> {
+        if self.is_github() {
+            let relation = match who {
+                Involvement::Authored => "author:@me",
+                Involvement::Assigned => "assignee:@me",
+                Involvement::ReviewRequested => "review-requested:@me",
+            };
+            let state = match state {
+                StateFilter::Open => "+is:open",
+                StateFilter::Closed => "+is:closed",
+                StateFilter::All => "",
+            };
+            let path = format!("/search/issues?q=is:{kind}{state}+{relation}&sort=updated&per_page=50");
+            let res: SearchResponse = self.api.get(&path).await?;
+            Ok(res.items)
+        } else {
+            let type_ = if kind == "pr" { "pulls" } else { "issues" };
+            let relation = match who {
+                Involvement::Authored => "created=true",
+                Involvement::Assigned => "assigned=true",
+                Involvement::ReviewRequested => "review_requested=true",
+            };
+            let path = format!(
+                "/repos/issues/search?type={type_}&state={}&{relation}&limit=50",
+                Self::state_param(state)
+            );
+            self.api.get(&path).await
+        }
     }
 
     pub(crate) async fn comments(&self, repo: &RepoId, number: u64) -> Result<Vec<Comment>> {
@@ -459,6 +507,12 @@ impl PullDto {
 }
 
 #[derive(Debug, Deserialize)]
+struct SearchResponse {
+    #[serde(default)]
+    items: Vec<IssueDto>,
+}
+
+#[derive(Debug, Deserialize)]
 struct CombinedStatus {
     #[serde(default)]
     state: String,
@@ -497,9 +551,69 @@ struct IssueDto {
     html_url: String,
     #[serde(default)]
     pull_request: Option<serde_json::Value>,
+    /// GitHub search results name the repo by API URL.
+    #[serde(default)]
+    repository_url: Option<String>,
+    /// Gitea search results embed the repo.
+    #[serde(default)]
+    repository: Option<NotificationRepo>,
+    #[serde(default)]
+    draft: Option<bool>,
 }
 
 impl IssueDto {
+    /// `owner/name` of the repo a search hit belongs to.
+    fn repo_full_name(&self) -> Option<String> {
+        if let Some(r) = &self.repository
+            && !r.full_name.is_empty()
+        {
+            return Some(r.full_name.clone());
+        }
+        let url = self.repository_url.as_deref()?;
+        let tail = url.split("/repos/").nth(1)?;
+        Some(tail.trim_end_matches('/').to_string())
+    }
+
+    /// A search hit that is a pull request, as a [`PullRequest`] (branches are not in search results).
+    fn into_search_pr(self, host: &str) -> Option<PullRequest> {
+        let pr = self.pull_request.clone()?;
+        let full = self.repo_full_name()?;
+        let (owner, name) = full.rsplit_once('/')?;
+        let repo = RepoId::new(host, owner, name);
+        let merged = pr.get("merged_at").is_some_and(|v| !v.is_null()) || pr.get("merged").and_then(|v| v.as_bool()).unwrap_or(false);
+        let draft = self.draft.unwrap_or(false);
+        let mut model = self.into_model(&repo);
+        if merged {
+            model.state = ItemState::Merged;
+        }
+        Some(PullRequest {
+            repo,
+            number: model.number,
+            title: model.title,
+            body: model.body,
+            author: model.author,
+            state: model.state,
+            draft,
+            labels: model.labels,
+            assignees: model.assignees,
+            comments: model.comments,
+            created_at: model.created_at,
+            updated_at: model.updated_at,
+            url: model.url,
+            ..PullRequest::default()
+        })
+    }
+
+    /// A search hit that is an issue.
+    fn into_search_issue(self, host: &str) -> Option<Issue> {
+        if self.pull_request.is_some() {
+            return None;
+        }
+        let full = self.repo_full_name()?;
+        let (owner, name) = full.rsplit_once('/')?;
+        Some(self.into_model(&RepoId::new(host, owner, name)))
+    }
+
     fn into_model(self, repo: &RepoId) -> Issue {
         Issue {
             repo: repo.clone(),

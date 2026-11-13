@@ -387,3 +387,66 @@ async fn malformed_json_is_a_parse_error_not_a_panic() {
         Err(PlatformError::Parse(_))
     ));
 }
+
+use gitkraft_settings::dashboard::Involvement;
+
+#[tokio::test]
+async fn github_search_finds_prs_across_repos() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/search/issues",
+        r#"{"items":[
+          {"number":4,"title":"Mine","state":"open","user":{"login":"me"},"repository_url":"https://api.github.com/repos/acme/app","pull_request":{"merged_at":null},"draft":true,"html_url":"u4"},
+          {"number":9,"title":"Done","state":"closed","user":{"login":"me"},"repository_url":"https://api.github.com/repos/acme/lib","pull_request":{"merged_at":"2026-01-01T00:00:00Z"},"html_url":"u9"},
+          {"number":2,"title":"An issue","state":"open","repository_url":"https://api.github.com/repos/acme/app","html_url":"u2"}]}"#,
+    );
+    let prs = github(&fake)
+        .search_pull_requests(Involvement::ReviewRequested, StateFilter::All, "me")
+        .await
+        .unwrap_or_default();
+    assert_eq!(prs.len(), 2, "issues are not PRs");
+    assert_eq!(prs[0].repo.key(), "github.com/acme/app");
+    assert!(prs[0].draft);
+    assert_eq!(prs[1].state, ItemState::Merged);
+    let url = &fake.requests()[0].url;
+    assert!(url.contains("q=is:pr+review-requested:@me") && !url.contains("is:open"), "{url}");
+}
+
+#[tokio::test]
+async fn github_issue_search_drops_prs() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/search/issues",
+        r#"{"items":[{"number":2,"title":"i","state":"open","repository_url":"https://api.github.com/repos/a/b","html_url":"u"},{"number":3,"title":"p","state":"open","repository_url":"https://api.github.com/repos/a/b","pull_request":{},"html_url":"u"}]}"#,
+    );
+    let issues = github(&fake).search_issues(Involvement::Assigned, StateFilter::Open, "me").await.unwrap_or_default();
+    assert_eq!(issues.iter().map(|i| i.number).collect::<Vec<_>>(), vec![2]);
+    assert!(fake.requests()[0].url.contains("q=is:issue+is:open+assignee:@me"));
+}
+
+#[tokio::test]
+async fn gitea_search_uses_the_flag_per_involvement() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://codeberg.org/api/v1/repos/issues/search",
+        r#"[{"number":1,"title":"t","state":"open","user":{"login":"me"},"repository":{"full_name":"o/r"},"pull_request":{"merged":true},"html_url":"u"}]"#,
+    );
+    let prs = gitea(&fake).search_pull_requests(Involvement::Authored, StateFilter::Open, "me").await.unwrap_or_default();
+    assert_eq!((prs[0].repo.key().as_str(), prs[0].state), ("codeberg.org/o/r", ItemState::Merged));
+    let url = &fake.requests()[0].url;
+    assert!(url.contains("type=pulls") && url.contains("created=true") && url.contains("state=open"), "{url}");
+}
+
+#[tokio::test]
+async fn gitlab_search_derives_the_project_from_references() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://gitlab.com/api/v4/merge_requests",
+        r#"[{"iid":3,"title":"t","state":"opened","references":{"full":"grp/sub/proj!3"},"web_url":"u"},{"iid":4,"title":"x","state":"opened","web_url":"u"}]"#,
+    );
+    let prs = gitlab(&fake).search_pull_requests(Involvement::ReviewRequested, StateFilter::Open, "erin").await.unwrap_or_default();
+    assert_eq!(prs.len(), 1, "no reference, no project, skipped");
+    assert_eq!((prs[0].repo.owner.as_str(), prs[0].repo.name.as_str()), ("grp/sub", "proj"));
+    let url = &fake.requests()[0].url;
+    assert!(url.contains("reviewer_username=erin") && url.contains("state=opened"), "{url}");
+}

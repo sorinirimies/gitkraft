@@ -14,6 +14,7 @@ use crate::model::{
     SubjectKind, User,
 };
 use crate::platform::{RepoId, url_encode};
+use gitkraft_settings::dashboard::Involvement;
 
 /// Adapter for gitlab.com and self-hosted GitLab.
 #[derive(Debug)]
@@ -101,6 +102,56 @@ impl<C: HttpClient> GitLab<C> {
             .map(|d| d.into_model(repo))
             // GitLab has no "closed incl. merged" filter, so `all` is narrowed here.
             .filter(|pr| q.state != StateFilter::Closed || pr.state != ItemState::Open)
+            .collect())
+    }
+
+    fn scope_params(who: Involvement, me: &str, state: StateFilter, issues: bool) -> String {
+        let scope = match who {
+            Involvement::Authored => "created_by_me",
+            Involvement::Assigned => "assigned_to_me",
+            Involvement::ReviewRequested => "all",
+        };
+        let state = match state {
+            StateFilter::Open => "opened",
+            StateFilter::Closed if issues => "closed",
+            StateFilter::Closed | StateFilter::All => "all",
+        };
+        let mut p = format!("scope={scope}&state={state}&per_page=50&order_by=updated_at");
+        if who == Involvement::ReviewRequested {
+            p.push_str(&format!("&reviewer_username={}", url_encode(me)));
+        }
+        p
+    }
+
+    /// Merge requests across all projects, by how you relate to them.
+    pub(crate) async fn search_pull_requests(
+        &self,
+        who: Involvement,
+        state: StateFilter,
+        me: &str,
+    ) -> Result<Vec<PullRequest>> {
+        let path = format!("/merge_requests?{}", Self::scope_params(who, me, state, false));
+        let dtos: Vec<MrDto> = self.api.get(&path).await?;
+        Ok(dtos
+            .into_iter()
+            .filter_map(|d| {
+                let repo = d.repo(&self.host)?;
+                Some(d.into_model(&repo))
+            })
+            .filter(|pr| state != StateFilter::Closed || pr.state != ItemState::Open)
+            .collect())
+    }
+
+    /// Issues across all projects, by how you relate to them.
+    pub(crate) async fn search_issues(&self, who: Involvement, state: StateFilter, me: &str) -> Result<Vec<Issue>> {
+        let path = format!("/issues?{}", Self::scope_params(who, me, state, true));
+        let dtos: Vec<IssueDto> = self.api.get(&path).await?;
+        Ok(dtos
+            .into_iter()
+            .filter_map(|d| {
+                let repo = d.repo(&self.host)?;
+                Some(d.into_model(&repo))
+            })
             .collect())
     }
 
@@ -341,8 +392,23 @@ struct PipelineDto {
     status: String,
 }
 
+#[derive(Debug, Deserialize, Default)]
+struct References {
+    #[serde(default)]
+    full: String,
+}
+
+/// `group/sub/proj!12` or `group/proj#3` → `group/sub/proj`.
+fn repo_from_reference(full: &str, host: &str) -> Option<RepoId> {
+    let path = full.split(['!', '#']).next()?;
+    let (owner, name) = path.rsplit_once('/')?;
+    (!owner.is_empty() && !name.is_empty()).then(|| RepoId::new(host, owner, name))
+}
+
 #[derive(Debug, Deserialize)]
 struct MrDto {
+    #[serde(default)]
+    references: Option<References>,
     iid: u64,
     #[serde(default)]
     title: String,
@@ -379,6 +445,10 @@ struct MrDto {
 }
 
 impl MrDto {
+    fn repo(&self, host: &str) -> Option<RepoId> {
+        repo_from_reference(&self.references.as_ref()?.full, host)
+    }
+
     fn into_model(self, repo: &RepoId) -> PullRequest {
         let state = match self.state.as_str() {
             "opened" => ItemState::Open,
@@ -423,6 +493,8 @@ struct MilestoneDto {
 
 #[derive(Debug, Deserialize)]
 struct IssueDto {
+    #[serde(default)]
+    references: Option<References>,
     iid: u64,
     #[serde(default)]
     title: String,
@@ -449,6 +521,10 @@ struct IssueDto {
 }
 
 impl IssueDto {
+    fn repo(&self, host: &str) -> Option<RepoId> {
+        repo_from_reference(&self.references.as_ref()?.full, host)
+    }
+
     fn into_model(self, repo: &RepoId) -> Issue {
         Issue {
             repo: repo.clone(),

@@ -8,9 +8,10 @@ use crate::gitlab::{GitLab, ItemKind};
 use crate::http::HttpClient;
 use crate::model::{
     ActivityDay, Capabilities, Comment, Issue, ListQuery, MergeMethod, Notification, PullRequest,
-    Review, ReviewVerdict, User,
+    Review, ReviewVerdict, StateFilter, User,
 };
 use crate::platform::{PlatformKind, RepoId};
+use gitkraft_settings::dashboard::Involvement;
 
 /// The adapter for one [`Account`].
 #[derive(Debug)]
@@ -63,6 +64,22 @@ impl<C: HttpClient> Backend<C> {
         match self {
             Self::GitHubLike(b) => b.list_pull_requests(repo, q).await,
             Self::GitLab(b) => b.list_pull_requests(repo, q).await,
+        }
+    }
+
+    /// Pull requests across every repo you can see, by relation to you. `me` is your login.
+    pub async fn search_pull_requests(&self, who: Involvement, state: StateFilter, me: &str) -> Result<Vec<PullRequest>> {
+        match self {
+            Self::GitHubLike(b) => b.search_pull_requests(who, state, me).await,
+            Self::GitLab(b) => b.search_pull_requests(who, state, me).await,
+        }
+    }
+
+    /// Issues across every repo you can see, by relation to you.
+    pub async fn search_issues(&self, who: Involvement, state: StateFilter, me: &str) -> Result<Vec<Issue>> {
+        match self {
+            Self::GitHubLike(b) => b.search_issues(who, state, me).await,
+            Self::GitLab(b) => b.search_issues(who, state, me).await,
         }
     }
 
