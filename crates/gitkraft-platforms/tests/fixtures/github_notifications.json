@@ -1,0 +1,8 @@
+[
+ {"id": "77", "unread": true, "reason": "review_requested", "updated_at": "2026-02-01T10:00:00Z",
+  "subject": {"title": "Add pulse view", "url": "https://api.github.com/repos/o/r/pulls/12", "type": "PullRequest"},
+  "repository": {"full_name": "o/r"}},
+ {"id": "78", "unread": false, "reason": "ci_activity",
+  "subject": {"title": "CI failed", "url": null, "type": "CheckSuite"},
+  "repository": {"full_name": "o/r"}}
+]

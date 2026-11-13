@@ -1,0 +1,8 @@
+[
+ {"iid": 3, "title": "Draft: Wip thing", "description": "d", "state": "opened",
+  "author": {"username": "erin", "avatar_url": ""}, "source_branch": "wip", "target_branch": "main",
+  "labels": ["ui"], "assignees": [{"username": "frank"}], "reviewers": [], "user_notes_count": 2,
+  "has_conflicts": true, "head_pipeline": {"status": "failed"}, "web_url": "https://gitlab.com/g/s/p/-/merge_requests/3"},
+ {"iid": 2, "title": "Done", "state": "merged", "author": {"username": "erin"},
+  "source_branch": "a", "target_branch": "main", "web_url": "u"}
+]

@@ -1,0 +1,720 @@
+//! GitHub and Gitea/Forgejo/Codeberg: Gitea deliberately mirrors the GitHub
+//! REST API, so one adapter serves both and branches only where they differ.
+
+use chrono::{DateTime, NaiveDate, Utc};
+use serde::Deserialize;
+use serde_json::json;
+
+use crate::api::{Api, parse};
+use crate::error::{PlatformError, Result};
+use crate::http::{HttpClient, Method};
+use crate::model::{
+    ActivityDay, Capabilities, ChecksState, Comment, Issue, ItemState, Label, ListQuery,
+    MergeMethod, Notification, NotificationReason, PullRequest, Review, ReviewVerdict, StateFilter,
+    SubjectKind, User,
+};
+use crate::platform::{PlatformKind, RepoId};
+
+/// Adapter for GitHub (and Enterprise) and Gitea-family hosts.
+#[derive(Debug)]
+pub struct GitHubLike<C> {
+    pub(crate) api: Api<C>,
+    host: String,
+}
+
+impl<C: HttpClient> GitHubLike<C> {
+    pub(crate) fn new(api: Api<C>, host: String) -> Self {
+        Self { api, host }
+    }
+
+    fn is_github(&self) -> bool {
+        self.api.kind == PlatformKind::GitHub
+    }
+
+    fn repo_path(repo: &RepoId) -> String {
+        format!("/repos/{}/{}", repo.owner, repo.name)
+    }
+
+    fn state_param(state: StateFilter) -> &'static str {
+        match state {
+            StateFilter::Open => "open",
+            StateFilter::Closed => "closed",
+            StateFilter::All => "all",
+        }
+    }
+
+    pub(crate) fn capabilities(&self) -> Capabilities {
+        Capabilities {
+            merge_methods: true,
+            reviews: true,
+            notifications: true,
+            contributions: !self.is_github() || self.api.token.is_some(),
+            checks: true,
+        }
+    }
+
+    pub(crate) async fn current_user(&self) -> Result<User> {
+        let dto: UserDto = self.api.get("/user").await?;
+        Ok(dto.into())
+    }
+
+    pub(crate) async fn list_pull_requests(
+        &self,
+        repo: &RepoId,
+        q: &ListQuery,
+    ) -> Result<Vec<PullRequest>> {
+        let path = format!(
+            "{}/pulls?state={}&per_page={}&page={}",
+            Self::repo_path(repo),
+            Self::state_param(q.state),
+            q.page.per_page,
+            q.page.page
+        );
+        let dtos: Vec<PullDto> = self.api.get(&path).await?;
+        // Neither platform filters PR lists by author or label server side.
+        Ok(dtos
+            .into_iter()
+            .map(|d| d.into_model(repo))
+            .filter(|pr| {
+                q.author
+                    .as_ref()
+                    .is_none_or(|a| pr.author.login.eq_ignore_ascii_case(a))
+                    && q.assignee.as_ref().is_none_or(|a| {
+                        pr.assignees.iter().any(|u| u.login.eq_ignore_ascii_case(a))
+                    })
+                    && q.label
+                        .as_ref()
+                        .is_none_or(|l| pr.labels.iter().any(|x| x.name == *l))
+            })
+            .collect())
+    }
+
+    pub(crate) async fn pull_request(&self, repo: &RepoId, number: u64) -> Result<PullRequest> {
+        let dto: PullDto = self
+            .api
+            .get(&format!("{}/pulls/{number}", Self::repo_path(repo)))
+            .await?;
+        let sha = dto.head.as_ref().and_then(|h| h.sha.clone());
+        let mut pr = dto.into_model(repo);
+        if let Some(sha) = sha {
+            pr.checks = self.checks(repo, &sha).await.ok().flatten();
+        }
+        Ok(pr)
+    }
+
+    async fn checks(&self, repo: &RepoId, sha: &str) -> Result<Option<ChecksState>> {
+        let status: CombinedStatus = self
+            .api
+            .get(&format!("{}/commits/{sha}/status", Self::repo_path(repo)))
+            .await?;
+        Ok(match status.state.as_str() {
+            "success" => Some(ChecksState::Success),
+            "failure" | "error" => Some(ChecksState::Failure),
+            "pending" => Some(ChecksState::Pending),
+            _ => None,
+        })
+    }
+
+    pub(crate) async fn pull_request_diff(&self, repo: &RepoId, number: u64) -> Result<String> {
+        let accept = if self.is_github() {
+            "application/vnd.github.v3.diff"
+        } else {
+            "text/plain"
+        };
+        self.api
+            .get_text(
+                &format!("{}/pulls/{number}.diff", Self::repo_path(repo)),
+                accept,
+            )
+            .await
+    }
+
+    pub(crate) async fn list_issues(&self, repo: &RepoId, q: &ListQuery) -> Result<Vec<Issue>> {
+        let mut path = format!(
+            "{}/issues?state={}&per_page={}&page={}",
+            Self::repo_path(repo),
+            Self::state_param(q.state),
+            q.page.per_page,
+            q.page.page
+        );
+        if self.is_github() {
+            push_param(&mut path, "creator", q.author.as_deref());
+            push_param(&mut path, "assignee", q.assignee.as_deref());
+        } else {
+            path.push_str("&type=issues");
+            push_param(&mut path, "created_by", q.author.as_deref());
+            push_param(&mut path, "assigned_by", q.assignee.as_deref());
+        }
+        push_param(&mut path, "labels", q.label.as_deref());
+        let dtos: Vec<IssueDto> = self.api.get(&path).await?;
+        // GitHub's issue list also returns pull requests.
+        Ok(dtos
+            .into_iter()
+            .filter(|d| d.pull_request.is_none())
+            .map(|d| d.into_model(repo))
+            .collect())
+    }
+
+    pub(crate) async fn issue(&self, repo: &RepoId, number: u64) -> Result<Issue> {
+        let dto: IssueDto = self
+            .api
+            .get(&format!("{}/issues/{number}", Self::repo_path(repo)))
+            .await?;
+        Ok(dto.into_model(repo))
+    }
+
+    pub(crate) async fn comments(&self, repo: &RepoId, number: u64) -> Result<Vec<Comment>> {
+        let dtos: Vec<CommentDto> = self
+            .api
+            .get(&format!(
+                "{}/issues/{number}/comments?per_page=100",
+                Self::repo_path(repo)
+            ))
+            .await?;
+        Ok(dtos.into_iter().map(Into::into).collect())
+    }
+
+    pub(crate) async fn reviews(&self, repo: &RepoId, number: u64) -> Result<Vec<Review>> {
+        let dtos: Vec<ReviewDto> = self
+            .api
+            .get(&format!(
+                "{}/pulls/{number}/reviews?per_page=100",
+                Self::repo_path(repo)
+            ))
+            .await?;
+        Ok(dtos.into_iter().map(Into::into).collect())
+    }
+
+    pub(crate) async fn post_comment(&self, repo: &RepoId, number: u64, body: &str) -> Result<()> {
+        self.api
+            .post_json(
+                &format!("{}/issues/{number}/comments", Self::repo_path(repo)),
+                &json!({ "body": body }),
+            )
+            .await
+            .map(|_| ())
+    }
+
+    pub(crate) async fn set_open(&self, repo: &RepoId, number: u64, open: bool) -> Result<()> {
+        let state = if open { "open" } else { "closed" };
+        self.api
+            .send(
+                Method::Patch,
+                &format!("{}/issues/{number}", Self::repo_path(repo)),
+                Some(&json!({ "state": state })),
+            )
+            .await
+            .map(|_| ())
+    }
+
+    pub(crate) async fn merge(
+        &self,
+        repo: &RepoId,
+        number: u64,
+        method: MergeMethod,
+    ) -> Result<()> {
+        let name = match method {
+            MergeMethod::Merge => "merge",
+            MergeMethod::Squash => "squash",
+            MergeMethod::Rebase => "rebase",
+        };
+        let path = format!("{}/pulls/{number}/merge", Self::repo_path(repo));
+        if self.is_github() {
+            self.api
+                .send(Method::Put, &path, Some(&json!({ "merge_method": name })))
+                .await
+                .map(|_| ())
+        } else {
+            self.api
+                .post_json(&path, &json!({ "Do": name }))
+                .await
+                .map(|_| ())
+        }
+    }
+
+    pub(crate) async fn submit_review(
+        &self,
+        repo: &RepoId,
+        number: u64,
+        verdict: ReviewVerdict,
+        body: &str,
+    ) -> Result<()> {
+        let event = match verdict {
+            ReviewVerdict::Approve => "APPROVE",
+            ReviewVerdict::RequestChanges => "REQUEST_CHANGES",
+            ReviewVerdict::Comment => "COMMENT",
+        };
+        self.api
+            .post_json(
+                &format!("{}/pulls/{number}/reviews", Self::repo_path(repo)),
+                &json!({ "event": event, "body": body }),
+            )
+            .await
+            .map(|_| ())
+    }
+
+    pub(crate) async fn notifications(&self) -> Result<Vec<Notification>> {
+        let dtos: Vec<NotificationDto> = self.api.get("/notifications?per_page=50").await?;
+        Ok(dtos.into_iter().map(|d| d.into_model(&self.host)).collect())
+    }
+
+    pub(crate) async fn mark_read(&self, id: &str) -> Result<()> {
+        self.api
+            .send(Method::Patch, &format!("/notifications/threads/{id}"), None)
+            .await
+            .map(|_| ())
+    }
+
+    pub(crate) async fn contributions(&self, user: &str) -> Result<Vec<ActivityDay>> {
+        if self.is_github() {
+            self.github_contributions(user).await
+        } else {
+            let points: Vec<HeatPoint> = self.api.get(&format!("/users/{user}/heatmap")).await?;
+            Ok(fold_days(points.into_iter().filter_map(|p| {
+                let date = DateTime::from_timestamp(p.timestamp, 0)?.date_naive();
+                Some((date, p.contributions))
+            })))
+        }
+    }
+
+    async fn github_contributions(&self, user: &str) -> Result<Vec<ActivityDay>> {
+        if self.api.token.is_none() {
+            return Err(PlatformError::Auth(
+                "the GitHub contribution calendar needs a token".into(),
+            ));
+        }
+        let url = if self.host == "github.com" {
+            "https://api.github.com/graphql".to_string()
+        } else {
+            format!("https://{}/api/graphql", self.host)
+        };
+        let query = "query($u:String!){user(login:$u){contributionsCollection{contributionCalendar{weeks{contributionDays{date contributionCount}}}}}}";
+        let res = self
+            .api
+            .post_json(&url, &json!({ "query": query, "variables": { "u": user } }))
+            .await?;
+        let value: GraphQl = parse(&res)?;
+        let user = value
+            .data
+            .and_then(|d| d.user)
+            .ok_or_else(|| PlatformError::NotFound(format!("user {user}")))?;
+        Ok(fold_days(
+            user.contributions_collection
+                .contribution_calendar
+                .weeks
+                .into_iter()
+                .flat_map(|w| w.contribution_days)
+                .filter_map(|d| Some((d.date.parse::<NaiveDate>().ok()?, d.contribution_count))),
+        ))
+    }
+}
+
+fn push_param(path: &mut String, name: &str, value: Option<&str>) {
+    if let Some(v) = value {
+        path.push('&');
+        path.push_str(name);
+        path.push('=');
+        path.push_str(v);
+    }
+}
+
+/// Sums counts per day and sorts by date.
+pub(crate) fn fold_days(days: impl Iterator<Item = (NaiveDate, u32)>) -> Vec<ActivityDay> {
+    let mut map = std::collections::BTreeMap::new();
+    for (date, count) in days {
+        *map.entry(date).or_insert(0u32) += count;
+    }
+    map.into_iter()
+        .map(|(date, count)| ActivityDay { date, count })
+        .collect()
+}
+
+// ── DTOs ────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, Default)]
+struct UserDto {
+    #[serde(default)]
+    login: String,
+    #[serde(default)]
+    avatar_url: Option<String>,
+}
+
+impl From<UserDto> for User {
+    fn from(d: UserDto) -> Self {
+        User {
+            login: d.login,
+            avatar_url: d.avatar_url.filter(|u| !u.is_empty()),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct LabelDto {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    color: String,
+}
+
+fn labels(v: Vec<LabelDto>) -> Vec<Label> {
+    v.into_iter()
+        .map(|l| Label {
+            name: l.name,
+            color: l.color.trim_start_matches('#').to_string(),
+        })
+        .collect()
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct BranchDto {
+    #[serde(rename = "ref", default)]
+    name: String,
+    #[serde(default)]
+    sha: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PullDto {
+    number: u64,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    body: Option<String>,
+    #[serde(default)]
+    user: Option<UserDto>,
+    #[serde(default)]
+    state: String,
+    #[serde(default)]
+    draft: Option<bool>,
+    #[serde(default)]
+    merged: Option<bool>,
+    #[serde(default)]
+    merged_at: Option<String>,
+    #[serde(default)]
+    head: Option<BranchDto>,
+    #[serde(default)]
+    base: Option<BranchDto>,
+    #[serde(default)]
+    labels: Vec<LabelDto>,
+    #[serde(default)]
+    assignees: Vec<UserDto>,
+    #[serde(default)]
+    requested_reviewers: Vec<UserDto>,
+    #[serde(default)]
+    comments: Option<u32>,
+    #[serde(default)]
+    additions: Option<u32>,
+    #[serde(default)]
+    deletions: Option<u32>,
+    #[serde(default)]
+    mergeable: Option<bool>,
+    #[serde(default)]
+    created_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    updated_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    html_url: String,
+}
+
+impl PullDto {
+    fn into_model(self, repo: &RepoId) -> PullRequest {
+        let merged = self.merged.unwrap_or(false) || self.merged_at.is_some();
+        let state = if merged {
+            ItemState::Merged
+        } else if self.state == "open" {
+            ItemState::Open
+        } else {
+            ItemState::Closed
+        };
+        let upper = self.title.to_uppercase();
+        let draft =
+            self.draft.unwrap_or(false) || upper.starts_with("WIP:") || upper.starts_with("[WIP]");
+        PullRequest {
+            repo: repo.clone(),
+            number: self.number,
+            title: self.title,
+            body: self.body.unwrap_or_default(),
+            author: self.user.map(Into::into).unwrap_or_default(),
+            state,
+            draft,
+            source_branch: self.head.map(|h| h.name).unwrap_or_default(),
+            target_branch: self.base.map(|b| b.name).unwrap_or_default(),
+            labels: labels(self.labels),
+            assignees: self.assignees.into_iter().map(Into::into).collect(),
+            reviewers: self
+                .requested_reviewers
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            comments: self.comments.unwrap_or(0),
+            additions: self.additions,
+            deletions: self.deletions,
+            mergeable: self.mergeable,
+            checks: None,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            url: self.html_url,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct CombinedStatus {
+    #[serde(default)]
+    state: String,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct MilestoneDto {
+    #[serde(default)]
+    title: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct IssueDto {
+    number: u64,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    body: Option<String>,
+    #[serde(default)]
+    user: Option<UserDto>,
+    #[serde(default)]
+    state: String,
+    #[serde(default)]
+    labels: Vec<LabelDto>,
+    #[serde(default)]
+    assignees: Option<Vec<UserDto>>,
+    #[serde(default)]
+    comments: Option<u32>,
+    #[serde(default)]
+    milestone: Option<MilestoneDto>,
+    #[serde(default)]
+    created_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    updated_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    html_url: String,
+    #[serde(default)]
+    pull_request: Option<serde_json::Value>,
+}
+
+impl IssueDto {
+    fn into_model(self, repo: &RepoId) -> Issue {
+        Issue {
+            repo: repo.clone(),
+            number: self.number,
+            title: self.title,
+            body: self.body.unwrap_or_default(),
+            author: self.user.map(Into::into).unwrap_or_default(),
+            state: if self.state == "open" {
+                ItemState::Open
+            } else {
+                ItemState::Closed
+            },
+            labels: labels(self.labels),
+            assignees: self
+                .assignees
+                .unwrap_or_default()
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            comments: self.comments.unwrap_or(0),
+            milestone: self.milestone.map(|m| m.title).filter(|t| !t.is_empty()),
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            url: self.html_url,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct CommentDto {
+    #[serde(default)]
+    id: u64,
+    #[serde(default)]
+    user: Option<UserDto>,
+    #[serde(default)]
+    body: String,
+    #[serde(default)]
+    created_at: Option<DateTime<Utc>>,
+}
+
+impl From<CommentDto> for Comment {
+    fn from(d: CommentDto) -> Self {
+        Comment {
+            id: d.id,
+            author: d.user.map(Into::into).unwrap_or_default(),
+            body: d.body,
+            created_at: d.created_at,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ReviewDto {
+    #[serde(default)]
+    user: Option<UserDto>,
+    #[serde(default)]
+    state: String,
+    #[serde(default)]
+    body: String,
+    #[serde(default)]
+    submitted_at: Option<DateTime<Utc>>,
+}
+
+impl From<ReviewDto> for Review {
+    fn from(d: ReviewDto) -> Self {
+        let verdict = match d.state.to_uppercase().as_str() {
+            "APPROVED" => Some(ReviewVerdict::Approve),
+            "CHANGES_REQUESTED" | "REQUEST_CHANGES" => Some(ReviewVerdict::RequestChanges),
+            "COMMENTED" | "COMMENT" => Some(ReviewVerdict::Comment),
+            _ => None,
+        };
+        Review {
+            author: d.user.map(Into::into).unwrap_or_default(),
+            verdict,
+            body: d.body,
+            submitted_at: d.submitted_at,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct NotificationSubject {
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    html_url: Option<String>,
+    #[serde(rename = "type", default)]
+    kind: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct NotificationRepo {
+    #[serde(default)]
+    full_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct NotificationDto {
+    #[serde(default)]
+    id: serde_json::Value,
+    #[serde(default)]
+    unread: bool,
+    #[serde(default)]
+    reason: Option<String>,
+    #[serde(default)]
+    updated_at: Option<DateTime<Utc>>,
+    subject: NotificationSubject,
+    #[serde(default)]
+    repository: Option<NotificationRepo>,
+}
+
+impl NotificationDto {
+    fn into_model(self, host: &str) -> Notification {
+        let kind = match self.subject.kind.as_str() {
+            "PullRequest" | "Pull" => SubjectKind::PullRequest,
+            "Issue" => SubjectKind::Issue,
+            "Commit" => SubjectKind::Commit,
+            "Release" => SubjectKind::Release,
+            _ => SubjectKind::Other,
+        };
+        let reason = match self.reason.as_deref() {
+            Some("review_requested") => NotificationReason::ReviewRequested,
+            Some("mention" | "team_mention") => NotificationReason::Mention,
+            Some("assign") => NotificationReason::Assigned,
+            Some("comment" | "author") => NotificationReason::Comment,
+            Some("ci_activity") => NotificationReason::CiActivity,
+            Some("subscribed") => NotificationReason::Subscribed,
+            _ => NotificationReason::Other,
+        };
+        let number = self
+            .subject
+            .url
+            .as_deref()
+            .and_then(|u| u.trim_end_matches('/').rsplit('/').next())
+            .and_then(|n| n.parse().ok());
+        let full = self
+            .repository
+            .map(|r| r.full_name)
+            .filter(|n| !n.is_empty());
+        let repo = full.as_deref().and_then(|f| {
+            let (owner, name) = f.rsplit_once('/')?;
+            Some(RepoId::new(host, owner, name))
+        });
+        let url = self
+            .subject
+            .html_url
+            .clone()
+            .unwrap_or_else(|| match (&repo, number) {
+                (Some(r), Some(n)) => {
+                    let seg = if kind == SubjectKind::PullRequest {
+                        "pull"
+                    } else {
+                        "issues"
+                    };
+                    format!("https://{host}/{}/{seg}/{n}", r.full_name())
+                }
+                (Some(r), None) => format!("https://{host}/{}", r.full_name()),
+                _ => format!("https://{host}"),
+            });
+        let id = match self.id {
+            serde_json::Value::String(s) => s,
+            other => other.to_string(),
+        };
+        Notification {
+            id,
+            repo,
+            kind,
+            number,
+            title: self.subject.title,
+            reason,
+            unread: self.unread,
+            updated_at: self.updated_at,
+            url,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct HeatPoint {
+    timestamp: i64,
+    contributions: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct GraphQl {
+    data: Option<GraphData>,
+}
+#[derive(Debug, Deserialize)]
+struct GraphData {
+    user: Option<GraphUser>,
+}
+#[derive(Debug, Deserialize)]
+struct GraphUser {
+    #[serde(rename = "contributionsCollection")]
+    contributions_collection: GraphCollection,
+}
+#[derive(Debug, Deserialize)]
+struct GraphCollection {
+    #[serde(rename = "contributionCalendar")]
+    contribution_calendar: GraphCalendar,
+}
+#[derive(Debug, Deserialize)]
+struct GraphCalendar {
+    weeks: Vec<GraphWeek>,
+}
+#[derive(Debug, Deserialize)]
+struct GraphWeek {
+    #[serde(rename = "contributionDays")]
+    contribution_days: Vec<GraphDay>,
+}
+#[derive(Debug, Deserialize)]
+struct GraphDay {
+    date: String,
+    #[serde(rename = "contributionCount")]
+    contribution_count: u32,
+}

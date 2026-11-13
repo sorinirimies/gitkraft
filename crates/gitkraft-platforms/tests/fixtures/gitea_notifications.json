@@ -1,0 +1,6 @@
+[
+ {"id": 9, "unread": true, "updated_at": "2026-02-01T10:00:00Z",
+  "subject": {"title": "New issue", "url": "https://codeberg.org/api/v1/repos/o/r/issues/4",
+              "html_url": "https://codeberg.org/o/r/issues/4", "type": "Issue"},
+  "repository": {"full_name": "o/r"}}
+]

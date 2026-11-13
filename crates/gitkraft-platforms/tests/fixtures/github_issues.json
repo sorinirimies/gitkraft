@@ -1,0 +1,7 @@
+[
+ {"number": 5, "title": "Crash", "body": null, "state": "open", "user": {"login": "dave"},
+  "labels": [{"name": "bug", "color": "d73a4a"}], "assignees": [], "comments": 1,
+  "milestone": {"title": "v1"}, "html_url": "https://github.com/o/r/issues/5"},
+ {"number": 12, "title": "A PR in disguise", "state": "open", "pull_request": {"url": "x"},
+  "html_url": "https://github.com/o/r/pull/12"}
+]

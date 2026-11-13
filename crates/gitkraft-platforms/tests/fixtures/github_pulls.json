@@ -1,0 +1,12 @@
+[
+ {"number": 12, "title": "Add pulse view", "body": "Adds it", "state": "open", "draft": true,
+  "user": {"login": "alice", "avatar_url": "https://a/1"},
+  "head": {"ref": "feat/pulse", "sha": "abc123"}, "base": {"ref": "master"},
+  "labels": [{"name": "enhancement", "color": "a2eeef"}],
+  "assignees": [{"login": "bob"}], "requested_reviewers": [{"login": "carol"}],
+  "comments": 3, "created_at": "2026-01-02T03:04:05Z", "updated_at": "2026-01-03T03:04:05Z",
+  "html_url": "https://github.com/o/r/pull/12"},
+ {"number": 11, "title": "Fix", "state": "closed", "merged_at": "2026-01-01T00:00:00Z",
+  "user": {"login": "bob"}, "head": {"ref": "fix"}, "base": {"ref": "master"},
+  "html_url": "https://github.com/o/r/pull/11"}
+]

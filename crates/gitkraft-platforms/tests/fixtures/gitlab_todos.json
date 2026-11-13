@@ -1,0 +1,4 @@
+[{"id": 41, "action_name": "build_failed", "target_type": "MergeRequest",
+  "target": {"iid": 3, "title": "Wip thing"}, "project": {"path_with_namespace": "g/s/p"},
+  "target_url": "https://gitlab.com/g/s/p/-/merge_requests/3", "state": "pending",
+  "created_at": "2026-02-02T00:00:00Z"}]

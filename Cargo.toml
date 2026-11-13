@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/gitkraft-platforms",
     "crates/gitkraft-settings",
     "crates/gitkraft-core",
     "crates/gitkraft-gui",
@@ -32,6 +33,11 @@ notify       = { version = "8.2.1", features = [] }
 futures      = "0.3"
 tempfile     = "3"
 tracing            = "0.1"
+thiserror    = "2"
+tokio        = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+reqwest      = { version = "0.13", default-features = false, features = ["rustls", "http2", "gzip"] }
+toml         = "1"
+toml_edit    = "0.25"
 
 # GUI (Iced)
 iced         = { version = "0.14", features = ["advanced", "canvas"] }
@@ -49,6 +55,7 @@ tui-skeleton         = "0.3.0"
 tui-nuances          = "0.1.11"
 
 # Internal crates
+gitkraft-platforms = { path = "crates/gitkraft-platforms", version = "1.4.1" }
 gitkraft-settings = { path = "crates/gitkraft-settings", version = "1.4.1" }
 gitkraft-core = { path = "crates/gitkraft-core", version = "1.4.1" }
 

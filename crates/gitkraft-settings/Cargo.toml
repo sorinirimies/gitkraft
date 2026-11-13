@@ -18,6 +18,8 @@ dirs       = { workspace = true }
 anyhow     = { workspace = true }
 tracing    = { workspace = true }
 tempfile   = { workspace = true }   # atomic settings writes
+toml       = { workspace = true }
+toml_edit  = { workspace = true }   # flip `enabled` without losing comments
 
 [lints]
 workspace = true
