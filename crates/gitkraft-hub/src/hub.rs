@@ -396,7 +396,7 @@ fn collect<T, K: Ord>(
             Err(e) => out.errors.push(e),
         }
     }
-    out.items.sort_by(|a, b| key(b).cmp(&key(a)));
+    out.items.sort_by_key(|a| std::cmp::Reverse(key(a)));
     out
 }
 
