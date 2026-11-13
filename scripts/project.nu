@@ -17,7 +17,7 @@
 # tui (a terminal .desktop entry, an AppImage) or gui (.desktop, AppStream, icons,
 # an AppImage, the macOS .app, Start-menu shortcuts). A gui binary never builds
 # for musl; set APT to its headers.
-export const BINS = [[crate, bin, kind, summary]; [gitkraft, gitkraft, gui, "GitKraft: desktop Git IDE (Iced)"], [gitkraft-tui, gitkraft-tui, tui, "GitKraft TUI: terminal Git IDE (Ratatui)"]]
+export const BINS = [[crate, bin, kind, summary]; [gitkraft, gitkraft, gui, "GitKraft: desktop Git IDE (Iced)"], [gitkraft-tui, gitkraft-tui, tui, "GitKraft TUI: terminal Git IDE (Ratatui)"], [gitkraft-web, gitkraft-web, web, "GitKraft web: your forges on localhost (Topcoat)"]]
 
 # The desktop app. `id` names the packages' icon (assets/icons/<id>.svg and
 # <id>-<size>.png), the DMG, the installer and the AUR package; `bundle_id` is the
@@ -41,7 +41,7 @@ export const APP = {
 }
 
 # Crates published to crates.io, dependencies first.
-export const PUBLISH = ["gitkraft-settings" "gitkraft-platforms" "gitkraft-ci" "gitkraft-hub" "gitkraft-core" "gitkraft" "gitkraft-tui"]
+export const PUBLISH = ["gitkraft-settings" "gitkraft-platforms" "gitkraft-ci" "gitkraft-hub" "gitkraft-core" "gitkraft" "gitkraft-tui" "gitkraft-web"]
 
 # System packages (apt) every Linux job that compiles installs first, e.g. the
 # headers a GUI toolkit links against: ["libxkbcommon-dev"].

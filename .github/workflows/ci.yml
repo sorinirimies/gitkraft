@@ -113,4 +113,4 @@ jobs:
       - name: Install system packages
         run: nu scripts/ci/apt.nu
       - name: cargo check
-        run: cargo check --workspace --locked
+        run: cargo check --workspace --exclude gitkraft-web --locked

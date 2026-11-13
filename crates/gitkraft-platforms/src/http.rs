@@ -156,6 +156,42 @@ impl<C: HttpClient> HttpClient for std::sync::Arc<C> {
     }
 }
 
+type BoxFuture<'a> = std::pin::Pin<Box<dyn Future<Output = Result<Response>> + Send + 'a>>;
+
+trait Erased: Send + Sync {
+    fn send_boxed(&self, req: Request) -> BoxFuture<'_>;
+}
+
+impl<C: HttpClient> Erased for C {
+    fn send_boxed(&self, req: Request) -> BoxFuture<'_> {
+        Box::pin(self.send(req))
+    }
+}
+
+/// A client behind a pointer, so code that cannot be generic (a web server's shared state)
+/// still takes any [`HttpClient`], the real one or a test fake.
+#[derive(Clone)]
+pub struct DynClient(std::sync::Arc<dyn Erased>);
+
+impl DynClient {
+    /// Boxes `client`.
+    pub fn new<C: HttpClient + 'static>(client: C) -> Self {
+        Self(std::sync::Arc::new(client))
+    }
+}
+
+impl std::fmt::Debug for DynClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("DynClient(..)")
+    }
+}
+
+impl HttpClient for DynClient {
+    fn send(&self, req: Request) -> impl Future<Output = Result<Response>> + Send {
+        self.0.send_boxed(req)
+    }
+}
+
 /// Wraps a client with an in-memory ETag cache: unchanged GETs answer `304`,
 /// which does not count against rate limits, and the cached body is returned.
 #[derive(Debug)]
@@ -278,6 +314,17 @@ mod tests {
                 .iter()
                 .all(|(k, _)| k != "If-None-Match")
         );
+    }
+
+    #[tokio::test]
+    async fn a_dyn_client_forwards_to_what_it_wraps() {
+        let fake = FakeClient::new();
+        fake.push_json("https://x/a", "{}");
+        let client = DynClient::new(fake.clone());
+        let res = client.clone().send(Request::get("https://x/a")).await;
+        assert_eq!(res.map(|r| r.status), Ok(200));
+        assert_eq!(fake.requests().len(), 1);
+        assert!(client.send(Request::get("https://x/none")).await.is_err());
     }
 
     #[test]

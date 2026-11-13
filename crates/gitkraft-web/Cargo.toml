@@ -1,0 +1,39 @@
+[package]
+name = "gitkraft-web"
+version.workspace = true
+edition.workspace = true
+# Topcoat needs a newer Rust than the workspace MSRV; the msrv jobs skip this crate.
+rust-version = "1.98"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "GitKraft on localhost: pull requests, issues, CI, pulse and notifications of every platform account (Topcoat, server rendered)"
+categories = ["web-programming", "development-tools"]
+keywords = ["git", "github", "gitlab", "gitea", "dashboard"]
+
+[lib]
+name = "gitkraft_web"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gitkraft-web"
+path = "src/main.rs"
+
+[dependencies]
+gitkraft-hub       = { workspace = true }
+gitkraft-platforms = { workspace = true }
+gitkraft-ci        = { workspace = true }
+gitkraft-settings  = { workspace = true }
+topcoat    = { workspace = true }
+tokio      = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+chrono     = { workspace = true }
+anyhow     = { workspace = true }
+git2       = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

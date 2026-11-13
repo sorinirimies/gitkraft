@@ -10,11 +10,10 @@ use chrono::{Local, Utc};
 use gitkraft_ci::{RerunScope, Run, RunDetail};
 use gitkraft_hub::accounts::{AccountsFile, discover};
 use gitkraft_hub::poller::{Engine, run_cycle};
-use gitkraft_hub::pulse::{Pulse, pulse};
+use gitkraft_hub::pulse::Pulse;
 use gitkraft_hub::{Hub, PrDetail, SectionData, SectionResult};
 use gitkraft_platforms::model::{
-    ActivityDay, Comment, Issue, ItemState, ListQuery, MergeMethod, Notification, PullRequest,
-    ReviewVerdict, StateFilter,
+    ActivityDay, Comment, Issue, ItemState, MergeMethod, Notification, PullRequest, ReviewVerdict,
 };
 use gitkraft_platforms::notify::{Notifier, desktop::DesktopNotifier};
 use gitkraft_platforms::{CachedClient, ItemKind, RepoId, ReqwestClient};
@@ -872,27 +871,7 @@ impl HubState {
         let tx = self.tx.clone();
         let api2 = api.clone();
         rt.spawn(async move {
-            let q = ListQuery {
-                state: StateFilter::All,
-                ..ListQuery::default()
-            };
-            let (prs, issues, runs) = match (api2.backend(&repo.host), api2.ci(&repo.host)) {
-                (Some(b), Some(ci)) => {
-                    let (p, i, r) = futures_join3(
-                        b.list_pull_requests(&repo, &q),
-                        b.list_issues(&repo, &q),
-                        ci.list_runs(&repo, &gitkraft_ci::RunQuery::default()),
-                    )
-                    .await;
-                    (
-                        p.unwrap_or_default(),
-                        i.unwrap_or_default(),
-                        r.unwrap_or_default(),
-                    )
-                }
-                _ => Default::default(),
-            };
-            let data = pulse(&prs, &issues, &runs, days, Utc::now());
+            let data = api2.repo_pulse(&repo, days).await;
             let _ = tx.send(Msg::Pulse {
                 repo: repo.key(),
                 days,
@@ -1498,16 +1477,6 @@ fn done(tx: &mpsc::Sender<Msg>, result: Result<(), String>, ok_text: String, rel
         },
     };
     let _ = tx.send(msg);
-}
-
-/// Joins three futures without pulling in a macro crate.
-async fn futures_join3<A, B, C>(
-    a: impl std::future::Future<Output = A>,
-    b: impl std::future::Future<Output = B>,
-    c: impl std::future::Future<Output = C>,
-) -> (A, B, C) {
-    let (a, b, c) = tokio::join!(a, b, c);
-    (a, b, c)
 }
 
 /// Reads `notifications.toml`; a missing or broken file means defaults.

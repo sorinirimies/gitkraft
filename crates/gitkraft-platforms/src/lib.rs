@@ -33,5 +33,5 @@ pub use backend::Backend;
 pub use error::{PlatformError, Result};
 pub use github_like::GitHubLike;
 pub use gitlab::{GitLab, ItemKind};
-pub use http::{CachedClient, HttpClient, ReqwestClient};
+pub use http::{CachedClient, DynClient, HttpClient, ReqwestClient};
 pub use platform::{HostMap, PlatformKind, RepoId, parse_remote_url, url_encode};

@@ -345,6 +345,32 @@ impl<C: HttpClient + Clone> Hub<C> {
         })
     }
 
+    /// The pulse of one repo: PRs, issues and CI runs of the last `days` days.
+    /// Lists that cannot be loaded count as empty, so a repo without CI still has a pulse.
+    pub async fn repo_pulse(&self, repo: &RepoId, days: u32) -> crate::pulse::Pulse {
+        let q = ListQuery {
+            state: StateFilter::All,
+            ..ListQuery::default()
+        };
+        let rq = RunQuery::default();
+        let (prs, issues, runs) = match (self.backend(&repo.host), self.ci(&repo.host)) {
+            (Some(b), Some(ci)) => {
+                let (p, i, r) = futures::join!(
+                    b.list_pull_requests(repo, &q),
+                    b.list_issues(repo, &q),
+                    ci.list_runs(repo, &rq),
+                );
+                (
+                    p.unwrap_or_default(),
+                    i.unwrap_or_default(),
+                    r.unwrap_or_default(),
+                )
+            }
+            _ => Default::default(),
+        };
+        crate::pulse::pulse(&prs, &issues, &runs, days, chrono::Utc::now())
+    }
+
     /// Daily contributions summed over every account, oldest first, plus per-account errors.
     pub async fn contributions(&self) -> SectionResult<ActivityDay> {
         let calls = self.entries.iter().map(|e| async move {

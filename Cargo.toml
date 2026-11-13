@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/gitkraft-web",
     "crates/gitkraft-hub",
     "crates/gitkraft-ci",
     "crates/gitkraft-platforms",
@@ -40,6 +41,7 @@ tokio        = { version = "1", features = ["rt-multi-thread", "macros", "time",
 reqwest      = { version = "0.13", default-features = false, features = ["rustls", "http2", "gzip"] }
 notify-rust  = "4"
 toml         = "1"
+topcoat      = "0.10"
 toml_edit    = "0.25"
 
 # GUI (Iced)
@@ -61,6 +63,7 @@ ratatui-image        = { version = "11.1", default-features = false, features = 
 image                = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 
 # Internal crates
+gitkraft-web = { path = "crates/gitkraft-web", version = "1.4.1" }
 gitkraft-hub = { path = "crates/gitkraft-hub", version = "1.4.1" }
 gitkraft-ci = { path = "crates/gitkraft-ci", version = "1.4.1" }
 gitkraft-platforms = { path = "crates/gitkraft-platforms", version = "1.4.1" }

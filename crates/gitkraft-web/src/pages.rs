@@ -1,0 +1,956 @@
+//! The pages. Each is a plain GET; the data comes from [`Session`], the markup is Topcoat.
+
+use chrono::{Duration, Utc};
+use gitkraft_ci::annotations::{Severity, extract};
+use gitkraft_ci::log::parse_log;
+use gitkraft_ci::model::Status;
+use gitkraft_ci::timing::{format_seconds, gantt, job_seconds};
+use gitkraft_hub::SectionData;
+use gitkraft_platforms::model::{
+    ChecksState, ItemState, NotificationReason, ReviewVerdict, SubjectKind,
+};
+use gitkraft_platforms::{RepoId, url_encode};
+use gitkraft_settings::notify::{StatusInput, status};
+use topcoat::{
+    Result,
+    context::{Cx, app_context},
+    router::{error::not_found, page, query_params},
+    view::{Child, Unescaped, View, component, view},
+};
+
+use crate::render;
+use crate::session::Session;
+use crate::style::SCRIPT;
+
+/// One entry of the top navigation.
+#[derive(Debug, Clone)]
+pub struct NavItem {
+    /// Link target.
+    pub href: String,
+    /// Text.
+    pub label: String,
+    /// The current page.
+    pub on: bool,
+}
+
+/// One row of a dashboard list, whatever the section kind.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Row {
+    /// Where the row links to.
+    pub href: String,
+    /// A one-character state mark.
+    pub mark: &'static str,
+    /// CSS class of the mark.
+    pub class: &'static str,
+    /// Main text.
+    pub title: String,
+    /// Secondary text.
+    pub meta: String,
+}
+
+fn item_href(path: &str, repo: &RepoId, number: u64) -> String {
+    format!("{path}?repo={}&n={number}", url_encode(&repo.key()))
+}
+
+fn ago(dt: Option<chrono::DateTime<Utc>>) -> String {
+    dt.map(gitkraft_core_relative).unwrap_or_default()
+}
+
+fn gitkraft_core_relative(dt: chrono::DateTime<Utc>) -> String {
+    let d = Utc::now() - dt;
+    match () {
+        () if d < Duration::minutes(1) => "just now".into(),
+        () if d < Duration::hours(1) => format!("{}m ago", d.num_minutes()),
+        () if d < Duration::days(1) => format!("{}h ago", d.num_hours()),
+        () if d < Duration::days(60) => format!("{}d ago", d.num_days()),
+        () => format!("{}mo ago", d.num_days() / 30),
+    }
+}
+
+fn state_mark(s: ItemState) -> (&'static str, &'static str) {
+    match s {
+        ItemState::Open => ("●", "ok"),
+        ItemState::Merged => ("●", "acc"),
+        ItemState::Closed => ("●", "err"),
+    }
+}
+
+fn run_mark(s: Status) -> (&'static str, &'static str) {
+    let class = match s {
+        Status::Success => "ok",
+        Status::Failed => "err",
+        Status::Running => "warn",
+        Status::Cancelled | Status::Skipped => "mu",
+        Status::Queued | Status::Waiting | Status::Manual => "acc",
+    };
+    (s.glyph(false), class)
+}
+
+/// The rows of a section.
+pub fn rows_of(data: &SectionData) -> Vec<Row> {
+    match data {
+        SectionData::Prs(r) => r
+            .items
+            .iter()
+            .map(|p| {
+                let (mark, class) = match (p.state, p.checks) {
+                    (ItemState::Open, Some(ChecksState::Failure)) => ("✘", "err"),
+                    (ItemState::Open, Some(ChecksState::Pending)) => ("●", "warn"),
+                    (ItemState::Open, _) if p.draft => ("◌", "mu"),
+                    (s, _) => state_mark(s),
+                };
+                Row {
+                    href: item_href("/pr", &p.repo, p.number),
+                    mark,
+                    class,
+                    title: format!("#{} {}", p.number, p.title),
+                    meta: format!(
+                        "{} · {} · {}",
+                        p.repo.full_name(),
+                        p.author.login,
+                        ago(p.updated_at)
+                    ),
+                }
+            })
+            .collect(),
+        SectionData::Issues(r) => r
+            .items
+            .iter()
+            .map(|i| {
+                let (mark, class) = state_mark(i.state);
+                Row {
+                    href: item_href("/issue", &i.repo, i.number),
+                    mark,
+                    class,
+                    title: format!("#{} {}", i.number, i.title),
+                    meta: format!(
+                        "{} · {} · {}",
+                        i.repo.full_name(),
+                        i.author.login,
+                        ago(i.updated_at)
+                    ),
+                }
+            })
+            .collect(),
+        SectionData::Runs(r) => r
+            .items
+            .iter()
+            .map(|run| {
+                let (mark, class) = run_mark(run.status);
+                Row {
+                    href: format!("/ci/run?repo={}&id={}", url_encode(&run.repo.key()), run.id),
+                    mark,
+                    class,
+                    title: format!(
+                        "{} #{} · {} · {}",
+                        run.name, run.number, run.branch, run.title
+                    ),
+                    meta: format!("{} · {}", run.actor, ago(run.created_at)),
+                }
+            })
+            .collect(),
+        SectionData::Inbox(r) => r
+            .items
+            .iter()
+            .map(|n| {
+                let (mark, class) = if n.unread {
+                    ("●", "acc")
+                } else {
+                    ("○", "mu")
+                };
+                let href = match (&n.repo, n.number, n.kind) {
+                    (Some(repo), Some(num), SubjectKind::PullRequest) => {
+                        item_href("/pr", repo, num)
+                    }
+                    (Some(repo), Some(num), SubjectKind::Issue) => item_href("/issue", repo, num),
+                    _ => n.url.clone(),
+                };
+                let why = match n.reason {
+                    NotificationReason::ReviewRequested => "review requested",
+                    NotificationReason::Mention => "mention",
+                    NotificationReason::Assigned => "assigned",
+                    NotificationReason::Comment => "comment",
+                    NotificationReason::CiActivity => "CI",
+                    NotificationReason::Subscribed | NotificationReason::Other => "watching",
+                };
+                Row {
+                    href,
+                    mark,
+                    class,
+                    title: n.title.clone(),
+                    meta: format!(
+                        "{why} · {} · {}",
+                        n.repo.as_ref().map(RepoId::full_name).unwrap_or_default(),
+                        ago(n.updated_at)
+                    ),
+                }
+            })
+            .collect(),
+    }
+}
+
+fn nav(session: &Session, active: &str) -> Vec<NavItem> {
+    let mut items: Vec<NavItem> = session
+        .dashboard()
+        .visible()
+        .map(|(i, s)| NavItem {
+            href: format!("/?s={i}"),
+            label: s.name.clone(),
+            on: active == format!("s{i}"),
+        })
+        .collect();
+    for (key, href, label) in [
+        ("pulse", "/pulse", "Pulse"),
+        ("inbox", "/inbox", "Inbox"),
+        ("notify", "/notify", "🔔 Notifications"),
+    ] {
+        items.push(NavItem {
+            href: href.into(),
+            label: label.into(),
+            on: active == key,
+        });
+    }
+    items
+}
+
+/// The page frame.
+#[component]
+pub(crate) async fn shell(
+    title: String,
+    nav: Vec<NavItem>,
+    vars: String,
+    child: Child<'_>,
+) -> Result<impl View> {
+    Ok(view! {
+        <!DOCTYPE html>
+        <html lang="en">
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>(title)</title>
+                <style>(vars)</style>
+                <link rel="stylesheet" href="/style.css">
+                (Unescaped::new_unchecked(format!("<script>{SCRIPT}</script>")))
+            </head>
+            <body>
+                <header class="top">
+                    <span class="brand">"GitKraft"</span>
+                    <nav>
+                        for n in nav {
+                            <a href=(n.href) class=(if n.on { "on" } else { "" })>(n.label)</a>
+                        }
+                    </nav>
+                </header>
+                <main>(child)</main>
+            </body>
+        </html>
+    })
+}
+
+#[derive(Debug)]
+#[topcoat::router::query_params(error = redirect("/"))]
+pub struct SectionParams {
+    /// Index into the dashboard.
+    pub s: Option<String>,
+}
+
+#[page("/")]
+async fn dashboard(cx: &Cx) -> Result<impl View> {
+    let params = query_params::<SectionParams>(cx)?;
+    let session: &Session = app_context(cx);
+    let dash = session.dashboard();
+    let first = dash.visible().next().map(|(i, _)| i);
+    let index = params
+        .s
+        .as_deref()
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|i| dash.sections.get(*i).is_some_and(|s| !s.hidden))
+        .or(first);
+    let (name, rows, errors) = match index {
+        Some(i) => {
+            let data = session.section_data(i).await;
+            (
+                dash.sections[i].name.clone(),
+                data.as_ref().map(rows_of).unwrap_or_default(),
+                data.map(|d| d.errors().to_vec()).unwrap_or_default(),
+            )
+        }
+        None => (
+            "Dashboard".into(),
+            Vec::new(),
+            vec!["No sections: add some to dashboard.toml".to_string()],
+        ),
+    };
+    let empty = rows.is_empty() && errors.is_empty();
+    let active = index.map(|i| format!("s{i}")).unwrap_or_default();
+    Ok(view! {
+        shell(title: format!("{name} · GitKraft"), nav: nav(session, &active), vars: render::css_vars(&session.theme()),
+            <h1>(name.clone())</h1>
+            for e in errors { <div class="note err">(e)</div> }
+            if empty { <p class="dim">"Nothing here."</p> }
+            <table>
+                for r in rows {
+                    <tr>
+                        <td class="mark"><span class=(r.class)>(r.mark)</span></td>
+                        <td><a href=(r.href)>(r.title)</a><div class="meta small">(r.meta)</div></td>
+                    </tr>
+                }
+            </table>
+        )
+    })
+}
+
+#[derive(Debug)]
+#[topcoat::router::query_params(error = redirect("/"))]
+pub struct ItemParams {
+    /// `host/owner/name`.
+    pub repo: Option<String>,
+    /// Number.
+    pub n: Option<String>,
+    /// PR tab.
+    pub tab: Option<String>,
+    /// Run id.
+    pub id: Option<String>,
+    /// Job id.
+    pub job: Option<String>,
+    /// Days.
+    pub days: Option<String>,
+}
+
+fn parse_item(p: &ItemParams) -> Option<(RepoId, u64)> {
+    Some((
+        RepoId::from_key(p.repo.as_deref()?)?,
+        p.n.as_deref()?.parse().ok()?,
+    ))
+}
+
+/// A line of a diff with its CSS class.
+pub fn diff_class(l: &str) -> &'static str {
+    if l.starts_with("+++") || l.starts_with("---") || l.starts_with("diff ") {
+        "ctx"
+    } else if l.starts_with('+') {
+        "add"
+    } else if l.starts_with('-') {
+        "del"
+    } else if l.starts_with("@@") {
+        "hunk"
+    } else {
+        "ctx"
+    }
+}
+
+/// Lines of the diff shown at most (the rest is cut with a note).
+const DIFF_LINES: usize = 4000;
+
+fn act_json(v: serde_json::Value) -> String {
+    v.to_string()
+}
+
+#[page("/pr")]
+async fn pull_request(cx: &Cx) -> Result<impl View> {
+    let params = query_params::<ItemParams>(cx)?;
+    let session: &Session = app_context(cx);
+    let (repo, number) = parse_item(params).ok_or_else(not_found)?;
+    let detail = session
+        .hub()
+        .pr_detail(&repo, number)
+        .await
+        .map_err(|_| not_found())?;
+    let tab = params.tab.clone().unwrap_or_else(|| "overview".into());
+    let pr = detail.pr.clone();
+    let key = repo.key();
+    let base = format!("/pr?repo={}&n={number}", url_encode(&key));
+    let state_word = match (pr.state, pr.draft) {
+        (ItemState::Open, true) => "draft",
+        (ItemState::Open, false) => "open",
+        (ItemState::Merged, _) => "merged",
+        (ItemState::Closed, _) => "closed",
+    };
+    let checks = match pr.checks {
+        Some(ChecksState::Success) => "✔ checks passed",
+        Some(ChecksState::Failure) => "✘ checks failed",
+        Some(ChecksState::Pending) => "● checks running",
+        None => "",
+    };
+    let reviews: Vec<String> = detail
+        .reviews
+        .iter()
+        .map(|r| {
+            let what = match r.verdict {
+                Some(ReviewVerdict::Approve) => "approved",
+                Some(ReviewVerdict::RequestChanges) => "requested changes",
+                _ => "commented",
+            };
+            format!("{} {what}", r.author.login)
+        })
+        .collect();
+    let mut diff: Vec<(&'static str, String)> = detail
+        .diff
+        .lines()
+        .take(DIFF_LINES)
+        .map(|l| (diff_class(l), l.to_string()))
+        .collect();
+    if detail.diff.lines().count() > DIFF_LINES {
+        diff.push(("hunk", format!("… diff cut after {DIFF_LINES} lines")));
+    }
+    let images = gitkraft_hub::markdown::image_urls(&format!(
+        "{}\n{}",
+        pr.body,
+        detail
+            .comments
+            .iter()
+            .map(|c| c.body.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    ));
+    let open = pr.state == ItemState::Open;
+    let target = serde_json::json!({ "repo": key, "number": number });
+    let with = |extra: serde_json::Value| {
+        let mut v = target.clone();
+        if let (Some(o), Some(e)) = (v.as_object_mut(), extra.as_object()) {
+            o.extend(e.clone());
+        }
+        act_json(v)
+    };
+    let approve = with(serde_json::json!({"action": "review", "verdict": "approve"}));
+    let changes = with(serde_json::json!({"action": "review", "verdict": "request_changes"}));
+    let comment = with(serde_json::json!({"action": "comment", "kind": "pr"}));
+    let merge = with(serde_json::json!({"action": "merge", "method": "merge"}));
+    let squash = with(serde_json::json!({"action": "merge", "method": "squash"}));
+    let toggle = with(serde_json::json!({"action": "set_open", "kind": "pr", "open": !open}));
+    let toggle_label = if open { "Close" } else { "Reopen" };
+    let labels: Vec<String> = pr.labels.iter().map(|l| l.name.clone()).collect();
+    Ok(view! {
+        shell(title: format!("{} · #{number}", pr.title), nav: nav(session, ""), vars: render::css_vars(&session.theme()),
+            <h1>(pr.title.clone())</h1>
+            <div class="meta">
+                <span class=(format!("badge {state_word}"))>(state_word)</span>
+                " "(format!("{}#{number} by {} · {} → {}", repo.full_name(), pr.author.login, pr.source_branch, pr.target_branch))
+                " "<span>(checks)</span>
+                if pr.mergeable == Some(false) { " "<span class="err">"⚠ conflicts"</span> }
+                if let (Some(a), Some(d)) = (pr.additions, pr.deletions) { " "<span class="mu">(format!("+{a} −{d}"))</span> }
+            </div>
+            if !labels.is_empty() { <div class="meta small">"labels: "(labels.join(", "))</div> }
+            for e in detail.errors.clone() { <div class="note warn">(e)</div> }
+            <div class="bar">
+                <button class="primary" data-act=(approve) data-from="note" onclick="actBtn(this)">"Approve"</button>
+                <button data-act=(changes) data-from="note" onclick="actBtn(this)">"Request changes"</button>
+                if open {
+                    <button data-act=(merge) data-confirm="Merge this pull request?" onclick="actBtn(this)">"Merge"</button>
+                    <button data-act=(squash) data-confirm="Squash and merge?" onclick="actBtn(this)">"Squash"</button>
+                }
+                <button class="danger" data-act=(toggle) data-confirm=(format!("{toggle_label} this pull request?")) onclick="actBtn(this)">(toggle_label)</button>
+            </div>
+            <nav class="tabs">
+                <a href=(format!("{base}&tab=overview")) class=(if tab == "overview" { "on" } else { "" })>"Overview"</a>
+                <a href=(format!("{base}&tab=diff")) class=(if tab == "diff" { "on" } else { "" })>"Diff"</a>
+                <a href=(format!("{base}&tab=comments")) class=(if tab == "comments" { "on" } else { "" })>(format!("Comments {}", detail.comments.len()))</a>
+            </nav>
+            if tab == "diff" {
+                <div class="diff">
+                    for (class, text) in diff { <div class=(class)>(text)</div> }
+                </div>
+            } else if tab == "comments" {
+                for c in detail.comments.clone() {
+                    <div class="comment"><b>(c.author.login.clone())</b>" "<span class="meta small">(ago(c.created_at))</span><pre>(c.body.clone())</pre></div>
+                }
+                <h2>"Write a comment"</h2>
+                <textarea id="note" placeholder="Comment, or the note for a review"></textarea>
+                <div class="bar"><button class="primary" data-act=(comment) data-from="note" onclick="actBtn(this)">"Comment"</button></div>
+            } else {
+                for r in reviews { <div>(r)</div> }
+                <div class="panel"><pre>(if pr.body.trim().is_empty() { "No description.".to_string() } else { pr.body.clone() })</pre></div>
+                for url in images { <img class="shot" loading="lazy" referrerpolicy="no-referrer" src=(url)> }
+                <h2>"Note for a review"</h2>
+                <textarea id="note" placeholder="Optional for approving, required for requesting changes"></textarea>
+            }
+        )
+    })
+}
+
+#[page("/issue")]
+async fn issue(cx: &Cx) -> Result<impl View> {
+    let params = query_params::<ItemParams>(cx)?;
+    let session: &Session = app_context(cx);
+    let (repo, number) = parse_item(params).ok_or_else(not_found)?;
+    let backend = session.hub().backend(&repo.host).ok_or_else(not_found)?;
+    let issue = backend
+        .issue(&repo, number)
+        .await
+        .map_err(|_| not_found())?;
+    let comments = backend
+        .comments(&repo, gitkraft_platforms::ItemKind::Issue, number)
+        .await
+        .unwrap_or_default();
+    let open = issue.state == ItemState::Open;
+    let key = repo.key();
+    let comment = act_json(
+        serde_json::json!({"action": "comment", "repo": key, "number": number, "kind": "issue"}),
+    );
+    let toggle = act_json(
+        serde_json::json!({"action": "set_open", "repo": key, "number": number, "kind": "issue", "open": !open}),
+    );
+    let images = gitkraft_hub::markdown::image_urls(&format!(
+        "{}\n{}",
+        issue.body,
+        comments
+            .iter()
+            .map(|c| c.body.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    ));
+    let labels: Vec<String> = issue.labels.iter().map(|l| l.name.clone()).collect();
+    Ok(view! {
+        shell(title: format!("{} · #{number}", issue.title), nav: nav(session, ""), vars: render::css_vars(&session.theme()),
+            <h1>(issue.title.clone())</h1>
+            <div class="meta">
+                <span class=(if open { "badge open" } else { "badge closed" })>(if open { "open" } else { "closed" })</span>
+                " "(format!("{}#{number} by {}", repo.full_name(), issue.author.login))
+            </div>
+            if !labels.is_empty() { <div class="meta small">"labels: "(labels.join(", "))</div> }
+            <div class="panel"><pre>(if issue.body.trim().is_empty() { "No description.".to_string() } else { issue.body.clone() })</pre></div>
+            for url in images { <img class="shot" loading="lazy" referrerpolicy="no-referrer" src=(url)> }
+            for c in comments { <div class="comment"><b>(c.author.login.clone())</b>" "<span class="meta small">(ago(c.created_at))</span><pre>(c.body.clone())</pre></div> }
+            <textarea id="note" placeholder="Write a comment"></textarea>
+            <div class="bar">
+                <button class="primary" data-act=(comment) data-from="note" onclick="actBtn(this)">"Comment"</button>
+                <button class="danger" data-act=(toggle) data-confirm="Change the state of this issue?" onclick="actBtn(this)">(if open { "Close" } else { "Reopen" })</button>
+            </div>
+        )
+    })
+}
+
+fn parse_run(p: &ItemParams) -> Option<(RepoId, u64)> {
+    Some((
+        RepoId::from_key(p.repo.as_deref()?)?,
+        p.id.as_deref()?.parse().ok()?,
+    ))
+}
+
+#[page("/ci/run")]
+async fn ci_run(cx: &Cx) -> Result<impl View> {
+    let params = query_params::<ItemParams>(cx)?;
+    let session: &Session = app_context(cx);
+    let (repo, id) = parse_run(params).ok_or_else(not_found)?;
+    let ci = session.hub().ci(&repo.host).ok_or_else(not_found)?;
+    let detail = ci.run_detail(&repo, id).await.map_err(|_| not_found())?;
+    let run = detail.run.clone();
+    let key = repo.key();
+    let (mark, class) = run_mark(run.status);
+    let timeline = Unescaped::new_unchecked(render::gantt_svg(&gantt(&detail)));
+    let jobs: Vec<(String, &'static str, &'static str, String, String)> = detail
+        .jobs
+        .iter()
+        .map(|j| {
+            let (m, c) = run_mark(j.status);
+            (
+                format!("/ci/log?repo={}&job={}&id={id}", url_encode(&key), j.id),
+                m,
+                c,
+                format!(
+                    "{}{}",
+                    j.stage
+                        .as_deref()
+                        .map(|s| format!("{s} · "))
+                        .unwrap_or_default(),
+                    j.name
+                ),
+                job_seconds(j).map(format_seconds).unwrap_or_default(),
+            )
+        })
+        .collect();
+    let rerun_failed = act_json(
+        serde_json::json!({"action": "rerun", "repo": key, "run_id": id, "branch": run.branch, "scope": "failed"}),
+    );
+    let rerun_all = act_json(
+        serde_json::json!({"action": "rerun", "repo": key, "run_id": id, "branch": run.branch, "scope": "all"}),
+    );
+    let cancel = act_json(serde_json::json!({"action": "cancel", "repo": key, "run_id": id}));
+    let active = run.status.is_active();
+    Ok(view! {
+        shell(title: format!("{} #{}", run.name, run.number), nav: nav(session, ""), vars: render::css_vars(&session.theme()),
+            <h1><span class=(class)>(mark)</span>" "(format!("{} #{}", run.name, run.number))</h1>
+            <div class="meta">(format!("{} · {} · {} · {}", repo.full_name(), run.branch, run.event, run.actor))</div>
+            <div class="meta small">(run.title.clone())</div>
+            <div class="bar">
+                <button data-act=(rerun_failed) data-confirm="Re-run the failed jobs?" onclick="actBtn(this)">"Re-run failed"</button>
+                <button data-act=(rerun_all) data-confirm="Re-run every job?" onclick="actBtn(this)">"Re-run all"</button>
+                if active { <button class="danger" data-act=(cancel) data-confirm="Cancel this run?" onclick="actBtn(this)">"Cancel"</button> }
+                if active { <meta http-equiv="refresh" content="10"> }
+            </div>
+            <h2>"Timeline"</h2>
+            <div class="panel">(timeline)</div>
+            <h2>"Jobs"</h2>
+            <table>
+                for (href, m, c, name, secs) in jobs {
+                    <tr><td class="mark"><span class=(c)>(m)</span></td><td><a href=(href)>(name)</a></td><td class="meta">(secs)</td></tr>
+                }
+            </table>
+        )
+    })
+}
+
+#[page("/ci/log")]
+async fn ci_log(cx: &Cx) -> Result<impl View> {
+    let params = query_params::<ItemParams>(cx)?;
+    let session: &Session = app_context(cx);
+    let repo =
+        RepoId::from_key(params.repo.as_deref().unwrap_or_default()).ok_or_else(not_found)?;
+    let job: u64 = params
+        .job
+        .as_deref()
+        .and_then(|j| j.parse().ok())
+        .ok_or_else(not_found)?;
+    let ci = session.hub().ci(&repo.host).ok_or_else(not_found)?;
+    let raw = ci.job_log(&repo, job).await.map_err(|_| not_found())?;
+    let lines = parse_log(&raw);
+    let found: Vec<(String, String, &'static str)> = extract(&lines)
+        .into_iter()
+        .map(|a| {
+            let at = match (&a.file, a.line) {
+                (Some(f), Some(l)) => format!("{f}:{l}"),
+                (Some(f), None) => f.clone(),
+                _ => String::new(),
+            };
+            (
+                format!("#L{}", lines[a.log_index].number),
+                format!("{at} {}", a.message),
+                if a.severity == Severity::Error {
+                    "err"
+                } else {
+                    "warn"
+                },
+            )
+        })
+        .collect();
+    let back = params
+        .id
+        .as_deref()
+        .map(|id| format!("/ci/run?repo={}&id={id}", url_encode(&repo.key())))
+        .unwrap_or_else(|| "/".into());
+    let body = Unescaped::new_unchecked(render::log_html(&lines));
+    Ok(view! {
+        shell(title: format!("Log · job {job}"), nav: nav(session, ""), vars: render::css_vars(&session.theme()),
+            <h1>(format!("Log of job {job}"))</h1>
+            <div class="meta"><a href=(back)>"← back to the run"</a>" · "(format!("{} lines", lines.len()))</div>
+            if !found.is_empty() {
+                <h2>(format!("{} problems found", found.len()))</h2>
+                <div class="panel">
+                    for (href, text, class) in found { <div><a href=(href) class=(class)>(text)</a></div> }
+                </div>
+            }
+            (body)
+        )
+    })
+}
+
+#[page("/pulse")]
+async fn pulse(cx: &Cx) -> Result<impl View> {
+    let params = query_params::<ItemParams>(cx)?;
+    let session: &Session = app_context(cx);
+    let days: u32 = params
+        .days
+        .as_deref()
+        .and_then(|d| d.parse().ok())
+        .filter(|d| (1..=365).contains(d))
+        .unwrap_or(30);
+    let dash = session.dashboard();
+    let mut repos: Vec<String> = dash
+        .sections
+        .iter()
+        .flat_map(|s| s.repos.iter().cloned())
+        .collect();
+    repos.sort();
+    repos.dedup();
+    let chosen = params
+        .repo
+        .clone()
+        .filter(|r| RepoId::from_key(r).is_some())
+        .or_else(|| repos.first().cloned());
+    let contributions = session.hub().contributions().await;
+    let today = Utc::now().date_naive();
+    let heat = Unescaped::new_unchecked(render::heatmap_svg(&contributions.items, today));
+    let total = render::year_total(&contributions.items, today);
+    let data = match chosen.as_deref().and_then(RepoId::from_key) {
+        Some(repo) => Some(session.hub().repo_pulse(&repo, days).await),
+        None => None,
+    };
+    let bars = data
+        .as_ref()
+        .map(|p| Unescaped::new_unchecked(render::bars_svg(&p.prs_per_day, "PRs opened")));
+    let stats: Vec<(String, usize)> = data
+        .as_ref()
+        .map(|p| {
+            vec![
+                ("PRs opened".to_string(), p.prs_opened),
+                ("PRs merged".into(), p.prs_merged),
+                ("PRs closed".into(), p.prs_closed),
+                ("PRs open now".into(), p.prs_open_now),
+                ("Issues opened".into(), p.issues_opened),
+                ("Issues closed".into(), p.issues_closed),
+                ("CI green".into(), p.ci_green),
+                ("CI red".into(), p.ci_red),
+            ]
+        })
+        .unwrap_or_default();
+    let authors: Vec<String> = data
+        .as_ref()
+        .map(|p| {
+            p.top_authors
+                .iter()
+                .map(|(a, n)| format!("{a} · {n}"))
+                .collect()
+        })
+        .unwrap_or_default();
+    let errors = contributions.errors.clone();
+    let range_links: Vec<(String, String, bool)> = [7u32, 30, 90, 365]
+        .iter()
+        .map(|d| {
+            (
+                format!(
+                    "/pulse?repo={}&days={d}",
+                    url_encode(chosen.as_deref().unwrap_or_default())
+                ),
+                format!("{d} days"),
+                *d == days,
+            )
+        })
+        .collect();
+    let repo_links: Vec<(String, String, bool)> = repos
+        .iter()
+        .map(|r| {
+            (
+                format!("/pulse?repo={}&days={days}", url_encode(r)),
+                r.clone(),
+                Some(r) == chosen.as_ref(),
+            )
+        })
+        .collect();
+    Ok(view! {
+        shell(title: "Pulse · GitKraft".to_string(), nav: nav(session, "pulse"), vars: render::css_vars(&session.theme()),
+            <h1>"Contributions"</h1>
+            <div class="meta">(format!("{total} contributions in the last year, all accounts"))</div>
+            for e in errors { <div class="note warn">(e)</div> }
+            <div class="panel">(heat)</div>
+            <h1>"Pulse"</h1>
+            <nav class="tabs">for (href, label, on) in repo_links { <a href=(href) class=(if on { "on" } else { "" })>(label)</a> }</nav>
+            <nav class="tabs">for (href, label, on) in range_links { <a href=(href) class=(if on { "on" } else { "" })>(label)</a> }</nav>
+            if data.is_none() { <p class="dim">"Add repos to your dashboard sections to see their pulse."</p> }
+            <div class="grid">for (label, n) in stats { <div class="stat"><b>(n.to_string())</b>(label)</div> }</div>
+            if let Some(b) = bars { <h2>"PRs opened per day"</h2><div class="panel">(b)</div> }
+            if !authors.is_empty() { <h2>"Most active authors"</h2><div class="panel">for a in authors { <div>(a)</div> }</div> }
+        )
+    })
+}
+
+#[page("/inbox")]
+async fn inbox(cx: &Cx) -> Result<impl View> {
+    let session: &Session = app_context(cx);
+    let engine = session.engine();
+    let saved: Vec<(String, String, String)> = engine
+        .inbox
+        .entries()
+        .iter()
+        .map(|e| {
+            (
+                format!("{} · {}", e.alert.headline(), e.alert.title),
+                if e.read {
+                    "mu".to_string()
+                } else {
+                    "acc".to_string()
+                },
+                ago(Some(e.at)),
+            )
+        })
+        .collect();
+    let inbox_section = gitkraft_settings::dashboard::Section {
+        name: "Inbox".into(),
+        kind: gitkraft_settings::dashboard::SectionKind::Inbox,
+        repos: vec![],
+        involvement: None,
+        state: Default::default(),
+        label: None,
+        branch: None,
+        hidden: false,
+    };
+    let live = session.hub().load_section(&inbox_section).await;
+    let rows = rows_of(&live);
+    let errors = live.errors().to_vec();
+    Ok(view! {
+        shell(title: "Inbox · GitKraft".to_string(), nav: nav(session, "inbox"), vars: render::css_vars(&session.theme()),
+            <h1>"Inbox"</h1>
+            for e in errors { <div class="note err">(e)</div> }
+            <table>
+                for r in rows {
+                    <tr><td class="mark"><span class=(r.class)>(r.mark)</span></td><td><a href=(r.href)>(r.title)</a><div class="meta small">(r.meta)</div></td></tr>
+                }
+            </table>
+            if !saved.is_empty() {
+                <h2>"Raised by the poller"</h2>
+                <table>
+                    for (text, class, when) in saved { <tr><td class=(class)>(text)</td><td class="meta">(when)</td></tr> }
+                </table>
+            }
+        )
+    })
+}
+
+#[page("/notify")]
+async fn notify(cx: &Cx) -> Result<impl View> {
+    let session: &Session = app_context(cx);
+    let config = session.notify_config();
+    let engine = session.engine();
+    let dash = session.dashboard();
+    let mut keys: Vec<String> = config.projects.keys().cloned().collect();
+    keys.extend(dash.sections.iter().flat_map(|s| s.repos.iter().cloned()));
+    keys.sort();
+    keys.dedup();
+    let now = Utc::now();
+    let rows: Vec<(String, String, String, String, bool)> = keys
+        .into_iter()
+        .map(|key| {
+            let eff = config.resolve(&key, None);
+            let st = engine.status.repos.get(&key).cloned().unwrap_or_default();
+            let s = status(
+                &StatusInput {
+                    enabled: eff.enabled,
+                    muted_until: engine.state.muted_until(&key),
+                    last_poll: st.last_poll,
+                    last_error: st.last_error,
+                    poller_heartbeat: engine.status.heartbeat,
+                    interval: eff.poll_interval,
+                },
+                now,
+            );
+            let on = eff.enabled;
+            (
+                key.clone(),
+                s.glyph(true).to_string(),
+                s.describe(now),
+                act_json(serde_json::json!({"action": "notify_toggle", "repo": key, "on": !on})),
+                on,
+            )
+        })
+        .collect();
+    let global_on = config.defaults.enabled.unwrap_or(false);
+    let global =
+        act_json(serde_json::json!({"action": "notify_toggle", "repo": "", "on": !global_on}));
+    let mode = if engine
+        .status
+        .heartbeat
+        .is_some_and(|h| now - h < Duration::minutes(5))
+    {
+        engine.status.mode.clone()
+    } else {
+        "not running".to_string()
+    };
+    Ok(view! {
+        shell(title: "Notifications · GitKraft".to_string(), nav: nav(session, "notify"), vars: render::css_vars(&session.theme()),
+            <h1>"Notifications"</h1>
+            <div class="meta">(format!("poller: {mode} · start it with `gitkraft-tui notify --daemon`"))</div>
+            <div class="bar"><button data-act=(global) onclick="actBtn(this)">(if global_on { "Turn all off" } else { "Turn all on" })</button></div>
+            <table>
+                for (key, glyph, text, toggle, on) in rows {
+                    <tr>
+                        <td class="mark"><code>(glyph)</code></td>
+                        <td>(key)<div class="meta small">(text)</div></td>
+                        <td><button data-act=(toggle) onclick="actBtn(this)">(if on { "Turn off" } else { "Turn on" })</button></td>
+                    </tr>
+                }
+            </table>
+        )
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gitkraft_hub::SectionResult;
+    use gitkraft_platforms::model::{Notification, PullRequest, User};
+
+    fn repo() -> RepoId {
+        RepoId::new("github.com", "o", "r")
+    }
+
+    #[test]
+    fn pr_rows_link_to_the_pr_page_and_show_checks() {
+        let pr = |n, checks, draft| PullRequest {
+            repo: repo(),
+            number: n,
+            title: format!("t{n}"),
+            author: User {
+                login: "a".into(),
+                avatar_url: None,
+            },
+            checks,
+            draft,
+            ..PullRequest::default()
+        };
+        let rows = rows_of(&SectionData::Prs(SectionResult {
+            items: vec![
+                pr(1, Some(ChecksState::Failure), false),
+                pr(2, None, true),
+                pr(3, None, false),
+            ],
+            errors: vec![],
+        }));
+        assert_eq!(rows[0].href, "/pr?repo=github.com%2Fo%2Fr&n=1");
+        assert_eq!((rows[0].mark, rows[0].class), ("✘", "err"));
+        assert_eq!((rows[1].mark, rows[1].class), ("◌", "mu"));
+        assert_eq!((rows[2].mark, rows[2].class), ("●", "ok"));
+        assert_eq!(rows[0].title, "#1 t1");
+        assert!(rows[0].meta.starts_with("o/r · a"));
+    }
+
+    #[test]
+    fn inbox_rows_link_into_the_app_when_they_can() {
+        let n = |kind, number| Notification {
+            id: "1".into(),
+            repo: Some(repo()),
+            kind,
+            number,
+            title: "t".into(),
+            reason: NotificationReason::ReviewRequested,
+            unread: true,
+            updated_at: None,
+            url: "https://github.com/o/r/pull/1".into(),
+        };
+        let rows = rows_of(&SectionData::Inbox(SectionResult {
+            items: vec![
+                n(SubjectKind::PullRequest, Some(1)),
+                n(SubjectKind::Issue, Some(2)),
+                n(SubjectKind::Release, None),
+            ],
+            errors: vec![],
+        }));
+        assert_eq!(rows[0].href, "/pr?repo=github.com%2Fo%2Fr&n=1");
+        assert_eq!(rows[1].href, "/issue?repo=github.com%2Fo%2Fr&n=2");
+        assert_eq!(rows[2].href, "https://github.com/o/r/pull/1");
+        assert!(rows[0].meta.starts_with("review requested"));
+    }
+
+    #[test]
+    fn relative_times_step_through_units() {
+        let ago = |d: Duration| gitkraft_core_relative(Utc::now() - d);
+        assert_eq!(ago(Duration::seconds(5)), "just now");
+        assert_eq!(ago(Duration::minutes(5)), "5m ago");
+        assert_eq!(ago(Duration::hours(5)), "5h ago");
+        assert_eq!(ago(Duration::days(5)), "5d ago");
+        assert_eq!(ago(Duration::days(100)), "3mo ago");
+    }
+
+    #[test]
+    fn diff_lines_get_their_colour_class() {
+        for (line, class) in [
+            ("+x", "add"),
+            ("-x", "del"),
+            ("@@ -1 +1 @@", "hunk"),
+            (" ctx", "ctx"),
+            ("+++ b/f", "ctx"),
+            ("--- a/f", "ctx"),
+            ("diff --git a b", "ctx"),
+        ] {
+            assert_eq!(diff_class(line), class, "{line}");
+        }
+    }
+}
