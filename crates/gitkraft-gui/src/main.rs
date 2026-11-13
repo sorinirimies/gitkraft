@@ -266,6 +266,10 @@ fn handle_key_press(
             }
             // Ctrl/Cmd + W — close current tab / repo
             Key::Character(ref c) if c.as_str() == "w" => Some(gitkraft_gui::Message::CloseRepo),
+            // Ctrl/Cmd + P — the hub's command palette (ignored outside the hub)
+            Key::Character(ref c) if c.as_str() == "p" => Some(gitkraft_gui::Message::Hub(
+                gitkraft_gui::features::hub::HubMessage::PaletteToggle,
+            )),
             // Ctrl/Cmd + R — refresh
             Key::Character(ref c) if c.as_str() == "r" => Some(gitkraft_gui::Message::RefreshRepo),
             _ => None,

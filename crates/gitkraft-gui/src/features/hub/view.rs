@@ -46,7 +46,56 @@ pub fn view(app: &GitKraft) -> Element<'_, Message> {
             .style(theme::bg_style),
     )
     .on_release(HubMessage::DragCancel);
-    Element::from(area).map(Message::Hub)
+    let base: El<'_> = area.into();
+    let shown: El<'_> = if hub.palette.is_some() {
+        iced::widget::stack![base, palette(hub, &c)].into()
+    } else {
+        base
+    };
+    shown.map(Message::Hub)
+}
+
+fn palette<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
+    let query = hub.palette.as_deref().unwrap_or_default();
+    let shown = hub.palette_shown();
+    let mut list = column![].spacing(2);
+    for (n, (label, _)) in shown.iter().take(14).enumerate() {
+        list = list.push(
+            button(text(label.clone()).size(13))
+                .on_press(HubMessage::PaletteRun(n))
+                .style(theme::ghost_button)
+                .width(Length::Fill)
+                .padding([4, 10]),
+        );
+    }
+    if shown.is_empty() {
+        list = list.push(text("nothing matches").size(13).color(c.text_secondary));
+    }
+    let input = text_input("Type a command…  (Enter runs the first)", query)
+        .id(iced::widget::Id::new(super::state::PALETTE_INPUT))
+        .on_input(HubMessage::PaletteQuery)
+        .on_submit(HubMessage::PaletteSubmit)
+        .padding(8);
+    let card = container(column![input, list].spacing(8).width(Length::Fill))
+        .width(Length::Fixed(520.0))
+        .padding(12)
+        .style(theme::surface_style);
+    let backdrop = button(Space::new().width(Length::Fill).height(Length::Fill))
+        .on_press(HubMessage::PaletteToggle)
+        .style(button::text)
+        .width(Length::Fill)
+        .height(Length::Fill);
+    iced::widget::stack![
+        backdrop,
+        container(card)
+            .width(Length::Fill)
+            .padding(iced::Padding {
+                top: 70.0,
+                ..iced::Padding::ZERO
+            })
+            .align_x(Alignment::Center)
+    ]
+    .into()
 }
 
 fn tint(c: &ThemeColors, ok: bool) -> Color {
@@ -104,6 +153,10 @@ fn top_bar<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
             tab("Pulse", HubView::Pulse),
             tab("SSH keys", HubView::Keys),
             Space::new().width(Length::Fill),
+            button(text("Commands ⌘P").size(12).color(c.text_secondary))
+                .on_press(HubMessage::PaletteToggle)
+                .style(theme::ghost_button)
+                .padding([4, 10]),
             button(text(bell).size(12).color(bell_color))
                 .on_press(HubMessage::ToggleBell)
                 .style(theme::ghost_button)
@@ -496,6 +549,7 @@ fn pr_detail<'a>(
         ("Approve", HubMessage::Approve),
         ("Request changes", HubMessage::RequestChanges),
         ("Comment", HubMessage::PostComment),
+        ("Check out", HubMessage::Worktree),
     ];
     if open {
         buttons.push((
@@ -1350,6 +1404,10 @@ mod tests {
             "a\n\u{1b}[31merror: x\u{1b}[0m\n --> f.rs:1:1".into(),
         ))));
         let _ = view(&app);
+        for q in ["", "ref", "zzzz"] {
+            app.hub.as_mut().expect("hub").palette = Some(q.into());
+            let _ = view(&app);
+        }
         // Without a hub the hub view is an empty placeholder, not a panic.
         let _ = view(&GitKraft::new());
     }

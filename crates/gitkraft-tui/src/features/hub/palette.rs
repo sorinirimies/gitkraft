@@ -26,49 +26,9 @@ pub struct Palette {
     pub row: usize,
 }
 
-/// How well `query` matches `text`: `None` unless every query letter appears in order.
-/// Consecutive letters and letters at a word start score higher; gaps cost a little.
-pub fn fuzzy_score(query: &str, text: &str) -> Option<i32> {
-    let q: Vec<char> = query
-        .to_lowercase()
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect();
-    if q.is_empty() {
-        return Some(0);
-    }
-    let t: Vec<char> = text.to_lowercase().chars().collect();
-    let mut score = 0;
-    let mut qi = 0;
-    let mut last: Option<usize> = None;
-    for (ti, c) in t.iter().enumerate() {
-        if qi < q.len() && *c == q[qi] {
-            score += 10;
-            if last.is_some_and(|l| l + 1 == ti) {
-                score += 15;
-            }
-            if ti == 0 || !t[ti - 1].is_alphanumeric() {
-                score += 12;
-            }
-            if let Some(l) = last {
-                score -= ((ti - l - 1) as i32).min(6);
-            }
-            last = Some(ti);
-            qi += 1;
-        }
-    }
-    (qi == q.len()).then_some(score - t.len() as i32 / 8)
-}
-
-/// Indexes into `entries` that match `query`, best first (ties keep list order).
-pub fn filter(entries: &[Entry], query: &str) -> Vec<usize> {
-    let mut hits: Vec<(i32, usize)> = entries
-        .iter()
-        .enumerate()
-        .filter_map(|(i, e)| fuzzy_score(query, &e.label).map(|s| (s, i)))
-        .collect();
-    hits.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
-    hits.into_iter().map(|(_, i)| i).collect()
+/// Indexes into `entries` that match `query`, best first.
+pub fn filter_entries(entries: &[Entry], query: &str) -> Vec<usize> {
+    gitkraft_hub::fuzzy::filter(entries.iter().map(|e| e.label.as_str()), query)
 }
 
 fn e(label: impl Into<String>, key: char, view: View) -> Entry {
@@ -154,27 +114,6 @@ pub fn entries_for(hub: &HubState) -> Vec<Entry> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_query_must_appear_in_order_and_case_does_not_matter() {
-        assert!(fuzzy_score("mrg", "Pull request: merge").is_some());
-        assert!(fuzzy_score("MERGE", "Pull request: merge").is_some());
-        assert!(fuzzy_score("gem", "merge").is_none());
-        assert!(fuzzy_score("zzz", "merge").is_none());
-        assert_eq!(fuzzy_score("", "anything"), Some(0));
-        assert_eq!(fuzzy_score("   ", "anything"), Some(0));
-    }
-
-    #[test]
-    fn consecutive_letters_and_word_starts_win() {
-        let tight = fuzzy_score("rerun", "CI run: re-run failed jobs").expect("m");
-        let loose = fuzzy_score("rerun", "Pull request: close or reopen, then run").expect("m");
-        assert!(tight > loose);
-        assert!(
-            fuzzy_score("ssh", "Go to SSH keys")
-                > fuzzy_score("ssh", "Pulse: previous repository, see slashes here")
-        );
-    }
-
     fn list() -> Vec<Entry> {
         vec![
             e("Refresh", 'r', View::Dashboard),
@@ -185,13 +124,13 @@ mod tests {
 
     #[test]
     fn filtering_ranks_and_keeps_order_on_ties() {
-        assert_eq!(filter(&list(), ""), [0, 1, 2]);
+        assert_eq!(filter_entries(&list(), ""), [0, 1, 2]);
         assert_eq!(
-            filter(&list(), "pulse"),
+            filter_entries(&list(), "pulse"),
             [1, 2],
             "word-start 'Pulse:' and 'pulse' tie on letters; list order decides"
         );
-        assert_eq!(filter(&list(), "next"), [2]);
-        assert!(filter(&list(), "xyz").is_empty());
+        assert_eq!(filter_entries(&list(), "next"), [2]);
+        assert!(filter_entries(&list(), "xyz").is_empty());
     }
 }

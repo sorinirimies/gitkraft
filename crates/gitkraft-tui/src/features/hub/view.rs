@@ -64,7 +64,7 @@ fn render_palette(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme
         return;
     }
     let entries = super::palette::entries_for(hub);
-    let shown = super::palette::filter(&entries, &p.query);
+    let shown = super::palette::filter_entries(&entries, &p.query);
     let w = area.width.saturating_sub(8).clamp(20, 72);
     let h = (shown.len().min(12) as u16 + 3)
         .min(area.height.saturating_sub(2))

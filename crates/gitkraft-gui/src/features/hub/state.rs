@@ -37,6 +37,9 @@ impl std::fmt::Debug for ApiHandle {
     }
 }
 
+/// Id of the palette text box.
+pub(crate) const PALETTE_INPUT: &str = "hub_palette";
+
 /// What setup found.
 #[derive(Debug, Clone)]
 pub struct Setup {
@@ -138,6 +141,8 @@ pub enum HubMessage {
     CancelRun,
     /// Download the selected run's artifacts.
     Artifacts,
+    /// Check the selected pull request out into a worktree.
+    Worktree,
     /// Start the selected run's workflow again, with the note as `[WORKFLOW] REF key=value…`.
     Dispatch,
     /// An action finished.
@@ -180,6 +185,14 @@ pub enum HubMessage {
     PulseDays(u32),
     /// Switch notifications on or off for the current repo.
     ToggleBell,
+    /// Open or close the command palette.
+    PaletteToggle,
+    /// The palette's search text changed.
+    PaletteQuery(String),
+    /// Run the n-th shown entry.
+    PaletteRun(usize),
+    /// Run the first shown entry (Enter).
+    PaletteSubmit,
     /// A timer tick (poll, refresh the bell).
     Tick,
     /// The poller finished a cycle.
@@ -300,6 +313,10 @@ pub struct HubState {
     pub accounts: usize,
     /// Watched projects.
     pub watched: Vec<RepoId>,
+    /// The command palette's search text while open.
+    pub palette: Option<String>,
+    /// Open local checkouts, by project.
+    pub checkouts: Vec<(RepoId, std::path::PathBuf)>,
     /// Parsed `notifications.toml`.
     pub notify_config: NotifyConfig,
     /// The bell of the current repo.
@@ -331,6 +348,8 @@ impl HubState {
             ready: false,
             accounts: 0,
             watched: Vec::new(),
+            palette: None,
+            checkouts: Vec::new(),
             notify_config: NotifyConfig::default(),
             bell: None,
             api: None,
@@ -341,7 +360,9 @@ impl HubState {
     }
 
     /// Opens the hub: loads the dashboard file and starts discovering accounts.
-    pub fn open(repos: Vec<Vec<String>>) -> (Self, Task<HubMessage>) {
+    pub fn open(tabs: Vec<(Option<std::path::PathBuf>, Vec<String>)>) -> (Self, Task<HubMessage>) {
+        let checkouts = gitkraft_hub::checkout::local_checkouts(&tabs);
+        let repos: Vec<Vec<String>> = tabs.into_iter().map(|(_, urls)| urls).collect();
         let mut notice = None;
         let dashboard = match files::dashboard_path()
             .ok()
@@ -354,6 +375,7 @@ impl HubState {
             None => Dashboard::starter(),
         };
         let mut state = Self::detached(dashboard);
+        state.checkouts = checkouts;
         state.dashboard_file = files::dashboard_path().ok();
         state.notify_file = files::notify_config_path().ok();
         state.notify_config = read_config(state.notify_file.as_deref());
@@ -558,6 +580,24 @@ impl HubState {
             HubMessage::CancelRun => self.cancel_run(),
             HubMessage::Dispatch => self.dispatch(),
             HubMessage::Artifacts => self.artifacts(),
+            HubMessage::Worktree => self.worktree(),
+            HubMessage::PaletteToggle => {
+                self.palette = match self.palette {
+                    Some(_) => None,
+                    None => Some(String::new()),
+                };
+                if self.palette.is_some() {
+                    iced::widget::operation::focus(iced::widget::Id::new(PALETTE_INPUT))
+                } else {
+                    Task::none()
+                }
+            }
+            HubMessage::PaletteQuery(q) => {
+                self.palette = Some(q);
+                Task::none()
+            }
+            HubMessage::PaletteSubmit => self.palette_run(0),
+            HubMessage::PaletteRun(n) => self.palette_run(n),
             HubMessage::ActionDone(result) => {
                 match result {
                     Ok(text) => {
@@ -1083,6 +1123,13 @@ impl HubState {
         })
     }
 
+    fn selected_pr(&self) -> Option<gitkraft_platforms::model::PullRequest> {
+        let SectionData::Prs(r) = self.active_data()? else {
+            return None;
+        };
+        r.items.get(self.row?).cloned()
+    }
+
     fn selected_run(&self) -> Option<gitkraft_ci::Run> {
         let SectionData::Runs(r) = self.active_data()? else {
             return None;
@@ -1100,6 +1147,117 @@ impl HubState {
                 .await
                 .map(|()| "re-run started".to_string())
                 .map_err(|e| e.to_string())
+        })
+    }
+
+    /// What the palette can do now, as `(label, message)`.
+    pub fn palette_entries(&self) -> Vec<(String, HubMessage)> {
+        use gitkraft_platforms::model::MergeMethod;
+        let mut v: Vec<(String, HubMessage)> = Vec::new();
+        let mut add = |l: &str, m: HubMessage| v.push((l.to_string(), m));
+        if self.selected_pr().is_some() {
+            add(
+                "Pull request: approve (note = text box)",
+                HubMessage::Approve,
+            );
+            add("Pull request: request changes", HubMessage::RequestChanges);
+            add("Pull request: comment", HubMessage::PostComment);
+            add("Pull request: merge", HubMessage::Merge(MergeMethod::Merge));
+            add(
+                "Pull request: squash and merge",
+                HubMessage::Merge(MergeMethod::Squash),
+            );
+            add("Pull request: close or reopen", HubMessage::ToggleOpen);
+            add(
+                "Pull request: check out in a worktree",
+                HubMessage::Worktree,
+            );
+            add("Pull request: show the diff", HubMessage::Tab(PrTab::Diff));
+        }
+        if self.selected_run().is_some() {
+            add(
+                "CI run: re-run failed jobs",
+                HubMessage::Rerun(RerunScope::Failed),
+            );
+            add(
+                "CI run: re-run everything",
+                HubMessage::Rerun(RerunScope::All),
+            );
+            add("CI run: run the workflow again", HubMessage::Dispatch);
+            add("CI run: download artifacts", HubMessage::Artifacts);
+            add("CI run: cancel", HubMessage::CancelRun);
+        }
+        for (n, idx) in self.visible_sections().into_iter().enumerate() {
+            let name = &self.dashboard.sections[idx].name;
+            add(
+                &format!("Go to section: {name}"),
+                HubMessage::SelectSection(n),
+            );
+        }
+        add("Go to dashboard", HubMessage::Show(HubView::Dashboard));
+        add("Go to pulse", HubMessage::Show(HubView::Pulse));
+        add("Go to SSH keys", HubMessage::Show(HubView::Keys));
+        add("Refresh", HubMessage::Refresh);
+        add(
+            "Notifications: toggle for this project",
+            HubMessage::ToggleBell,
+        );
+        v
+    }
+
+    /// Entries matching the palette text, best first.
+    pub fn palette_shown(&self) -> Vec<(String, HubMessage)> {
+        let all = self.palette_entries();
+        let q = self.palette.as_deref().unwrap_or_default();
+        gitkraft_hub::fuzzy::filter(all.iter().map(|(l, _)| l.as_str()), q)
+            .into_iter()
+            .filter_map(|i| all.get(i).cloned())
+            .collect()
+    }
+
+    fn palette_run(&mut self, n: usize) -> Task<HubMessage> {
+        let pick = self.palette_shown().into_iter().nth(n);
+        self.palette = None;
+        match pick {
+            Some((_, m)) => self.update(m),
+            None => Task::none(),
+        }
+    }
+
+    fn worktree(&mut self) -> Task<HubMessage> {
+        let Some(pr) = self.selected_pr() else {
+            self.notice = Some(("select a pull request first".into(), false));
+            return Task::none();
+        };
+        let Some(path) = self
+            .checkouts
+            .iter()
+            .find(|(r, _)| *r == pr.repo)
+            .map(|(_, p)| p.clone())
+        else {
+            self.notice = Some((
+                format!(
+                    "no local checkout of {} is open: open it in a tab first",
+                    pr.repo.full_name()
+                ),
+                false,
+            ));
+            return Task::none();
+        };
+        let Some(kind) = self
+            .handle()
+            .and_then(|a| a.backend(&pr.repo.host).map(|b| b.kind()))
+        else {
+            self.notice = Some((format!("{}: no account", pr.repo.host), false));
+            return Task::none();
+        };
+        self.notice = Some((format!("checking out #{}…", pr.number), true));
+        self.act(move |_| async move {
+            tokio::task::spawn_blocking(move || {
+                gitkraft_hub::checkout::checkout_worktree(kind, &pr.repo, pr.number, &path)
+            })
+            .await
+            .map_err(|e| e.to_string())?
         })
     }
 
@@ -1704,6 +1862,101 @@ mod tests {
             s.notice
                 .as_ref()
                 .is_some_and(|(t, ok)| t.contains("no account") && !ok)
+        );
+    }
+
+    #[test]
+    fn the_palette_opens_filters_runs_and_closes() {
+        let mut s = state();
+        assert!(s.palette.is_none());
+        let _ = s.update(HubMessage::PaletteToggle);
+        assert_eq!(s.palette.as_deref(), Some(""));
+        let all = s.palette_shown().len();
+        assert!(all >= 6, "views, refresh and bell are always there");
+        let _ = s.update(HubMessage::PaletteQuery("pulse".into()));
+        let shown = s.palette_shown();
+        assert!(!shown.is_empty() && shown.len() < all);
+        assert_eq!(shown[0].0, "Go to pulse");
+        let _ = s.update(HubMessage::PaletteSubmit);
+        assert!(s.palette.is_none(), "running closes it");
+        assert_eq!(s.view, HubView::Pulse);
+        let _ = s.update(HubMessage::PaletteToggle);
+        let _ = s.update(HubMessage::PaletteQuery("zzzz".into()));
+        assert!(s.palette_shown().is_empty());
+        let _ = s.update(HubMessage::PaletteSubmit);
+        assert!(
+            s.palette.is_none() && s.view == HubView::Pulse,
+            "no match: nothing runs"
+        );
+        let _ = s.update(HubMessage::PaletteToggle);
+        let _ = s.update(HubMessage::PaletteToggle);
+        assert!(s.palette.is_none());
+    }
+
+    #[test]
+    fn the_palette_offers_pr_and_run_actions_only_when_selected() {
+        let mut s = state();
+        let labels = |s: &HubState| {
+            s.palette_entries()
+                .into_iter()
+                .map(|(l, _)| l)
+                .collect::<Vec<_>>()
+        };
+        assert!(!labels(&s).iter().any(|l| l.starts_with("Pull request:")));
+        let pr = gitkraft_platforms::model::PullRequest {
+            repo: RepoId::new("github.com", "o", "r"),
+            ..Default::default()
+        };
+        s.slots[0].data = Some(Arc::new(SectionData::Prs(SectionResult {
+            items: vec![pr],
+            errors: vec![],
+        })));
+        let _ = s.update(HubMessage::SelectSection(0));
+        let _ = s.update(HubMessage::SelectRow(0));
+        assert!(
+            labels(&s)
+                .iter()
+                .any(|l| l == "Pull request: check out in a worktree")
+        );
+        assert!(!labels(&s).iter().any(|l| l.starts_with("CI run:")));
+    }
+
+    #[test]
+    fn worktree_needs_a_pull_request_and_an_open_checkout() {
+        let mut s = state();
+        let _ = s.update(HubMessage::Worktree);
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, ok)| t.contains("select a pull request") && !ok)
+        );
+        let repo = RepoId::new("github.com", "o", "r");
+        let pr = gitkraft_platforms::model::PullRequest {
+            number: 4,
+            repo: repo.clone(),
+            ..Default::default()
+        };
+        s.slots[0].data = Some(Arc::new(SectionData::Prs(SectionResult {
+            items: vec![pr],
+            errors: vec![],
+        })));
+        let _ = s.update(HubMessage::SelectSection(0));
+        let _ = s.update(HubMessage::SelectRow(0));
+        let _ = s.update(HubMessage::Worktree);
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, ok)| t.contains("no local checkout of o/r") && !ok),
+            "{:?}",
+            s.notice
+        );
+        s.checkouts = vec![(repo, std::path::PathBuf::from("/nowhere"))];
+        let _ = s.update(HubMessage::Worktree);
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, ok)| t.contains("no account") && !ok),
+            "an unknown host is reported before any git runs"
         );
     }
 

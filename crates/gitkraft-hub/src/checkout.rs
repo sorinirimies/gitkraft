@@ -59,9 +59,131 @@ pub fn plan(
     })
 }
 
+/// Local names and URLs of the remotes of the checkout at `path`.
+pub fn remotes_of(path: &Path) -> Result<Vec<(String, String)>, String> {
+    let repo = git2::Repository::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let remotes =
+        gitkraft_core::features::remotes::list_remotes(&repo).map_err(|e| e.to_string())?;
+    Ok(remotes
+        .into_iter()
+        .filter_map(|r| Some((r.name, r.url?)))
+        .collect())
+}
+
+/// Fetches PR `number` of `repo` and adds (or updates) its worktree; returns what to tell the user.
+pub fn checkout_worktree(
+    kind: PlatformKind,
+    repo: &RepoId,
+    number: u64,
+    workdir: &Path,
+) -> Result<String, String> {
+    let remotes = remotes_of(workdir)?;
+    let plan = plan(kind, repo, number, &remotes, workdir).ok_or_else(|| {
+        format!(
+            "{} has no remote that points at {}",
+            workdir.display(),
+            repo.key()
+        )
+    })?;
+    gitkraft_core::features::remotes::worktree::add_from_remote_ref(
+        workdir,
+        &plan.remote,
+        &plan.remote_ref,
+        &plan.branch,
+        &plan.dest,
+    )
+    .map_err(|e| format!("{e:#}"))?;
+    Ok(format!(
+        "#{number} is checked out in {}",
+        plan.dest.display()
+    ))
+}
+
+/// Which open checkouts belong to which project: `(path, remote URLs)` per open tab.
+pub fn local_checkouts(tabs: &[(Option<PathBuf>, Vec<String>)]) -> Vec<(RepoId, PathBuf)> {
+    let mut out: Vec<(RepoId, PathBuf)> = Vec::new();
+    for (path, urls) in tabs {
+        let Some(path) = path else { continue };
+        for repo in urls.iter().filter_map(|u| parse_remote_url(u)) {
+            if !out.iter().any(|(r, _)| *r == repo) {
+                out.push((repo, path.clone()));
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn git(dir: &Path, args: &[&str]) {
+        let out = std::process::Command::new("git")
+            .current_dir(dir)
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(args)
+            .output()
+            .expect("git");
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    #[test]
+    fn remotes_are_listed_and_a_repo_without_a_matching_remote_is_an_error() {
+        let root = tempfile::tempdir().expect("tmp");
+        let main = root.path().join("main");
+        std::fs::create_dir_all(&main).expect("mk");
+        git(&main, &["init", "-q"]);
+        git(
+            &main,
+            &["remote", "add", "origin", "git@github.com:o/r.git"],
+        );
+        git(&main, &["remote", "add", "local", "/srv/git/r"]);
+        assert_eq!(
+            remotes_of(&main).expect("remotes"),
+            [
+                ("local".to_string(), "/srv/git/r".to_string()),
+                ("origin".to_string(), "git@github.com:o/r.git".to_string())
+            ]
+        );
+        let other = RepoId::new("github.com", "x", "y");
+        let err = checkout_worktree(PlatformKind::GitHub, &other, 3, &main).expect_err("no remote");
+        assert!(
+            err.contains("no remote that points at github.com/x/y"),
+            "{err}"
+        );
+        assert!(remotes_of(&root.path().join("nope")).is_err());
+    }
+
+    #[test]
+    fn open_tabs_map_projects_to_their_first_checkout() {
+        let tabs = vec![
+            (
+                Some(PathBuf::from("/a")),
+                vec!["git@github.com:o/r.git".to_string(), "/srv/x".to_string()],
+            ),
+            (None, vec!["git@github.com:o/none.git".to_string()]),
+            (
+                Some(PathBuf::from("/b")),
+                vec![
+                    "https://github.com/o/r".to_string(),
+                    "git@gitlab.com:g/p.git".to_string(),
+                ],
+            ),
+        ];
+        let got = local_checkouts(&tabs);
+        assert_eq!(
+            got,
+            [
+                (RepoId::new("github.com", "o", "r"), PathBuf::from("/a")),
+                (RepoId::new("gitlab.com", "g", "p"), PathBuf::from("/b")),
+            ]
+        );
+        assert!(local_checkouts(&[]).is_empty());
+    }
 
     fn remotes() -> Vec<(String, String)> {
         vec![

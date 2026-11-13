@@ -188,7 +188,7 @@ fn palette_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
     let Some(p) = hub.palette.as_mut() else {
         return Outcome::Stay;
     };
-    let shown = palette::filter(&entries, &p.query);
+    let shown = palette::filter_entries(&entries, &p.query);
     match key.code {
         KeyCode::Esc => hub.palette = None,
         KeyCode::Down | KeyCode::Tab => p.row = (p.row + 1).min(shown.len().saturating_sub(1)),

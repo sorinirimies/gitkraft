@@ -21,12 +21,17 @@ impl GitKraft {
             // ── Hub ───────────────────────────────────────────────────────
             Message::Hub(crate::features::hub::HubMessage::Open) => {
                 if self.hub.is_none() {
-                    let remotes: Vec<Vec<String>> = self
+                    let tabs: Vec<(Option<std::path::PathBuf>, Vec<String>)> = self
                         .tabs
                         .iter()
-                        .map(|t| t.remotes.iter().filter_map(|r| r.url.clone()).collect())
+                        .map(|t| {
+                            (
+                                t.repo_path.clone(),
+                                t.remotes.iter().filter_map(|r| r.url.clone()).collect(),
+                            )
+                        })
                         .collect();
-                    let (state, task) = crate::features::hub::HubState::open(remotes);
+                    let (state, task) = crate::features::hub::HubState::open(tabs);
                     self.hub = Some(Box::new(state));
                     return task.map(Message::Hub);
                 }

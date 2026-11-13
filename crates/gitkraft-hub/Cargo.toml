@@ -14,6 +14,8 @@ keywords = ["git", "dashboard", "pull-requests", "ci"]
 gitkraft-platforms = { workspace = true }
 gitkraft-ci        = { workspace = true }
 gitkraft-settings  = { workspace = true }
+gitkraft-core      = { workspace = true }
+git2               = { workspace = true }
 chrono   = { workspace = true }
 futures  = { workspace = true }
 serde    = { workspace = true }
