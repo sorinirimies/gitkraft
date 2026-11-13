@@ -1607,12 +1607,15 @@ dependencies = [
 name = "gitkraft-hub"
 version = "1.4.1"
 dependencies = [
+ "anyhow",
  "chrono",
  "futures",
  "gitkraft-ci",
  "gitkraft-platforms",
  "gitkraft-settings",
  "serde",
+ "serde_json",
+ "tempfile",
  "tokio",
  "toml",
 ]

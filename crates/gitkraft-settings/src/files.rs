@@ -29,6 +29,11 @@ pub fn notify_state_path() -> Result<PathBuf> {
     Ok(state_dir()?.join("notify-state.json"))
 }
 
+/// `<state>/ci-memory.json`: last CI result per workflow and branch.
+pub fn ci_memory_path() -> Result<PathBuf> {
+    Ok(state_dir()?.join("ci-memory.json"))
+}
+
 /// `<state>/notify-status.json`, written by the poller, read by the UIs.
 pub fn notify_status_path() -> Result<PathBuf> {
     Ok(state_dir()?.join("notify-status.json"))

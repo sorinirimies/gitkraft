@@ -6,6 +6,7 @@
 
 pub mod accounts;
 mod hub;
+pub mod poller;
 pub mod pulse;
 
 pub use hub::{Hub, PrDetail, SectionData, SectionResult, is_open, shared};
