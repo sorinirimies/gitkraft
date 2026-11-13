@@ -1447,9 +1447,22 @@ version = "1.4.1"
 dependencies = [
  "anyhow",
  "chrono",
- "dirs",
  "git2",
+ "gitkraft-settings",
  "notify",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
+name = "gitkraft-settings"
+version = "1.4.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs",
  "serde",
  "serde_json",
  "tempfile",

@@ -92,17 +92,17 @@ impl AppSettings {
     pub fn follow_system_theme(&self) -> bool {
         self.theme_name
             .as_deref()
-            .is_some_and(crate::features::theme::is_system_name)
+            .is_some_and(crate::theme::is_system_name)
     }
 
     /// Preset index for the saved theme. `"System"` resolves from the OS
     /// appearance; unknown/missing names fall back to `0`.
     pub fn theme_index(&self) -> usize {
         match self.theme_name.as_deref() {
-            Some(n) if crate::features::theme::is_system_name(n) => {
-                crate::features::theme::current_system_theme_index()
+            Some(n) if crate::theme::is_system_name(n) => {
+                crate::theme::current_system_theme_index()
             }
-            Some(n) => crate::features::theme::theme_index_by_name(n),
+            Some(n) => crate::theme::theme_index_by_name(n),
             None => 0,
         }
     }
@@ -149,7 +149,7 @@ mod theme_tests {
             ..Default::default()
         };
         assert!(s.follow_system_theme());
-        assert!(s.theme_index() < crate::features::theme::THEME_COUNT);
+        assert!(s.theme_index() < crate::theme::THEME_COUNT);
         assert!(!AppSettings::default().follow_system_theme());
         assert_eq!(AppSettings::default().theme_index(), 0);
     }

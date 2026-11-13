@@ -1,0 +1,23 @@
+[package]
+name = "gitkraft-settings"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Settings, layout, repo history and theme data for GitKraft (no git2, no UI)"
+categories = ["development-tools", "config"]
+keywords = ["git", "settings", "theme"]
+
+[dependencies]
+serde      = { workspace = true }
+serde_json = { workspace = true }
+chrono     = { workspace = true }
+dirs       = { workspace = true }
+anyhow     = { workspace = true }
+tracing    = { workspace = true }
+tempfile   = { workspace = true }   # atomic settings writes
+
+[lints]
+workspace = true

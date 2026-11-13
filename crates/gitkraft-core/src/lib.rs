@@ -4,7 +4,7 @@
 //!
 //! | Module | What lives here |
 //! |--------|-----------------|
-//! | [`features`] | Git operations and types grouped by feature — repo, branches, commits, diff, staging, remotes, stash, log |
+//! | [`features`] | Git operations and types grouped by feature — repo, branches, commits, diff, staging, remotes, stash, log (settings and theme live in `gitkraft-settings`, re-exported here) |
 //! | [`utils`] | Helpers — relative time formatting, OID formatting, text truncation |
 //!
 //! This crate has NO GUI or TUI dependencies.

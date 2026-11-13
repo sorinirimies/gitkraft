@@ -41,7 +41,7 @@ export const APP = {
 }
 
 # Crates published to crates.io, dependencies first.
-export const PUBLISH = ["gitkraft-core" "gitkraft" "gitkraft-tui"]
+export const PUBLISH = ["gitkraft-settings" "gitkraft-core" "gitkraft" "gitkraft-tui"]
 
 # System packages (apt) every Linux job that compiles installs first, e.g. the
 # headers a GUI toolkit links against: ["libxkbcommon-dev"].

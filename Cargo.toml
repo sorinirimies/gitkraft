@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/gitkraft-settings",
     "crates/gitkraft-core",
     "crates/gitkraft-gui",
     "crates/gitkraft-tui",
@@ -48,6 +49,7 @@ tui-skeleton         = "0.3.0"
 tui-nuances          = "0.1.11"
 
 # Internal crates
+gitkraft-settings = { path = "crates/gitkraft-settings", version = "1.4.1" }
 gitkraft-core = { path = "crates/gitkraft-core", version = "1.4.1" }
 
 [workspace.lints.rust]

@@ -13,10 +13,10 @@ keywords = ["git", "vcs", "ide", "repository"]
 
 [dependencies]
 git2          = { workspace = true }
+gitkraft-settings = { workspace = true }
 serde         = { workspace = true }
 serde_json    = { workspace = true }
 chrono        = { workspace = true }
-dirs          = { workspace = true }
 anyhow        = { workspace = true }
 tracing       = { workspace = true }
 notify        = { workspace = true }
