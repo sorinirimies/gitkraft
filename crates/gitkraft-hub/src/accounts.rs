@@ -16,6 +16,10 @@ pub struct AccountConfig {
     /// Client id of your OAuth application on this host, for `login` without a pasted token.
     #[serde(default)]
     pub oauth_client_id: Option<String>,
+    /// URL of a Woodpecker CI server that builds this host's repositories, e.g. `https://ci.codeberg.org`.
+    /// The token comes from `GITKRAFT_WOODPECKER_TOKEN_<HOST>` or `GITKRAFT_WOODPECKER_TOKEN`, never from this file.
+    #[serde(default)]
+    pub woodpecker: Option<String>,
 }
 
 /// The whole `accounts.toml`.
@@ -48,6 +52,42 @@ impl AccountsFile {
             .find(|a| a.host.eq_ignore_ascii_case(host))
             .and_then(|a| a.clone_via)
     }
+}
+
+fn env_suffix(host: &str) -> String {
+    host.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+/// The Woodpecker server configured for `host`, with its token from `env`.
+pub fn woodpecker_for(
+    host: &str,
+    file: &AccountsFile,
+    env: impl Fn(&str) -> Option<String>,
+) -> Option<gitkraft_platforms::Woodpecker> {
+    let url = file
+        .accounts
+        .iter()
+        .find(|a| a.host.eq_ignore_ascii_case(host))?
+        .woodpecker
+        .clone()
+        .filter(|u| !u.trim().is_empty())?;
+    let token = env(&format!("GITKRAFT_WOODPECKER_TOKEN_{}", env_suffix(host)))
+        .or_else(|| env("GITKRAFT_WOODPECKER_TOKEN"))
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .map(Secret::new);
+    Some(gitkraft_platforms::Woodpecker {
+        url: url.trim().trim_end_matches('/').to_string(),
+        token,
+    })
 }
 
 /// The OAuth client id to use for `host`: the argument, then `GITKRAFT_OAUTH_CLIENT_ID_<HOST>`,
@@ -120,6 +160,7 @@ pub fn discover(
         .map(|(kind, host)| {
             let mut account = Account::new(kind, host.clone());
             account.token = resolve(kind, &host);
+            account.woodpecker = woodpecker_for(&host, file, |n| std::env::var(n).ok());
             account
         })
         .collect()
@@ -127,6 +168,34 @@ pub fn discover(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_woodpecker_server_comes_from_the_file_and_its_token_from_the_environment() {
+        let file = AccountsFile::parse("[[account]]\nkind = \"gitea\"\nhost = \"codeberg.org\"\nwoodpecker = \"https://ci.codeberg.org/\"\n\n[[account]]\nkind = \"gitea\"\nhost = \"git.x.org\"\n").expect("file");
+        let none = |_: &str| None;
+        let w = woodpecker_for("codeberg.org", &file, none).expect("configured");
+        assert_eq!(
+            (w.url.as_str(), w.token.is_none()),
+            ("https://ci.codeberg.org", true)
+        );
+        let env = |n: &str| match n {
+            "GITKRAFT_WOODPECKER_TOKEN_CODEBERG_ORG" => Some(" host-token ".into()),
+            "GITKRAFT_WOODPECKER_TOKEN" => Some("global".into()),
+            _ => None,
+        };
+        let w = woodpecker_for("CODEBERG.org", &file, env).expect("configured");
+        assert_eq!(w.token.as_ref().map(Secret::expose), Some("host-token"));
+        let global = |n: &str| (n == "GITKRAFT_WOODPECKER_TOKEN").then(|| "global".to_string());
+        assert_eq!(
+            woodpecker_for("codeberg.org", &file, global)
+                .and_then(|w| w.token)
+                .as_ref()
+                .map(Secret::expose),
+            Some("global")
+        );
+        assert!(woodpecker_for("git.x.org", &file, none).is_none());
+        assert!(woodpecker_for("unknown", &file, none).is_none());
+    }
+
     #[test]
     fn the_oauth_client_id_comes_from_the_argument_then_env_then_the_file() {
         let file = AccountsFile::parse("[[account]]\nkind = \"gitlab\"\nhost = \"git.example.com\"\noauth_client_id = \"from-file\"\n").expect("file");

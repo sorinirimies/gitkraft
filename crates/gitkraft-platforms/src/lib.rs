@@ -33,7 +33,7 @@ pub mod platform;
 pub mod ssh;
 pub mod testing;
 
-pub use account::{Account, Secret};
+pub use account::{Account, Secret, Woodpecker};
 pub use backend::Backend;
 pub use error::{PlatformError, Result};
 pub use github_like::GitHubLike;

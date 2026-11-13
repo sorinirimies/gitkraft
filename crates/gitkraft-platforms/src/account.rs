@@ -35,6 +35,17 @@ pub struct Account {
     pub token: Option<Secret>,
     /// Your login on this host; filled by `current_user`.
     pub me: Option<String>,
+    /// A Woodpecker CI server that builds this host's repositories (Codeberg uses one).
+    pub woodpecker: Option<Woodpecker>,
+}
+
+/// A Woodpecker CI server and your token on it (a different token from the forge's).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Woodpecker {
+    /// Server URL, e.g. `https://ci.codeberg.org`.
+    pub url: String,
+    /// Personal access token from the server's user page.
+    pub token: Option<Secret>,
 }
 
 impl Account {
@@ -45,7 +56,17 @@ impl Account {
             host: host.into().to_lowercase(),
             token: None,
             me: None,
+            woodpecker: None,
         }
+    }
+
+    /// Builds with a Woodpecker CI server.
+    pub fn with_woodpecker(mut self, url: impl Into<String>, token: Option<Secret>) -> Self {
+        self.woodpecker = Some(Woodpecker {
+            url: url.into().trim_end_matches('/').to_string(),
+            token,
+        });
+        self
     }
 
     /// Sets the token.

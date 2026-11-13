@@ -65,7 +65,15 @@ serves the same on localhost.
 [[account]]
 kind = "gitlab"      # github | gitlab | gitea (also forgejo, codeberg)
 host = "git.example.com"
+
+[[account]]
+kind = "gitea"
+host = "codeberg.org"
+woodpecker = "https://ci.codeberg.org"   # CI runs, steps, logs, restart, cancel come from Woodpecker
 ```
+
+A Woodpecker token (from the server's user page) is read from `GITKRAFT_WOODPECKER_TOKEN_<HOST>` or
+`GITKRAFT_WOODPECKER_TOKEN`; Woodpecker restarts whole pipelines only and has no artifacts.
 
 **Sign in once.** `gitkraft-tui login github.com` runs the OAuth device flow (GitHub, GitLab; needs an OAuth
 application's client id: `--client-id`, `GITKRAFT_OAUTH_CLIENT_ID` or `oauth_client_id` in `accounts.toml`);

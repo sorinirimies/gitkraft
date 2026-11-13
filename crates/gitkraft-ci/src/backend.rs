@@ -7,6 +7,7 @@ use gitkraft_platforms::{Account, PlatformError, PlatformKind, RepoId, Result};
 use crate::github_like::ActionsBackend;
 use crate::gitlab::GitLabCi;
 use crate::model::{RerunScope, Run, RunDetail, RunQuery};
+use crate::woodpecker::WoodpeckerCi;
 
 /// The CI adapter for one account.
 #[derive(Debug)]
@@ -15,11 +16,23 @@ pub enum CiBackend<C> {
     Actions(ActionsBackend<C>),
     /// GitLab CI.
     GitLab(GitLabCi<C>),
+    /// A Woodpecker server (Codeberg's CI).
+    Woodpecker(WoodpeckerCi<C>),
 }
 
 impl<C: HttpClient> CiBackend<C> {
     /// Builds the adapter for `account` on top of `client`.
     pub fn new(account: &Account, client: C) -> Self {
+        if let Some(w) = &account.woodpecker {
+            let api = Api::new(
+                client,
+                // Woodpecker takes `Authorization: Bearer`, which the GitHub kind sends.
+                PlatformKind::GitHub,
+                format!("{}/api", w.url),
+                w.token.clone(),
+            );
+            return Self::Woodpecker(WoodpeckerCi::new(api, w.url.clone()));
+        }
         let api = Api::new(
             client,
             account.kind,
@@ -37,6 +50,7 @@ impl<C: HttpClient> CiBackend<C> {
         match self {
             Self::Actions(b) => b.host_label(),
             Self::GitLab(_) => "GitLab CI",
+            Self::Woodpecker(_) => "Woodpecker CI",
         }
     }
 
@@ -45,6 +59,7 @@ impl<C: HttpClient> CiBackend<C> {
         match self {
             Self::Actions(b) => b.list_runs(repo, q).await,
             Self::GitLab(b) => b.list_runs(repo, q).await,
+            Self::Woodpecker(b) => b.list_runs(repo, q).await,
         }
     }
 
@@ -53,6 +68,7 @@ impl<C: HttpClient> CiBackend<C> {
         match self {
             Self::Actions(b) => b.run_detail(repo, run_id).await,
             Self::GitLab(b) => b.run_detail(repo, run_id).await,
+            Self::Woodpecker(b) => b.run_detail(repo, run_id).await,
         }
     }
 
@@ -61,6 +77,7 @@ impl<C: HttpClient> CiBackend<C> {
         match self {
             Self::Actions(b) => b.job_log(repo, job_id).await,
             Self::GitLab(b) => b.job_log(repo, job_id).await,
+            Self::Woodpecker(b) => b.job_log(repo, job_id).await,
         }
     }
 
@@ -69,6 +86,7 @@ impl<C: HttpClient> CiBackend<C> {
         match self {
             Self::Actions(b) => b.rerun(repo, run, scope).await,
             Self::GitLab(b) => b.rerun(repo, run, scope).await,
+            Self::Woodpecker(b) => b.rerun(repo, run, scope).await,
         }
     }
 
@@ -77,6 +95,9 @@ impl<C: HttpClient> CiBackend<C> {
         match self {
             Self::Actions(b) => b.rerun_job(repo, job_id).await,
             Self::GitLab(b) => b.rerun_job(repo, job_id).await,
+            Self::Woodpecker(_) => Err(PlatformError::Unsupported(
+                "re-running one step: Woodpecker restarts the whole pipeline",
+            )),
         }
     }
 
@@ -85,13 +106,16 @@ impl<C: HttpClient> CiBackend<C> {
         match self {
             Self::Actions(b) => b.cancel(repo, run_id).await,
             Self::GitLab(b) => b.cancel(repo, run_id).await,
+            Self::Woodpecker(b) => b.cancel(repo, run_id).await,
         }
     }
 
     /// Starts a manual job (GitLab). Other platforms have no such thing.
     pub async fn play_job(&self, repo: &RepoId, job_id: u64) -> Result<()> {
         match self {
-            Self::Actions(_) => Err(PlatformError::Unsupported("manual jobs on this platform")),
+            Self::Actions(_) | Self::Woodpecker(_) => {
+                Err(PlatformError::Unsupported("manual jobs on this platform"))
+            }
             Self::GitLab(b) => b.play_job(repo, job_id).await,
         }
     }
@@ -105,6 +129,7 @@ impl<C: HttpClient> CiBackend<C> {
         match self {
             Self::Actions(b) => b.artifacts(repo, run_id).await,
             Self::GitLab(b) => b.artifacts(repo, run_id).await,
+            Self::Woodpecker(_) => Ok(Vec::new()),
         }
     }
 
@@ -113,6 +138,7 @@ impl<C: HttpClient> CiBackend<C> {
         match self {
             Self::Actions(b) => b.download_artifact(repo, artifact_id).await,
             Self::GitLab(b) => b.download_artifact(repo, artifact_id).await,
+            Self::Woodpecker(_) => Err(PlatformError::Unsupported("artifacts on Woodpecker")),
         }
     }
 
@@ -120,7 +146,7 @@ impl<C: HttpClient> CiBackend<C> {
     pub async fn list_workflows(&self, repo: &RepoId) -> Result<Vec<crate::model::Workflow>> {
         match self {
             Self::Actions(b) => b.list_workflows(repo).await,
-            Self::GitLab(_) => Ok(Vec::new()),
+            Self::GitLab(_) | Self::Woodpecker(_) => Ok(Vec::new()),
         }
     }
 
@@ -135,7 +161,7 @@ impl<C: HttpClient> CiBackend<C> {
             Self::Actions(b) => Ok(crate::inputs::workflow_inputs(
                 &b.workflow_file(repo, workflow, git_ref).await?,
             )),
-            Self::GitLab(_) => Ok(Vec::new()),
+            Self::GitLab(_) | Self::Woodpecker(_) => Ok(Vec::new()),
         }
     }
 
@@ -150,6 +176,7 @@ impl<C: HttpClient> CiBackend<C> {
         match self {
             Self::Actions(b) => b.dispatch(repo, workflow, git_ref, inputs).await,
             Self::GitLab(b) => b.dispatch(repo, workflow, git_ref, inputs).await,
+            Self::Woodpecker(b) => b.dispatch(repo, git_ref, inputs).await,
         }
     }
 }

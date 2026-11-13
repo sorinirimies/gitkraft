@@ -14,6 +14,7 @@ pub mod model;
 pub mod stats;
 pub mod timing;
 pub mod watch;
+pub mod woodpecker;
 
 pub use model::{Artifact, Job, RerunScope, Run, RunDetail, RunQuery, Status, Step, Workflow};
 
@@ -21,3 +22,4 @@ pub use backend::CiBackend;
 pub use github_like::ActionsBackend;
 pub use gitlab::GitLabCi;
 pub use inputs::{WorkflowInput, workflow_inputs};
+pub use woodpecker::WoodpeckerCi;

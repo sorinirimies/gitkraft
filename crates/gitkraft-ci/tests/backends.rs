@@ -374,3 +374,131 @@ async fn artifacts_are_listed_and_downloaded_on_github_and_gitlab() {
         (31, "build artifacts", false, true)
     );
 }
+
+fn woodpecker(fake: &FakeClient) -> CiBackend<FakeClient> {
+    CiBackend::new(
+        &Account::new(PlatformKind::Gitea, "codeberg.org")
+            .with_woodpecker("https://ci.codeberg.org/", Some(Secret::new("wp"))),
+        fake.clone(),
+    )
+}
+
+const WP: &str = "https://ci.codeberg.org/api";
+
+#[tokio::test]
+async fn woodpecker_pipelines_are_runs_and_steps_are_jobs() {
+    let fake = FakeClient::new();
+    fake.push_json(&format!("{WP}/repos/lookup/o/r"), r#"{"id":42}"#);
+    fake.push_json(
+        &format!("{WP}/repos/42/pipelines"),
+        r#"[{"number":7,"status":"failure","event":"push","branch":"main","commit":"abc","message":"fix\nmore","author":"me","created":1700000000,"started":1700000010,"finished":1700000070},
+            {"number":6,"status":"success","event":"push","branch":"main"}]"#,
+    );
+    let b = woodpecker(&fake);
+    assert_eq!(b.system_name(), "Woodpecker CI");
+    let runs = b
+        .list_runs(&repo(), &RunQuery::default())
+        .await
+        .expect("runs");
+    assert_eq!(runs.len(), 2);
+    assert_eq!(
+        (
+            runs[0].id,
+            runs[0].status,
+            runs[0].title.as_str(),
+            runs[0].actor.as_str()
+        ),
+        (7, Status::Failed, "fix", "me")
+    );
+    assert_eq!(runs[0].duration().map(|d| d.num_seconds()), Some(60));
+    assert_eq!(runs[1].status, Status::Success);
+    let sent = fake.requests();
+    assert!(sent.iter().all(|r| {
+        r.headers
+            .iter()
+            .any(|(k, v)| k == "Authorization" && v == "Bearer wp")
+    }));
+
+    let fake = FakeClient::new();
+    fake.push_json(&format!("{WP}/repos/lookup/o/r"), r#"{"id":42}"#);
+    fake.push_json(
+        &format!("{WP}/repos/42/pipelines/7"),
+        r#"{"number":7,"status":"failure","workflows":[{"name":"build","children":[
+            {"id":101,"name":"clone","state":"success"},{"id":102,"name":"test","state":"failure","started":1700000010,"finished":1700000020}]}]}"#,
+    );
+    let d = woodpecker(&fake)
+        .run_detail(&repo(), 7)
+        .await
+        .expect("detail");
+    assert_eq!(d.jobs.len(), 2);
+    assert_eq!(
+        (
+            d.jobs[1].id,
+            d.jobs[1].name.as_str(),
+            d.jobs[1].stage.as_deref(),
+            d.jobs[1].status
+        ),
+        (102, "test", Some("build"), Status::Failed)
+    );
+}
+
+#[tokio::test]
+async fn woodpecker_logs_are_decoded_and_actions_hit_the_right_endpoints() {
+    let fake = FakeClient::new();
+    for _ in 0..3 {
+        fake.push_json(&format!("{WP}/repos/lookup/o/r"), r#"{"id":42}"#);
+    }
+    fake.push_json(
+        &format!("{WP}/repos/42/pipelines"),
+        r#"[{"number":8,"status":"success"},{"number":7,"status":"failure"}]"#,
+    );
+    fake.push_json(
+        &format!("{WP}/repos/42/pipelines/8"),
+        r#"{"number":8,"workflows":[{"name":"w","children":[{"id":5,"name":"x"}]}]}"#,
+    );
+    fake.push_json(
+        &format!("{WP}/repos/42/pipelines/7"),
+        r#"{"number":7,"workflows":[{"name":"w","children":[{"id":102,"name":"test"}]}]}"#,
+    );
+    fake.push_json(
+        &format!("{WP}/repos/42/logs/7/102"),
+        r#"[{"data":"Y2FyZ28gdGVzdAo="},{"data":"ZXJyb3I6IGJvb20="},{"data":"plain text"}]"#,
+    );
+    let b = woodpecker(&fake);
+    let log = b.job_log(&repo(), 102).await.expect("log");
+    assert_eq!(log, "cargo test\nerror: boom\nplain text\n");
+    assert!(matches!(
+        b.job_log(&repo(), 999).await,
+        Err(PlatformError::NotFound(_))
+    ));
+    assert!(matches!(
+        b.rerun_job(&repo(), 1).await,
+        Err(PlatformError::Unsupported(_))
+    ));
+
+    let fake = FakeClient::new();
+    for _ in 0..3 {
+        fake.push_json(&format!("{WP}/repos/lookup/o/r"), r#"{"id":42}"#);
+    }
+    fake.push_json(&format!("{WP}/repos/42/pipelines/7"), "{}");
+    fake.push_json(&format!("{WP}/repos/42/pipelines/7/cancel"), "{}");
+    fake.push_json(&format!("{WP}/repos/42/pipelines"), "{}");
+    let b = woodpecker(&fake);
+    let run = gitkraft_ci::Run {
+        id: 7,
+        ..gitkraft_ci::Run::default()
+    };
+    b.rerun(&repo(), &run, RerunScope::Failed)
+        .await
+        .expect("restart");
+    b.cancel(&repo(), 7).await.expect("cancel");
+    b.dispatch(&repo(), "", "main", &[("K".into(), "v".into())])
+        .await
+        .expect("dispatch");
+    let last = fake.requests().pop().expect("sent");
+    assert_eq!(
+        String::from_utf8_lossy(last.body.as_deref().unwrap_or_default()),
+        r#"{"branch":"main","variables":{"K":"v"}}"#
+    );
+    assert!(b.artifacts(&repo(), 7).await.expect("none").is_empty());
+}
