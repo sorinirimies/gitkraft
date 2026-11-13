@@ -40,6 +40,80 @@ GitKraft ships two front-ends from a single Rust workspace:
 ![TUI Themes](crates/gitkraft-tui/examples/vhs/generated/tui-themes.gif)
 ![TUI Tabs](crates/gitkraft-tui/examples/vhs/generated/tui-tabs.gif)
 
+## The hub: no more forge dashboards
+
+Press `H` in the TUI (or the **Hub** button in the GUI) for pull requests, issues, CI and
+notifications of **GitHub, GitLab, Gitea / Forgejo and Codeberg** in one place. `gitkraft-web`
+serves the same on localhost.
+
+| | |
+|---|---|
+| Dashboard | sections are saved queries (`dashboard.toml`): "Review requested", "My PRs", issues, CI of a repo, the inbox |
+| Pull requests | description (Markdown), reviews, checks, diff, comments; approve, request changes, comment, merge, close |
+| Issues | list, comment, close / reopen |
+| CI | runs, jobs, steps, timeline, live log with errors extracted; re-run failed / all, cancel (GitHub / Gitea Actions, GitLab CI) |
+| Pulse | contribution calendar over all accounts, PRs / issues / CI per period, activity per day |
+| Notifications | per-project settings, desktop notifications, a bell with its state on every project |
+| Mouse | click, wheel, drag a section tab to reorder, drag the divider to resize (TUI and GUI) |
+| Images | PR and issue pictures in the TUI (Kitty, iTerm2, Sixel or half blocks) |
+
+**Accounts.** Tokens are read, never stored: `GITKRAFT_TOKEN_<HOST>`, `GITHUB_TOKEN`, `GITLAB_TOKEN`,
+`CODEBERG_TOKEN` / `GITEA_TOKEN`, or `gh auth login`. Self-hosted instances go in
+`~/.config/gitkraft/accounts.toml`:
+
+```toml
+[[account]]
+kind = "gitlab"      # github | gitlab | gitea (also forgejo, codeberg)
+host = "git.example.com"
+```
+
+**Dashboard** (`~/.config/gitkraft/dashboard.toml`; drag the tabs and it is rewritten):
+
+```toml
+[[section]]
+name = "Review requested"
+kind = "prs"                      # prs | issues | ci | inbox
+involvement = "review_requested"  # authored | assigned | review_requested
+
+[[section]]
+name = "gitkraft CI"
+kind = "ci"
+repos = ["github.com/sorinirimies/gitkraft"]
+branch = "master"
+```
+
+**Notifications** (`~/.config/gitkraft/notifications.toml`, per project; a repo may also carry
+`.gitkraft/notifications.toml`). Later layers win: built-in, `[defaults]`, `[projects."host/owner/name"]`, the repo file.
+
+```toml
+[defaults]
+enabled = true
+poll_interval = "60s"
+events = ["review_requested", "mention", "pr_opened", "issue_opened", "ci_failed"]
+quiet_hours = "22:00-08:00"
+
+[projects."github.com/sorinirimies/gitkraft"]
+poll_interval = "30s"
+branches = ["master", "release/*"]          # CI events only on these
+labels = { exclude = ["wip"] }
+authors = { exclude = ["dependabot[bot]"] }
+
+[projects."github.com/org/noisy"]
+enabled = false
+```
+
+`n` toggles the current project in the TUI (`N` everything, `z` snoozes one hour); the bell shows
+`[*]` on, `[ ]` off, `[z]` snoozed, `[!]` error, `[?]` on but no poller running. While the TUI or GUI
+hub is open it polls itself; run it headless with
+
+```sh
+gitkraft-tui notify --daemon       # or --once for cron
+gitkraft-tui notify status | on | off | mute 2h | unmute | test | install
+```
+
+**Web:** `gitkraft-web` (needs Rust 1.98, so the MSRV job skips it) serves `http://127.0.0.1:3333`.
+There is no login: do not bind it beyond localhost.
+
 ## Features
 
 - **Branch management** — create, checkout, delete, rename, merge, rebase (local & remote)
