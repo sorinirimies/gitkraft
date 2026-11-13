@@ -125,7 +125,9 @@ fn open_prompt(hub: &mut HubState, purpose: PromptPurpose) {
         hub.set_notice("select a pull request or issue first".into(), false);
         return;
     }
-    if purpose != PromptPurpose::Comment && hub.selected_pr().is_none() {
+    if !matches!(purpose, PromptPurpose::Comment | PromptPurpose::Labels)
+        && hub.selected_pr().is_none()
+    {
         hub.set_notice("reviews only apply to pull requests".into(), false);
         return;
     }
@@ -303,6 +305,7 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
             hub.open_inline_prompt()
         }
         KeyCode::Char('c') => open_prompt(hub, PromptPurpose::Comment),
+        KeyCode::Char('L') => open_prompt(hub, PromptPurpose::Labels),
         KeyCode::Char('m') => hub.ask(Action::Merge(MergeMethod::Merge)),
         KeyCode::Char('M') => hub.ask(Action::Merge(MergeMethod::Squash)),
         KeyCode::Char('C') => hub.ask(Action::ToggleOpen),
@@ -830,6 +833,26 @@ mod tests {
             (a.path.as_str(), a.line, a.side),
             ("a", 1, gitkraft_platforms::diffpos::Side::Old)
         );
+    }
+
+    #[test]
+    fn capital_l_opens_the_labels_prompt_and_bad_text_is_explained() {
+        let mut s = state();
+        chars(&mut s, "L");
+        assert_eq!(
+            s.prompt.as_ref().map(|p| p.purpose),
+            Some(PromptPurpose::Labels)
+        );
+        key_outcome(&mut s, key(KeyCode::Enter));
+        assert!(s.prompt.is_none());
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, ok)| t.contains("type labels") && !ok)
+        );
+        chars(&mut s, "L");
+        chars(&mut s, "+bug");
+        key_outcome(&mut s, key(KeyCode::Esc));
+        assert!(s.prompt.is_none());
     }
 
     #[test]

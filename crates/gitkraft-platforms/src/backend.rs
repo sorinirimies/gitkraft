@@ -187,6 +187,29 @@ impl<C: HttpClient> Backend<C> {
         }
     }
 
+    /// The labels the project has.
+    pub async fn list_labels(&self, repo: &RepoId) -> Result<Vec<String>> {
+        match self {
+            Self::GitHubLike(b) => b.list_labels(repo).await,
+            Self::GitLab(b) => b.list_labels(repo).await,
+        }
+    }
+
+    /// Adds and removes labels (by name) on a PR or issue.
+    pub async fn edit_labels(
+        &self,
+        repo: &RepoId,
+        kind: ItemKind,
+        number: u64,
+        add: &[String],
+        remove: &[String],
+    ) -> Result<()> {
+        match self {
+            Self::GitHubLike(b) => b.edit_labels(repo, number, add, remove).await,
+            Self::GitLab(b) => b.edit_labels(repo, kind, number, add, remove).await,
+        }
+    }
+
     /// Closes (`open == false`) or reopens a PR or issue.
     pub async fn set_open(
         &self,

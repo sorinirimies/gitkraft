@@ -1580,6 +1580,7 @@ fn render_status(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme)
             PromptPurpose::LogSearch => "search",
             PromptPurpose::Dispatch => "run workflow: WORKFLOW REF key=value…",
             PromptPurpose::Inline => "inline comment",
+            PromptPurpose::Labels => "labels: +add -remove \"two words\"",
         };
         Line::from(vec![
             Span::styled(format!(" {label} › "), Style::default().fg(theme.accent)),

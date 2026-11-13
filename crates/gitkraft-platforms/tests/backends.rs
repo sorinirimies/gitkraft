@@ -644,3 +644,95 @@ async fn inline_comments_explain_a_missing_head_commit() {
         Err(PlatformError::Unsupported(_))
     ));
 }
+
+#[tokio::test]
+async fn labels_are_added_and_removed_by_name_or_id_depending_on_the_platform() {
+    use gitkraft_platforms::ItemKind;
+    let names = |v: &[&str]| v.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+
+    let fake = FakeClient::new();
+    fake.push_json("https://api.github.com/repos/o/r/issues/3/labels", "[]");
+    fake.push_json(
+        "https://api.github.com/repos/o/r/issues/3/labels/good%20first",
+        "[]",
+    );
+    github(&fake)
+        .edit_labels(
+            &repo(),
+            ItemKind::Issue,
+            3,
+            &names(&["bug"]),
+            &names(&["good first"]),
+        )
+        .await
+        .expect("github");
+    let sent = fake.requests();
+    assert_eq!(
+        String::from_utf8_lossy(sent[0].body.as_deref().unwrap_or_default()),
+        r#"{"labels":["bug"]}"#
+    );
+    assert_eq!(sent[1].method, gitkraft_platforms::http::Method::Delete);
+    assert!(sent[1].url.ends_with("/labels/good%20first"));
+
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://codeberg.org/api/v1/repos/o/r/labels",
+        r#"[{"id":11,"name":"bug"},{"id":12,"name":"wontfix"}]"#,
+    );
+    fake.push_json(
+        "https://codeberg.org/api/v1/repos/o/r/issues/3/labels/12",
+        "[]",
+    );
+    gitea(&fake)
+        .edit_labels(&repo(), ItemKind::Issue, 3, &[], &names(&["wontfix"]))
+        .await
+        .expect("gitea");
+    assert!(
+        fake.requests()
+            .last()
+            .expect("sent")
+            .url
+            .ends_with("/issues/3/labels/12")
+    );
+    assert!(matches!(
+        gitea(&fake)
+            .edit_labels(&repo(), ItemKind::Issue, 3, &[], &names(&["nope"]))
+            .await,
+        Err(PlatformError::NotFound(_))
+    ));
+
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://gitlab.com/api/v4/projects/g%2Fp/merge_requests/3",
+        "{}",
+    );
+    gitlab(&fake)
+        .edit_labels(
+            &RepoId::new("gitlab.com", "g", "p"),
+            ItemKind::PullRequest,
+            3,
+            &names(&["a", "b"]),
+            &names(&["c"]),
+        )
+        .await
+        .expect("gitlab");
+    let v: serde_json::Value =
+        serde_json::from_slice(fake.requests()[0].body.as_deref().unwrap_or_default())
+            .expect("json");
+    assert_eq!(
+        (v["add_labels"].as_str(), v["remove_labels"].as_str()),
+        (Some("a,b"), Some("c"))
+    );
+
+    fake.push_json(
+        "https://gitlab.com/api/v4/projects/g%2Fp/labels",
+        r#"[{"name":"x"}]"#,
+    );
+    assert_eq!(
+        gitlab(&fake)
+            .list_labels(&RepoId::new("gitlab.com", "g", "p"))
+            .await
+            .expect("labels"),
+        ["x"]
+    );
+}

@@ -261,6 +261,66 @@ impl<C: HttpClient> GitHubLike<C> {
             .map(|_| ())
     }
 
+    pub(crate) async fn list_labels(&self, repo: &RepoId) -> Result<Vec<String>> {
+        #[derive(Deserialize)]
+        struct L {
+            name: String,
+        }
+        let ls: Vec<L> = self
+            .api
+            .get(&format!(
+                "{}/labels?per_page=100&limit=100",
+                Self::repo_path(repo)
+            ))
+            .await?;
+        Ok(ls.into_iter().map(|l| l.name).collect())
+    }
+
+    pub(crate) async fn edit_labels(
+        &self,
+        repo: &RepoId,
+        number: u64,
+        add: &[String],
+        remove: &[String],
+    ) -> Result<()> {
+        let base = format!("{}/issues/{number}/labels", Self::repo_path(repo));
+        if !add.is_empty() {
+            self.api.post_json(&base, &json!({ "labels": add })).await?;
+        }
+        if remove.is_empty() {
+            return Ok(());
+        }
+        // GitHub removes by name; Gitea by id.
+        let ids: Vec<(u64, String)> = if self.is_github() {
+            Vec::new()
+        } else {
+            #[derive(Deserialize)]
+            struct L {
+                id: u64,
+                name: String,
+            }
+            let ls: Vec<L> = self
+                .api
+                .get(&format!("{}/labels?limit=100", Self::repo_path(repo)))
+                .await?;
+            ls.into_iter().map(|l| (l.id, l.name)).collect()
+        };
+        for name in remove {
+            let key = if self.is_github() {
+                crate::url_encode(name)
+            } else {
+                ids.iter()
+                    .find(|(_, n)| n == name)
+                    .map(|(id, _)| id.to_string())
+                    .ok_or_else(|| PlatformError::NotFound(format!("label '{name}'")))?
+            };
+            self.api
+                .send(Method::Delete, &format!("{base}/{key}"), None)
+                .await?;
+        }
+        Ok(())
+    }
+
     pub(crate) async fn set_open(&self, repo: &RepoId, number: u64, open: bool) -> Result<()> {
         let state = if open { "open" } else { "closed" };
         self.api

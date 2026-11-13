@@ -143,6 +143,8 @@ pub enum HubMessage {
     Artifacts,
     /// Check the selected pull request out into a worktree.
     Worktree,
+    /// Add and remove labels as typed in the note box (`+bug -wontfix`).
+    EditLabels,
     /// Select a diff line.
     DiffLine(usize),
     /// Comment on the selected diff line with the note text.
@@ -592,6 +594,7 @@ impl HubState {
                 Task::none()
             }
             HubMessage::InlineComment => self.inline_comment(),
+            HubMessage::EditLabels => self.edit_labels(),
             HubMessage::PaletteToggle => {
                 self.palette = match self.palette {
                     Some(_) => None,
@@ -1089,6 +1092,26 @@ impl HubState {
         })
     }
 
+    fn edit_labels(&mut self) -> Task<HubMessage> {
+        let edit = match gitkraft_hub::labels::parse(&self.note) {
+            Ok(e) => e,
+            Err(e) => {
+                self.notice = Some((e, false));
+                return Task::none();
+            }
+        };
+        let Some((repo, number, kind, _)) = self.target() else {
+            return Task::none();
+        };
+        self.act(move |api| async move {
+            let b = api.backend(&repo.host).ok_or("no account")?;
+            b.edit_labels(&repo, kind, number, &edit.add, &edit.remove)
+                .await
+                .map(|()| "labels updated".to_string())
+                .map_err(|e| e.to_string())
+        })
+    }
+
     fn inline_comment(&mut self) -> Task<HubMessage> {
         let body = self.note.trim().to_string();
         let Some(pr) = self.selected_pr() else {
@@ -1216,6 +1239,10 @@ impl HubState {
             add(
                 "Pull request: check out in a worktree",
                 HubMessage::Worktree,
+            );
+            add(
+                "Pull request: change labels (note = +bug -wontfix)",
+                HubMessage::EditLabels,
             );
             add("Pull request: show the diff", HubMessage::Tab(PrTab::Diff));
             if self.tab == PrTab::Diff {
@@ -1948,6 +1975,17 @@ mod tests {
                 .any(|l| l == "Pull request: check out in a worktree")
         );
         assert!(!labels(&s).iter().any(|l| l.starts_with("CI run:")));
+    }
+
+    #[test]
+    fn labels_need_text_that_parses() {
+        let mut s = state();
+        let _ = s.update(HubMessage::EditLabels);
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, ok)| t.contains("type labels") && !ok)
+        );
     }
 
     #[test]

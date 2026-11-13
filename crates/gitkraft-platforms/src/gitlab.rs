@@ -269,6 +269,36 @@ impl<C: HttpClient> GitLab<C> {
             .map(|_| ())
     }
 
+    pub(crate) async fn list_labels(&self, repo: &RepoId) -> Result<Vec<String>> {
+        #[derive(Deserialize)]
+        struct L {
+            name: String,
+        }
+        let ls: Vec<L> = self
+            .api
+            .get(&format!("{}/labels?per_page=100", project(repo)))
+            .await?;
+        Ok(ls.into_iter().map(|l| l.name).collect())
+    }
+
+    pub(crate) async fn edit_labels(
+        &self,
+        repo: &RepoId,
+        kind: ItemKind,
+        number: u64,
+        add: &[String],
+        remove: &[String],
+    ) -> Result<()> {
+        self.api
+            .send(
+                Method::Put,
+                &item_path(repo, kind, number),
+                Some(&json!({ "add_labels": add.join(","), "remove_labels": remove.join(",") })),
+            )
+            .await
+            .map(|_| ())
+    }
+
     pub(crate) async fn set_open(
         &self,
         repo: &RepoId,

@@ -174,6 +174,8 @@ pub enum PromptPurpose {
     Dispatch,
     /// A comment on the diff line in [`HubState::inline_anchor`].
     Inline,
+    /// Labels to add and remove: `+bug -wontfix`.
+    Labels,
 }
 
 /// Actions that ask for confirmation first.
@@ -1457,6 +1459,39 @@ impl HubState {
         });
     }
 
+    fn submit_labels(&mut self, text: &str) {
+        let edit = match gitkraft_hub::labels::parse(text) {
+            Ok(e) => e,
+            Err(e) => {
+                self.set_notice(e, false);
+                return;
+            }
+        };
+        let target = self
+            .selected_pr()
+            .map(|p| (p.repo.clone(), p.number, ItemKind::PullRequest))
+            .or_else(|| {
+                self.selected_issue()
+                    .map(|i| (i.repo.clone(), i.number, ItemKind::Issue))
+            });
+        let (Some(api), Some(rt), Some((repo, number, kind))) =
+            (self.api.clone(), self.handle(), target)
+        else {
+            return;
+        };
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            let r = match api.backend(&repo.host) {
+                Some(b) => b
+                    .edit_labels(&repo, kind, number, &edit.add, &edit.remove)
+                    .await
+                    .map_err(|e| e.to_string()),
+                None => Err("no account".into()),
+            };
+            done(&tx, r, "labels updated".into(), true);
+        });
+    }
+
     /// Sends the prompt's text.
     pub fn submit_prompt(&mut self) {
         let Some(prompt) = self.prompt.take() else {
@@ -1474,6 +1509,10 @@ impl HubState {
         }
         if prompt.purpose == PromptPurpose::Inline {
             self.submit_inline(prompt.buffer.trim());
+            return;
+        }
+        if prompt.purpose == PromptPurpose::Labels {
+            self.submit_labels(&prompt.buffer);
             return;
         }
         let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {

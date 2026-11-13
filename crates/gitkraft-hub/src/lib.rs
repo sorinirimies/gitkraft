@@ -12,6 +12,7 @@ pub mod dispatch;
 pub mod fuzzy;
 mod hub;
 pub mod keys;
+pub mod labels;
 pub mod markdown;
 pub mod poller;
 pub mod pulse;

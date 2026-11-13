@@ -550,6 +550,7 @@ fn pr_detail<'a>(
         ("Request changes", HubMessage::RequestChanges),
         ("Comment", HubMessage::PostComment),
         ("Check out", HubMessage::Worktree),
+        ("Labels", HubMessage::EditLabels),
     ];
     if hub.tab == PrTab::Diff {
         buttons.push(("Comment on line", HubMessage::InlineComment));

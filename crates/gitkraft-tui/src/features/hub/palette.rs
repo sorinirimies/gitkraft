@@ -53,6 +53,7 @@ pub fn entries_for(hub: &HubState) -> Vec<Entry> {
             e("Pull request: close or reopen", 'C', d),
             e("Pull request: check out in a worktree", 'w', d),
             e("Pull request: show images", 'i', d),
+            e("Pull request: change labels", 'L', d),
             e("Pull request: copy link", 'y', d),
             e("Pull request: next tab", 'v', d),
         ]);
@@ -66,6 +67,7 @@ pub fn entries_for(hub: &HubState) -> Vec<Entry> {
         out.extend([
             e("Issue: comment", 'c', d),
             e("Issue: close or reopen", 'C', d),
+            e("Issue: change labels", 'L', d),
             e("Issue: show images", 'i', d),
             e("Issue: copy link", 'y', d),
         ]);
