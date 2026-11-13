@@ -8,7 +8,8 @@ use gitkraft_settings::dashboard::Dashboard;
 use gitkraft_settings::files;
 use gitkraft_web::{Paths, ServerOptions, Session, serve};
 
-const USAGE: &str = "usage: gitkraft-web [--host HOST] [--port PORT] [--no-open]";
+const USAGE: &str =
+    "usage: gitkraft-web [--host HOST] [--port PORT] [--no-open] [--checkout DIR]...";
 
 fn parse_args(args: &[String]) -> Result<ServerOptions, String> {
     let mut opts = ServerOptions {
@@ -27,6 +28,9 @@ fn parse_args(args: &[String]) -> Result<ServerOptions, String> {
                     .map_err(|_| "--port must be a number")?
             }
             "--no-open" => opts.open_browser = false,
+            "--checkout" => opts
+                .checkouts
+                .push(it.next().ok_or("--checkout needs a directory")?.into()),
             "-h" | "--help" => return Err(USAGE.into()),
             other => return Err(format!("unknown option '{other}'\n{USAGE}")),
         }
@@ -73,7 +77,9 @@ async fn main() -> anyhow::Result<()> {
     let theme = gitkraft_settings::persistence::load_settings()
         .map(|s| s.theme_index())
         .unwrap_or(0);
-    serve(Session::new(hub, dashboard, Paths::user(), theme), opts).await?;
+    let mut paths = Paths::user();
+    paths.checkouts.extend(opts.checkouts.iter().cloned());
+    serve(Session::new(hub, dashboard, paths, theme), opts).await?;
     Ok(())
 }
 
@@ -96,6 +102,17 @@ mod tests {
         assert_eq!(
             (o.host.as_str(), o.port, o.open_browser),
             ("0.0.0.0", 8080, false)
+        );
+    }
+
+    #[test]
+    fn checkouts_can_be_given_more_than_once() {
+        let o = p(&["--checkout", "/a", "--checkout", "/b"]).expect("ok");
+        assert_eq!(o.checkouts, [std::path::PathBuf::from("/a"), "/b".into()]);
+        assert!(
+            p(&["--checkout"])
+                .expect_err("missing")
+                .contains("needs a directory")
         );
     }
 

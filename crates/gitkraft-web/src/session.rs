@@ -38,6 +38,8 @@ pub struct Paths {
     pub use_state_dir: bool,
     /// The `~/.ssh` directory the SSH key page may change.
     pub ssh_dir: Option<PathBuf>,
+    /// Local checkouts a pull request may be put in a worktree of (the one the server started in, plus `--checkout`).
+    pub checkouts: Vec<PathBuf>,
 }
 
 impl Paths {
@@ -48,6 +50,7 @@ impl Paths {
             notify: files::notify_config_path().ok(),
             use_state_dir: true,
             ssh_dir: Some(gitkraft_hub::keys::ssh_dir()),
+            checkouts: vec![PathBuf::from(".")],
         }
     }
 }
@@ -99,6 +102,26 @@ impl Session {
     /// `~/.ssh` when this session may change it.
     pub fn ssh_dir(&self) -> Option<&std::path::Path> {
         self.inner.paths.ssh_dir.as_deref()
+    }
+
+    /// The local checkout of `repo`, if one of the known directories has a remote that points at it.
+    pub fn checkout_of(&self, repo: &gitkraft_platforms::RepoId) -> Option<PathBuf> {
+        let tabs: Vec<(Option<PathBuf>, Vec<String>)> = self
+            .inner
+            .paths
+            .checkouts
+            .iter()
+            .map(|p| {
+                (
+                    p.canonicalize().ok(),
+                    gitkraft_hub::accounts::remote_urls(p),
+                )
+            })
+            .collect();
+        gitkraft_hub::checkout::local_checkouts(&tabs)
+            .into_iter()
+            .find(|(r, _)| r == repo)
+            .map(|(_, p)| p)
     }
 
     /// The hub.

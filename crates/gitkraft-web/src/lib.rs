@@ -32,6 +32,8 @@ pub struct ServerOptions {
     pub port: u16,
     /// Open the page in the browser once listening.
     pub open_browser: bool,
+    /// Extra local checkouts, besides the working directory, for putting pull requests in worktrees.
+    pub checkouts: Vec<std::path::PathBuf>,
 }
 
 impl Default for ServerOptions {
@@ -40,6 +42,7 @@ impl Default for ServerOptions {
             host: "127.0.0.1".into(),
             port: 3333,
             open_browser: false,
+            checkouts: Vec::new(),
         }
     }
 }

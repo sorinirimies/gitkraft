@@ -122,6 +122,10 @@ struct Harness {
 }
 
 async fn start() -> Harness {
+    start_with(Vec::new()).await
+}
+
+async fn start_with(checkouts: Vec<std::path::PathBuf>) -> Harness {
     let fake = FakeClient::new();
     let mut account = Account::new(PlatformKind::GitHub, "github.com").with_token(Secret::new("t"));
     account.me = Some("me".into());
@@ -139,6 +143,7 @@ async fn start() -> Harness {
         notify: Some(dir.path().join("notifications.toml")),
         use_state_dir: false,
         ssh_dir: None,
+        checkouts,
     };
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr = listener.local_addr().expect("addr");
@@ -665,4 +670,95 @@ async fn nonsense_merge_requests_are_refused_before_any_call() {
         assert!(r.body.contains(needle), "{}", r.body);
     }
     assert!(h.fake.requests().is_empty());
+}
+
+fn git(dir: &std::path::Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .current_dir(dir)
+        .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+        .args(args)
+        .output()
+        .expect("git");
+    assert!(
+        out.status.success(),
+        "{args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+const WORKTREE: &str = r#"{"action":"worktree","repo":"github.com/o/r","number":7}"#;
+
+#[tokio::test]
+async fn a_worktree_of_a_repo_without_a_known_checkout_says_how_to_fix_it() {
+    let h = start().await;
+    let r = request(h.addr, "POST", "/api/action", WORKTREE).await;
+    assert_eq!(r.status, 400, "{}", r.body);
+    assert!(r.body.contains("--checkout DIR"), "{}", r.body);
+    assert!(h.fake.requests().is_empty());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_pull_request_is_fetched_into_a_worktree_next_to_the_checkout() {
+    let root = tempfile::tempdir().expect("tmp");
+    // the "forge": a repository that keeps the PR head under refs/pull/7/head
+    let forge = root.path().join("forge");
+    std::fs::create_dir_all(&forge).expect("mk");
+    git(&forge, &["init", "-q"]);
+    std::fs::write(forge.join("f.txt"), "pr code").expect("write");
+    git(&forge, &["add", "."]);
+    git(&forge, &["commit", "-qm", "pr"]);
+    git(&forge, &["update-ref", "refs/pull/7/head", "HEAD"]);
+    // the checkout: origin is the GitHub URL; its "ssh" is a script that serves the forge above
+    let mine = root.path().join("r");
+    std::fs::create_dir_all(&mine).expect("mk");
+    git(&mine, &["init", "-q"]);
+    git(
+        &mine,
+        &["remote", "add", "origin", "git@github.com:o/r.git"],
+    );
+    let fake_ssh = root.path().join("fake-ssh");
+    std::fs::write(
+        &fake_ssh,
+        format!(
+            "#!/bin/sh\nexec git-upload-pack '{}/.git'\n",
+            forge.display()
+        ),
+    )
+    .expect("script");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&fake_ssh, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    }
+    git(
+        &mine,
+        &["config", "core.sshCommand", &fake_ssh.display().to_string()],
+    );
+    let h = start_with(vec![mine.clone()]).await;
+    let r = request(h.addr, "POST", "/api/action", WORKTREE).await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    assert!(r.body.contains("#7 is checked out"), "{}", r.body);
+    let wt = root.path().join("r-pr-7");
+    assert_eq!(
+        std::fs::read_to_string(wt.join("f.txt")).expect("worktree"),
+        "pr code"
+    );
+    assert!(h.fake.requests().is_empty(), "no platform call is needed");
+}
+
+#[tokio::test]
+async fn every_page_carries_the_command_palette_and_the_pr_page_a_check_out_button() {
+    let h = start().await;
+    h.fake
+        .push_json("https://api.github.com/repos/o/r/pulls", "[]");
+    let page = get(h.addr, "/").await;
+    for needle in ["function gkPalette", "gkEntries", "button[data-act]"] {
+        assert!(page.body.contains(needle), "{needle} missing");
+    }
+    pr_fixtures(&h);
+    let pr = get(h.addr, "/pr?repo=github.com%2Fo%2Fr&n=7").await;
+    assert!(pr.body.contains("Check out"), "{}", pr.body);
+    assert!(
+        pr.body.contains("&quot;action&quot;:&quot;worktree&quot;") || pr.body.contains("worktree")
+    );
 }

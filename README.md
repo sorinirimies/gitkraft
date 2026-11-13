@@ -174,6 +174,10 @@ gitkraft-tui notify status | on | off | mute 2h | unmute | test | install
 **Web:** `gitkraft-web` (needs Rust 1.98, so the MSRV job skips it) serves `http://127.0.0.1:3333`.
 There is no login: do not bind it beyond localhost. Every action carries a per-run token the pages embed, so
 another website cannot make the server act. The **SSH keys** page lists, sets up, tests and removes keys.
+`Ctrl/Cmd+K` (or `:` / `/` outside a text field) opens a **command palette**: every page link and every action button on
+the page (merge, approve, re-run, …) by fuzzy name; actions that ask first still ask. The PR page's **Check out** button
+fetches the PR into a worktree next to your local checkout: the one the server started in, plus any `--checkout DIR`
+(repeatable).
 
 ### MCP server: your forges for an AI assistant
 

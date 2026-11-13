@@ -111,6 +111,13 @@ pub enum ActionRequest {
         /// Run id.
         run_id: u64,
     },
+    /// Fetch a pull request into a worktree next to the local checkout.
+    Worktree {
+        /// `host/owner/name`.
+        repo: String,
+        /// Number.
+        number: u64,
+    },
     /// Create or reuse this machine's key for a host, register it and configure ssh.
     SshSetup {
         /// Host name, e.g. `github.com`.
@@ -292,6 +299,24 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
             ci.cancel(&repo, run_id)
                 .await
                 .map(|()| "run cancelled".to_string())
+        }
+        ActionRequest::Worktree { repo, number } => {
+            let repo = repo_of(&repo)?;
+            let kind = hub
+                .backend(&repo.host)
+                .ok_or("no account for this host")?
+                .kind();
+            let path = session.checkout_of(&repo).ok_or_else(|| {
+                format!(
+                    "no local checkout of {} is known: start gitkraft-web inside it, or pass --checkout DIR",
+                    repo.full_name()
+                )
+            })?;
+            return tokio::task::spawn_blocking(move || {
+                gitkraft_hub::checkout::checkout_worktree(kind, &repo, number, &path)
+            })
+            .await
+            .map_err(|e| e.to_string())?;
         }
         ActionRequest::SshSetup { host } => {
             let dir = session

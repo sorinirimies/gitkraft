@@ -428,6 +428,7 @@ async fn pull_request(cx: &Cx) -> Result<impl View> {
     let force = with_method("now", true);
     let update = with(serde_json::json!({"action": "update_branch"}));
     let cancel_auto = with(serde_json::json!({"action": "cancel_auto_merge"}));
+    let worktree = with(serde_json::json!({"action": "worktree"}));
     let toggle = with(serde_json::json!({"action": "set_open", "kind": "pr", "open": !open}));
     let toggle_label = if open { "Close" } else { "Reopen" };
     let labels: Vec<String> = pr.labels.iter().map(|l| l.name.clone()).collect();
@@ -460,6 +461,7 @@ async fn pull_request(cx: &Cx) -> Result<impl View> {
                     <button data-act=(update) data-confirm="Update this branch with its target branch?" onclick="actBtn(this)">"Update branch"</button>
                     <button data-act=(cancel_auto) data-confirm="Cancel the scheduled merge or leave the merge queue?" onclick="actBtn(this)">"Cancel auto-merge"</button>
                 }
+                <button data-act=(worktree) title="Fetch this pull request into a worktree next to your local checkout" onclick="actBtn(this)">"Check out"</button>
                 <button class="danger" data-act=(toggle) data-confirm=(format!("{toggle_label} this pull request?")) onclick="actBtn(this)">(toggle_label)</button>
             </div>
             <nav class="tabs">
