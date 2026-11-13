@@ -109,12 +109,44 @@ impl<C: HttpClient> GitHubLike<C> {
             .api
             .get(&format!("{}/commits/{sha}/status", Self::repo_path(repo)))
             .await?;
-        Ok(match status.state.as_str() {
-            "success" => Some(ChecksState::Success),
-            "failure" | "error" => Some(ChecksState::Failure),
-            "pending" => Some(ChecksState::Pending),
+        // GitHub reports "pending" for a commit with no commit statuses at all, which is every
+        // repo that only uses Actions; those results live in check runs.
+        let statuses = match (status.total_count, status.state.as_str()) {
+            (Some(0), _) => None,
+            (_, "success") => Some(ChecksState::Success),
+            (_, "failure" | "error") => Some(ChecksState::Failure),
+            (_, "pending") => Some(ChecksState::Pending),
             _ => None,
-        })
+        };
+        let runs = if self.is_github() {
+            self.check_runs(repo, sha).await.ok().flatten()
+        } else {
+            None
+        };
+        Ok(worst(statuses, runs))
+    }
+
+    /// The combined result of a commit's check runs (GitHub Actions and apps).
+    async fn check_runs(&self, repo: &RepoId, sha: &str) -> Result<Option<ChecksState>> {
+        let runs: CheckRuns = self
+            .api
+            .get(&format!(
+                "{}/commits/{sha}/check-runs?per_page=100",
+                Self::repo_path(repo)
+            ))
+            .await?;
+        let mut state = None;
+        for r in &runs.check_runs {
+            let this = match (r.status.as_str(), r.conclusion.as_deref()) {
+                ("completed", Some("failure" | "timed_out" | "cancelled" | "action_required")) => {
+                    ChecksState::Failure
+                }
+                ("completed", _) => ChecksState::Success, // success, neutral, skipped
+                _ => ChecksState::Pending,
+            };
+            state = worst(state, Some(this));
+        }
+        Ok(state)
     }
 
     pub(crate) async fn pull_request_diff(&self, repo: &RepoId, number: u64) -> Result<String> {
@@ -905,6 +937,34 @@ struct SearchResponse {
 struct CombinedStatus {
     #[serde(default)]
     state: String,
+    /// How many commit statuses there are; `Some(0)` makes `state` meaningless.
+    #[serde(default)]
+    total_count: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct CheckRuns {
+    #[serde(default)]
+    check_runs: Vec<CheckRun>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct CheckRun {
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    conclusion: Option<String>,
+}
+
+/// The more severe of two results: failure, then pending, then success; `None` knows nothing.
+fn worst(a: Option<ChecksState>, b: Option<ChecksState>) -> Option<ChecksState> {
+    use ChecksState::{Failure, Pending, Success};
+    match (a, b) {
+        (Some(Failure), _) | (_, Some(Failure)) => Some(Failure),
+        (Some(Pending), _) | (_, Some(Pending)) => Some(Pending),
+        (Some(Success), _) | (_, Some(Success)) => Some(Success),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Deserialize, Default)]

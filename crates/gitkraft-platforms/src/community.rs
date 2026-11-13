@@ -19,7 +19,7 @@ use crate::model::{
 use crate::platform::{PlatformKind, RepoId, url_encode};
 
 const DISCUSSION_FIELDS: &str = "id number title url body updatedAt isAnswered \
-     category{name} author{login avatarUrl} comments{totalCount}";
+     category{name} author{login avatarUrl} commentCount:comments{totalCount}";
 
 fn discussion_of(n: &serde_json::Value) -> Discussion {
     Discussion {
@@ -27,7 +27,7 @@ fn discussion_of(n: &serde_json::Value) -> Discussion {
         title: n["title"].as_str().unwrap_or_default().into(),
         author: author_of(&n["author"]),
         category: n["category"]["name"].as_str().unwrap_or_default().into(),
-        comments: n["comments"]["totalCount"].as_u64().unwrap_or(0) as u32,
+        comments: n["commentCount"]["totalCount"].as_u64().unwrap_or(0) as u32,
         answered: n["isAnswered"].as_bool().unwrap_or(false),
         body: n["body"].as_str().unwrap_or_default().into(),
         url: n["url"].as_str().unwrap_or_default().into(),

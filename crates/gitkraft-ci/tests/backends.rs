@@ -114,7 +114,8 @@ async fn log_is_fetched_as_text_and_parses() {
     assert!(
         fake.requests()[0]
             .headers
-            .contains(&("Accept".into(), "text/plain".into()))
+            .contains(&("Accept".into(), "application/vnd.github+json".into())),
+        "GitHub answers 415 to text/plain"
     );
 }
 

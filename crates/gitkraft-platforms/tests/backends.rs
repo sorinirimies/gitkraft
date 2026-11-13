@@ -1139,9 +1139,9 @@ async fn github_discussions_list_read_and_comment_through_graphql() {
         r#"{"data":{"repository":{"hasDiscussionsEnabled":true,"discussions":{"nodes":[
             {"id":"D_1","number":5,"title":"How do I clone?","url":"https://github.com/o/r/discussions/5",
              "body":"help","updatedAt":"2026-05-01T10:00:00Z","isAnswered":true,
-             "category":{"name":"Q&A"},"author":{"login":"alice","avatarUrl":null},"comments":{"totalCount":3}},
+             "category":{"name":"Q&A"},"author":{"login":"alice","avatarUrl":null},"commentCount":{"totalCount":3}},
             {"id":"D_2","number":6,"title":"Gone author","url":"u","body":"","updatedAt":"2026-05-02T10:00:00Z",
-             "isAnswered":false,"category":{"name":"Ideas"},"author":null,"comments":{"totalCount":0}}]}}}}"#,
+             "isAnswered":false,"category":{"name":"Ideas"},"author":null,"commentCount":{"totalCount":0}}]}}}}"#,
     );
     let list = github(&fake)
         .discussions(&repo(), 30)
@@ -1167,7 +1167,7 @@ async fn github_discussions_list_read_and_comment_through_graphql() {
         "https://api.github.com/graphql",
         r#"{"data":{"repository":{"discussion":{"id":"D_1","number":5,"title":"How do I clone?","url":"u","body":"help",
             "updatedAt":"2026-05-01T10:00:00Z","isAnswered":true,"category":{"name":"Q&A"},
-            "author":{"login":"alice"},"comments":{"totalCount":1,"nodes":[
+            "author":{"login":"alice"},"commentCount":{"totalCount":1},"comments":{"nodes":[
               {"databaseId":9,"body":"git clone","createdAt":"2026-05-01T11:00:00Z","author":{"login":"bob"}}]}}}}}"#,
     );
     let d = github(&fake)
@@ -1402,4 +1402,63 @@ async fn a_pull_request_knows_when_its_branch_is_behind_its_target() {
         Some(Some(true))
     );
     assert_eq!(mr(r#""draft":false"#).await.ok(), Some(None));
+}
+
+#[tokio::test]
+async fn an_actions_only_commit_is_judged_by_its_check_runs_not_the_empty_commit_status() {
+    let state = |status: &str, runs: &str| {
+        let fake = FakeClient::new();
+        fake.push_json(
+            "https://api.github.com/repos/o/r/pulls/12",
+            r#"{"number":12,"title":"t","state":"open","head":{"ref":"a","sha":"abc"},"base":{"ref":"m"},"html_url":"u"}"#,
+        );
+        fake.push_json(
+            "https://api.github.com/repos/o/r/commits/abc/status",
+            status,
+        );
+        fake.push_json(
+            "https://api.github.com/repos/o/r/commits/abc/check-runs",
+            runs,
+        );
+        async move {
+            github(&fake)
+                .pull_request(&repo(), 12)
+                .await
+                .map(|p| p.checks)
+        }
+    };
+    let none = r#"{"state":"pending","total_count":0}"#;
+    let run =
+        |s: &str, c: &str| format!(r#"{{"check_runs":[{{"status":"{s}","conclusion":{c}}}]}}"#);
+    assert_eq!(
+        state(none, &run("completed", "\"success\"")).await.ok(),
+        Some(Some(ChecksState::Success))
+    );
+    assert_eq!(
+        state(none, &run("completed", "\"skipped\"")).await.ok(),
+        Some(Some(ChecksState::Success))
+    );
+    assert_eq!(
+        state(none, &run("completed", "\"failure\"")).await.ok(),
+        Some(Some(ChecksState::Failure))
+    );
+    assert_eq!(
+        state(none, &run("in_progress", "null")).await.ok(),
+        Some(Some(ChecksState::Pending))
+    );
+    assert_eq!(
+        state(none, r#"{"check_runs":[]}"#).await.ok(),
+        Some(None),
+        "no checks at all is not pending"
+    );
+    // a real failing status wins over green runs
+    assert_eq!(
+        state(
+            r#"{"state":"failure","total_count":1}"#,
+            &run("completed", "\"success\"")
+        )
+        .await
+        .ok(),
+        Some(Some(ChecksState::Failure))
+    );
 }

@@ -101,8 +101,15 @@ impl<C: HttpClient> ActionsBackend<C> {
     }
 
     pub(crate) async fn job_log(&self, repo: &RepoId, job_id: u64) -> Result<String> {
+        // GitHub answers a log request with a redirect and refuses anything but its JSON media
+        // type; the redirect target serves the plain text.
+        let accept = if self.is_github() {
+            "application/vnd.github+json"
+        } else {
+            "text/plain"
+        };
         self.api
-            .get_text(&format!("{}/jobs/{job_id}/logs", base(repo)), "text/plain")
+            .get_text(&format!("{}/jobs/{job_id}/logs", base(repo)), accept)
             .await
     }
 

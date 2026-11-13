@@ -816,7 +816,7 @@ async fn the_community_page_lists_reads_and_comments_on_discussions() {
     let h = start().await;
     h.fake.push_json(
         "https://api.github.com/graphql",
-        r#"{"data":{"repository":{"hasDiscussionsEnabled":true,"discussions":{"nodes":[{"id":"D","number":5,"title":"How do I <clone>?","url":"u","body":"b","updatedAt":"2026-05-01T10:00:00Z","isAnswered":true,"category":{"name":"Q&A"},"author":{"login":"alice"},"comments":{"totalCount":2}}]}}}}"#,
+        r#"{"data":{"repository":{"hasDiscussionsEnabled":true,"discussions":{"nodes":[{"id":"D","number":5,"title":"How do I <clone>?","url":"u","body":"b","updatedAt":"2026-05-01T10:00:00Z","isAnswered":true,"category":{"name":"Q&A"},"author":{"login":"alice"},"commentCount":{"totalCount":2}}]}}}}"#,
     );
     let page = get(h.addr, "/community").await;
     assert_eq!(page.status, 200, "{}", page.body);
@@ -833,7 +833,7 @@ async fn the_community_page_lists_reads_and_comments_on_discussions() {
     let h = start().await;
     h.fake.push_json(
         "https://api.github.com/graphql",
-        r#"{"data":{"repository":{"discussion":{"id":"D","number":5,"title":"T","url":"u","body":"the question","updatedAt":"2026-05-01T10:00:00Z","isAnswered":false,"category":{"name":"Q&A"},"author":{"login":"alice"},"comments":{"totalCount":1,"nodes":[{"databaseId":9,"body":"an <b>answer</b>","createdAt":"2026-05-01T11:00:00Z","author":{"login":"bob"}}]}}}}}"#,
+        r#"{"data":{"repository":{"discussion":{"id":"D","number":5,"title":"T","url":"u","body":"the question","updatedAt":"2026-05-01T10:00:00Z","isAnswered":false,"category":{"name":"Q&A"},"author":{"login":"alice"},"commentCount":{"totalCount":1},"comments":{"nodes":[{"databaseId":9,"body":"an <b>answer</b>","createdAt":"2026-05-01T11:00:00Z","author":{"login":"bob"}}]}}}}}"#,
     );
     let page = get(
         h.addr,

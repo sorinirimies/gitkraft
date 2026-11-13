@@ -459,7 +459,7 @@ async fn discussions_list_slim_and_read_with_comments_and_wiki_says_why_not() {
     let (s, fake) = rig(Policy::default());
     fake.push_json(
         "https://api.github.com/graphql",
-        r#"{"data":{"repository":{"hasDiscussionsEnabled":true,"discussions":{"nodes":[{"id":"D","number":5,"title":"Q","url":"u","body":"long text","updatedAt":"2026-05-01T10:00:00Z","isAnswered":false,"category":{"name":"Q&A"},"author":{"login":"a","avatarUrl":"x"},"comments":{"totalCount":2}}]}}}}"#,
+        r#"{"data":{"repository":{"hasDiscussionsEnabled":true,"discussions":{"nodes":[{"id":"D","number":5,"title":"Q","url":"u","body":"long text","updatedAt":"2026-05-01T10:00:00Z","isAnswered":false,"category":{"name":"Q&A"},"author":{"login":"a","avatarUrl":"x"},"commentCount":{"totalCount":2}}]}}}}"#,
     );
     let v = json(
         &s.discussions(Parameters(DiscussionsArgs::default()))
