@@ -36,6 +36,7 @@ tracing            = "0.1"
 thiserror    = "2"
 tokio        = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
 reqwest      = { version = "0.13", default-features = false, features = ["rustls", "http2", "gzip"] }
+notify-rust  = "4"
 toml         = "1"
 toml_edit    = "0.25"
 

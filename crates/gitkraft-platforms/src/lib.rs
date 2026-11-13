@@ -9,6 +9,7 @@
 //! | [`platform`] | `PlatformKind`, `RepoId`, remote-URL parsing, host detection |
 //! | [`account`], [`auth`] | accounts and token lookup (env, platform CLI) |
 //! | [`http`] | the `HttpClient` seam, the `reqwest` client, the ETag cache |
+//! | [`notify`] | poll diffing, alerts, inbox, desktop dispatch, poller status |
 //! | [`backend`] | the per-account adapter used by every front-end |
 //! | [`testing`] | a fake client for tests |
 //!
@@ -23,6 +24,7 @@ mod github_like;
 mod gitlab;
 pub mod http;
 pub mod model;
+pub mod notify;
 pub mod platform;
 pub mod testing;
 

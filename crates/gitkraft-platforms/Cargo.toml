@@ -11,6 +11,7 @@ categories = ["development-tools", "api-bindings"]
 keywords = ["git", "github", "gitlab", "gitea", "forge"]
 
 [dependencies]
+gitkraft-settings = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
 chrono      = { workspace = true }
@@ -18,6 +19,12 @@ thiserror   = { workspace = true }
 reqwest     = { workspace = true }
 tokio       = { workspace = true }
 tracing     = { workspace = true }
+notify-rust = { workspace = true, optional = true }
+
+[features]
+default = []
+# Desktop notifications (macOS, Linux, Windows) through notify-rust.
+desktop = ["dep:notify-rust"]
 
 [dev-dependencies]
 tokio = { workspace = true }
