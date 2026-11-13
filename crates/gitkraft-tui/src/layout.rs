@@ -32,6 +32,8 @@ pub fn render(app: &mut App, frame: &mut Frame) {
             features::hub::view::render(app, frame, frame.area());
         }
     }
+    app.menu.tick(std::time::Instant::now());
+    features::menu::view::render(app, frame, std::time::Instant::now());
 }
 
 /// Render the full Main screen layout with header, content columns, staging

@@ -204,6 +204,10 @@ or any OpenAI-compatible server (`GITKRAFT_AI_PROVIDER=openai GITKRAFT_AI_BASE_U
 for Ollama, no key needed locally). The key comes from `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`, or
 `pbpaste | gitkraft-tui ai-key anthropic` stores it in the keyring. Never a config file.
 
+Settings menu: `M` slides a menu open over any screen: theme (←/→), reduced motion (Space), the project's
+commit message style (opens `.gitkraft/ai.toml`, creating a starter), the settings file and the key reference.
+j/k move, Esc closes. Reduced motion makes it open instantly and is saved in `tui-settings.json`.
+
 Commit messages: `gitkraft-tui commit-message` drafts one for what is staged (`--dry-run` shows the prompt,
 `--json` gives message and warnings); in the TUI press `g` in the staging pane and the draft fills the commit
 input (subject on the line, body kept), ready to edit. In the hub, `E` on a CI run explains its failed job.

@@ -54,6 +54,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // The settings menu owns the keyboard while it is open.
+    if app.menu.is_open() {
+        features::menu::events::handle_key(app, key);
+        return;
+    }
+
     match app.screen {
         AppScreen::Welcome => features::repo::events::handle_key(app, key),
         AppScreen::DirBrowser => handle_browser_key(app, key),
@@ -95,6 +101,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             match key.code {
                 KeyCode::Char('q') => app.should_quit = true,
                 KeyCode::Char('H') => features::hub::events::open(app),
+                KeyCode::Char('M') => app.open_menu(),
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     app.should_quit = true;
                 }

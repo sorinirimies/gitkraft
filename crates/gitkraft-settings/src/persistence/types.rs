@@ -69,6 +69,9 @@ pub struct AppSettings {
     /// Index of the active tab within open_tabs.
     #[serde(default)]
     pub active_tab_index: usize,
+    /// Skip UI animations (menus open instantly).
+    #[serde(default)]
+    pub reduced_motion: bool,
 }
 
 fn default_max_recent() -> usize {
@@ -86,6 +89,7 @@ impl Default for AppSettings {
             editor_name: None,
             open_tabs: Vec::new(),
             active_tab_index: 0,
+            reduced_motion: false,
         }
     }
 }

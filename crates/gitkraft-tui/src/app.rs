@@ -453,6 +453,10 @@ pub struct App {
     pub show_theme_panel: bool,
     /// Whether the options panel is visible.
     pub show_options_panel: bool,
+    /// The animated settings menu (`M`).
+    pub menu: crate::features::menu::Menu,
+    /// Menus open instantly instead of sliding.
+    pub reduced_motion: bool,
     /// Whether the About panel is visible.
     pub show_about_panel: bool,
     /// Configured editor for opening files.
@@ -540,6 +544,8 @@ impl App {
 
             show_theme_panel: false,
             show_options_panel: false,
+            menu: crate::features::menu::Menu::default(),
+            reduced_motion: settings.reduced_motion,
             show_about_panel: false,
             editor: settings
                 .editor_name
@@ -777,6 +783,26 @@ impl App {
             return; // never touch the user's real settings from unit tests
         }
         let _ = gitkraft_core::features::persistence::save_theme_tui(self.current_theme_name());
+    }
+
+    /// Opens the settings menu (it slides in unless reduced motion is on).
+    pub fn open_menu(&mut self) {
+        self.menu
+            .open(std::time::Instant::now(), self.reduced_motion);
+    }
+
+    /// Closes the settings menu at `now`.
+    pub fn close_menu(&mut self, now: std::time::Instant) {
+        self.menu.close(now, self.reduced_motion);
+    }
+
+    /// Persist the reduced-motion choice.
+    pub fn save_reduced_motion(&self) {
+        if cfg!(test) {
+            return;
+        }
+        let v = self.reduced_motion;
+        let _ = gitkraft_core::features::persistence::update_tui_settings(|s| s.reduced_motion = v);
     }
 
     /// Persist the paths of all open tabs for session restore.
@@ -1854,7 +1880,11 @@ impl App {
                 gitkraft_core::features::persistence::load_tui_settings().unwrap_or_default();
             let _ = gitkraft_core::features::persistence::save_tui_settings(&snap);
         }
+        self.open_path_in_editor(path, "settings");
+    }
 
+    /// Open `path` in the configured editor; `what` names it in the status bar.
+    pub fn open_path_in_editor(&mut self, path: std::path::PathBuf, what: &str) {
         let path_str = path.display().to_string();
 
         if self.editor.is_terminal_editor() {
@@ -1862,7 +1892,7 @@ impl App {
             // Signal the event loop in lib.rs to suspend the TUI, run the
             // editor synchronously, then resume.
             self.tab_mut().status_message =
-                Some(format!("Opening settings in {} — {path_str}", self.editor));
+                Some(format!("Opening {what} in {} — {path_str}", self.editor));
             self.pending_editor_open = Some(vec![path]);
         } else if !matches!(self.editor, gitkraft_core::Editor::None) {
             // GUI editor (VS Code, Zed, …): open in background.
@@ -1871,18 +1901,18 @@ impl App {
             match self.editor.open_file(&path) {
                 Ok(()) => {
                     self.tab_mut().status_message =
-                        Some(format!("Settings opened in {} — {path_str}", self.editor));
+                        Some(format!("{what} opened in {} — {path_str}", self.editor));
                 }
                 Err(e) => {
                     self.tab_mut().error_message =
-                        Some(format!("Could not open settings ({e}) — path: {path_str}"));
+                        Some(format!("Could not open {what} ({e}) — path: {path_str}"));
                 }
             }
         } else {
             // No editor configured — show the path so the user can open it
             // manually, and remind them how to configure an editor.
             self.tab_mut().status_message = Some(format!(
-                "Settings: {path_str}  \
+                "{what}: {path_str}  \
                  (no editor configured — press E to choose one, or set editor in GUI)"
             ));
         }
