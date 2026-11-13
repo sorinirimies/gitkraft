@@ -810,3 +810,47 @@ async fn the_calendar_cells_are_focusable_days_and_the_page_has_the_day_panel() 
         assert!(page.body.contains(needle), "{needle} missing");
     }
 }
+
+#[tokio::test]
+async fn the_community_page_lists_reads_and_comments_on_discussions() {
+    let h = start().await;
+    h.fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"repository":{"hasDiscussionsEnabled":true,"discussions":{"nodes":[{"id":"D","number":5,"title":"How do I <clone>?","url":"u","body":"b","updatedAt":"2026-05-01T10:00:00Z","isAnswered":true,"category":{"name":"Q&A"},"author":{"login":"alice"},"comments":{"totalCount":2}}]}}}}"#,
+    );
+    let page = get(h.addr, "/community").await;
+    assert_eq!(page.status, 200, "{}", page.body);
+    for needle in [
+        "Discussions &amp; wiki",
+        "#5 How do I &lt;clone&gt;?",
+        "Q&amp;A",
+        "answered",
+        "tab=discussions&amp;n=5",
+    ] {
+        assert!(page.body.contains(needle), "missing {needle:?}");
+    }
+
+    let h = start().await;
+    h.fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"repository":{"discussion":{"id":"D","number":5,"title":"T","url":"u","body":"the question","updatedAt":"2026-05-01T10:00:00Z","isAnswered":false,"category":{"name":"Q&A"},"author":{"login":"alice"},"comments":{"totalCount":1,"nodes":[{"databaseId":9,"body":"an <b>answer</b>","createdAt":"2026-05-01T11:00:00Z","author":{"login":"bob"}}]}}}}}"#,
+    );
+    let page = get(
+        h.addr,
+        "/community?repo=github.com%2Fo%2Fr&tab=discussions&n=5",
+    )
+    .await;
+    assert!(
+        page.body.contains("the question") && page.body.contains("an &lt;b&gt;answer&lt;/b&gt;")
+    );
+    assert!(page.body.contains("discussion_comment"), "a comment box");
+}
+
+#[tokio::test]
+async fn the_wiki_tab_explains_that_github_has_no_wiki_api() {
+    let h = start().await;
+    let page = get(h.addr, "/community?tab=wiki").await;
+    assert_eq!(page.status, 200);
+    assert!(page.body.contains(".wiki.git"), "{}", page.body);
+    assert!(h.fake.requests().is_empty());
+}

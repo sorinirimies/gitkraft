@@ -202,6 +202,7 @@ fn nav(session: &Session, active: &str) -> Vec<NavItem> {
     for (key, href, label) in [
         ("pulse", "/pulse", "Pulse"),
         ("inbox", "/inbox", "Inbox"),
+        ("community", "/community", "Discussions & wiki"),
         ("keys", "/keys", "SSH keys"),
         ("notify", "/notify", "🔔 Notifications"),
     ] {
@@ -318,6 +319,8 @@ pub struct ItemParams {
     pub job: Option<String>,
     /// Days.
     pub days: Option<String>,
+    /// Wiki page slug.
+    pub page: Option<String>,
 }
 
 fn parse_item(p: &ItemParams) -> Option<(RepoId, u64)> {
@@ -764,6 +767,155 @@ async fn pulse(cx: &Cx) -> Result<impl View> {
             <div class="grid">for (label, n) in stats { <div class="stat"><b>(n.to_string())</b>(label)</div> }</div>
             if let Some(b) = bars { <h2>"PRs opened per day"</h2><div class="panel">(b)</div> }
             if !authors.is_empty() { <h2>"Most active authors"</h2><div class="panel">for a in authors { <div>(a)</div> }</div> }
+        )
+    })
+}
+
+/// Discussions and wikis of one repository.
+#[page("/community")]
+async fn community(cx: &Cx) -> Result<impl View> {
+    let params = query_params::<ItemParams>(cx)?;
+    let session: &Session = app_context(cx);
+    let dash = session.dashboard();
+    let mut repos: Vec<String> = dash
+        .sections
+        .iter()
+        .flat_map(|s| s.repos.iter().cloned())
+        .collect();
+    repos.sort();
+    repos.dedup();
+    let chosen = params
+        .repo
+        .clone()
+        .filter(|r| RepoId::from_key(r).is_some())
+        .or_else(|| repos.first().cloned());
+    let repo = chosen.as_deref().and_then(RepoId::from_key);
+    let wiki_tab = params.tab.as_deref() == Some("wiki");
+    let key = chosen.clone().unwrap_or_default();
+    let repo_links: Vec<(String, String, bool)> = repos
+        .iter()
+        .map(|r| {
+            (
+                format!(
+                    "/community?repo={}&tab={}",
+                    url_encode(r),
+                    if wiki_tab { "wiki" } else { "discussions" }
+                ),
+                r.clone(),
+                Some(r) == chosen.as_ref(),
+            )
+        })
+        .collect();
+    let tab_links: Vec<(String, String, bool)> = [("discussions", "Discussions"), ("wiki", "Wiki")]
+        .iter()
+        .map(|(t, label)| {
+            (
+                format!("/community?repo={}&tab={t}", url_encode(&key)),
+                label.to_string(),
+                (*t == "wiki") == wiki_tab,
+            )
+        })
+        .collect();
+    // what the platform says is shown as a note: GitHub has no wiki API, the others have no discussions
+    let mut note: Option<String> = None;
+    let mut list: Vec<(String, String, String)> = Vec::new();
+    let mut heading = String::new();
+    let mut text: Option<String> = None;
+    let mut comments: Vec<(String, String, String)> = Vec::new();
+    let mut act = String::new();
+    if let Some(repo) = &repo {
+        match session.hub().backend(&repo.host) {
+            None => note = Some(format!("no account for {}", repo.host)),
+            Some(b) if wiki_tab => match params.page.as_deref() {
+                Some(slug) => match b.wiki_page(repo, slug).await {
+                    Ok(p) => {
+                        heading = p.page.title;
+                        text = Some(p.content);
+                    }
+                    Err(e) => note = Some(e.to_string()),
+                },
+                None => match b.wiki_pages(repo).await {
+                    Ok(pages) => {
+                        list = pages
+                            .into_iter()
+                            .map(|p| {
+                                (
+                                    format!(
+                                        "/community?repo={}&tab=wiki&page={}",
+                                        url_encode(&key),
+                                        url_encode(&p.slug)
+                                    ),
+                                    p.title,
+                                    String::new(),
+                                )
+                            })
+                            .collect()
+                    }
+                    Err(e) => note = Some(e.to_string()),
+                },
+            },
+            Some(b) => match params.n.as_deref().and_then(|n| n.parse().ok()) {
+                Some(n) => match b.discussion(repo, n).await {
+                    Ok(d) => {
+                        heading = format!("#{} {}", d.discussion.number, d.discussion.title);
+                        text = Some(d.discussion.body);
+                        comments = d
+                            .comments
+                            .into_iter()
+                            .map(|c| (c.author.login, ago(c.created_at), c.body))
+                            .collect();
+                        act = act_json(
+                            serde_json::json!({"action": "discussion_comment", "repo": key, "number": n}),
+                        );
+                    }
+                    Err(e) => note = Some(e.to_string()),
+                },
+                None => match b.discussions(repo, 50).await {
+                    Ok(ds) => {
+                        list = ds
+                            .into_iter()
+                            .map(|d| {
+                                (
+                                    format!(
+                                        "/community?repo={}&tab=discussions&n={}",
+                                        url_encode(&key),
+                                        d.number
+                                    ),
+                                    format!("#{} {}", d.number, d.title),
+                                    format!(
+                                        "{} · {} · {} comments{}",
+                                        d.category,
+                                        d.author.login,
+                                        d.comments,
+                                        if d.answered { " · answered" } else { "" }
+                                    ),
+                                )
+                            })
+                            .collect()
+                    }
+                    Err(e) => note = Some(e.to_string()),
+                },
+            },
+        }
+    }
+    let has_text = text.is_some();
+    let text = text.unwrap_or_default();
+    let can_comment = !act.is_empty();
+    Ok(view! {
+        shell(title: "Discussions & wiki · GitKraft".to_string(), nav: nav(session, "community"), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
+            <h1>"Discussions & wiki"</h1>
+            <nav class="tabs">for (href, label, on) in repo_links { <a href=(href) class=(if on { "on" } else { "" })>(label)</a> }</nav>
+            <nav class="tabs">for (href, label, on) in tab_links { <a href=(href) class=(if on { "on" } else { "" })>(label)</a> }</nav>
+            if repo.is_none() { <p class="dim">"Add repos to your dashboard sections to browse their discussions and wiki."</p> }
+            if let Some(n) = note { <div class="note warn">(n)</div> }
+            for (href, title, meta) in list { <div class="row"><a href=(href)>(title)</a>" "<span class="meta small">(meta)</span></div> }
+            if !heading.is_empty() { <h2>(heading)</h2> }
+            if has_text { <div class="panel"><pre>(text)</pre></div> }
+            for (who, when, body) in comments { <div class="comment"><b>(who)</b>" "<span class="meta small">(when)</span><pre>(body)</pre></div> }
+            if can_comment {
+                <textarea id="note" placeholder="Write a comment"></textarea>
+                <div class="bar"><button class="primary" data-act=(act) data-from="note" onclick="actBtn(this)">"Comment"</button></div>
+            }
         )
     })
 }

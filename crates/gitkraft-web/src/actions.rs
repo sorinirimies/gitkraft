@@ -36,6 +36,15 @@ pub enum ActionRequest {
         /// Text.
         body: String,
     },
+    /// Comment on a GitHub discussion.
+    DiscussionComment {
+        /// `host/owner/name`.
+        repo: String,
+        /// Discussion number.
+        number: u64,
+        /// Text.
+        body: String,
+    },
     /// Merge a PR.
     Merge {
         /// `host/owner/name`.
@@ -171,6 +180,17 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
             };
             backend
                 .post_comment(&repo, kind, number, body.trim())
+                .await
+                .map(|()| "comment posted".to_string())
+        }
+        ActionRequest::DiscussionComment { repo, number, body } => {
+            if body.trim().is_empty() {
+                return Err("a comment needs some text".into());
+            }
+            let repo = repo_of(&repo)?;
+            let backend = hub.backend(&repo.host).ok_or("no account for this host")?;
+            backend
+                .comment_on_discussion(&repo, number, body.trim())
                 .await
                 .map(|()| "comment posted".to_string())
         }
