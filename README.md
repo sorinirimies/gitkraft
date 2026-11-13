@@ -175,6 +175,39 @@ gitkraft-tui notify status | on | off | mute 2h | unmute | test | install
 There is no login: do not bind it beyond localhost. Every action carries a per-run token the pages embed, so
 another website cannot make the server act. The **SSH keys** page lists, sets up, tests and removes keys.
 
+### MCP server: your forges for an AI assistant
+
+`gitkraft-mcp` speaks the [Model Context Protocol](https://modelcontextprotocol.io) on stdio and gives an
+assistant the same accounts and platforms the TUI, GUI and web use (GitHub, GitLab, Gitea, Codeberg, Woodpecker).
+Tokens come from the same places as everywhere else (env, `gitkraft-tui login`, `gh`, `glab`, git credentials);
+the checkout it starts in is the default repository, so `repo` can be left out.
+
+```json
+{ "mcpServers": { "gitkraft": { "command": "gitkraft-mcp" } } }
+```
+
+**Read-only by default.** Without `--write` the server has no tool that changes anything, on any platform.
+
+| Read (always) | |
+|---|---|
+| `accounts` | hosts, your login, what each platform supports, whether writes are on |
+| `my_pull_requests`, `my_issues`, `inbox` | what is yours, assigned to you, waiting for your review, in your notifications |
+| `list_pull_requests`, `get_pull_request` | lists without descriptions; one PR with reviews, comments, checks and (on request, cut to a size) its diff |
+| `list_issues`, `get_issue`, `list_labels` | |
+| `ci_runs`, `ci_run`, `ci_job_log`, `list_workflows` | runs, jobs, and a job's log without colour codes: the tail, or only lines matching `grep` |
+| `pulse` | PRs, issues, green and red CI over the last days |
+
+| Write (`--write`) | |
+|---|---|
+| `comment`, `review`, `set_open`, `edit_labels` | |
+| `merge_pull_request` | now, `when_green` or `queue`; merge, squash or rebase. `force` also needs `--allow-force` |
+| `update_branch`, `cancel_auto_merge` | |
+| `ci_rerun`, `ci_cancel`, `dispatch_workflow` | inputs are checked against the workflow file |
+
+Tools carry the MCP `readOnlyHint` / `destructiveHint` annotations, so a client can ask before a merge.
+Options: `--write`, `--allow-force`, `--repo host/owner/name` (env `GITKRAFT_MCP_WRITE`, `GITKRAFT_MCP_FORCE`,
+`GITKRAFT_MCP_REPO`). Add `--write` to the client entry only for sessions where it should be able to act.
+
 ## Features
 
 - **Branch management** — create, checkout, delete, rename, merge, rebase (local & remote)

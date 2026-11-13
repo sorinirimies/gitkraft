@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/gitkraft-web",
+    "crates/gitkraft-mcp",
     "crates/gitkraft-hub",
     "crates/gitkraft-ci",
     "crates/gitkraft-platforms",
@@ -42,6 +43,8 @@ reqwest      = { version = "0.13", default-features = false, features = ["rustls
 notify-rust  = "4"
 toml         = "1"
 topcoat      = "0.10"
+rmcp         = { version = "3.9", features = ["server", "macros", "schemars", "transport-io"] }
+schemars     = "1"
 toml_edit    = "0.25"
 sha2         = "0.10"
 base64       = "0.22"

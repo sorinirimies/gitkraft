@@ -3,7 +3,6 @@
 //! Binds `127.0.0.1:3333`; `--host`, `--port` override; `--no-open` keeps the browser closed.
 
 use gitkraft_hub::Hub;
-use gitkraft_hub::accounts::{AccountsFile, discover};
 use gitkraft_platforms::{CachedClient, DynClient, ReqwestClient};
 use gitkraft_settings::dashboard::Dashboard;
 use gitkraft_settings::files;
@@ -51,32 +50,17 @@ async fn main() -> anyhow::Result<()> {
         }
         None => Dashboard::starter(),
     };
-    let file = match read(files::accounts_path()) {
-        Some(text) => {
-            AccountsFile::parse(&text).map_err(|e| anyhow::anyhow!("accounts.toml: {e}"))?
-        }
-        None => AccountsFile::default(),
-    };
-    // Remote URLs of the checkout we were started in, plus the repos the dashboard names.
-    let mut urls: Vec<String> = Vec::new();
-    if let Ok(repo) = git2::Repository::discover(".")
-        && let Ok(remotes) = repo.remotes()
-    {
-        for name in remotes.iter().flatten().flatten() {
-            if let Ok(r) = repo.find_remote(name)
-                && let Ok(u) = r.url()
-            {
-                urls.push(u.to_string());
-            }
-        }
-    }
-    for key in dashboard.sections.iter().flat_map(|s| s.repos.iter()) {
-        urls.push(format!("https://{key}"));
-    }
+    // The checkout we were started in, plus the repos the dashboard names.
+    let repos: Vec<String> = dashboard
+        .sections
+        .iter()
+        .flat_map(|s| s.repos.iter().cloned())
+        .collect();
     let accounts = tokio::task::spawn_blocking(move || {
-        discover(&urls, &file, gitkraft_platforms::auth::resolve_token)
+        gitkraft_hub::accounts::discover_for(std::path::Path::new("."), &repos)
     })
-    .await?;
+    .await?
+    .map_err(|e| anyhow::anyhow!(e))?;
     if accounts.is_empty() {
         eprintln!(
             "gitkraft-web: no accounts found; set GITHUB_TOKEN / GITLAB_TOKEN / CODEBERG_TOKEN or log in with `gh`"

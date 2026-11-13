@@ -1,0 +1,38 @@
+[package]
+name = "gitkraft-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "GitKraft as an MCP server: pull requests, issues and CI of GitHub, GitLab, Gitea and Codeberg for AI assistants, read-only unless you allow writes"
+readme = "README.md"
+categories = ["command-line-utilities", "development-tools"]
+keywords = ["mcp", "git", "github", "gitlab", "ci"]
+
+[lib]
+name = "gitkraft_mcp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gitkraft-mcp"
+path = "src/main.rs"
+
+[dependencies]
+gitkraft-hub       = { workspace = true }
+gitkraft-platforms = { workspace = true }
+gitkraft-ci        = { workspace = true }
+gitkraft-settings  = { workspace = true }
+rmcp       = { workspace = true }
+schemars   = { workspace = true }
+tokio      = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+anyhow     = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

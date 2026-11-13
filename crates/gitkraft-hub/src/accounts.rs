@@ -67,6 +67,55 @@ fn env_suffix(host: &str) -> String {
 }
 
 /// The Woodpecker server configured for `host`, with its token from `env`.
+/// Remote URLs of the git checkout containing `dir`, `origin` first.
+pub fn remote_urls(dir: &std::path::Path) -> Vec<String> {
+    let Ok(repo) = git2::Repository::discover(dir) else {
+        return Vec::new();
+    };
+    let Ok(names) = repo.remotes() else {
+        return Vec::new();
+    };
+    let mut names: Vec<&str> = names.iter().flatten().flatten().collect();
+    names.sort_by_key(|n| *n != "origin");
+    names
+        .into_iter()
+        .filter_map(|n| repo.find_remote(n).ok()?.url().ok().map(str::to_string))
+        .collect()
+}
+
+/// The repository of the checkout containing `dir`, from its first remote.
+pub fn repo_of_dir(dir: &std::path::Path) -> Option<gitkraft_platforms::RepoId> {
+    remote_urls(dir)
+        .iter()
+        .find_map(|u| gitkraft_platforms::platform::parse_remote_url(u))
+}
+
+/// Accounts for the checkout in `dir` plus `repos` (`host/owner/name`), from `accounts.toml` and the
+/// usual token sources. Blocks (it may run `gh` or `git credential fill`).
+///
+/// # Errors
+/// `accounts.toml` is present but does not parse.
+pub fn discover_for(
+    dir: &std::path::Path,
+    repos: &[String],
+) -> Result<Vec<gitkraft_platforms::Account>, String> {
+    use gitkraft_settings::files;
+    let file = match files::accounts_path()
+        .ok()
+        .and_then(|p| files::read_optional(&p).ok().flatten())
+    {
+        Some(text) => AccountsFile::parse(&text).map_err(|e| format!("accounts.toml: {e}"))?,
+        None => AccountsFile::default(),
+    };
+    let mut urls = remote_urls(dir);
+    urls.extend(repos.iter().map(|k| format!("https://{k}")));
+    Ok(discover(
+        &urls,
+        &file,
+        gitkraft_platforms::auth::resolve_token,
+    ))
+}
+
 pub fn woodpecker_for(
     host: &str,
     file: &AccountsFile,
@@ -168,6 +217,28 @@ pub fn discover(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn remotes_of_a_checkout_come_origin_first_and_give_the_default_repo() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let repo = git2::Repository::init(dir.path()).expect("init");
+        repo.remote("upstream", "https://gitlab.com/u/p.git")
+            .expect("remote");
+        repo.remote("origin", "git@github.com:o/r.git")
+            .expect("remote");
+        let urls = super::remote_urls(dir.path());
+        assert_eq!(
+            urls,
+            ["git@github.com:o/r.git", "https://gitlab.com/u/p.git"]
+        );
+        assert_eq!(
+            super::repo_of_dir(dir.path()).map(|r| r.key()).as_deref(),
+            Some("github.com/o/r")
+        );
+        let none = tempfile::tempdir().expect("tmp");
+        assert!(super::remote_urls(none.path()).is_empty());
+        assert!(super::repo_of_dir(none.path()).is_none());
+    }
+
     #[test]
     fn a_woodpecker_server_comes_from_the_file_and_its_token_from_the_environment() {
         let file = AccountsFile::parse("[[account]]\nkind = \"gitea\"\nhost = \"codeberg.org\"\nwoodpecker = \"https://ci.codeberg.org/\"\n\n[[account]]\nkind = \"gitea\"\nhost = \"git.x.org\"\n").expect("file");
