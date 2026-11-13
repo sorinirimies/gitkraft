@@ -6,5 +6,6 @@ pub mod images;
 pub mod list;
 pub mod logview;
 pub mod markdown;
+pub mod palette;
 pub mod state;
 pub mod view;

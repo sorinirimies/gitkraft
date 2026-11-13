@@ -96,6 +96,14 @@ impl<C: HttpClient> CiBackend<C> {
         }
     }
 
+    /// Workflows that can be started by hand (GitLab has no such list: it returns none).
+    pub async fn list_workflows(&self, repo: &RepoId) -> Result<Vec<crate::model::Workflow>> {
+        match self {
+            Self::Actions(b) => b.list_workflows(repo).await,
+            Self::GitLab(_) => Ok(Vec::new()),
+        }
+    }
+
     /// Triggers a workflow on `git_ref` with inputs (GitLab: CI variables).
     pub async fn dispatch(
         &self,

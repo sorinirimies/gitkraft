@@ -9,6 +9,7 @@
 //! Call [`run`] with an optional repository path to start the TUI application.
 
 pub mod app;
+pub mod auth_cli;
 pub mod cli;
 pub mod events;
 pub mod features;

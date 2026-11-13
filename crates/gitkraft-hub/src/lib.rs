@@ -5,6 +5,8 @@
 //! contribution calendar.
 
 pub mod accounts;
+pub mod checkout;
+pub mod dispatch;
 mod hub;
 pub mod keys;
 pub mod markdown;

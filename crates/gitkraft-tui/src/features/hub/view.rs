@@ -54,7 +54,86 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         View::Keys => render_keys(hub, frame, rows[2], &theme, &mut hits),
     }
     render_status(hub, frame, rows[3], &theme);
+    render_palette(hub, frame, area, &theme);
     hub.set_hits(hits);
+}
+
+fn render_palette(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme) {
+    let Some(p) = &hub.palette else { return };
+    if area.width < 20 || area.height < 5 {
+        return;
+    }
+    let entries = super::palette::entries_for(hub);
+    let shown = super::palette::filter(&entries, &p.query);
+    let w = area.width.saturating_sub(8).clamp(20, 72);
+    let h = (shown.len().min(12) as u16 + 3)
+        .min(area.height.saturating_sub(2))
+        .max(4);
+    let rect = Rect::new(
+        area.x + (area.width - w) / 2,
+        area.y + 2.min(area.height.saturating_sub(h)),
+        w,
+        h,
+    );
+    frame.render_widget(ratatui::widgets::Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.accent))
+        .title(" Command palette · Enter run · Esc close ");
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+    if inner.height == 0 {
+        return;
+    }
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("› ", Style::default().fg(theme.accent)),
+            Span::styled(
+                format!("{}█", p.query),
+                Style::default().fg(theme.text_primary),
+            ),
+        ])),
+        Rect::new(inner.x, inner.y, inner.width, 1),
+    );
+    let visible = inner.height.saturating_sub(1) as usize;
+    let first = p.row.saturating_sub(visible.saturating_sub(1));
+    let lines: Vec<Line> = shown
+        .iter()
+        .enumerate()
+        .skip(first)
+        .take(visible)
+        .map(|(n, i)| {
+            let e = &entries[*i];
+            let style = if n == p.row {
+                Style::default().fg(theme.bg).bg(theme.accent)
+            } else {
+                Style::default().fg(theme.text_primary)
+            };
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        " {:<width$}",
+                        e.label,
+                        width = inner.width.saturating_sub(6) as usize
+                    ),
+                    style,
+                ),
+                Span::styled(
+                    format!(" {} ", e.key),
+                    if n == p.row { style } else { muted(theme) },
+                ),
+            ])
+        })
+        .collect();
+    let body = if lines.is_empty() {
+        vec![Line::from(Span::styled(" nothing matches", muted(theme)))]
+    } else {
+        lines
+    };
+    frame.render_widget(
+        Paragraph::new(body),
+        Rect::new(inner.x, inner.y + 1, inner.width, inner.height - 1),
+    );
 }
 
 fn muted(theme: &UiTheme) -> Style {
@@ -1436,7 +1515,7 @@ fn hints(hub: &HubState) -> &'static str {
         return "j/k scroll · / search · n/N next · e first error · a errors · space fold · g/G ends · Esc close";
     }
     if hub.view == View::Keys {
-        return "j/k select · s set up this machine · t test · d remove key · r refresh · Tab dashboard · q back";
+        return "j/k select · : palette · s set up this machine · t test · d remove key · r refresh · Tab dashboard · q back";
     }
     if hub.view == View::Pulse {
         return "r refresh · [ ] repo · 1/2/3/4 = 7/30/90/365 days · Tab dashboard · q back";
@@ -1447,13 +1526,15 @@ fn hints(hub: &HubState) -> &'static str {
         .map(|s| s.kind)
     {
         Some(SectionKind::Prs) => {
-            "a approve · x changes · c comment · m merge · C close · v tab · r refresh · n bell · q back"
+            "a approve · x changes · c comment · m merge · C close · w worktree · v tab · r refresh · n bell · q back"
         }
         Some(SectionKind::Issues) => "c comment · C close/reopen · r refresh · n bell · q back",
         Some(SectionKind::Ci) => {
-            "Enter log · f rerun failed · F rerun all · X cancel · r refresh · n bell · q back"
+            "Enter log · f rerun failed · F rerun all · D run workflow · X cancel · r refresh · q back"
         }
-        _ => "Tab section · {/} move section · p pulse · r refresh · n bell · q back",
+        _ => {
+            "Tab section · : palette · {/} move section · p pulse · K ssh keys · r refresh · n bell · q back"
+        }
     }
 }
 
@@ -1475,6 +1556,7 @@ fn render_status(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme)
             PromptPurpose::Approve => "approve note (Enter to send)",
             PromptPurpose::RequestChanges => "what must change",
             PromptPurpose::LogSearch => "search",
+            PromptPurpose::Dispatch => "run workflow: WORKFLOW REF key=value…",
         };
         Line::from(vec![
             Span::styled(format!(" {label} › "), Style::default().fg(theme.accent)),
@@ -1620,6 +1702,32 @@ mod tests {
         app.hub.as_mut().expect("hub").keys.data = Some(Default::default());
         assert!(draw(&mut app, 100, 12).contains("Press s to create one"));
         for (w, h) in [(1, 1), (5, 3), (30, 5)] {
+            draw(&mut app, w, h);
+        }
+    }
+
+    #[test]
+    fn the_palette_draws_its_query_matches_and_keys() {
+        let mut hub = state();
+        hub.palette = Some(crate::features::hub::palette::Palette {
+            query: "merge".into(),
+            row: 0,
+        });
+        let mut app = app_with(hub);
+        let text = draw(&mut app, 100, 24);
+        assert!(
+            text.contains("Command palette")
+                && text.contains("merge█")
+                && text.contains("Pull request: merge"),
+            "{text}"
+        );
+        app.hub.as_mut().expect("hub").palette = Some(crate::features::hub::palette::Palette {
+            query: "qqq".into(),
+            row: 0,
+        });
+        assert!(draw(&mut app, 100, 24).contains("nothing matches"));
+        app.hub.as_mut().expect("hub").palette = Some(Default::default());
+        for (w, h) in [(1, 1), (10, 3), (22, 6), (300, 80)] {
             draw(&mut app, w, h);
         }
     }

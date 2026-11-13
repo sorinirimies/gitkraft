@@ -13,6 +13,9 @@ pub struct AccountConfig {
     /// Which URL to use when gitkraft adds a remote or switches one (`ssh` or `https`).
     #[serde(default)]
     pub clone_via: Option<gitkraft_platforms::Transport>,
+    /// Client id of your OAuth application on this host, for `login` without a pasted token.
+    #[serde(default)]
+    pub oauth_client_id: Option<String>,
 }
 
 /// The whole `accounts.toml`.
@@ -45,6 +48,37 @@ impl AccountsFile {
             .find(|a| a.host.eq_ignore_ascii_case(host))
             .and_then(|a| a.clone_via)
     }
+}
+
+/// The OAuth client id to use for `host`: the argument, then `GITKRAFT_OAUTH_CLIENT_ID_<HOST>`,
+/// then `GITKRAFT_OAUTH_CLIENT_ID`, then `accounts.toml`.
+pub fn oauth_client_id(
+    host: &str,
+    arg: Option<&str>,
+    env: impl Fn(&str) -> Option<String>,
+    file: &AccountsFile,
+) -> Option<String> {
+    let suffix: String = host
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    arg.map(str::to_string)
+        .or_else(|| env(&format!("GITKRAFT_OAUTH_CLIENT_ID_{suffix}")))
+        .or_else(|| env("GITKRAFT_OAUTH_CLIENT_ID"))
+        .or_else(|| {
+            file.accounts
+                .iter()
+                .find(|a| a.host.eq_ignore_ascii_case(host))
+                .and_then(|a| a.oauth_client_id.clone())
+        })
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 /// Builds the account list: every host found in `remote_urls` or `file` (deduplicated, in first-seen order),
@@ -93,6 +127,35 @@ pub fn discover(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_oauth_client_id_comes_from_the_argument_then_env_then_the_file() {
+        let file = AccountsFile::parse("[[account]]\nkind = \"gitlab\"\nhost = \"git.example.com\"\noauth_client_id = \"from-file\"\n").expect("file");
+        let none = |_: &str| None;
+        assert_eq!(
+            oauth_client_id("git.example.com", None, none, &file).as_deref(),
+            Some("from-file")
+        );
+        let env = |n: &str| match n {
+            "GITKRAFT_OAUTH_CLIENT_ID_GIT_EXAMPLE_COM" => Some("host-env".into()),
+            "GITKRAFT_OAUTH_CLIENT_ID" => Some("global-env".into()),
+            _ => None,
+        };
+        assert_eq!(
+            oauth_client_id("git.example.com", None, env, &file).as_deref(),
+            Some("host-env")
+        );
+        assert_eq!(
+            oauth_client_id("github.com", None, env, &file).as_deref(),
+            Some("global-env")
+        );
+        assert_eq!(
+            oauth_client_id("git.example.com", Some("arg"), env, &file).as_deref(),
+            Some("arg")
+        );
+        assert_eq!(oauth_client_id("github.com", None, none, &file), None);
+        assert_eq!(oauth_client_id("github.com", Some("  "), none, &file), None);
+    }
+
     use super::*;
 
     fn token_for(host: &'static str) -> impl Fn(PlatformKind, &str) -> Option<Secret> {

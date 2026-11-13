@@ -8,7 +8,7 @@ use gitkraft_platforms::{PlatformKind, RepoId, Result};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::model::{Job, RerunScope, Run, RunDetail, RunQuery, Status, Step};
+use crate::model::{Job, RerunScope, Run, RunDetail, RunQuery, Status, Step, Workflow};
 use crate::timing::infer_needs;
 
 /// Adapter for GitHub and Gitea-family Actions.
@@ -134,6 +134,34 @@ impl<C: HttpClient> ActionsBackend<C> {
             .map(|_| ())
     }
 
+    pub(crate) async fn list_workflows(&self, repo: &RepoId) -> Result<Vec<Workflow>> {
+        #[derive(Deserialize)]
+        struct Wf {
+            id: u64,
+            #[serde(default)]
+            name: String,
+            #[serde(default)]
+            path: String,
+            #[serde(default)]
+            state: String,
+        }
+        #[derive(Deserialize)]
+        struct Wfs {
+            #[serde(default)]
+            workflows: Vec<Wf>,
+        }
+        let r: Wfs = self.api.get(&format!("{}/workflows", base(repo))).await?;
+        Ok(r.workflows
+            .into_iter()
+            .map(|w| Workflow {
+                id: w.id,
+                file: w.path.rsplit('/').next().unwrap_or_default().to_string(),
+                name: w.name,
+                active: w.state.is_empty() || w.state == "active",
+            })
+            .collect())
+    }
+
     pub(crate) async fn dispatch(
         &self,
         repo: &RepoId,
@@ -225,6 +253,13 @@ impl RunDto {
             .is_terminal()
             .then(|| self.stopped.or(self.updated_at))
             .flatten();
+        let workflow = self
+            .path
+            .as_deref()
+            .and_then(|p| p.split('@').next())
+            .and_then(|p| p.rsplit('/').next())
+            .map(str::to_string)
+            .unwrap_or_default();
         let name = self
             .name
             .filter(|n| !n.is_empty())
@@ -238,6 +273,7 @@ impl RunDto {
             id: self.id,
             repo: repo.clone(),
             name,
+            workflow,
             title: self.display_title.unwrap_or_default(),
             number: self.run_number,
             status,

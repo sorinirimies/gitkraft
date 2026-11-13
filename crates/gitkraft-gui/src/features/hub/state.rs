@@ -136,6 +136,8 @@ pub enum HubMessage {
     Rerun(RerunScope),
     /// Cancel the run.
     CancelRun,
+    /// Start the selected run's workflow again, with the note as `[WORKFLOW] REF key=value…`.
+    Dispatch,
     /// An action finished.
     ActionDone(Result<String, String>),
     /// A drag of section tab `i` began.
@@ -552,6 +554,7 @@ impl HubState {
             HubMessage::ToggleOpen => self.toggle_open(),
             HubMessage::Rerun(scope) => self.rerun(scope),
             HubMessage::CancelRun => self.cancel_run(),
+            HubMessage::Dispatch => self.dispatch(),
             HubMessage::ActionDone(result) => {
                 match result {
                     Ok(text) => {
@@ -1097,6 +1100,50 @@ impl HubState {
         })
     }
 
+    fn dispatch(&mut self) -> Task<HubMessage> {
+        let Some(run) = self.selected_run() else {
+            self.notice = Some(("select a CI run first".into(), false));
+            return Task::none();
+        };
+        let needs_workflow = !run.workflow.is_empty();
+        let text = if self.note.trim().is_empty() {
+            if needs_workflow {
+                format!("{} {}", run.workflow, run.branch)
+            } else {
+                run.branch.clone()
+            }
+        } else {
+            self.note.clone()
+        };
+        let gitkraft_hub::dispatch::Dispatch {
+            workflow,
+            git_ref,
+            inputs,
+        } = match gitkraft_hub::dispatch::parse(&text, needs_workflow) {
+            Ok(v) => v,
+            Err(e) => {
+                self.notice = Some((e, false));
+                return Task::none();
+            }
+        };
+        self.act(move |api| async move {
+            let ci = api.ci(&run.repo.host).ok_or("no account")?;
+            ci.dispatch(&run.repo, &workflow, &git_ref, &inputs)
+                .await
+                .map(|()| {
+                    format!(
+                        "started {} on {git_ref}",
+                        if workflow.is_empty() {
+                            "a pipeline"
+                        } else {
+                            &workflow
+                        }
+                    )
+                })
+                .map_err(|e| e.to_string())
+        })
+    }
+
     fn cancel_run(&mut self) -> Task<HubMessage> {
         let Some(run) = self.selected_run() else {
             return Task::none();
@@ -1630,6 +1677,43 @@ mod tests {
             s.notice
                 .as_ref()
                 .is_some_and(|(t, ok)| t.contains("no account") && !ok)
+        );
+    }
+
+    #[test]
+    fn dispatch_without_a_run_or_with_bad_text_explains() {
+        let mut s = state();
+        let _ = s.update(HubMessage::Dispatch);
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, ok)| t.contains("select a CI run") && !ok)
+        );
+        let run = gitkraft_ci::Run {
+            id: 1,
+            workflow: "ci.yml".into(),
+            branch: "main".into(),
+            ..Default::default()
+        };
+        s.slots[2].data = Some(Arc::new(SectionData::Runs(SectionResult {
+            items: vec![run],
+            errors: vec![],
+        })));
+        let _ = s.update(HubMessage::SelectSection(2));
+        let _ = s.update(HubMessage::SelectRow(0));
+        let _ = s.update(HubMessage::NoteInput("ci.yml".into()));
+        let _ = s.update(HubMessage::Dispatch);
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, ok)| t.contains("branch or tag") && !ok)
+        );
+        let _ = s.update(HubMessage::NoteInput("ci.yml main bad".into()));
+        let _ = s.update(HubMessage::Dispatch);
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, _)| t.contains("key=value"))
         );
     }
 }

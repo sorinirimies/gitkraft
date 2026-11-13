@@ -166,6 +166,8 @@ pub enum PromptPurpose {
     RequestChanges,
     /// Search text in the log viewer.
     LogSearch,
+    /// Start a workflow: `WORKFLOW REF [key=value …]`.
+    Dispatch,
 }
 
 /// Actions that ask for confirmation first.
@@ -311,6 +313,8 @@ pub struct HubState {
     pub pulse: PulseState,
     /// SSH keys view.
     pub keys: KeysState,
+    /// The command palette, while open.
+    pub palette: Option<super::palette::Palette>,
     /// Image overlay.
     pub images: Images,
     /// Terminal graphics protocol for images.
@@ -376,6 +380,7 @@ impl HubState {
             last_click: None,
             pulse: PulseState::default(),
             keys: KeysState::default(),
+            palette: None,
             images: Images::default(),
             picker: Picker::halfblocks(),
             client: None,
@@ -904,6 +909,123 @@ impl HubState {
         });
     }
 
+    // ── Dispatch ─────────────────────────────────────────────────────────────
+
+    /// Opens the dispatch prompt, prefilled from the selected run.
+    pub fn open_dispatch_prompt(&mut self) {
+        let Some(run) = self.selected_run().cloned() else {
+            self.set_notice(
+                "select a CI run first: dispatching starts the same workflow again".into(),
+                false,
+            );
+            return;
+        };
+        let buffer = if run.workflow.is_empty() {
+            format!("{} ", run.branch)
+        } else {
+            format!("{} {} ", run.workflow, run.branch)
+        };
+        self.prompt = Some(Prompt {
+            purpose: PromptPurpose::Dispatch,
+            buffer,
+        });
+    }
+
+    fn dispatch_from(&mut self, text: &str) {
+        let Some(run) = self.selected_run().cloned() else {
+            return;
+        };
+        let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {
+            return;
+        };
+        let needs_workflow = !run.workflow.is_empty();
+        let gitkraft_hub::dispatch::Dispatch {
+            workflow,
+            git_ref,
+            inputs,
+        } = match gitkraft_hub::dispatch::parse(text, needs_workflow) {
+            Ok(v) => v,
+            Err(e) => {
+                self.set_notice(e, false);
+                return;
+            }
+        };
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            let r = match api.ci(&run.repo.host) {
+                Some(ci) => ci
+                    .dispatch(&run.repo, &workflow, &git_ref, &inputs)
+                    .await
+                    .map_err(|e| e.to_string()),
+                None => Err("no account".into()),
+            };
+            done(
+                &tx,
+                r,
+                format!(
+                    "started {} on {git_ref}",
+                    if workflow.is_empty() {
+                        "a pipeline"
+                    } else {
+                        &workflow
+                    }
+                ),
+                true,
+            );
+        });
+    }
+
+    // ── Worktree ─────────────────────────────────────────────────────────────
+
+    /// Checks the selected pull request out into a worktree next to its local checkout.
+    pub fn checkout_pr_worktree(&mut self) {
+        let Some(pr) = self.selected_pr().cloned() else {
+            self.set_notice("select a pull request first".into(), false);
+            return;
+        };
+        let Some(path) = self
+            .watched
+            .iter()
+            .find(|w| w.repo == pr.repo)
+            .and_then(|w| w.path.clone())
+        else {
+            self.set_notice(
+                format!(
+                    "no local checkout of {} is open: open it in a tab first",
+                    pr.repo.full_name()
+                ),
+                false,
+            );
+            return;
+        };
+        let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {
+            return;
+        };
+        let Some(kind) = api.backend(&pr.repo.host).map(|b| b.kind()) else {
+            self.set_notice(format!("{}: no account", pr.repo.host), false);
+            return;
+        };
+        self.set_notice(format!("checking out #{}…", pr.number), true);
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            let r = tokio::task::spawn_blocking(move || {
+                checkout_worktree(kind, &pr.repo, pr.number, &path)
+            })
+            .await
+            .map_err(|e| e.to_string())
+            .and_then(|r| r);
+            let (text, ok) = match r {
+                Ok(t) => (t, true),
+                Err(e) => (e, false),
+            };
+            let _ = tx.send(Msg::Done {
+                text,
+                ok,
+                reload: false,
+            });
+        });
+    }
+
     // ── SSH keys ─────────────────────────────────────────────────────────────
 
     /// The selected key row.
@@ -1245,6 +1367,10 @@ impl HubState {
             if let Some(log) = &mut self.log {
                 log.set_query(&prompt.buffer);
             }
+            return;
+        }
+        if prompt.purpose == PromptPurpose::Dispatch {
+            self.dispatch_from(&prompt.buffer);
             return;
         }
         let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {
@@ -1625,6 +1751,47 @@ async fn fetch_image(client: &Client, url: &str) -> Result<image::DynamicImage, 
     tokio::task::spawn_blocking(move || decode(&res.body))
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// `(name, url)` of every remote of the checkout at `path`.
+pub(crate) fn remotes_of(path: &std::path::Path) -> Result<Vec<(String, String)>, String> {
+    let repo = git2::Repository::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let remotes =
+        gitkraft_core::features::remotes::list_remotes(&repo).map_err(|e| e.to_string())?;
+    Ok(remotes
+        .into_iter()
+        .filter_map(|r| Some((r.name, r.url?)))
+        .collect())
+}
+
+/// Fetches PR `number` of `repo` and adds (or updates) its worktree; returns what to tell the user.
+pub(crate) fn checkout_worktree(
+    kind: gitkraft_platforms::PlatformKind,
+    repo: &RepoId,
+    number: u64,
+    workdir: &std::path::Path,
+) -> Result<String, String> {
+    let remotes = remotes_of(workdir)?;
+    let plan =
+        gitkraft_hub::checkout::plan(kind, repo, number, &remotes, workdir).ok_or_else(|| {
+            format!(
+                "{} has no remote that points at {}",
+                workdir.display(),
+                repo.key()
+            )
+        })?;
+    gitkraft_core::features::remotes::worktree::add_from_remote_ref(
+        workdir,
+        &plan.remote,
+        &plan.remote_ref,
+        &plan.branch,
+        &plan.dest,
+    )
+    .map_err(|e| format!("{e:#}"))?;
+    Ok(format!(
+        "#{number} is checked out in {}",
+        plan.dest.display()
+    ))
 }
 
 fn ssh_dir() -> PathBuf {
@@ -2084,5 +2251,52 @@ mod tests {
         s.move_row(1);
         assert_eq!(s.row_count(), 0);
         assert!(s.selected_url().is_none());
+    }
+}
+
+#[cfg(test)]
+mod worktree_tests {
+    use super::*;
+
+    fn git(dir: &std::path::Path, args: &[&str]) {
+        let out = std::process::Command::new("git")
+            .current_dir(dir)
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(args)
+            .output()
+            .expect("git");
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    #[test]
+    fn remotes_are_listed_and_a_repo_without_a_matching_remote_is_an_error() {
+        let root = tempfile::tempdir().expect("tmp");
+        let main = root.path().join("main");
+        std::fs::create_dir_all(&main).expect("mk");
+        git(&main, &["init", "-q"]);
+        git(
+            &main,
+            &["remote", "add", "origin", "git@github.com:o/r.git"],
+        );
+        git(&main, &["remote", "add", "local", "/srv/git/r"]);
+        assert_eq!(
+            remotes_of(&main).expect("remotes"),
+            [
+                ("local".to_string(), "/srv/git/r".to_string()),
+                ("origin".to_string(), "git@github.com:o/r.git".to_string())
+            ]
+        );
+        let other = RepoId::new("github.com", "x", "y");
+        let err = checkout_worktree(gitkraft_platforms::PlatformKind::GitHub, &other, 3, &main)
+            .expect_err("no remote");
+        assert!(
+            err.contains("no remote that points at github.com/x/y"),
+            "{err}"
+        );
+        assert!(remotes_of(&root.path().join("nope")).is_err());
     }
 }

@@ -67,6 +67,31 @@ kind = "gitlab"      # github | gitlab | gitea (also forgejo, codeberg)
 host = "git.example.com"
 ```
 
+**Sign in once.** `gitkraft-tui login github.com` runs the OAuth device flow (GitHub, GitLab; needs an OAuth
+application's client id: `--client-id`, `GITKRAFT_OAUTH_CLIENT_ID` or `oauth_client_id` in `accounts.toml`);
+`login HOST --token` takes a pasted token and works everywhere. The token is checked, then stored in the
+system keyring (macOS `security`, Linux `secret-tool`); `logout HOST` removes it. Lookup order: environment,
+keyring, `gh` / `glab`, git's credential helper.
+
+**Git over SSH.** fetch, pull and push use your system `git` and `ssh` (agent, `~/.ssh/config`, keychain), and
+a failure says what to do. `gitkraft-tui ssh …` gets a key in place:
+
+```sh
+gitkraft-tui ssh setup github.com      # create ~/.ssh/gitkraft_github.com (or --key PATH), register it, configure, load, test
+gitkraft-tui ssh list github.com       # keys on the account; ● = held by this machine
+gitkraft-tui ssh revoke github.com ID  # remove one
+gitkraft-tui ssh status                # key, config block, agent, connection per host
+gitkraft-tui ssh switch ssh            # rewrite origin from https to ssh (or back)
+```
+
+Setup is idempotent, edits only a marked block of `~/.ssh/config` (and saves a backup first), and never sees a
+passphrase (`--passphrase` lets `ssh-keygen` ask). The Hub's **SSH keys** view (`K`) does the same from the UI.
+`clone_via = "ssh" | "https"` per `[[account]]` records which transport you prefer.
+
+**Palette and more.** `:` or Ctrl+P opens a fuzzy command palette with every action that applies to the
+selection. `w` checks the selected pull request out into a worktree next to your checkout; `D` starts a workflow
+by hand (`ci.yml main level=debug`).
+
 **Dashboard** (`~/.config/gitkraft/dashboard.toml`; drag the tabs and it is rewritten):
 
 ```toml

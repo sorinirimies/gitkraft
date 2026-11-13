@@ -237,6 +237,7 @@ impl PipelineDto {
                 .name
                 .filter(|n| !n.is_empty())
                 .unwrap_or_else(|| "pipeline".into()),
+            workflow: String::new(),
             title: self.sha.chars().take(8).collect(),
             number: self.iid.unwrap_or(self.id),
             status,

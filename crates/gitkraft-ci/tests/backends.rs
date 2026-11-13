@@ -287,3 +287,34 @@ async fn errors_pass_through() {
         Err(PlatformError::Forbidden(_))
     ));
 }
+
+#[tokio::test]
+async fn runs_carry_their_workflow_file_for_dispatching_and_workflows_are_listed() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/repos/o/r/actions/runs",
+        r#"{"workflow_runs":[{"id":1,"name":"CI","status":"completed","conclusion":"success","path":".github/workflows/ci.yml"}]}"#,
+    );
+    fake.push_json(
+        "https://api.github.com/repos/o/r/actions/workflows",
+        r#"{"total_count":2,"workflows":[{"id":10,"name":"CI","path":".github/workflows/ci.yml","state":"active"},{"id":11,"name":"Old","path":".github/workflows/old.yml","state":"disabled_manually"}]}"#,
+    );
+    let b = github(&fake);
+    let runs = b
+        .list_runs(&repo(), &RunQuery::default())
+        .await
+        .expect("runs");
+    assert_eq!(
+        (runs[0].name.as_str(), runs[0].workflow.as_str()),
+        ("CI", "ci.yml")
+    );
+    let wfs = b.list_workflows(&repo()).await.expect("workflows");
+    assert_eq!(wfs.len(), 2);
+    assert_eq!(
+        (wfs[0].file.as_str(), wfs[0].active, wfs[1].active),
+        ("ci.yml", true, false)
+    );
+
+    let lab = gitlab(&FakeClient::new());
+    assert!(lab.list_workflows(&repo()).await.expect("none").is_empty());
+}

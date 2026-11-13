@@ -14,7 +14,7 @@ pub mod stats;
 pub mod timing;
 pub mod watch;
 
-pub use model::{Job, RerunScope, Run, RunDetail, RunQuery, Status, Step};
+pub use model::{Job, RerunScope, Run, RunDetail, RunQuery, Status, Step, Workflow};
 
 pub use backend::CiBackend;
 pub use github_like::ActionsBackend;

@@ -14,6 +14,21 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    if matches!(args.first().map(String::as_str), Some("login" | "logout")) {
+        let cmd = gitkraft_tui::auth_cli::parse(&args).unwrap_or_else(|e| {
+            eprintln!("{e}");
+            std::process::exit(2);
+        });
+        match gitkraft_tui::auth_cli::run(cmd) {
+            Ok(text) => print!("{text}"),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+        return Ok(());
+    }
+
     if args.first().map(String::as_str) == Some("ssh") {
         let cmd = gitkraft_tui::ssh_cli::parse(&args[1..]).unwrap_or_else(|e| {
             eprintln!("{e}");
@@ -31,7 +46,7 @@ fn main() -> anyhow::Result<()> {
 
     let cli = gitkraft_tui::cli::parse_args(std::env::args().skip(1)).unwrap_or_else(|e| {
         eprintln!(
-            "{e}\nusage: gitkraft-tui [REPO] [--theme NAME] [--list-themes] | gitkraft-tui notify … | gitkraft-tui ssh …"
+            "{e}\nusage: gitkraft-tui [REPO] [--theme NAME] [--list-themes] | gitkraft-tui notify … | gitkraft-tui ssh … | gitkraft-tui login|logout HOST"
         );
         std::process::exit(2);
     });

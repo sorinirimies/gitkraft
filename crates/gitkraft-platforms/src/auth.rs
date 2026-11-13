@@ -104,10 +104,12 @@ pub fn token_from_git_credential(host: &str) -> Option<Secret> {
         .flatten()
 }
 
-/// Resolves a token for `host`: environment, then the platform CLI, then git's credential
-/// helper. Tokens are never stored by gitkraft.
+/// Resolves a token for `host`: environment, then the system keyring (`gitkraft-tui login`), then
+/// the platform CLI, then git's credential helper. Tokens are never stored by gitkraft.
 pub fn resolve_token(kind: PlatformKind, host: &str) -> Option<Secret> {
+    use crate::credentials::{SecretStore, SystemKeyring};
     token_from_env(&env_var_names(kind, host), |n| std::env::var(n).ok())
+        .or_else(|| SystemKeyring.get(host))
         .or_else(|| token_from_cli(kind, host))
         .or_else(|| token_from_git_credential(host))
 }

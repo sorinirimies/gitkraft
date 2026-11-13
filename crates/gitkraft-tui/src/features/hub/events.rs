@@ -6,6 +6,7 @@ use gitkraft_platforms::model::MergeMethod;
 use ratatui::layout::Rect;
 
 use super::drag::DragTarget;
+use super::palette::{self, Palette};
 use super::state::{Action, DetailTab, Focus, HubState, Prompt, PromptPurpose, Target, View};
 use crate::app::{App, AppScreen};
 
@@ -56,6 +57,14 @@ pub fn key_outcome(hub: &mut HubState, key: KeyEvent) -> Outcome {
     }
     if hub.prompt.is_some() {
         prompt_key(hub, key);
+        return Outcome::Stay;
+    }
+    if hub.palette.is_some() {
+        return palette_key(hub, key);
+    }
+    let ctrl_p = key.code == KeyCode::Char('p') && key.modifiers.contains(KeyModifiers::CONTROL);
+    if (ctrl_p || key.code == KeyCode::Char(':')) && !hub.images.open && hub.log.is_none() {
+        hub.palette = Some(Palette::default());
         return Outcome::Stay;
     }
     if hub.images.open {
@@ -174,6 +183,40 @@ fn pulse_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
     Outcome::Stay
 }
 
+fn palette_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
+    let entries = palette::entries_for(hub);
+    let Some(p) = hub.palette.as_mut() else {
+        return Outcome::Stay;
+    };
+    let shown = palette::filter(&entries, &p.query);
+    match key.code {
+        KeyCode::Esc => hub.palette = None,
+        KeyCode::Down | KeyCode::Tab => p.row = (p.row + 1).min(shown.len().saturating_sub(1)),
+        KeyCode::Up | KeyCode::BackTab => p.row = p.row.saturating_sub(1),
+        KeyCode::Backspace => {
+            p.query.pop();
+            p.row = 0;
+        }
+        KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            p.query.push(c);
+            p.row = 0;
+        }
+        KeyCode::Enter => {
+            let pick = shown.get(p.row).and_then(|i| entries.get(*i)).cloned();
+            hub.palette = None;
+            if let Some(entry) = pick {
+                hub.view = entry.view;
+                return key_outcome(
+                    hub,
+                    KeyEvent::new(KeyCode::Char(entry.key), KeyModifiers::NONE),
+                );
+            }
+        }
+        _ => {}
+    }
+    Outcome::Stay
+}
+
 fn open_keys(hub: &mut HubState) {
     hub.view = View::Keys;
     if hub.keys.data.is_none() && !hub.keys.loading {
@@ -206,6 +249,7 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
         KeyCode::Right if alt => move_section(hub, 1),
         KeyCode::Left if alt => move_section(hub, -1),
         KeyCode::Char('K') => open_keys(hub),
+        KeyCode::Char('w') => hub.checkout_pr_worktree(),
         KeyCode::Char('}') => move_section(hub, 1),
         KeyCode::Char('{') => move_section(hub, -1),
         KeyCode::Char(c @ '1'..='9') => hub.select_section((c as usize) - ('1' as usize)),
@@ -258,6 +302,7 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
         KeyCode::Char('f') => hub.ask(Action::Rerun(RerunScope::Failed)),
         KeyCode::Char('F') => hub.ask(Action::Rerun(RerunScope::All)),
         KeyCode::Char('X') => hub.ask(Action::CancelRun),
+        KeyCode::Char('D') => hub.open_dispatch_prompt(),
         _ => {}
     }
     Outcome::Stay
@@ -720,6 +765,117 @@ mod tests {
             },
         );
         assert_eq!(s.keys.row, 0);
+    }
+
+    #[test]
+    fn dispatch_needs_a_selected_run_and_opens_a_prefilled_prompt() {
+        let mut s = state();
+        chars(&mut s, "D");
+        assert!(s.prompt.is_none());
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, ok)| t.contains("select a CI run") && !ok)
+        );
+        let run = gitkraft_ci::Run {
+            id: 1,
+            workflow: "ci.yml".into(),
+            branch: "main".into(),
+            ..Default::default()
+        };
+        s.slots[0].data = Some(gitkraft_hub::SectionData::Runs(
+            gitkraft_hub::SectionResult {
+                items: vec![run],
+                errors: vec![],
+            },
+        ));
+        s.active = 0;
+        s.row = 0;
+        chars(&mut s, "D");
+        let p = s.prompt.as_ref().expect("prompt");
+        assert_eq!(
+            (p.purpose, p.buffer.as_str()),
+            (PromptPurpose::Dispatch, "ci.yml main ")
+        );
+        // typing and escaping work like any prompt
+        chars(&mut s, "x=1");
+        assert!(s.prompt.as_ref().is_some_and(|p| p.buffer.ends_with("x=1")));
+        key_outcome(&mut s, key(KeyCode::Esc));
+        assert!(s.prompt.is_none());
+    }
+
+    #[test]
+    fn the_palette_opens_filters_and_runs_the_entrys_key() {
+        let mut s = state();
+        chars(&mut s, ":");
+        assert!(s.palette.is_some());
+        chars(&mut s, "pulse");
+        assert_eq!(s.palette.as_ref().map(|p| p.query.as_str()), Some("pulse"));
+        key_outcome(&mut s, key(KeyCode::Enter));
+        assert!(s.palette.is_none());
+        assert_eq!(s.view, View::Pulse, "ran the pulse entry");
+
+        // from the keys view the palette still reaches dashboard-scoped entries
+        s.view = View::Keys;
+        let ctrl_p = KeyEvent {
+            modifiers: KeyModifiers::CONTROL,
+            ..key(KeyCode::Char('p'))
+        };
+        key_outcome(&mut s, ctrl_p);
+        assert!(s.palette.is_some());
+        chars(&mut s, "go to ssh");
+        key_outcome(&mut s, key(KeyCode::Enter));
+        assert_eq!(s.view, View::Keys);
+    }
+
+    #[test]
+    fn palette_editing_and_leaving() {
+        let mut s = state();
+        chars(&mut s, ":");
+        chars(&mut s, "zzzz");
+        key_outcome(&mut s, key(KeyCode::Enter));
+        assert!(
+            s.palette.is_none(),
+            "no match: closes without doing anything"
+        );
+        assert_eq!(s.view, View::Dashboard);
+        chars(&mut s, ":");
+        chars(&mut s, "ab");
+        key_outcome(&mut s, key(KeyCode::Backspace));
+        assert_eq!(s.palette.as_ref().map(|p| p.query.as_str()), Some("a"));
+        key_outcome(&mut s, key(KeyCode::Down));
+        key_outcome(&mut s, key(KeyCode::Down));
+        assert!(s.palette.as_ref().is_some_and(|p| p.row > 0));
+        key_outcome(&mut s, key(KeyCode::Up));
+        key_outcome(&mut s, key(KeyCode::Esc));
+        assert!(s.palette.is_none());
+        assert_eq!(
+            key_outcome(&mut s, key(KeyCode::Esc)),
+            Outcome::Close,
+            "Esc then leaves the hub as before"
+        );
+    }
+
+    #[test]
+    fn the_palette_offers_what_applies_to_the_selection() {
+        let mut s = state();
+        let labels = |s: &HubState| {
+            palette::entries_for(s)
+                .into_iter()
+                .map(|e| e.label)
+                .collect::<Vec<_>>()
+        };
+        assert!(
+            labels(&s).iter().any(|l| l.starts_with("Pull request:")),
+            "the fixture selects a PR"
+        );
+        assert!(!labels(&s).iter().any(|l| l.starts_with("CI run:")));
+        assert!(
+            labels(&s)
+                .iter()
+                .any(|l| l.starts_with("Go to section: Mine"))
+        );
+        s.slots[0].data = None;
+        assert!(!labels(&s).iter().any(|l| l.starts_with("Pull request:")));
     }
 
     #[test]

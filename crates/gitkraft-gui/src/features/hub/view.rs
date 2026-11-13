@@ -818,6 +818,10 @@ fn run_detail<'a>(hub: &'a HubState, run: &'a gitkraft_ci::Run, c: &ThemeColors)
             .spacing(8)
         )
         .height(Length::Fill),
+        note_input(
+            hub,
+            "Run workflow: [WORKFLOW] REF key=value… (blank: the same again)"
+        ),
         action_row(c, buttons)
     ]
     .spacing(8)

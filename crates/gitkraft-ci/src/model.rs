@@ -116,6 +116,9 @@ pub struct Run {
     pub repo: RepoId,
     /// Workflow name (GitLab: pipeline source).
     pub name: String,
+    /// Workflow file name (`ci.yml`), what dispatching a run needs. Empty on GitLab.
+    #[serde(default)]
+    pub workflow: String,
     /// Commit message or run title.
     pub title: String,
     /// Run number within the workflow.
@@ -145,6 +148,19 @@ impl Run {
     pub fn duration(&self) -> Option<chrono::Duration> {
         Some(self.finished_at? - self.started_at.or(self.created_at)?)
     }
+}
+
+/// A workflow that can be started by hand.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Workflow {
+    /// Platform id.
+    pub id: u64,
+    /// Display name.
+    pub name: String,
+    /// File name, e.g. `ci.yml`.
+    pub file: String,
+    /// Enabled.
+    pub active: bool,
 }
 
 /// A run with its jobs.
