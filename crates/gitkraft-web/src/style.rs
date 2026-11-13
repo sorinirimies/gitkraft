@@ -44,7 +44,7 @@ svg .lbl{font:10px sans-serif;fill:var(--muted)}svg.heat{max-width:100%;height:a
 /// The script every page loads: sends an action as JSON and reloads.
 pub const SCRIPT: &str = r#"
 async function act(p){
-  const r=await fetch('/api/action',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(p)});
+  const r=await fetch('/api/action',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({token:document.querySelector('meta[name=gk-token]').content},p))});
   const t=await r.text();
   if(!r.ok){alert(t);return;}
   location.reload();

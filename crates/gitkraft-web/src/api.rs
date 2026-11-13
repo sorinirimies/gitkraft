@@ -42,11 +42,23 @@ async fn contributions(cx: &Cx) -> Result<Json<serde_json::Value>> {
     ))
 }
 
+/// An action with the page's token.
+#[derive(Debug, serde::Deserialize)]
+struct Envelope {
+    #[serde(default)]
+    token: String,
+    #[serde(flatten)]
+    req: ActionRequest,
+}
+
 /// Runs an action: `{"action": "comment", "repo": "github.com/o/r", "number": 1, "kind": "pr", "body": "…"}`.
 #[route(POST "/api/action")]
-async fn action(cx: &Cx, Json(req): Json<ActionRequest>) -> Result<Json<serde_json::Value>> {
+async fn action(cx: &Cx, Json(env): Json<Envelope>) -> Result<Json<serde_json::Value>> {
     let session: &Session = app_context(cx);
-    match perform(session, req).await {
+    if env.token != session.token() {
+        return Err(bad_request("missing or wrong token: reload the page").into());
+    }
+    match perform(session, env.req).await {
         Ok(message) => Ok(Json(serde_json::json!({ "ok": true, "message": message }))),
         Err(e) => Err(bad_request(e).into()),
     }

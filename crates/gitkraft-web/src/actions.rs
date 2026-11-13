@@ -86,6 +86,23 @@ pub enum ActionRequest {
         /// Run id.
         run_id: u64,
     },
+    /// Create or reuse this machine's key for a host, register it and configure ssh.
+    SshSetup {
+        /// Host name, e.g. `github.com`.
+        host: String,
+    },
+    /// Remove a key from an account.
+    SshRevoke {
+        /// Host name.
+        host: String,
+        /// Platform id of the key.
+        id: String,
+    },
+    /// Run `ssh -T git@host`.
+    SshTest {
+        /// Host name.
+        host: String,
+    },
     /// Turn notifications on or off for a project (`repo` empty: everything).
     NotifyToggle {
         /// `host/owner/name`, or empty for the global switch.
@@ -211,6 +228,41 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
             ci.cancel(&repo, run_id)
                 .await
                 .map(|()| "run cancelled".to_string())
+        }
+        ActionRequest::SshSetup { host } => {
+            let dir = session
+                .ssh_dir()
+                .ok_or("this session may not change the ssh directory")?
+                .to_path_buf();
+            let machine = gitkraft_hub::keys::machine_name();
+            let out = gitkraft_hub::keys::setup_host(
+                hub,
+                &host,
+                &dir,
+                &gitkraft_platforms::ssh::SystemSsh,
+                &machine,
+            )
+            .await;
+            session.invalidate();
+            return out.map(|t| t.lines().collect::<Vec<_>>().join(" · "));
+        }
+        ActionRequest::SshRevoke { host, id } => {
+            let out = gitkraft_hub::keys::revoke(hub, &host, &id).await;
+            session.invalidate();
+            return out;
+        }
+        ActionRequest::SshTest { host } => {
+            session.ssh_dir().ok_or("this session may not run ssh")?;
+            let (probe, line) = tokio::task::spawn_blocking(move || {
+                gitkraft_hub::keys::test_host(&gitkraft_platforms::ssh::SystemSsh, &host)
+            })
+            .await
+            .map_err(|e| e.to_string())?;
+            return if matches!(probe, gitkraft_platforms::ssh::Probe::Authenticated { .. }) {
+                Ok(line)
+            } else {
+                Err(line)
+            };
         }
         ActionRequest::NotifyToggle { repo, on } => {
             return toggle_notifications(session, &repo, on);

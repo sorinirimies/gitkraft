@@ -1854,6 +1854,7 @@ version = "1.4.1"
 dependencies = [
  "anyhow",
  "chrono",
+ "dirs",
  "futures",
  "git2",
  "gitkraft-ci",

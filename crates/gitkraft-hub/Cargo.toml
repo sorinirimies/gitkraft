@@ -16,6 +16,7 @@ gitkraft-ci        = { workspace = true }
 gitkraft-settings  = { workspace = true }
 gitkraft-core      = { workspace = true }
 git2               = { workspace = true }
+dirs               = { workspace = true }
 chrono   = { workspace = true }
 futures  = { workspace = true }
 serde    = { workspace = true }

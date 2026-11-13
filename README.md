@@ -139,7 +139,8 @@ gitkraft-tui notify status | on | off | mute 2h | unmute | test | install
 ```
 
 **Web:** `gitkraft-web` (needs Rust 1.98, so the MSRV job skips it) serves `http://127.0.0.1:3333`.
-There is no login: do not bind it beyond localhost.
+There is no login: do not bind it beyond localhost. Every action carries a per-run token the pages embed, so
+another website cannot make the server act. The **SSH keys** page lists, sets up, tests and removes keys.
 
 ## Features
 

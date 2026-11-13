@@ -164,14 +164,7 @@ pub fn render_keys(keys: &[SshKey], mine: &[String], host: &str) -> String {
 }
 
 fn machine_name() -> String {
-    std::process::Command::new("hostname")
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .or_else(|| std::env::var("HOSTNAME").ok())
-        .unwrap_or_else(|| "this machine".into())
+    gitkraft_hub::keys::machine_name()
 }
 
 /// Runs a command against `backend_for` (one backend per host) and `tools`, in `ssh_dir`.

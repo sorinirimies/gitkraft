@@ -10,6 +10,19 @@ use gitkraft_web::{Paths, Session, router};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
+/// The token of each test server, which a real page reads from its `<meta>`.
+static TOKENS: std::sync::Mutex<Vec<(SocketAddr, String)>> = std::sync::Mutex::new(Vec::new());
+
+fn token_of(addr: SocketAddr) -> String {
+    TOKENS
+        .lock()
+        .expect("lock")
+        .iter()
+        .find(|(a, _)| *a == addr)
+        .map(|(_, t)| t.clone())
+        .unwrap_or_default()
+}
+
 struct Response {
     status: u16,
     body: String,
@@ -32,6 +45,14 @@ fn dechunk(raw: &[u8]) -> Vec<u8> {
 }
 
 async fn request(addr: SocketAddr, method: &str, path: &str, body: &str) -> Response {
+    // Actions carry the page's token unless the test brings its own.
+    let with_token;
+    let body = if path == "/api/action" && body.starts_with('{') && !body.contains("\"token\"") {
+        with_token = body.replacen('{', &format!("{{\"token\":\"{}\",", token_of(addr)), 1);
+        with_token.as_str()
+    } else {
+        body
+    };
     let mut s = TcpStream::connect(addr).await.expect("connect");
     let extra = if method == "POST" {
         format!(
@@ -117,10 +138,15 @@ async fn start() -> Harness {
         dashboard: None,
         notify: Some(dir.path().join("notifications.toml")),
         use_state_dir: false,
+        ssh_dir: None,
     };
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr = listener.local_addr().expect("addr");
     let session = Session::new(hub, dashboard, paths, 0);
+    TOKENS
+        .lock()
+        .expect("lock")
+        .push((addr, session.token().to_string()));
     tokio::spawn(async move {
         let _ = topcoat::serve(listener, router(session)).await;
     });
@@ -486,4 +512,85 @@ async fn json_and_static_routes() {
         "{}",
         c.body
     );
+}
+
+#[tokio::test]
+async fn an_action_without_the_pages_token_is_refused_and_never_reaches_the_platform() {
+    let h = start().await;
+    let body = r#"{"action":"comment","repo":"github.com/o/r","number":7,"kind":"pr","body":"x"}"#;
+    // No token at all, and a wrong one.
+    for raw in [
+        body.to_string(),
+        body.replacen('{', r#"{"token":"guess","#, 1),
+    ] {
+        let mut s = TcpStream::connect(h.addr).await.expect("connect");
+        s.write_all(
+            format!(
+                "POST /api/action HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{raw}",
+                raw.len()
+            )
+            .as_bytes(),
+        )
+        .await
+        .expect("write");
+        let mut out = Vec::new();
+        s.read_to_end(&mut out).await.expect("read");
+        let text = String::from_utf8_lossy(&out).to_string();
+        assert!(text.starts_with("HTTP/1.1 400"), "{text}");
+        assert!(text.contains("wrong token"), "{text}");
+    }
+    assert!(h.fake.requests().is_empty());
+    // Every page carries the token.
+    let page = get(h.addr, "/notify").await;
+    assert!(
+        page.body
+            .contains(&format!("content=\"{}\"", token_of(h.addr))),
+        "{}",
+        page.body
+    );
+}
+
+#[tokio::test]
+async fn the_keys_page_lists_keys_and_a_key_can_be_removed() {
+    let h = start().await;
+    h.fake.push_json(
+        "https://api.github.com/user/keys?per_page=100&limit=50",
+        r#"[{"id":5,"title":"my <laptop>","key":"ssh-ed25519 AAAA"}]"#,
+    );
+    let page = get(h.addr, "/keys").await;
+    assert_eq!(page.status, 200);
+    assert!(
+        page.body.contains("my &lt;laptop&gt;")
+            && page.body.contains("Remove")
+            && !page.body.contains("Set up ssh"),
+        "no ssh dir in a test session: {}",
+        page.body
+    );
+    h.fake
+        .push_status("https://api.github.com/user/keys/5", 204, "");
+    let r = request(
+        h.addr,
+        "POST",
+        "/api/action",
+        r#"{"action":"ssh_revoke","host":"github.com","id":"5"}"#,
+    )
+    .await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    assert!(r.body.contains("removed key 5"));
+    for body in [
+        r#"{"action":"ssh_setup","host":"github.com"}"#,
+        r#"{"action":"ssh_test","host":"github.com"}"#,
+    ] {
+        let r = request(h.addr, "POST", "/api/action", body).await;
+        assert_eq!(r.status, 400, "{body}");
+        assert!(r.body.contains("may not"), "{}", r.body);
+    }
+    let r = request(
+        h.addr,
+        "POST",
+        "/api/action",
+        r#"{"action":"ssh_revoke","host":"nowhere","id":"1"}"#,
+    )
+    .await;
+    assert!(r.body.contains("no account"), "{}", r.body);
 }

@@ -16,6 +16,17 @@ use gitkraft_settings::theme::{AppTheme, theme_by_index};
 /// How long a loaded section is reused, so a page reload does not hit the platforms again.
 const CACHE_FOR: Duration = Duration::from_secs(20);
 
+/// 128 random bits as hex, from the operating system's seed of `RandomState`.
+fn new_token() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    (0..2)
+        .map(|_| {
+            let h = std::collections::hash_map::RandomState::new().build_hasher();
+            format!("{:016x}", h.finish())
+        })
+        .collect()
+}
+
 /// Where the server reads and writes; all `None` in tests.
 #[derive(Debug, Clone, Default)]
 pub struct Paths {
@@ -25,6 +36,8 @@ pub struct Paths {
     pub notify: Option<PathBuf>,
     /// Directory of the poller's state files.
     pub use_state_dir: bool,
+    /// The `~/.ssh` directory the SSH key page may change.
+    pub ssh_dir: Option<PathBuf>,
 }
 
 impl Paths {
@@ -34,6 +47,7 @@ impl Paths {
             dashboard: files::dashboard_path().ok(),
             notify: files::notify_config_path().ok(),
             use_state_dir: true,
+            ssh_dir: Some(gitkraft_hub::keys::ssh_dir()),
         }
     }
 }
@@ -43,6 +57,7 @@ struct Inner {
     dashboard: RwLock<Dashboard>,
     paths: Paths,
     theme: usize,
+    token: String,
     cache: Mutex<HashMap<usize, (Instant, SectionData)>>,
 }
 
@@ -69,9 +84,21 @@ impl Session {
                 dashboard: RwLock::new(dashboard),
                 paths,
                 theme,
+                token: new_token(),
                 cache: Mutex::new(HashMap::new()),
             }),
         }
+    }
+
+    /// The secret every page sends with an action. A page of another site cannot know it, so it cannot
+    /// make this server act (cross-site request forgery).
+    pub fn token(&self) -> &str {
+        &self.inner.token
+    }
+
+    /// `~/.ssh` when this session may change it.
+    pub fn ssh_dir(&self) -> Option<&std::path::Path> {
+        self.inner.paths.ssh_dir.as_deref()
     }
 
     /// The hub.

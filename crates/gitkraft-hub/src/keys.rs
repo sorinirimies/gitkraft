@@ -1,7 +1,7 @@
 //! The SSH keys screen's data: keys per account, which of them belong to this machine,
 //! and the actions on them. Front-ends render it; nothing here draws or blocks the UI thread.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use gitkraft_platforms::HttpClient;
 use gitkraft_platforms::model::SshKey;
@@ -49,6 +49,23 @@ pub fn local_fingerprints(ssh_dir: &Path, tools: &impl SshTools) -> Vec<String> 
     out.sort();
     out.dedup();
     out
+}
+
+/// The user's `~/.ssh` (a relative `.ssh` when there is no home directory).
+pub fn ssh_dir() -> PathBuf {
+    dirs::home_dir().map_or_else(|| PathBuf::from(".ssh"), |h| h.join(".ssh"))
+}
+
+/// This machine's name, for key titles.
+pub fn machine_name() -> String {
+    std::process::Command::new("hostname")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| std::env::var("HOSTNAME").ok())
+        .unwrap_or_else(|| "this machine".into())
 }
 
 /// Loads the keys of every account.

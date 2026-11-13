@@ -1867,19 +1867,12 @@ async fn fetch_image(client: &Client, url: &str) -> Result<image::DynamicImage, 
         .map_err(|e| e.to_string())?
 }
 
-/// `(name, url)` of every remote of the checkout at `path`.
 fn ssh_dir() -> PathBuf {
-    dirs::home_dir().map_or_else(|| PathBuf::from(".ssh"), |h| h.join(".ssh"))
+    gitkraft_hub::keys::ssh_dir()
 }
 
 fn machine_name() -> String {
-    std::process::Command::new("hostname")
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "this machine".into())
+    gitkraft_hub::keys::machine_name()
 }
 
 async fn reload_keys(api: &Api) -> gitkraft_hub::keys::KeysData {
