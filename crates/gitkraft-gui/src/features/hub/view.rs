@@ -32,6 +32,7 @@ pub fn view(app: &GitKraft) -> Element<'_, Message> {
         HubView::Dashboard => dashboard(hub, &c),
         HubView::Pulse => pulse(hub, &c),
         HubView::Keys => keys(hub, &c),
+        HubView::Community => community(hub, &c),
     };
     let screen = column![
         top_bar(hub, &c),
@@ -154,6 +155,7 @@ fn top_bar<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
             tab("Dashboard", HubView::Dashboard),
             tab("Pulse", HubView::Pulse),
             tab("SSH keys", HubView::Keys),
+            tab("Discussions & wiki", HubView::Community),
             Space::new().width(Length::Fill),
             button(text("Commands ⌘P").size(12).color(c.text_secondary))
                 .on_press(HubMessage::PaletteToggle)
@@ -1042,6 +1044,115 @@ fn log_view<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
 
 // ── SSH keys ─────────────────────────────────────────────────────────────────
 
+fn community<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
+    use gitkraft_hub::community::Tab;
+    let cs = &hub.community;
+    let repo = cs.repo.as_ref().map(|r| r.key()).unwrap_or_default();
+    let tab_button = |label: &'static str, tab: Tab| {
+        let on = cs.tab == tab;
+        button(
+            text(label)
+                .size(13)
+                .color(if on { c.accent } else { c.text_secondary }),
+        )
+        .on_press(HubMessage::CommunityTab(tab))
+        .style(theme::ghost_button)
+        .padding([4, 10])
+    };
+    let header = row![
+        tab_button("Discussions", Tab::Discussions),
+        tab_button("Wiki", Tab::Wiki),
+        text(repo).size(13).color(c.text_secondary),
+        Space::new().width(Length::Fill),
+        button(text("‹ repo").size(12))
+            .on_press(HubMessage::CommunityRepo(-1))
+            .style(theme::ghost_button),
+        button(text("repo ›").size(12))
+            .on_press(HubMessage::CommunityRepo(1))
+            .style(theme::ghost_button),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center);
+
+    let mut list = column![].spacing(2);
+    match (&cs.items, &cs.error) {
+        (_, Some(e)) => list = list.push(text(e.clone()).size(13).color(c.yellow)),
+        (None, None) => {
+            let note = if cs.loading {
+                "Loading…"
+            } else {
+                "Nothing loaded yet."
+            };
+            list = list.push(text(note).size(13).color(c.text_secondary));
+        }
+        (Some(items), None) if items.is_empty() => {
+            list = list.push(text("Nothing here.").size(13).color(c.text_secondary));
+        }
+        (Some(items), None) => {
+            for (i, it) in items.iter().enumerate() {
+                let sel = c.selection;
+                let selected = cs.row == i;
+                let line = container(
+                    column![
+                        text(it.title.clone()).size(13).color(c.text_primary),
+                        text(it.meta.clone()).size(11).color(c.text_secondary),
+                    ]
+                    .spacing(2),
+                )
+                .padding([5, 8])
+                .width(Length::Fill)
+                .style(move |_| container::Style {
+                    background: selected.then(|| sel.into()),
+                    ..container::Style::default()
+                });
+                list = list.push(mouse_area(line).on_press(HubMessage::CommunityOpen(i)));
+            }
+        }
+    }
+    let mut detail = column![].spacing(8);
+    match &cs.page {
+        None => {
+            detail = detail.push(
+                text("Pick one to read it.")
+                    .size(13)
+                    .color(c.text_secondary),
+            );
+        }
+        Some(p) => {
+            detail = detail
+                .push(text(p.title.clone()).size(15).color(c.text_primary))
+                .push(text(p.text.clone()).size(13).color(c.text_primary));
+            for (who, body) in &p.comments {
+                detail = detail
+                    .push(text(who.clone()).size(12).color(c.accent))
+                    .push(text(body.clone()).size(13).color(c.text_primary));
+            }
+        }
+    }
+    let mut right = column![scrollable(detail).height(Length::Fill)].spacing(8);
+    if cs.page.is_some() && cs.tab == Tab::Discussions {
+        right = right.push(note_input(hub, "Write a comment"));
+        right = right.push(
+            button(text("Comment").size(13))
+                .on_press(HubMessage::CommunityComment)
+                .style(theme::toolbar_button)
+                .padding([4, 10]),
+        );
+    }
+    column![
+        header,
+        row![
+            container(scrollable(list)).width(Length::FillPortion(2)),
+            container(right).width(Length::FillPortion(3)),
+        ]
+        .spacing(14)
+        .height(Length::Fill),
+    ]
+    .spacing(10)
+    .padding(14)
+    .into()
+}
+
 fn keys<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
     let mut col = column![].spacing(10).padding(14);
     col = col.push(
@@ -1605,5 +1716,34 @@ mod tests {
     fn mixing_colours_interpolates() {
         let m = mix(Color::BLACK, Color::WHITE, 0.5);
         assert!((m.r - 0.5).abs() < 1e-6 && m.a == 1.0);
+    }
+
+    #[test]
+    fn the_community_view_builds_loading_listed_open_and_failed() {
+        use gitkraft_hub::community::{Item, Page, Tab};
+        let mut app = app();
+        app.hub.as_mut().expect("hub").view = HubView::Community;
+        let _ = view(&app);
+        app.hub.as_mut().expect("hub").community.loading = true;
+        let _ = view(&app);
+        let hub = app.hub.as_mut().expect("hub");
+        hub.community.loading = false;
+        hub.community.items = Some(vec![Item {
+            key: "5".into(),
+            title: "#5 Q".into(),
+            meta: "Q&A".into(),
+        }]);
+        hub.community.page = Some(Page {
+            key: "5".into(),
+            title: "#5 Q".into(),
+            text: "body".into(),
+            comments: vec![("bob".into(), "answer".into())],
+        });
+        let _ = view(&app);
+        let hub = app.hub.as_mut().expect("hub");
+        hub.community.tab = Tab::Wiki;
+        hub.community.items = None;
+        hub.community.error = Some("GitHub wikis are git repositories".into());
+        let _ = view(&app);
     }
 }

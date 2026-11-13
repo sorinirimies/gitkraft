@@ -63,6 +63,8 @@ pub enum HubView {
     Pulse,
     /// SSH keys of every account.
     Keys,
+    /// Discussions and the wiki of one repository.
+    Community,
 }
 
 /// Tabs of the PR detail.
@@ -172,6 +174,26 @@ pub enum HubMessage {
     DragDrop(usize),
     /// The button was released elsewhere.
     DragCancel,
+    /// The list of discussions or wiki pages arrived.
+    CommunityLoaded {
+        repo: String,
+        tab: gitkraft_hub::community::Tab,
+        result: Result<Vec<gitkraft_hub::community::Item>, String>,
+    },
+    /// An open discussion or wiki page arrived.
+    CommunityPageLoaded {
+        repo: String,
+        tab: gitkraft_hub::community::Tab,
+        result: Result<gitkraft_hub::community::Page, String>,
+    },
+    /// Show discussions or the wiki.
+    CommunityTab(gitkraft_hub::community::Tab),
+    /// Open list entry `i`.
+    CommunityOpen(usize),
+    /// The next (+1) or previous (-1) watched repository.
+    CommunityRepo(isize),
+    /// Post the note as a comment on the open discussion.
+    CommunityComment,
     /// SSH keys arrived.
     KeysLoaded(Arc<gitkraft_hub::keys::KeysData>),
     /// Pick a key row.
@@ -283,6 +305,25 @@ pub struct PulseState {
     pub day_data: Option<Arc<gitkraft_hub::DayResult>>,
 }
 
+/// Discussions and wiki view state.
+#[derive(Debug, Default)]
+pub struct CommunityState {
+    /// Repository shown.
+    pub repo: Option<RepoId>,
+    /// Discussions or wiki.
+    pub tab: gitkraft_hub::community::Tab,
+    /// The list, once loaded.
+    pub items: Option<Vec<gitkraft_hub::community::Item>>,
+    /// Row opened (or about to be).
+    pub row: usize,
+    /// The open page.
+    pub page: Option<gitkraft_hub::community::Page>,
+    /// Why the list could not be loaded.
+    pub error: Option<String>,
+    /// A load is running.
+    pub loading: bool,
+}
+
 /// SSH keys view state.
 #[derive(Debug, Default)]
 pub struct KeysState {
@@ -338,6 +379,8 @@ pub struct HubState {
     pub pulse: PulseState,
     /// SSH keys view.
     pub keys: KeysState,
+    /// Discussions and wiki.
+    pub community: CommunityState,
     /// Status line text and success flag.
     pub notice: Option<(String, bool)>,
     /// Setup finished.
@@ -379,6 +422,7 @@ impl HubState {
             drag: None,
             pulse: PulseState::default(),
             keys: KeysState::default(),
+            community: CommunityState::default(),
             notice: None,
             ready: false,
             accounts: 0,
@@ -494,6 +538,13 @@ impl HubState {
                 }
                 if v == HubView::Keys && self.keys.data.is_none() && !self.keys.loading {
                     return self.load_keys();
+                }
+                if v == HubView::Community
+                    && self.community.items.is_none()
+                    && self.community.error.is_none()
+                    && !self.community.loading
+                {
+                    return self.load_community();
                 }
                 Task::none()
             }
@@ -691,6 +742,61 @@ impl HubState {
                 self.drag = None;
                 Task::none()
             }
+            HubMessage::CommunityLoaded { repo, tab, result } => {
+                if self.community.repo.as_ref().map(RepoId::key) == Some(repo)
+                    && self.community.tab == tab
+                {
+                    self.community.loading = false;
+                    match result {
+                        Ok(items) => {
+                            self.community.error = None;
+                            self.community.row =
+                                self.community.row.min(items.len().saturating_sub(1));
+                            self.community.items = Some(items);
+                        }
+                        Err(e) => {
+                            self.community.items = None;
+                            self.community.error = Some(e);
+                        }
+                    }
+                }
+                Task::none()
+            }
+            HubMessage::CommunityPageLoaded { repo, tab, result } => {
+                if self.community.repo.as_ref().map(RepoId::key) == Some(repo)
+                    && self.community.tab == tab
+                {
+                    match result {
+                        Ok(p) => self.community.page = Some(p),
+                        Err(e) => self.notice = Some((e, false)),
+                    }
+                }
+                Task::none()
+            }
+            HubMessage::CommunityTab(tab) => {
+                if self.community.tab != tab {
+                    self.community.tab = tab;
+                    self.community.row = 0;
+                    return self.load_community();
+                }
+                Task::none()
+            }
+            HubMessage::CommunityOpen(i) => self.open_community(i),
+            HubMessage::CommunityRepo(delta) => {
+                if self.watched.is_empty() {
+                    return Task::none();
+                }
+                let cur = self
+                    .community
+                    .repo
+                    .as_ref()
+                    .and_then(|r| self.watched.iter().position(|w| w == r))
+                    .unwrap_or(0);
+                let next = (cur as isize + delta).rem_euclid(self.watched.len() as isize) as usize;
+                self.community.repo = Some(self.watched[next].clone());
+                self.load_community()
+            }
+            HubMessage::CommunityComment => self.comment_on_discussion(),
             HubMessage::KeysLoaded(data) => {
                 self.keys.loading = false;
                 if let Some(e) = data.errors.first() {
@@ -1052,6 +1158,109 @@ impl HubState {
             HubMessage::ContributionsLoaded(Arc::new(c))
         });
         Task::batch([pulse, contributions])
+    }
+
+    // ── Discussions and wiki ─────────────────────────────────────────────────
+
+    /// Loads the list for the current repository and tab.
+    fn load_community(&mut self) -> Task<HubMessage> {
+        let Some(api) = self.handle() else {
+            return Task::none();
+        };
+        let Some(repo) = self.community.repo.clone().or_else(|| self.current_repo()) else {
+            self.notice = Some(("no repository: add one to a section".into(), false));
+            return Task::none();
+        };
+        let tab = self.community.tab;
+        self.community.repo = Some(repo.clone());
+        self.community.loading = true;
+        self.community.items = None;
+        self.community.page = None;
+        self.community.error = None;
+        let key = repo.key();
+        Task::perform(
+            async move { gitkraft_hub::community::list(&api, &repo, tab).await },
+            move |result| HubMessage::CommunityLoaded {
+                repo: key.clone(),
+                tab,
+                result,
+            },
+        )
+    }
+
+    fn open_community(&mut self, i: usize) -> Task<HubMessage> {
+        self.community.row = i;
+        let (Some(api), Some(repo), Some(item)) = (
+            self.handle(),
+            self.community.repo.clone(),
+            self.community
+                .items
+                .as_ref()
+                .and_then(|l| l.get(i))
+                .cloned(),
+        ) else {
+            return Task::none();
+        };
+        let tab = self.community.tab;
+        let key = repo.key();
+        Task::perform(
+            async move { gitkraft_hub::community::page(&api, &repo, tab, &item).await },
+            move |result| HubMessage::CommunityPageLoaded {
+                repo: key.clone(),
+                tab,
+                result,
+            },
+        )
+    }
+
+    fn comment_on_discussion(&mut self) -> Task<HubMessage> {
+        let body = self.note.trim().to_string();
+        if self.community.tab != gitkraft_hub::community::Tab::Discussions {
+            self.notice = Some(("wiki pages take no comments".into(), false));
+            return Task::none();
+        }
+        let (Some(api), Some(repo), Some(page)) = (
+            self.handle(),
+            self.community.repo.clone(),
+            self.community.page.clone(),
+        ) else {
+            return Task::none();
+        };
+        let Ok(number) = page.key.parse::<u64>() else {
+            return Task::none();
+        };
+        if body.is_empty() {
+            self.notice = Some(("a comment needs some text".into(), false));
+            return Task::none();
+        }
+        self.note.clear();
+        let item = gitkraft_hub::community::Item {
+            key: page.key.clone(),
+            title: page.title.clone(),
+            meta: String::new(),
+        };
+        let key = repo.key();
+        Task::perform(
+            async move {
+                let b = api.backend(&repo.host).ok_or("no account")?;
+                b.comment_on_discussion(&repo, number, &body)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                // show the page again, now with the new comment
+                gitkraft_hub::community::page(
+                    &api,
+                    &repo,
+                    gitkraft_hub::community::Tab::Discussions,
+                    &item,
+                )
+                .await
+            },
+            move |result| HubMessage::CommunityPageLoaded {
+                repo: key.clone(),
+                tab: gitkraft_hub::community::Tab::Discussions,
+                result,
+            },
+        )
     }
 
     // ── SSH keys ─────────────────────────────────────────────────────────────
@@ -1422,6 +1631,10 @@ impl HubState {
         add("Go to dashboard", HubMessage::Show(HubView::Dashboard));
         add("Go to pulse", HubMessage::Show(HubView::Pulse));
         add("Go to SSH keys", HubMessage::Show(HubView::Keys));
+        add(
+            "Go to discussions and wiki",
+            HubMessage::Show(HubView::Community),
+        );
         add("Refresh", HubMessage::Refresh);
         add(
             "Notifications: toggle for this project",
@@ -2356,6 +2569,55 @@ mod tests {
             s.pulse.day,
             Some(today - chrono::Duration::days(370)),
             "not past the calendar's year"
+        );
+    }
+
+    #[test]
+    fn community_answers_for_another_repo_or_tab_are_dropped_and_errors_are_kept() {
+        use gitkraft_hub::community::{Item, Tab};
+        let mut s = state();
+        s.community.repo = Some(RepoId::new("github.com", "o", "r"));
+        let item = |n: &str| Item {
+            key: n.into(),
+            title: format!("#{n} T"),
+            meta: String::new(),
+        };
+        let _ = s.update(HubMessage::CommunityLoaded {
+            repo: "github.com/o/other".into(),
+            tab: Tab::Discussions,
+            result: Ok(vec![item("1")]),
+        });
+        assert!(s.community.items.is_none(), "another repo");
+        s.community.row = 9;
+        let _ = s.update(HubMessage::CommunityLoaded {
+            repo: "github.com/o/r".into(),
+            tab: Tab::Discussions,
+            result: Ok(vec![item("1"), item("2")]),
+        });
+        assert_eq!(s.community.row, 1, "the selection stays inside the list");
+        let _ = s.update(HubMessage::CommunityLoaded {
+            repo: "github.com/o/r".into(),
+            tab: Tab::Discussions,
+            result: Err("not supported by this platform".into()),
+        });
+        assert!(s.community.items.is_none());
+        assert_eq!(
+            s.community.error.as_deref(),
+            Some("not supported by this platform")
+        );
+        // switching tab clears and reloads; a comment on a wiki page is refused
+        let _ = s.update(HubMessage::CommunityTab(Tab::Wiki));
+        assert_eq!(s.community.tab, Tab::Wiki);
+        s.community.page = Some(gitkraft_hub::community::Page {
+            key: "home".into(),
+            ..Default::default()
+        });
+        s.note = "hi".into();
+        let _ = s.update(HubMessage::CommunityComment);
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, _)| t.contains("wiki pages"))
         );
     }
 }

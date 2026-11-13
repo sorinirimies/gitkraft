@@ -52,6 +52,7 @@ serves the same on localhost.
 | Pull requests | description (Markdown), reviews, checks, diff, comments; approve, request changes, comment, merge, close |
 | Issues | list, comment, close / reopen |
 | CI | runs, jobs, steps, timeline, live log with errors extracted; re-run failed / all, cancel (GitHub / Gitea Actions, GitLab CI) |
+| Discussions & wiki | GitHub discussions (list, read, comment); the wiki of GitLab, Gitea, Forgejo and Codeberg repos (list, read). GitHub wikis are git repos (`<repo>.wiki.git`) with no API, so the tab says so. TUI key `T`, GUI tab, web `/community`, MCP tools `discussions` and `wiki` |
 | Pulse | contribution calendar over all accounts (click a day, or use the arrow keys, for what you did that day: commits per repository, PRs, issues, reviews, comments), PRs / issues / CI per period, activity per day |
 | Notifications | per-project settings, desktop notifications, a bell with its state on every project |
 | Mouse | click, wheel, drag a section tab to reorder, drag the divider to resize (TUI and GUI) |
