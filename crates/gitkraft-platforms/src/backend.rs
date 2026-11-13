@@ -7,8 +7,9 @@ use crate::github_like::GitHubLike;
 use crate::gitlab::{GitLab, ItemKind};
 use crate::http::HttpClient;
 use crate::model::{
-    ActivityDay, Capabilities, Comment, DayActivity, Issue, ListQuery, MergeMethod, MergeOptions,
-    MergeOutcome, Notification, PullRequest, Review, ReviewVerdict, StateFilter, UpdateStyle, User,
+    ActivityDay, Capabilities, Comment, DayActivity, Discussion, DiscussionDetail, Issue,
+    ListQuery, MergeMethod, MergeOptions, MergeOutcome, Notification, PullRequest, Review,
+    ReviewVerdict, StateFilter, UpdateStyle, User, WikiContent, WikiPage,
 };
 use crate::platform::{PlatformKind, RepoId};
 use gitkraft_settings::dashboard::Involvement;
@@ -318,6 +319,57 @@ impl<C: HttpClient> Backend<C> {
         match self {
             Self::GitHubLike(b) => b.day_activity(user, date).await,
             Self::GitLab(b) => b.day_activity(user, date).await,
+        }
+    }
+
+    /// The repository wiki's pages (GitLab, Gitea family).
+    pub async fn wiki_pages(&self, repo: &RepoId) -> Result<Vec<WikiPage>> {
+        match self {
+            Self::GitHubLike(b) => b.wiki_pages(repo).await,
+            Self::GitLab(b) => b.wiki_pages(repo).await,
+        }
+    }
+
+    /// One wiki page with its content.
+    pub async fn wiki_page(&self, repo: &RepoId, slug: &str) -> Result<WikiContent> {
+        match self {
+            Self::GitHubLike(b) => b.wiki_page(repo, slug).await,
+            Self::GitLab(b) => b.wiki_page(repo, slug).await,
+        }
+    }
+
+    /// Latest discussions of a repository (GitHub only).
+    pub async fn discussions(&self, repo: &RepoId, first: u32) -> Result<Vec<Discussion>> {
+        match self {
+            Self::GitHubLike(b) => b.discussions(repo, first).await,
+            Self::GitLab(_) => Err(PlatformError::Unsupported(
+                "discussions exist on GitHub only",
+            )),
+        }
+    }
+
+    /// One discussion with its comments (GitHub only).
+    pub async fn discussion(&self, repo: &RepoId, number: u64) -> Result<DiscussionDetail> {
+        match self {
+            Self::GitHubLike(b) => b.discussion(repo, number).await,
+            Self::GitLab(_) => Err(PlatformError::Unsupported(
+                "discussions exist on GitHub only",
+            )),
+        }
+    }
+
+    /// Comments on a discussion (GitHub only).
+    pub async fn comment_on_discussion(
+        &self,
+        repo: &RepoId,
+        number: u64,
+        body: &str,
+    ) -> Result<()> {
+        match self {
+            Self::GitHubLike(b) => b.comment_on_discussion(repo, number, body).await,
+            Self::GitLab(_) => Err(PlatformError::Unsupported(
+                "discussions exist on GitHub only",
+            )),
         }
     }
 

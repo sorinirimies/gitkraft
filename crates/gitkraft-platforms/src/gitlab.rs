@@ -33,7 +33,7 @@ pub enum ItemKind {
     Issue,
 }
 
-fn project(repo: &RepoId) -> String {
+pub(crate) fn project(repo: &RepoId) -> String {
     format!("/projects/{}", url_encode(&repo.full_name()))
 }
 

@@ -33,7 +33,7 @@ impl<C: HttpClient> GitHubLike<C> {
         self.api.kind == PlatformKind::GitHub
     }
 
-    fn repo_path(repo: &RepoId) -> String {
+    pub(crate) fn repo_path(repo: &RepoId) -> String {
         format!("/repos/{}/{}", repo.owner, repo.name)
     }
 
@@ -473,7 +473,7 @@ impl<C: HttpClient> GitHubLike<C> {
     }
 
     /// One GraphQL call; GraphQL reports failures inside a 200, so `errors` is checked here.
-    async fn graphql(
+    pub(crate) async fn graphql(
         &self,
         query: &str,
         variables: &serde_json::Value,

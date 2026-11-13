@@ -1130,3 +1130,148 @@ fn headlines_are_singular_for_one_and_say_so_for_none() {
     assert_eq!(d.headline(), "1 contribution on 2026-03-10");
     assert!(d.groups().is_empty());
 }
+
+#[tokio::test]
+async fn github_discussions_list_read_and_comment_through_graphql() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"repository":{"hasDiscussionsEnabled":true,"discussions":{"nodes":[
+            {"id":"D_1","number":5,"title":"How do I clone?","url":"https://github.com/o/r/discussions/5",
+             "body":"help","updatedAt":"2026-05-01T10:00:00Z","isAnswered":true,
+             "category":{"name":"Q&A"},"author":{"login":"alice","avatarUrl":null},"comments":{"totalCount":3}},
+            {"id":"D_2","number":6,"title":"Gone author","url":"u","body":"","updatedAt":"2026-05-02T10:00:00Z",
+             "isAnswered":false,"category":{"name":"Ideas"},"author":null,"comments":{"totalCount":0}}]}}}}"#,
+    );
+    let list = github(&fake)
+        .discussions(&repo(), 30)
+        .await
+        .unwrap_or_default();
+    assert_eq!(list.len(), 2);
+    assert_eq!(
+        (
+            list[0].number,
+            list[0].category.as_str(),
+            list[0].answered,
+            list[0].comments
+        ),
+        (5, "Q&A", true, 3)
+    );
+    assert_eq!(
+        list[1].author.login, "ghost",
+        "a deleted account reads as ghost"
+    );
+
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"repository":{"discussion":{"id":"D_1","number":5,"title":"How do I clone?","url":"u","body":"help",
+            "updatedAt":"2026-05-01T10:00:00Z","isAnswered":true,"category":{"name":"Q&A"},
+            "author":{"login":"alice"},"comments":{"totalCount":1,"nodes":[
+              {"databaseId":9,"body":"git clone","createdAt":"2026-05-01T11:00:00Z","author":{"login":"bob"}}]}}}}}"#,
+    );
+    let d = github(&fake)
+        .discussion(&repo(), 5)
+        .await
+        .unwrap_or_default();
+    assert_eq!(d.comments.len(), 1);
+    assert_eq!(
+        (
+            d.comments[0].author.login.as_str(),
+            d.comments[0].body.as_str()
+        ),
+        ("bob", "git clone")
+    );
+
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"repository":{"discussion":{"id":"D_1"}}}}"#,
+    );
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"addDiscussionComment":{"comment":{"id":"C_1"}}}}"#,
+    );
+    assert!(
+        github(&fake)
+            .comment_on_discussion(&repo(), 5, "thanks")
+            .await
+            .is_ok()
+    );
+    let body = fake
+        .requests()
+        .last()
+        .and_then(|r| r.body.clone())
+        .unwrap_or_default();
+    let sent = String::from_utf8_lossy(&body).into_owned();
+    assert!(
+        sent.contains("addDiscussionComment") && sent.contains("thanks") && sent.contains("D_1")
+    );
+}
+
+#[tokio::test]
+async fn discussions_are_a_github_thing_and_wikis_are_not() {
+    let fake = FakeClient::new();
+    assert!(matches!(
+        gitea(&fake).discussions(&repo(), 10).await,
+        Err(PlatformError::Unsupported(_))
+    ));
+    assert!(matches!(
+        gitlab(&fake).discussion(&repo(), 1).await,
+        Err(PlatformError::Unsupported(_))
+    ));
+    let err = github(&fake)
+        .wiki_pages(&repo())
+        .await
+        .err()
+        .map(|e| e.to_string());
+    assert!(err.unwrap_or_default().contains(".wiki.git"));
+    assert!(
+        fake.requests().is_empty(),
+        "nothing was sent for an unsupported call"
+    );
+}
+
+#[tokio::test]
+async fn gitea_wiki_pages_and_content_decode_base64() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://codeberg.org/api/v1/repos/o/r/wiki/pages",
+        r#"[{"title":"Home","sub_url":"Home"},{"title":"Setup guide","sub_url":"Setup-guide"}]"#,
+    );
+    let pages = gitea(&fake).wiki_pages(&repo()).await.unwrap_or_default();
+    assert_eq!(
+        pages.iter().map(|p| p.slug.as_str()).collect::<Vec<_>>(),
+        ["Home", "Setup-guide"]
+    );
+    // "# Hello\nworld" in base64, wrapped over two lines like some servers do
+    fake.push_json(
+        "https://codeberg.org/api/v1/repos/o/r/wiki/page/Home",
+        r##"{"title":"Home","sub_url":"Home","content_base64":"IyBIZWxs\nbwp3b3JsZA=="}"##,
+    );
+    let page = gitea(&fake)
+        .wiki_page(&repo(), "Home")
+        .await
+        .unwrap_or_default();
+    assert_eq!(page.content, "# Hello\nworld");
+}
+
+#[tokio::test]
+async fn gitlab_wiki_pages_and_content() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://gitlab.com/api/v4/projects/o%2Fr/wikis",
+        r#"[{"title":"Home","slug":"home","format":"markdown"},{"title":"Dev/Setup","slug":"dev/setup","format":"markdown"}]"#,
+    );
+    let pages = gitlab(&fake).wiki_pages(&repo()).await.unwrap_or_default();
+    assert_eq!(pages[1].slug, "dev/setup");
+    fake.push_json(
+        "https://gitlab.com/api/v4/projects/o%2Fr/wikis/dev%2Fsetup",
+        r##"{"title":"Dev/Setup","slug":"dev/setup","content":"# Setup"}"##,
+    );
+    let page = gitlab(&fake)
+        .wiki_page(&repo(), "dev/setup")
+        .await
+        .unwrap_or_default();
+    assert_eq!(page.content, "# Setup");
+}

@@ -141,6 +141,7 @@ fn read_tools_are_marked_read_only() {
             "ci_rerun",
             "ci_cancel",
             "dispatch_workflow",
+            "comment_discussion",
         ];
         assert_eq!(ro, Some(!writes.contains(&name)), "{name}: {t}");
     }

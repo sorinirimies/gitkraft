@@ -200,11 +200,13 @@ the checkout it starts in is the default repository, so `repo` can be left out.
 | `list_issues`, `get_issue`, `list_labels` | |
 | `ci_runs`, `ci_run`, `ci_job_log`, `list_workflows` | runs, jobs, and a job's log without colour codes: the tail, or only lines matching `grep` |
 | `pulse` | PRs, issues, green and red CI over the last days |
+| `discussions` | GitHub discussions: the latest, or one with its comments |
+| `wiki` | the wiki of a GitLab / Gitea / Forgejo / Codeberg repo: page list or one page (GitHub wikis are git repos) |
 | `activity_day` | what you did on one calendar day, over every account |
 
 | Write (`--write`) | |
 |---|---|
-| `comment`, `review`, `set_open`, `edit_labels` | |
+| `comment`, `comment_discussion`, `review`, `set_open`, `edit_labels` | |
 | `merge_pull_request` | now, `when_green` or `queue`; merge, squash or rebase. `force` also needs `--allow-force` |
 | `update_branch`, `cancel_auto_merge` | |
 | `ci_rerun`, `ci_cancel`, `dispatch_workflow` | inputs are checked against the workflow file |

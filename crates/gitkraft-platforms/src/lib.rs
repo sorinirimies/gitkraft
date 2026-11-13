@@ -20,6 +20,7 @@ pub mod account;
 pub mod api;
 pub mod auth;
 pub mod backend;
+mod community;
 pub mod credentials;
 pub mod diffpos;
 pub mod error;

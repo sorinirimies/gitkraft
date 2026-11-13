@@ -533,3 +533,53 @@ pub struct SshKey {
     /// When it was added.
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 }
+
+/// A wiki page in a list.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct WikiPage {
+    /// Page title.
+    pub title: String,
+    /// What the platform calls the page in its URLs.
+    pub slug: String,
+}
+
+/// A wiki page with its Markdown.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct WikiContent {
+    /// The page.
+    pub page: WikiPage,
+    /// Markdown (or whatever markup the wiki uses).
+    pub content: String,
+}
+
+/// A GitHub discussion.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Discussion {
+    /// Number in the repository.
+    pub number: u64,
+    /// Title.
+    pub title: String,
+    /// Author.
+    pub author: User,
+    /// Category name, e.g. `Q&A`.
+    pub category: String,
+    /// Number of comments.
+    pub comments: u32,
+    /// A comment was marked as the answer.
+    pub answered: bool,
+    /// Markdown body.
+    pub body: String,
+    /// Web address.
+    pub url: String,
+    /// Last update.
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+/// A discussion with its comments.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct DiscussionDetail {
+    /// The discussion.
+    pub discussion: Discussion,
+    /// Its top-level comments, oldest first.
+    pub comments: Vec<Comment>,
+}

@@ -57,6 +57,28 @@ pub(crate) struct ItemArgs {
     pub max_diff_chars: Option<usize>,
 }
 
+/// Discussions of a repository.
+#[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
+pub(crate) struct DiscussionsArgs {
+    /// `host/owner/name`; default: the current checkout.
+    pub repo: Option<String>,
+    /// Discussion number: with it the discussion and its comments, without it the latest list.
+    pub number: Option<u64>,
+    /// How many to list (default 20, at most 100).
+    pub limit: Option<u32>,
+}
+
+/// A wiki page, or the page list.
+#[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
+pub(crate) struct WikiArgs {
+    /// `host/owner/name`; default: the current checkout.
+    pub repo: Option<String>,
+    /// Page slug from the list: with it the page's Markdown, without it the page list.
+    pub page: Option<String>,
+    /// Characters of the page to return (default 40000).
+    pub max_chars: Option<usize>,
+}
+
 /// CI runs of a repository.
 #[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
 pub(crate) struct RunsArgs {
@@ -349,6 +371,63 @@ impl GitkraftServer {
             .await
             .map_err(|e| failed("get_issue comments", e))?;
         out(&slim(json!({"issue": issue, "comments": comments}), true))
+    }
+
+    #[tool(
+        description = "GitHub discussions: the latest ones, or with `number` one discussion with its comments. Other platforms have none.",
+        annotations(read_only_hint = true)
+    )]
+    pub(crate) async fn discussions(
+        &self,
+        Parameters(a): Parameters<DiscussionsArgs>,
+    ) -> ToolResult {
+        let repo = self.repo(a.repo.as_deref())?;
+        let b = self.backend(&repo)?;
+        match a.number {
+            Some(n) => {
+                let d = b
+                    .discussion(&repo, n)
+                    .await
+                    .map_err(|e| failed("discussions", e))?;
+                out(&slim(json!({"repo": repo.key(), "discussion": d}), true))
+            }
+            None => {
+                let list = b
+                    .discussions(&repo, clamp(a.limit, 20))
+                    .await
+                    .map_err(|e| failed("discussions", e))?;
+                out(&slim(
+                    json!({"repo": repo.key(), "discussions": list}),
+                    false,
+                ))
+            }
+        }
+    }
+
+    #[tool(
+        description = "A repository's wiki on GitLab, Gitea, Forgejo or Codeberg: the page list, or with `page` one page's Markdown. GitHub wikis are git repositories (<repo>.wiki.git) and not reachable here.",
+        annotations(read_only_hint = true)
+    )]
+    pub(crate) async fn wiki(&self, Parameters(a): Parameters<WikiArgs>) -> ToolResult {
+        let repo = self.repo(a.repo.as_deref())?;
+        let b = self.backend(&repo)?;
+        match a.page {
+            Some(slug) => {
+                let p = b
+                    .wiki_page(&repo, &slug)
+                    .await
+                    .map_err(|e| failed("wiki", e))?;
+                let (text, cut) = truncate(&p.content, a.max_chars.unwrap_or(40_000));
+                out(&json!({
+                    "repo": repo.key(), "title": p.page.title, "slug": p.page.slug,
+                    "content": text, "truncated": cut,
+                }))
+            }
+            None => {
+                let pages = b.wiki_pages(&repo).await.map_err(|e| failed("wiki", e))?;
+                out(&json!({"repo": repo.key(), "pages": pages}))
+            }
+        }
     }
 
     #[tool(

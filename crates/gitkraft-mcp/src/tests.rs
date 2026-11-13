@@ -56,6 +56,8 @@ fn read_only_servers_have_no_write_tools_and_write_servers_have_all() {
         "ci_runs",
         "ci_job_log",
         "pulse",
+        "discussions",
+        "wiki",
     ] {
         assert!(names.iter().any(|n| n == t), "{t} in {names:?}");
     }
@@ -69,6 +71,7 @@ fn read_only_servers_have_no_write_tools_and_write_servers_have_all() {
         "ci_cancel",
         "dispatch_workflow",
         "update_branch",
+        "comment_discussion",
     ] {
         assert!(
             !names.iter().any(|n| n == t),
@@ -88,6 +91,7 @@ fn read_only_servers_have_no_write_tools_and_write_servers_have_all() {
         "ci_rerun",
         "ci_cancel",
         "dispatch_workflow",
+        "comment_discussion",
     ] {
         assert!(names.iter().any(|n| n == t), "{t} in {names:?}");
     }
@@ -447,4 +451,25 @@ async fn activity_day_groups_the_day_and_refuses_days_outside_the_calendar() {
         );
     }
     assert_eq!(fake.requests().len(), before);
+}
+
+#[tokio::test]
+async fn discussions_list_slim_and_read_with_comments_and_wiki_says_why_not() {
+    let (s, fake) = rig(Policy::default());
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"repository":{"hasDiscussionsEnabled":true,"discussions":{"nodes":[{"id":"D","number":5,"title":"Q","url":"u","body":"long text","updatedAt":"2026-05-01T10:00:00Z","isAnswered":false,"category":{"name":"Q&A"},"author":{"login":"a","avatarUrl":"x"},"comments":{"totalCount":2}}]}}}}"#,
+    );
+    let v = json(
+        &s.discussions(Parameters(DiscussionsArgs::default()))
+            .await
+            .expect("tool"),
+    );
+    assert_eq!(v["discussions"][0]["title"], "Q");
+    assert!(v["discussions"][0].get("body").is_none(), "lists are slim");
+    let err = s
+        .wiki(Parameters(WikiArgs::default()))
+        .await
+        .expect_err("github has no wiki api");
+    assert!(err.message.contains(".wiki.git"), "{err:?}");
 }

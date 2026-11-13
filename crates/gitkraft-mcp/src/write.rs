@@ -27,6 +27,17 @@ pub(crate) struct CommentArgs {
     pub body: String,
 }
 
+/// A comment on a discussion.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub(crate) struct DiscussionCommentArgs {
+    /// `host/owner/name`; default: the current checkout.
+    pub repo: Option<String>,
+    /// Discussion number.
+    pub number: u64,
+    /// Markdown text.
+    pub body: String,
+}
+
 /// Submit a review.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub(crate) struct ReviewArgs {
@@ -177,6 +188,27 @@ impl GitkraftServer {
             .await
             .map_err(|e| failed("comment", e))?;
         out(&json!({"ok": true, "message": format!("commented on {}#{}", repo.key(), a.number)}))
+    }
+
+    #[tool(
+        description = "Post a comment on a GitHub discussion.",
+        annotations(read_only_hint = false, destructive_hint = false)
+    )]
+    pub(crate) async fn comment_discussion(
+        &self,
+        Parameters(a): Parameters<DiscussionCommentArgs>,
+    ) -> ToolResult {
+        let repo = self.repo(a.repo.as_deref())?;
+        if a.body.trim().is_empty() {
+            return Err(invalid("body is empty"));
+        }
+        self.backend(&repo)?
+            .comment_on_discussion(&repo, a.number, &a.body)
+            .await
+            .map_err(|e| failed("comment_discussion", e))?;
+        out(
+            &json!({"ok": true, "message": format!("commented on discussion {}#{}", repo.key(), a.number)}),
+        )
     }
 
     #[tool(
