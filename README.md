@@ -180,6 +180,26 @@ the page (merge, approve, re-run, …) by fuzzy name; actions that ask first sti
 fetches the PR into a worktree next to your local checkout: the one the server started in, plus any `--checkout DIR`
 (repeatable).
 
+### Command line: your forges from a script
+
+`gitkraft-tui` without a command opens the TUI; with one it prints. Every read command takes `--json`;
+`-R host/owner/name` picks a repository (default: the current checkout).
+
+```sh
+gitkraft-tui accounts                 # who you are on each host
+gitkraft-tui prs --who review         # PRs waiting for your review, over every account
+gitkraft-tui prs -R cli/cli -n 10     # PRs of a repository
+gitkraft-tui show 123 --diff          # one PR (add --issue for an issue)
+gitkraft-tui runs --status failed     # CI runs; then `run ID`, `log JOB --grep error`
+gitkraft-tui day 2026-05-01           # what you did that day, over every account
+gitkraft-tui pulse --days 14 ; discussions ; boards ; wiki [PAGE] ; inbox
+gitkraft-tui comment 123 "looks good" ; merge 123 --method squash --when-green ; rerun RUN
+gitkraft-tui completions zsh > ~/.zfunc/_gitkraft-tui
+```
+
+A forced merge is not offered here; use the UI, where it is a deliberate act. `notify`, `login`,
+`logout`, `clone` and `ssh` are described under their own sections.
+
 ### MCP server: your forges for an AI assistant
 
 `gitkraft-mcp` speaks the [Model Context Protocol](https://modelcontextprotocol.io) on stdio and gives an

@@ -14,6 +14,7 @@ pub mod cli;
 pub mod clone_cli;
 pub mod events;
 pub mod features;
+pub mod forge_cli;
 pub mod layout;
 pub mod notify_cli;
 pub mod ssh_cli;

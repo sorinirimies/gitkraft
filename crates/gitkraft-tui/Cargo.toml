@@ -41,6 +41,10 @@ gitkraft-ci        = { workspace = true }
 gitkraft-hub       = { workspace = true }
 tokio              = { workspace = true }
 chrono             = { workspace = true }
+serde              = { workspace = true }
+clap               = { workspace = true }
+clap_complete      = { workspace = true }
+serde_json         = { workspace = true }
 
 [dev-dependencies]
 tempfile           = { workspace = true }

@@ -1,70 +1,75 @@
-use std::path::PathBuf;
+use clap::Parser;
+use gitkraft_tui::forge_cli::{Cmd, Session};
+
+/// Runs a command that prints and exits. A usage error exits 2, a failure 1.
+fn run_command(cmd: Cmd) -> anyhow::Result<()> {
+    fn usage(e: String) -> ! {
+        eprintln!("{e}");
+        std::process::exit(2);
+    }
+    fn print(r: anyhow::Result<String>) -> anyhow::Result<()> {
+        match r {
+            Ok(text) => {
+                print!("{text}");
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("error: {e:#}");
+                std::process::exit(1);
+            }
+        }
+    }
+    let with = |word: &str, args: Vec<String>| {
+        std::iter::once(word.to_string())
+            .chain(args)
+            .collect::<Vec<_>>()
+    };
+    match cmd {
+        Cmd::Notify { args } => {
+            let c = gitkraft_tui::notify_cli::parse(&args).unwrap_or_else(|e| usage(e));
+            print(gitkraft_tui::notify_cli::run(c))
+        }
+        Cmd::Login { args } => {
+            let c =
+                gitkraft_tui::auth_cli::parse(&with("login", args)).unwrap_or_else(|e| usage(e));
+            print(gitkraft_tui::auth_cli::run(c))
+        }
+        Cmd::Logout { args } => {
+            let c =
+                gitkraft_tui::auth_cli::parse(&with("logout", args)).unwrap_or_else(|e| usage(e));
+            print(gitkraft_tui::auth_cli::run(c))
+        }
+        Cmd::Clone { args } => {
+            let c = gitkraft_tui::clone_cli::parse(&args).unwrap_or_else(|e| usage(e));
+            print(gitkraft_tui::clone_cli::run(c))
+        }
+        Cmd::Ssh { args } => {
+            let c = gitkraft_tui::ssh_cli::parse(&args).unwrap_or_else(|e| usage(e));
+            print(gitkraft_tui::ssh_cli::run(c))
+        }
+        Cmd::Completions { shell } => {
+            print!("{}", gitkraft_tui::forge_cli::completions(shell));
+            Ok(())
+        }
+        Cmd::Forge(f) => {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?;
+            print(rt.block_on(async {
+                let cwd = std::env::current_dir()?;
+                Session::connect(cwd, f.repo_flag()).await?.run(&f).await
+            }))
+        }
+    }
+}
 
 fn main() -> anyhow::Result<()> {
     gitkraft_core::limit_git_memory();
 
-    // `gitkraft-tui notify …` runs the notification poller and its controls without the UI.
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.first().map(String::as_str) == Some("notify") {
-        let cmd = gitkraft_tui::notify_cli::parse(&args[1..]).unwrap_or_else(|e| {
-            eprintln!("{e}");
-            std::process::exit(2);
-        });
-        print!("{}", gitkraft_tui::notify_cli::run(cmd)?);
-        return Ok(());
+    let cli = gitkraft_tui::forge_cli::Cli::parse();
+    if let Some(cmd) = cli.command {
+        return run_command(cmd);
     }
-
-    if matches!(args.first().map(String::as_str), Some("login" | "logout")) {
-        let cmd = gitkraft_tui::auth_cli::parse(&args).unwrap_or_else(|e| {
-            eprintln!("{e}");
-            std::process::exit(2);
-        });
-        match gitkraft_tui::auth_cli::run(cmd) {
-            Ok(text) => print!("{text}"),
-            Err(e) => {
-                eprintln!("{e}");
-                std::process::exit(1);
-            }
-        }
-        return Ok(());
-    }
-
-    if args.first().map(String::as_str) == Some("clone") {
-        let cmd = gitkraft_tui::clone_cli::parse(&args[1..]).unwrap_or_else(|e| {
-            eprintln!("{e}");
-            std::process::exit(2);
-        });
-        match gitkraft_tui::clone_cli::run(cmd) {
-            Ok(text) => print!("{text}"),
-            Err(e) => {
-                eprintln!("{e}");
-                std::process::exit(1);
-            }
-        }
-        return Ok(());
-    }
-
-    if args.first().map(String::as_str) == Some("ssh") {
-        let cmd = gitkraft_tui::ssh_cli::parse(&args[1..]).unwrap_or_else(|e| {
-            eprintln!("{e}");
-            std::process::exit(2);
-        });
-        match gitkraft_tui::ssh_cli::run(cmd) {
-            Ok(text) => print!("{text}"),
-            Err(e) => {
-                eprintln!("{e}");
-                std::process::exit(1);
-            }
-        }
-        return Ok(());
-    }
-
-    let cli = gitkraft_tui::cli::parse_args(std::env::args().skip(1)).unwrap_or_else(|e| {
-        eprintln!(
-            "{e}\nusage: gitkraft-tui [REPO] [--theme NAME] [--list-themes] | gitkraft-tui notify … | gitkraft-tui ssh … | gitkraft-tui clone SPEC | gitkraft-tui login|logout HOST"
-        );
-        std::process::exit(2);
-    });
 
     if cli.list_themes {
         for n in gitkraft_tui::cli::theme_names() {
@@ -86,7 +91,7 @@ fn main() -> anyhow::Result<()> {
 
     // Try to pick up a repo path from the first CLI argument, or fall back to
     // the current working directory if it looks like a Git repository.
-    let repo_path = cli.repo_path.map(PathBuf::from).or_else(|| {
+    let repo_path = cli.repo_path.or_else(|| {
         let cwd = std::env::current_dir().ok()?;
         // Check if cwd (or any ancestor) contains a .git dir
         if cwd.join(".git").exists() {

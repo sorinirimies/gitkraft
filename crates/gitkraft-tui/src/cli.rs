@@ -1,4 +1,4 @@
-//! Command-line handling for theme selection (`--theme`, `--list-themes`).
+//! Theme names for `--theme` and `--list-themes` (the arguments themselves are parsed in `forge_cli`).
 
 use crate::features::theme::palette::theme_names as nuances_names;
 use gitkraft_core::{SYSTEM_THEME_NAME, is_system_name};
@@ -20,41 +20,9 @@ pub fn resolve_theme(name: &str) -> Option<&'static str> {
     nuances_names().iter().copied().find(|n| *n == want)
 }
 
-/// Parsed command line.
-#[derive(Debug, Default, PartialEq, Eq)]
-pub struct Cli {
-    pub repo_path: Option<String>,
-    pub theme: Option<String>,
-    pub list_themes: bool,
-}
-
-/// Parse arguments (without the program name).
-pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Cli, String> {
-    let mut cli = Cli::default();
-    let mut it = args.into_iter();
-    while let Some(a) = it.next() {
-        if a == "--list-themes" {
-            cli.list_themes = true;
-        } else if a == "--theme" {
-            cli.theme = Some(it.next().ok_or("--theme requires a value")?);
-        } else if let Some(v) = a.strip_prefix("--theme=") {
-            cli.theme = Some(v.to_string());
-        } else if a.starts_with("--") {
-            return Err(format!("unknown option '{a}'"));
-        } else if cli.repo_path.is_none() {
-            cli.repo_path = Some(a);
-        }
-    }
-    Ok(cli)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn p(a: &[&str]) -> Result<Cli, String> {
-        parse_args(a.iter().map(|s| s.to_string()))
-    }
 
     #[test]
     fn names_start_with_system_and_cover_all_presets() {
@@ -69,20 +37,5 @@ mod tests {
         assert_eq!(resolve_theme("Dracula"), Some("dracula"));
         assert_eq!(resolve_theme("Tokyo Night"), Some("tokyo-night"));
         assert_eq!(resolve_theme("nope"), None);
-    }
-
-    #[test]
-    fn parses_flags_and_repo() {
-        assert_eq!(p(&[]).unwrap(), Cli::default());
-        let c = p(&["/tmp/r", "--theme", "Nord"]).unwrap();
-        assert_eq!(c.repo_path.as_deref(), Some("/tmp/r"));
-        assert_eq!(c.theme.as_deref(), Some("Nord"));
-        assert_eq!(
-            p(&["--theme=System"]).unwrap().theme.as_deref(),
-            Some("System")
-        );
-        assert!(p(&["--list-themes"]).unwrap().list_themes);
-        assert!(p(&["--theme"]).is_err());
-        assert!(p(&["--bogus"]).is_err());
     }
 }
