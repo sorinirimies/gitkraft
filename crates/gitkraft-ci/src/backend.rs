@@ -124,6 +124,21 @@ impl<C: HttpClient> CiBackend<C> {
         }
     }
 
+    /// The inputs `workflow` asks for when started by hand; none on GitLab or when the file cannot be read.
+    pub async fn workflow_inputs(
+        &self,
+        repo: &RepoId,
+        workflow: &str,
+        git_ref: &str,
+    ) -> Result<Vec<crate::inputs::WorkflowInput>> {
+        match self {
+            Self::Actions(b) => Ok(crate::inputs::workflow_inputs(
+                &b.workflow_file(repo, workflow, git_ref).await?,
+            )),
+            Self::GitLab(_) => Ok(Vec::new()),
+        }
+    }
+
     /// Triggers a workflow on `git_ref` with inputs (GitLab: CI variables).
     pub async fn dispatch(
         &self,

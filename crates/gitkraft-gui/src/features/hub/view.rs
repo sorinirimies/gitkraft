@@ -551,6 +551,9 @@ fn pr_detail<'a>(
         ("Comment", HubMessage::PostComment),
         ("Check out", HubMessage::Worktree),
     ];
+    if hub.tab == PrTab::Diff {
+        buttons.push(("Comment on line", HubMessage::InlineComment));
+    }
     if open {
         buttons.push((
             "Merge",
@@ -606,7 +609,7 @@ fn pr_detail<'a>(
         }
         (Some(d), PrTab::Diff) => {
             let mut col = column![];
-            for l in d.diff.lines().take(4000) {
+            for (i, l) in d.diff.lines().enumerate().take(4000) {
                 let color = if l.starts_with('+') && !l.starts_with("+++") {
                     c.green
                 } else if l.starts_with('-') && !l.starts_with("---") {
@@ -616,12 +619,21 @@ fn pr_detail<'a>(
                 } else {
                     c.diff_context
                 };
-                col = col.push(
+                let chosen = hub.detail.diff_line == Some(i);
+                let accent = c.accent;
+                let line = container(
                     text(l.to_string())
                         .font(iced::Font::MONOSPACE)
                         .size(12)
                         .color(color),
-                );
+                )
+                .width(Length::Fill)
+                .style(move |_| container::Style {
+                    background: chosen
+                        .then_some(iced::Background::Color(Color { a: 0.22, ..accent })),
+                    ..container::Style::default()
+                });
+                col = col.push(mouse_area(line).on_press(HubMessage::DiffLine(i)));
             }
             scrollable(col).height(Length::Fill).into()
         }

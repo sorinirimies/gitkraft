@@ -479,6 +479,82 @@ async fn gitlab_search_derives_the_project_from_references() {
     );
 }
 
+fn new(path: &str, line: u32) -> gitkraft_platforms::diffpos::Anchor {
+    gitkraft_platforms::diffpos::Anchor {
+        path: path.into(),
+        line,
+        side: gitkraft_platforms::diffpos::Side::New,
+    }
+}
+
+fn old(path: &str, line: u32) -> gitkraft_platforms::diffpos::Anchor {
+    gitkraft_platforms::diffpos::Anchor {
+        side: gitkraft_platforms::diffpos::Side::Old,
+        ..new(path, line)
+    }
+}
+
+#[tokio::test]
+async fn comments_on_removed_lines_use_the_old_side_on_each_platform() {
+    let body = |req: &gitkraft_platforms::http::Request| -> serde_json::Value {
+        serde_json::from_slice(req.body.as_deref().unwrap_or_default()).expect("json")
+    };
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/repos/o/r/pulls/3",
+        r#"{"number":3,"head":{"ref":"f","sha":"abc"},"base":{"ref":"main"}}"#,
+    );
+    fake.push_json("https://api.github.com/repos/o/r/pulls/3/comments", "{}");
+    github(&fake)
+        .comment_on_line(&repo(), 3, &old("a.rs", 7), "gone?")
+        .await
+        .expect("github");
+    let v = body(&fake.requests()[1]);
+    assert_eq!(
+        (v["side"].as_str(), v["line"].as_u64()),
+        (Some("LEFT"), Some(7))
+    );
+
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://codeberg.org/api/v1/repos/o/r/pulls/3",
+        r#"{"number":3,"head":{"ref":"f","sha":"d"},"base":{"ref":"main"}}"#,
+    );
+    fake.push_json(
+        "https://codeberg.org/api/v1/repos/o/r/pulls/3/reviews",
+        "{}",
+    );
+    gitea(&fake)
+        .comment_on_line(&repo(), 3, &old("a.rs", 7), "gone?")
+        .await
+        .expect("gitea");
+    let v = body(&fake.requests()[1]);
+    assert_eq!(v["comments"][0]["old_position"], 7);
+    assert!(v["comments"][0].get("new_position").is_none());
+
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://gitlab.com/api/v4/projects/g%2Fp/merge_requests/3",
+        r#"{"iid":3,"diff_refs":{"base_sha":"b","start_sha":"s","head_sha":"h"}}"#,
+    );
+    fake.push_json(
+        "https://gitlab.com/api/v4/projects/g%2Fp/merge_requests/3/discussions",
+        "{}",
+    );
+    gitlab(&fake)
+        .comment_on_line(
+            &RepoId::new("gitlab.com", "g", "p"),
+            3,
+            &old("x.rs", 7),
+            "gone?",
+        )
+        .await
+        .expect("gitlab");
+    let v = body(&fake.requests()[1]);
+    assert_eq!(v["position"]["old_line"], 7);
+    assert!(v["position"].get("new_line").is_none());
+}
+
 #[tokio::test]
 async fn inline_comments_anchor_to_the_head_commit_on_each_platform() {
     let body = |req: &gitkraft_platforms::http::Request| {
@@ -492,7 +568,7 @@ async fn inline_comments_anchor_to_the_head_commit_on_each_platform() {
     );
     fake.push_json("https://api.github.com/repos/o/r/pulls/3/comments", "{}");
     github(&fake)
-        .comment_on_line(&repo(), 3, "src/a.rs", 12, "nit")
+        .comment_on_line(&repo(), 3, &new("src/a.rs", 12), "nit")
         .await
         .expect("github");
     let sent = fake.requests();
@@ -521,7 +597,7 @@ async fn inline_comments_anchor_to_the_head_commit_on_each_platform() {
         "{}",
     );
     gitea(&fake)
-        .comment_on_line(&repo(), 3, "a.rs", 4, "why")
+        .comment_on_line(&repo(), 3, &new("a.rs", 4), "why")
         .await
         .expect("gitea");
     let v: serde_json::Value = serde_json::from_str(&body(&fake.requests()[1])).expect("json");
@@ -540,7 +616,7 @@ async fn inline_comments_anchor_to_the_head_commit_on_each_platform() {
     );
     let r = RepoId::new("gitlab.com", "g", "p");
     gitlab(&fake)
-        .comment_on_line(&r, 3, "x.rs", 9, "hm")
+        .comment_on_line(&r, 3, &new("x.rs", 9), "hm")
         .await
         .expect("gitlab");
     let v: serde_json::Value = serde_json::from_str(&body(&fake.requests()[1])).expect("json");
@@ -562,7 +638,9 @@ async fn inline_comments_explain_a_missing_head_commit() {
         r#"{"number":3}"#,
     );
     assert!(matches!(
-        github(&fake).comment_on_line(&repo(), 3, "a", 1, "x").await,
+        github(&fake)
+            .comment_on_line(&repo(), 3, &new("a", 1), "x")
+            .await,
         Err(PlatformError::Unsupported(_))
     ));
 }

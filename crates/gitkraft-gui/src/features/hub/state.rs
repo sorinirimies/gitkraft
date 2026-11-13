@@ -143,6 +143,10 @@ pub enum HubMessage {
     Artifacts,
     /// Check the selected pull request out into a worktree.
     Worktree,
+    /// Select a diff line.
+    DiffLine(usize),
+    /// Comment on the selected diff line with the note text.
+    InlineComment,
     /// Start the selected run's workflow again, with the note as `[WORKFLOW] REF key=value…`.
     Dispatch,
     /// An action finished.
@@ -226,6 +230,8 @@ pub struct Detail {
     pub error: Option<String>,
     /// Selected job.
     pub job: usize,
+    /// Diff line a comment would go on (index into the diff's lines).
+    pub diff_line: Option<usize>,
 }
 
 /// A log being read.
@@ -581,6 +587,11 @@ impl HubState {
             HubMessage::Dispatch => self.dispatch(),
             HubMessage::Artifacts => self.artifacts(),
             HubMessage::Worktree => self.worktree(),
+            HubMessage::DiffLine(i) => {
+                self.detail.diff_line = Some(i);
+                Task::none()
+            }
+            HubMessage::InlineComment => self.inline_comment(),
             HubMessage::PaletteToggle => {
                 self.palette = match self.palette {
                     Some(_) => None,
@@ -1078,6 +1089,40 @@ impl HubState {
         })
     }
 
+    fn inline_comment(&mut self) -> Task<HubMessage> {
+        let body = self.note.trim().to_string();
+        let Some(pr) = self.selected_pr() else {
+            self.notice = Some(("select a pull request first".into(), false));
+            return Task::none();
+        };
+        let diff = self
+            .detail
+            .pr
+            .as_ref()
+            .map(|d| d.diff.as_str())
+            .unwrap_or_default();
+        let anchor = self.detail.diff_line.and_then(|i| {
+            gitkraft_platforms::diffpos::positions(diff)
+                .get(i)?
+                .anchor()
+        });
+        let Some(anchor) = anchor else {
+            self.notice = Some(("click a changed or unchanged diff line first".into(), false));
+            return Task::none();
+        };
+        if body.is_empty() {
+            self.notice = Some(("a comment needs some text".into(), false));
+            return Task::none();
+        }
+        self.act(move |api| async move {
+            let b = api.backend(&pr.repo.host).ok_or("no account")?;
+            b.comment_on_line(&pr.repo, pr.number, &anchor, &body)
+                .await
+                .map(|()| format!("commented on {}:{}", anchor.path, anchor.line))
+                .map_err(|e| e.to_string())
+        })
+    }
+
     fn review(&mut self, verdict: ReviewVerdict) -> Task<HubMessage> {
         let body = self.note.trim().to_string();
         let Some((repo, number, ItemKind::PullRequest, _)) = self.target() else {
@@ -1173,6 +1218,12 @@ impl HubState {
                 HubMessage::Worktree,
             );
             add("Pull request: show the diff", HubMessage::Tab(PrTab::Diff));
+            if self.tab == PrTab::Diff {
+                add(
+                    "Diff: comment on the selected line (note = text box)",
+                    HubMessage::InlineComment,
+                );
+            }
         }
         if self.selected_run().is_some() {
             add(
@@ -1300,11 +1351,7 @@ impl HubState {
         } else {
             self.note.clone()
         };
-        let gitkraft_hub::dispatch::Dispatch {
-            workflow,
-            git_ref,
-            inputs,
-        } = match gitkraft_hub::dispatch::parse(&text, needs_workflow) {
+        let d = match gitkraft_hub::dispatch::parse(&text, needs_workflow) {
             Ok(v) => v,
             Err(e) => {
                 self.notice = Some((e, false));
@@ -1313,19 +1360,7 @@ impl HubState {
         };
         self.act(move |api| async move {
             let ci = api.ci(&run.repo.host).ok_or("no account")?;
-            ci.dispatch(&run.repo, &workflow, &git_ref, &inputs)
-                .await
-                .map(|()| {
-                    format!(
-                        "started {} on {git_ref}",
-                        if workflow.is_empty() {
-                            "a pipeline"
-                        } else {
-                            &workflow
-                        }
-                    )
-                })
-                .map_err(|e| e.to_string())
+            gitkraft_hub::dispatch::start(ci, &run.repo, &d).await
         })
     }
 
@@ -1913,6 +1948,47 @@ mod tests {
                 .any(|l| l == "Pull request: check out in a worktree")
         );
         assert!(!labels(&s).iter().any(|l| l.starts_with("CI run:")));
+    }
+
+    #[test]
+    fn an_inline_comment_needs_a_line_with_an_anchor_and_text() {
+        let mut s = state();
+        let pr = gitkraft_platforms::model::PullRequest {
+            repo: RepoId::new("github.com", "o", "r"),
+            ..Default::default()
+        };
+        s.slots[0].data = Some(Arc::new(SectionData::Prs(SectionResult {
+            items: vec![pr.clone()],
+            errors: vec![],
+        })));
+        let _ = s.update(HubMessage::SelectSection(0));
+        let _ = s.update(HubMessage::SelectRow(0));
+        s.detail.pr = Some(Arc::new(gitkraft_hub::PrDetail {
+            pr,
+            comments: vec![],
+            reviews: vec![],
+            diff: "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +5 @@\n-old\n+new".into(),
+            errors: vec![],
+        }));
+        let say = |s: &HubState| s.notice.clone().map(|(t, _)| t).unwrap_or_default();
+        let _ = s.update(HubMessage::InlineComment);
+        assert!(say(&s).contains("click a changed"), "{}", say(&s));
+        let _ = s.update(HubMessage::DiffLine(0));
+        let _ = s.update(HubMessage::InlineComment);
+        assert!(
+            say(&s).contains("click a changed"),
+            "a header has no anchor"
+        );
+        let _ = s.update(HubMessage::DiffLine(4));
+        let _ = s.update(HubMessage::InlineComment);
+        assert!(say(&s).contains("needs some text"), "{}", say(&s));
+        let _ = s.update(HubMessage::NoteInput("why?".into()));
+        s.notice = None;
+        let _ = s.update(HubMessage::InlineComment);
+        assert!(
+            s.notice.is_none(),
+            "valid input starts the call without a complaint"
+        );
     }
 
     #[test]

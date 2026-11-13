@@ -323,10 +323,11 @@ impl<C: HttpClient> GitHubLike<C> {
         &self,
         repo: &RepoId,
         number: u64,
-        path: &str,
-        line: u32,
+        at: &crate::diffpos::Anchor,
         body: &str,
     ) -> Result<()> {
+        use crate::diffpos::Side;
+        let (path, line) = (at.path.as_str(), at.line);
         let pr: PullDto = self
             .api
             .get(&format!("{}/pulls/{number}", Self::repo_path(repo)))
@@ -341,11 +342,16 @@ impl<C: HttpClient> GitHubLike<C> {
             self.api
                 .post_json(
                     &format!("{}/pulls/{number}/comments", Self::repo_path(repo)),
-                    &json!({ "body": body, "commit_id": sha, "path": path, "line": line, "side": "RIGHT" }),
+                    &json!({ "body": body, "commit_id": sha, "path": path, "line": line, "side": if at.side == Side::Old { "LEFT" } else { "RIGHT" } }),
                 )
                 .await
                 .map(|_| ())
         } else {
+            let position_key = if at.side == Side::Old {
+                "old_position"
+            } else {
+                "new_position"
+            };
             self.api
                 .post_json(
                     &format!("{}/pulls/{number}/reviews", Self::repo_path(repo)),
@@ -353,7 +359,11 @@ impl<C: HttpClient> GitHubLike<C> {
                         "event": "COMMENT",
                         "body": "",
                         "commit_id": sha,
-                        "comments": [{ "path": path, "body": body, "new_position": line }],
+                        "comments": [{
+                            "path": path,
+                            "body": body,
+                            (position_key): line,
+                        }],
                     }),
                 )
                 .await

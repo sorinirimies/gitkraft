@@ -322,7 +322,7 @@ pub struct HubState {
     /// The command palette, while open.
     pub palette: Option<super::palette::Palette>,
     /// Where the pending inline comment goes: `(path, line)`.
-    pub inline_anchor: Option<(String, u32)>,
+    pub inline_anchor: Option<gitkraft_platforms::diffpos::Anchor>,
     /// Image overlay.
     pub images: Images,
     /// Terminal graphics protocol for images.
@@ -980,14 +980,14 @@ impl HubState {
             .map(|d| d.diff.as_str())
             .unwrap_or_default();
         let pos = gitkraft_platforms::diffpos::positions(diff);
-        let Some((path, line)) = pos.get(self.detail.diff_cursor).and_then(|p| p.anchor()) else {
+        let Some(anchor) = pos.get(self.detail.diff_cursor).and_then(|p| p.anchor()) else {
             self.set_notice(
-                "move the cursor (j/k) onto an added or unchanged line first".into(),
+                "move the cursor (j/k) onto a changed or unchanged line first".into(),
                 false,
             );
             return;
         };
-        self.inline_anchor = Some((path.to_string(), line));
+        self.inline_anchor = Some(anchor);
         self.prompt = Some(Prompt {
             purpose: PromptPurpose::Inline,
             buffer: String::new(),
@@ -1024,11 +1024,7 @@ impl HubState {
             return;
         };
         let needs_workflow = !run.workflow.is_empty();
-        let gitkraft_hub::dispatch::Dispatch {
-            workflow,
-            git_ref,
-            inputs,
-        } = match gitkraft_hub::dispatch::parse(text, needs_workflow) {
+        let d = match gitkraft_hub::dispatch::parse(text, needs_workflow) {
             Ok(v) => v,
             Err(e) => {
                 self.set_notice(e, false);
@@ -1038,25 +1034,13 @@ impl HubState {
         let tx = self.tx.clone();
         rt.spawn(async move {
             let r = match api.ci(&run.repo.host) {
-                Some(ci) => ci
-                    .dispatch(&run.repo, &workflow, &git_ref, &inputs)
-                    .await
-                    .map_err(|e| e.to_string()),
+                Some(ci) => gitkraft_hub::dispatch::start(ci, &run.repo, &d).await,
                 None => Err("no account".into()),
             };
-            done(
-                &tx,
-                r,
-                format!(
-                    "started {} on {git_ref}",
-                    if workflow.is_empty() {
-                        "a pipeline"
-                    } else {
-                        &workflow
-                    }
-                ),
-                true,
-            );
+            match r {
+                Ok(msg) => done(&tx, Ok(()), msg, true),
+                Err(e) => done(&tx, Err(e), String::new(), true),
+            }
         });
     }
 
@@ -1444,7 +1428,7 @@ impl HubState {
     }
 
     fn submit_inline(&mut self, body: &str) {
-        let (Some(api), Some(rt), Some((path, line)), Some(pr)) = (
+        let (Some(api), Some(rt), Some(anchor), Some(pr)) = (
             self.api.clone(),
             self.handle(),
             self.inline_anchor.take(),
@@ -1459,12 +1443,17 @@ impl HubState {
         rt.spawn(async move {
             let r = match api.backend(&pr.repo.host) {
                 Some(b) => b
-                    .comment_on_line(&pr.repo, pr.number, &path, line, &body)
+                    .comment_on_line(&pr.repo, pr.number, &anchor, &body)
                     .await
                     .map_err(|e| e.to_string()),
                 None => Err("no account".into()),
             };
-            done(&tx, r, format!("commented on {path}:{line}"), true);
+            done(
+                &tx,
+                r,
+                format!("commented on {}:{}", anchor.path, anchor.line),
+                true,
+            );
         });
     }
 

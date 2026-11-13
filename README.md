@@ -88,6 +88,10 @@ Setup is idempotent, edits only a marked block of `~/.ssh/config` (and saves a b
 passphrase (`--passphrase` lets `ssh-keygen` ask). The Hub's **SSH keys** view (`K`) does the same from the UI.
 `clone_via = "ssh" | "https"` per `[[account]]` records which transport you prefer.
 
+**Workflow inputs.** `D` (and the GUI's Dispatch) reads `workflow_dispatch.inputs` from the workflow file: defaults
+fill what you leave out, `choice`/`boolean`/`number` values are checked, and a missing required input is named.
+**Inline comments** work on removed lines too (old side), and in the GUI by clicking a diff line.
+
 **Palette and more.** In the TUI `:` or Ctrl+P, in the GUI Ctrl/Cmd+P or the **Commands** button, opens a fuzzy
 command palette with every action that applies to the selection. The GUI has a **Check out** button for pull
 requests (the project must be open in a tab). `w` checks the selected pull request out into a worktree next to your checkout; `D` starts a workflow

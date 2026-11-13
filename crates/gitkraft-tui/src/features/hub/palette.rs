@@ -57,6 +57,11 @@ pub fn entries_for(hub: &HubState) -> Vec<Entry> {
             e("Pull request: next tab", 'v', d),
         ]);
     }
+    if hub.focus == super::state::Focus::Detail
+        && hub.detail.tab == Some(super::state::DetailTab::Diff)
+    {
+        out.push(e("Diff: comment on the line under the cursor", 'c', d));
+    }
     if hub.selected_issue().is_some() {
         out.extend([
             e("Issue: comment", 'c', d),

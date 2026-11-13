@@ -342,10 +342,11 @@ impl<C: HttpClient> GitLab<C> {
         &self,
         repo: &RepoId,
         number: u64,
-        path: &str,
-        line: u32,
+        at: &crate::diffpos::Anchor,
         body: &str,
     ) -> Result<()> {
+        use crate::diffpos::Side;
+        let (path, line) = (at.path.as_str(), at.line);
         #[derive(Deserialize)]
         struct Refs {
             #[serde(default)]
@@ -364,6 +365,11 @@ impl<C: HttpClient> GitLab<C> {
         let r = mr.diff_refs.ok_or(PlatformError::Unsupported(
             "this merge request has no diff refs yet",
         ))?;
+        let line_key = if at.side == Side::Old {
+            "old_line"
+        } else {
+            "new_line"
+        };
         self.api
             .post_json(
                 &format!("{item}/discussions"),
@@ -376,7 +382,7 @@ impl<C: HttpClient> GitLab<C> {
                         "head_sha": r.head_sha,
                         "old_path": path,
                         "new_path": path,
-                        "new_line": line,
+                        (line_key): line,
                     },
                 }),
             )

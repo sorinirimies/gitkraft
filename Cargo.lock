@@ -1825,6 +1825,7 @@ dependencies = [
 name = "gitkraft-ci"
 version = "1.4.1"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "gitkraft-platforms",
  "gitkraft-settings",

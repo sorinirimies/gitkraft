@@ -203,6 +203,43 @@ impl<C: HttpClient> ActionsBackend<C> {
             .collect())
     }
 
+    /// The text of a workflow file at `git_ref` (`.github/workflows` first, then `.gitea/workflows`).
+    pub(crate) async fn workflow_file(
+        &self,
+        repo: &RepoId,
+        file: &str,
+        git_ref: &str,
+    ) -> Result<String> {
+        use base64::Engine as _;
+        let mut last = None;
+        for dir in [".github/workflows", ".gitea/workflows"] {
+            let path = format!(
+                "/repos/{}/{}/contents/{dir}/{}?ref={}",
+                repo.owner,
+                repo.name,
+                gitkraft_platforms::url_encode(file),
+                gitkraft_platforms::url_encode(git_ref)
+            );
+            match self.api.get::<serde_json::Value>(&path).await {
+                Ok(v) => {
+                    let b64: String = v
+                        .get("content")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or_default()
+                        .split_whitespace()
+                        .collect();
+                    let bytes = base64::engine::general_purpose::STANDARD
+                        .decode(b64)
+                        .map_err(|e| gitkraft_platforms::PlatformError::Parse(e.to_string()))?;
+                    return Ok(String::from_utf8_lossy(&bytes).into_owned());
+                }
+                Err(e) => last = Some(e),
+            }
+        }
+        Err(last
+            .unwrap_or_else(|| gitkraft_platforms::PlatformError::NotFound("workflow file".into())))
+    }
+
     pub(crate) async fn dispatch(
         &self,
         repo: &RepoId,

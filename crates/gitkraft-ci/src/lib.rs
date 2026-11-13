@@ -8,6 +8,7 @@ pub mod backend;
 pub mod events;
 mod github_like;
 mod gitlab;
+pub mod inputs;
 pub mod log;
 pub mod model;
 pub mod stats;
@@ -19,3 +20,4 @@ pub use model::{Artifact, Job, RerunScope, Run, RunDetail, RunQuery, Status, Ste
 pub use backend::CiBackend;
 pub use github_like::ActionsBackend;
 pub use gitlab::GitLabCi;
+pub use inputs::{WorkflowInput, workflow_inputs};

@@ -794,7 +794,7 @@ mod tests {
         assert!(s.prompt.is_none(), "cursor 0 is a header line");
         assert!(
             s.fresh_notice()
-                .is_some_and(|(t, ok)| t.contains("added or unchanged") && !ok)
+                .is_some_and(|(t, ok)| t.contains("changed or unchanged") && !ok)
         );
         for _ in 0..5 {
             chars(&mut s, "j");
@@ -809,7 +809,10 @@ mod tests {
             s.prompt.as_ref().map(|p| p.purpose),
             Some(PromptPurpose::Inline)
         );
-        assert_eq!(s.inline_anchor, Some(("a".to_string(), 5)));
+        assert_eq!(
+            s.inline_anchor.as_ref().map(|a| (a.path.as_str(), a.line)),
+            Some(("a", 5))
+        );
         for _ in 0..30 {
             chars(&mut s, "j");
         }
@@ -819,6 +822,30 @@ mod tests {
         );
         key_outcome(&mut s, key(KeyCode::Esc));
         assert!(s.prompt.is_none());
+        // A removed line is commented on at its old line number.
+        s.detail.diff_cursor = 4;
+        chars(&mut s, "c");
+        let a = s.inline_anchor.as_ref().expect("anchor");
+        assert_eq!(
+            (a.path.as_str(), a.line, a.side),
+            ("a", 1, gitkraft_platforms::diffpos::Side::Old)
+        );
+    }
+
+    #[test]
+    fn the_palette_offers_an_inline_comment_only_on_the_diff() {
+        let mut s = state();
+        let has = |s: &HubState| {
+            palette::entries_for(s)
+                .iter()
+                .any(|e| e.label.starts_with("Diff: comment"))
+        };
+        assert!(!has(&s));
+        s.detail.tab = Some(DetailTab::Diff);
+        s.focus = Focus::Detail;
+        assert!(has(&s));
+        s.focus = Focus::List;
+        assert!(!has(&s));
     }
 
     #[test]
