@@ -69,10 +69,47 @@ pub fn token_from_cli(kind: PlatformKind, host: &str) -> Option<Secret> {
     (!token.is_empty()).then(|| Secret::new(token))
 }
 
-/// Resolves a token for `host`: environment, then CLI. Tokens are never stored by gitkraft.
+/// The `password=` of a `git credential fill` answer.
+pub fn password_from_credential(output: &str) -> Option<Secret> {
+    output
+        .lines()
+        .find_map(|l| l.strip_prefix("password="))
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(Secret::new)
+}
+
+/// Asks git's credential helper (keychain, `gh auth setup-git`, …) for the https password of
+/// `host`, which for the platforms is a personal access token. Never prompts.
+pub fn token_from_git_credential(host: &str) -> Option<Secret> {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = Command::new("git")
+        .args(["credential", "fill"])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    child
+        .stdin
+        .take()?
+        .write_all(format!("protocol=https\nhost={host}\n\n").as_bytes())
+        .ok()?;
+    let out = child.wait_with_output().ok()?;
+    out.status
+        .success()
+        .then(|| password_from_credential(&String::from_utf8_lossy(&out.stdout)))
+        .flatten()
+}
+
+/// Resolves a token for `host`: environment, then the platform CLI, then git's credential
+/// helper. Tokens are never stored by gitkraft.
 pub fn resolve_token(kind: PlatformKind, host: &str) -> Option<Secret> {
     token_from_env(&env_var_names(kind, host), |n| std::env::var(n).ok())
         .or_else(|| token_from_cli(kind, host))
+        .or_else(|| token_from_git_credential(host))
 }
 
 #[cfg(test)]
@@ -88,6 +125,17 @@ mod tests {
             env_var_names(PlatformKind::GitLab, "git-lab.example.com")[0],
             "GITKRAFT_TOKEN_GIT_LAB_EXAMPLE_COM"
         );
+    }
+
+    #[test]
+    fn the_credential_answer_yields_its_password() {
+        let out = "protocol=https\nhost=github.com\nusername=me\npassword=ghp_secret\n";
+        assert_eq!(
+            password_from_credential(out).map(|s| s.expose().to_string()),
+            Some("ghp_secret".into())
+        );
+        assert!(password_from_credential("username=me\npassword=\n").is_none());
+        assert!(password_from_credential("").is_none());
     }
 
     #[test]

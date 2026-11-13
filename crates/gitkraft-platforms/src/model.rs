@@ -296,3 +296,18 @@ pub struct ListQuery {
     /// Paging.
     pub page: Page,
 }
+
+/// An SSH public key registered on an account.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SshKey {
+    /// Platform id (used to delete it).
+    pub id: String,
+    /// Title shown on the platform.
+    pub title: String,
+    /// `<type> <base64>`.
+    pub key: String,
+    /// `SHA256:…`, when it could be worked out.
+    pub fingerprint: Option<String>,
+    /// When it was added.
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+}

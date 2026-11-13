@@ -51,6 +51,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         View::Pulse => {
             render_pulse(hub, frame, rows[2], &theme);
         }
+        View::Keys => render_keys(hub, frame, rows[2], &theme, &mut hits),
     }
     render_status(hub, frame, rows[3], &theme);
     hub.set_hits(hits);
@@ -146,7 +147,11 @@ fn render_title(
         Rect::new(x, area.y, brand.len() as u16, 1),
     );
     x += brand.len() as u16;
-    for (view, label) in [(View::Dashboard, " Dashboard "), (View::Pulse, " Pulse ")] {
+    for (view, label) in [
+        (View::Dashboard, " Dashboard "),
+        (View::Pulse, " Pulse "),
+        (View::Keys, " SSH keys "),
+    ] {
         let w = label.len() as u16;
         if x + w > area.x + area.width {
             break;
@@ -1186,6 +1191,98 @@ fn render_log(
     }
 }
 
+// ── SSH keys ─────────────────────────────────────────────────────────────────
+
+fn render_keys(
+    hub: &mut HubState,
+    frame: &mut Frame,
+    area: Rect,
+    theme: &UiTheme,
+    hits: &mut Vec<Hit>,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.border_inactive))
+        .title(" SSH keys · git over ssh without passwords ");
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    if inner.height == 0 || inner.width == 0 {
+        return;
+    }
+    let Some(data) = hub.keys.data.as_ref() else {
+        let text = if hub.keys.loading {
+            "Loading keys…"
+        } else {
+            "No keys loaded. Press r."
+        };
+        frame.render_widget(Paragraph::new(Span::styled(text, muted(theme))), inner);
+        return;
+    };
+    let mut lines: Vec<Line> = Vec::new();
+    let mut shown = Vec::new();
+    for (i, r) in data.rows.iter().enumerate() {
+        let selected = i == hub.keys.row;
+        let mark = if r.mine { "●" } else { " " };
+        let when = r
+            .key
+            .created_at
+            .map(|d| d.format("%Y-%m-%d").to_string())
+            .unwrap_or_default();
+        let style = if selected {
+            Style::default().fg(theme.bg).bg(theme.accent)
+        } else {
+            Style::default().fg(theme.text_primary)
+        };
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!(" {mark} "),
+                if selected {
+                    style
+                } else {
+                    Style::default().fg(theme.success)
+                },
+            ),
+            Span::styled(format!("{:<16} ", r.host), style),
+            Span::styled(format!("{:<28} ", r.key.title), style),
+            Span::styled(
+                format!("{} ", r.key.fingerprint.as_deref().unwrap_or("-")),
+                if selected { style } else { muted(theme) },
+            ),
+            Span::styled(when, if selected { style } else { muted(theme) }),
+        ]));
+        shown.push(i);
+    }
+    if lines.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "No SSH keys on any account. Press s to create one for this machine and register it.",
+            muted(theme),
+        )));
+    }
+    lines.push(Line::default());
+    for e in &data.errors {
+        lines.push(Line::from(Span::styled(
+            format!(" ✘ {e}"),
+            Style::default().fg(theme.error),
+        )));
+    }
+    lines.push(Line::from(Span::styled(
+        format!(
+            " ● = a key this machine holds · accounts: {}",
+            data.hosts.join(", ")
+        ),
+        muted(theme),
+    )));
+    for (n, i) in shown.iter().enumerate() {
+        if (n as u16) < inner.height {
+            hits.push(Hit {
+                rect: Rect::new(inner.x, inner.y + n as u16, inner.width, 1),
+                target: Target::Row(*i),
+            });
+        }
+    }
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
 // ── Pulse ────────────────────────────────────────────────────────────────────
 
 fn render_pulse(hub: &mut HubState, frame: &mut Frame, area: Rect, theme: &UiTheme) {
@@ -1338,6 +1435,9 @@ fn hints(hub: &HubState) -> &'static str {
     if hub.log.is_some() {
         return "j/k scroll · / search · n/N next · e first error · a errors · space fold · g/G ends · Esc close";
     }
+    if hub.view == View::Keys {
+        return "j/k select · s set up this machine · t test · d remove key · r refresh · Tab dashboard · q back";
+    }
     if hub.view == View::Pulse {
         return "r refresh · [ ] repo · 1/2/3/4 = 7/30/90/365 days · Tab dashboard · q back";
     }
@@ -1451,7 +1551,77 @@ mod tests {
         assert_eq!(count(|t| matches!(t, Target::Row(_))), 5);
         assert_eq!(count(|t| matches!(t, Target::Divider)), 1);
         assert_eq!(count(|t| matches!(t, Target::Bell)), 1);
-        assert_eq!(count(|t| matches!(t, Target::ViewTab(_))), 2);
+        assert_eq!(count(|t| matches!(t, Target::ViewTab(_))), 3);
+    }
+
+    fn keys_data() -> gitkraft_hub::keys::KeysData {
+        use gitkraft_hub::keys::{KeyRow, KeysData};
+        use gitkraft_platforms::model::SshKey;
+        let key = |id: &str, title: &str| SshKey {
+            id: id.into(),
+            title: title.into(),
+            key: String::new(),
+            fingerprint: Some(format!("SHA256:{id}")),
+            created_at: None,
+        };
+        KeysData {
+            hosts: vec!["github.com".into(), "gitlab.com".into()],
+            rows: vec![
+                KeyRow {
+                    host: "github.com".into(),
+                    key: key("1", "gitkraft laptop"),
+                    mine: true,
+                },
+                KeyRow {
+                    host: "gitlab.com".into(),
+                    key: key("2", "old"),
+                    mine: false,
+                },
+            ],
+            errors: vec!["codeberg.org: 403".into()],
+        }
+    }
+
+    #[test]
+    fn the_keys_view_lists_keys_marks_ours_and_shows_failures() {
+        let mut hub = state();
+        hub.view = View::Keys;
+        hub.keys.data = Some(keys_data());
+        let mut app = app_with(hub);
+        let text = draw(&mut app, 120, 20);
+        for want in [
+            "SSH keys",
+            "gitkraft laptop",
+            "gitlab.com",
+            "● ",
+            "codeberg.org: 403",
+            "accounts: github.com, gitlab.com",
+        ] {
+            assert!(text.contains(want), "{want} in\n{text}");
+        }
+        let hub = app.hub.as_ref().expect("hub");
+        assert_eq!(
+            hub.hits
+                .iter()
+                .filter(|h| matches!(h.target, Target::Row(_)))
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn the_keys_view_explains_empty_and_loading_states() {
+        let mut hub = state();
+        hub.view = View::Keys;
+        let mut app = app_with(hub);
+        assert!(draw(&mut app, 100, 12).contains("No keys loaded"));
+        app.hub.as_mut().expect("hub").keys.loading = true;
+        assert!(draw(&mut app, 100, 12).contains("Loading keys"));
+        app.hub.as_mut().expect("hub").keys.data = Some(Default::default());
+        assert!(draw(&mut app, 100, 12).contains("Press s to create one"));
+        for (w, h) in [(1, 1), (5, 3), (30, 5)] {
+            draw(&mut app, w, h);
+        }
     }
 
     #[test]

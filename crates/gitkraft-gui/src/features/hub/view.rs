@@ -29,6 +29,7 @@ pub fn view(app: &GitKraft) -> Element<'_, Message> {
     let body: El<'_> = match hub.view {
         HubView::Dashboard => dashboard(hub, &c),
         HubView::Pulse => pulse(hub, &c),
+        HubView::Keys => keys(hub, &c),
     };
     let screen = column![
         top_bar(hub, &c),
@@ -101,6 +102,7 @@ fn top_bar<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
             text("GitKraft Hub").size(15).color(c.accent),
             tab("Dashboard", HubView::Dashboard),
             tab("Pulse", HubView::Pulse),
+            tab("SSH keys", HubView::Keys),
             Space::new().width(Length::Fill),
             button(text(bell).size(12).color(bell_color))
                 .on_press(HubMessage::ToggleBell)
@@ -942,6 +944,140 @@ fn log_view<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
         .into()
 }
 
+// ── SSH keys ─────────────────────────────────────────────────────────────────
+
+fn keys<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
+    let mut col = column![].spacing(10).padding(14);
+    col = col.push(
+        text("SSH keys · git over ssh without passwords")
+            .size(14)
+            .color(c.text_primary),
+    );
+    let Some(data) = &hub.keys.data else {
+        let note = if hub.keys.loading {
+            "Loading keys…"
+        } else {
+            "No keys loaded yet."
+        };
+        return col.push(text(note).size(13).color(c.text_secondary)).into();
+    };
+    let mut list = column![].spacing(2);
+    for (i, r) in data.rows.iter().enumerate() {
+        let selected = hub.keys.row == i;
+        let sel = c.selection;
+        let line = container(
+            row![
+                text(if r.mine { "●" } else { " " }).size(13).color(c.green),
+                text(r.host.clone())
+                    .size(13)
+                    .color(c.accent)
+                    .width(Length::Fixed(140.0)),
+                text(r.key.title.clone())
+                    .size(13)
+                    .color(c.text_primary)
+                    .width(Length::Fixed(220.0)),
+                text(r.key.fingerprint.clone().unwrap_or_else(|| "-".into()))
+                    .size(12)
+                    .color(c.text_secondary),
+                text(
+                    r.key
+                        .created_at
+                        .map(|d| d.format("%Y-%m-%d").to_string())
+                        .unwrap_or_default()
+                )
+                .size(12)
+                .color(c.text_secondary),
+            ]
+            .spacing(10),
+        )
+        .padding([5, 8])
+        .width(Length::Fill)
+        .style(move |_| container::Style {
+            background: selected.then(|| sel.into()),
+            ..container::Style::default()
+        });
+        list = list.push(mouse_area(line).on_press(HubMessage::SelectKey(i)));
+    }
+    if data.rows.is_empty() {
+        list = list.push(
+            text("No SSH keys on any account. Set one up for this machine below.")
+                .size(13)
+                .color(c.text_secondary),
+        );
+    }
+    col = col.push(scrollable(list).height(Length::Fill));
+    for e in &data.errors {
+        col = col.push(text(format!("✘ {e}")).size(12).color(c.red));
+    }
+    col = col.push(
+        text(format!(
+            "● = a key this machine holds · accounts: {}",
+            data.hosts.join(", ")
+        ))
+        .size(11)
+        .color(c.text_secondary),
+    );
+    let host = hub.keys_host();
+    let mut actions = row![].spacing(6).align_y(Alignment::Center);
+    if hub.keys.confirm_revoke {
+        let what = hub
+            .selected_key()
+            .map(|r| {
+                format!(
+                    "Remove “{}” from {}?{}",
+                    r.key.title,
+                    r.host,
+                    if r.mine {
+                        " It is this machine's key."
+                    } else {
+                        ""
+                    }
+                )
+            })
+            .unwrap_or_default();
+        actions = actions
+            .push(text(what).size(12).color(c.yellow))
+            .push(
+                button(text("Yes, remove").size(12).color(c.red))
+                    .on_press(HubMessage::ConfirmRevoke)
+                    .style(theme::toolbar_button)
+                    .padding([4, 10]),
+            )
+            .push(
+                button(text("No").size(12))
+                    .on_press(HubMessage::CancelRevoke)
+                    .style(theme::toolbar_button)
+                    .padding([4, 10]),
+            );
+    } else {
+        let mut set = button(
+            text(match &host {
+                Some(h) => format!("Set up {h} on this machine"),
+                None => "Set up".into(),
+            })
+            .size(12)
+            .color(c.text_primary),
+        )
+        .style(theme::toolbar_button)
+        .padding([4, 10]);
+        let mut test = button(text("Test connection").size(12).color(c.text_primary))
+            .style(theme::toolbar_button)
+            .padding([4, 10]);
+        if let Some(h) = &host {
+            set = set.on_press(HubMessage::SetupKeys(h.clone()));
+            test = test.on_press(HubMessage::TestKeys(h.clone()));
+        }
+        let mut rm = button(text("Remove key").size(12).color(c.red))
+            .style(theme::toolbar_button)
+            .padding([4, 10]);
+        if hub.selected_key().is_some() {
+            rm = rm.on_press(HubMessage::AskRevoke);
+        }
+        actions = actions.push(set).push(test).push(rm);
+    }
+    col.push(actions).height(Length::Fill).into()
+}
+
 // ── Pulse ────────────────────────────────────────────────────────────────────
 
 fn pulse<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
@@ -1212,6 +1348,39 @@ mod tests {
         let _ = view(&app);
         // Without a hub the hub view is an empty placeholder, not a panic.
         let _ = view(&GitKraft::new());
+    }
+
+    #[test]
+    fn the_keys_view_builds_loading_loaded_and_asking() {
+        use gitkraft_hub::keys::{KeyRow, KeysData};
+        use gitkraft_platforms::model::SshKey;
+        let mut app = app();
+        app.hub.as_mut().expect("hub").view = HubView::Keys;
+        let _ = view(&app);
+        app.hub.as_mut().expect("hub").keys.loading = true;
+        let _ = view(&app);
+        let key = SshKey {
+            id: "1".into(),
+            title: "laptop".into(),
+            key: String::new(),
+            fingerprint: Some("SHA256:x".into()),
+            created_at: None,
+        };
+        let hub = app.hub.as_mut().expect("hub");
+        hub.keys.data = Some(Arc::new(KeysData {
+            hosts: vec!["github.com".into()],
+            rows: vec![KeyRow {
+                host: "github.com".into(),
+                key,
+                mine: true,
+            }],
+            errors: vec!["x: 403".into()],
+        }));
+        let _ = view(&app);
+        app.hub.as_mut().expect("hub").keys.confirm_revoke = true;
+        let _ = view(&app);
+        app.hub.as_mut().expect("hub").keys.data = Some(Arc::new(KeysData::default()));
+        let _ = view(&app);
     }
 
     #[test]

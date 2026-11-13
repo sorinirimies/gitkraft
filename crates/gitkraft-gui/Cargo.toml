@@ -21,6 +21,7 @@ path = "src/main.rs"
 
 [dependencies]
 gitkraft-core = { workspace = true }
+dirs = { workspace = true }
 gitkraft-hub  = { workspace = true }
 gitkraft-ci   = { workspace = true }
 gitkraft-settings  = { workspace = true }

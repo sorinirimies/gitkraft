@@ -42,6 +42,8 @@ pub enum View {
     Dashboard,
     /// Activity graphs.
     Pulse,
+    /// SSH keys of every account.
+    Keys,
 }
 
 /// Which pane keys act on.
@@ -177,6 +179,8 @@ pub enum Action {
     Rerun(RerunScope),
     /// Cancel a CI run.
     CancelRun,
+    /// Remove the selected SSH key from its account.
+    RevokeKey,
 }
 
 /// A pending confirmation.
@@ -200,6 +204,17 @@ pub struct PulseState {
     /// Days covered by `data`.
     pub days: u32,
     /// Something is loading.
+    pub loading: bool,
+}
+
+/// State of the SSH keys view.
+#[derive(Debug, Default)]
+pub struct KeysState {
+    /// What was loaded.
+    pub data: Option<gitkraft_hub::keys::KeysData>,
+    /// Selected row.
+    pub row: usize,
+    /// A load is running.
     pub loading: bool,
 }
 
@@ -251,6 +266,7 @@ enum Msg {
         data: Pulse,
     },
     Contributions(SectionResult<ActivityDay>),
+    Keys(gitkraft_hub::keys::KeysData),
     Done {
         text: String,
         ok: bool,
@@ -293,6 +309,8 @@ pub struct HubState {
     pub last_click: Option<(Instant, Target)>,
     /// Pulse view.
     pub pulse: PulseState,
+    /// SSH keys view.
+    pub keys: KeysState,
     /// Image overlay.
     pub images: Images,
     /// Terminal graphics protocol for images.
@@ -357,6 +375,7 @@ impl HubState {
             hits: Vec::new(),
             last_click: None,
             pulse: PulseState::default(),
+            keys: KeysState::default(),
             images: Images::default(),
             picker: Picker::halfblocks(),
             client: None,
@@ -885,6 +904,123 @@ impl HubState {
         });
     }
 
+    // ── SSH keys ─────────────────────────────────────────────────────────────
+
+    /// The selected key row.
+    pub fn selected_key(&self) -> Option<&gitkraft_hub::keys::KeyRow> {
+        self.keys.data.as_ref()?.rows.get(self.keys.row)
+    }
+
+    /// Host to act on: the selected key's, else the first account's.
+    pub fn keys_host(&self) -> Option<String> {
+        self.selected_key()
+            .map(|r| r.host.clone())
+            .or_else(|| self.keys.data.as_ref()?.hosts.first().cloned())
+    }
+
+    /// Moves the key selection.
+    pub fn move_key(&mut self, delta: isize) {
+        let n = self.keys.data.as_ref().map_or(0, |d| d.rows.len());
+        if n > 0 {
+            self.keys.row = (self.keys.row as isize + delta).clamp(0, n as isize - 1) as usize;
+        }
+    }
+
+    /// Loads the keys of every account.
+    pub fn load_keys(&mut self) {
+        let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {
+            return;
+        };
+        self.keys.loading = true;
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            let _ = tx.send(Msg::Keys(reload_keys(&api).await));
+        });
+    }
+
+    fn revoke_selected_key(&mut self) {
+        let (Some(api), Some(rt), Some(row)) = (
+            self.api.clone(),
+            self.handle(),
+            self.selected_key().cloned(),
+        ) else {
+            return;
+        };
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            let r = gitkraft_hub::keys::revoke(&api, &row.host, &row.key.id).await;
+            let (text, ok) = match r {
+                Ok(t) => (t, true),
+                Err(e) => (e, false),
+            };
+            let _ = tx.send(Msg::Done {
+                text,
+                ok,
+                reload: false,
+            });
+            let _ = tx.send(Msg::Keys(reload_keys(&api).await));
+        });
+    }
+
+    /// Creates or reuses this machine's key for the selected account and registers it.
+    pub fn setup_keys_host(&mut self) {
+        let (Some(api), Some(rt), Some(host)) = (self.api.clone(), self.handle(), self.keys_host())
+        else {
+            self.set_notice("no account to set up".into(), false);
+            return;
+        };
+        self.set_notice(format!("setting up ssh for {host}…"), true);
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            let dir = ssh_dir();
+            let r = gitkraft_hub::keys::setup_host(
+                &api,
+                &host,
+                &dir,
+                &gitkraft_platforms::ssh::SystemSsh,
+                &machine_name(),
+            )
+            .await;
+            let (text, ok) = match r {
+                Ok(t) => (t.lines().collect::<Vec<_>>().join(" · "), true),
+                Err(e) => (e, false),
+            };
+            let _ = tx.send(Msg::Done {
+                text,
+                ok,
+                reload: false,
+            });
+            let _ = tx.send(Msg::Keys(reload_keys(&api).await));
+        });
+    }
+
+    /// Tests the connection to the selected account over ssh.
+    pub fn test_keys_host(&mut self) {
+        let (Some(rt), Some(host)) = (self.handle(), self.keys_host()) else {
+            return;
+        };
+        self.set_notice(format!("testing ssh to {host}…"), true);
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            let (p, line) = tokio::task::spawn_blocking(move || {
+                gitkraft_hub::keys::test_host(&gitkraft_platforms::ssh::SystemSsh, &host)
+            })
+            .await
+            .unwrap_or_else(|e| {
+                (
+                    gitkraft_platforms::ssh::Probe::Other(e.to_string()),
+                    e.to_string(),
+                )
+            });
+            let ok = matches!(p, gitkraft_platforms::ssh::Probe::Authenticated { .. });
+            let _ = tx.send(Msg::Done {
+                text: line,
+                ok,
+                reload: false,
+            });
+        });
+    }
+
     // ── Images ───────────────────────────────────────────────────────────────
 
     /// Image URLs in the selected item's description and comments.
@@ -952,6 +1088,25 @@ impl HubState {
 
     /// Asks before doing `action` on the selected item.
     pub fn ask(&mut self, action: Action) {
+        if action == Action::RevokeKey {
+            match self.selected_key() {
+                Some(r) => {
+                    let text = format!(
+                        "Remove “{}” from {}?{} y/n",
+                        r.key.title,
+                        r.host,
+                        if r.mine {
+                            " It is this machine's key: git over ssh stops working until you run setup again."
+                        } else {
+                            ""
+                        }
+                    );
+                    self.confirm = Some(Confirm { action, text });
+                }
+                None => self.set_notice("select a key first".into(), false),
+            }
+            return;
+        }
         let text = match (
             action,
             self.selected_pr().is_some(),
@@ -1062,6 +1217,7 @@ impl HubState {
                     done(&tx, r, "re-run started".into(), true);
                 });
             }
+            Action::RevokeKey => self.revoke_selected_key(),
             Action::CancelRun => {
                 let Some(run) = self.selected_run().cloned() else {
                     return;
@@ -1385,6 +1541,14 @@ impl HubState {
                     self.pulse.loading = false;
                 }
             }
+            Msg::Keys(data) => {
+                self.keys.loading = false;
+                if let Some(e) = data.errors.first() {
+                    self.set_notice(e.clone(), false);
+                }
+                self.keys.row = self.keys.row.min(data.rows.len().saturating_sub(1));
+                self.keys.data = Some(data);
+            }
             Msg::Contributions(c) => {
                 if let Some(e) = c.errors.first() {
                     self.set_notice(e.clone(), false);
@@ -1461,6 +1625,29 @@ async fn fetch_image(client: &Client, url: &str) -> Result<image::DynamicImage, 
     tokio::task::spawn_blocking(move || decode(&res.body))
         .await
         .map_err(|e| e.to_string())?
+}
+
+fn ssh_dir() -> PathBuf {
+    dirs::home_dir().map_or_else(|| PathBuf::from(".ssh"), |h| h.join(".ssh"))
+}
+
+fn machine_name() -> String {
+    std::process::Command::new("hostname")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "this machine".into())
+}
+
+async fn reload_keys(api: &Api) -> gitkraft_hub::keys::KeysData {
+    let mine = tokio::task::spawn_blocking(|| {
+        gitkraft_hub::keys::local_fingerprints(&ssh_dir(), &gitkraft_platforms::ssh::SystemSsh)
+    })
+    .await
+    .unwrap_or_default();
+    gitkraft_hub::keys::load(api, &mine).await
 }
 
 fn done(tx: &mpsc::Sender<Msg>, result: Result<(), String>, ok_text: String, reload: bool) {

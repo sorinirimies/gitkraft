@@ -79,6 +79,52 @@ impl RepoId {
     }
 }
 
+/// How a remote URL reaches the platform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Transport {
+    /// `git@host:owner/name.git`
+    Ssh,
+    /// `https://host/owner/name.git`
+    #[default]
+    Https,
+}
+
+impl Transport {
+    /// Parses `ssh` / `https` (also `http`).
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "ssh" => Some(Self::Ssh),
+            "https" | "http" => Some(Self::Https),
+            _ => None,
+        }
+    }
+
+    /// Which transport a remote URL uses; `None` for local paths and `file://`.
+    pub fn of_url(url: &str) -> Option<Self> {
+        let u = url.trim();
+        if u.starts_with("https://") || u.starts_with("http://") {
+            Some(Self::Https)
+        } else if u.starts_with("ssh://")
+            || (u.contains('@') && u.contains(':') && !u.contains("://"))
+        {
+            Some(Self::Ssh)
+        } else {
+            None
+        }
+    }
+}
+
+impl RepoId {
+    /// The clone URL over `transport`.
+    pub fn clone_url(&self, transport: Transport) -> String {
+        match transport {
+            Transport::Ssh => format!("git@{}:{}/{}.git", self.host, self.owner, self.name),
+            Transport::Https => format!("https://{}/{}/{}.git", self.host, self.owner, self.name),
+        }
+    }
+}
+
 impl std::fmt::Display for RepoId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.key())
@@ -161,6 +207,33 @@ impl HostMap {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn clone_urls_round_trip_through_the_parser_for_both_transports() {
+        let id = RepoId::new("git.example.com", "group/sub", "app");
+        for t in [Transport::Ssh, Transport::Https] {
+            let url = id.clone_url(t);
+            assert_eq!(parse_remote_url(&url), Some(id.clone()), "{url}");
+            assert_eq!(Transport::of_url(&url), Some(t));
+        }
+        assert_eq!(
+            RepoId::new("github.com", "o", "r").clone_url(Transport::Ssh),
+            "git@github.com:o/r.git"
+        );
+    }
+
+    #[test]
+    fn transports_are_detected_and_parsed() {
+        assert_eq!(
+            Transport::of_url("ssh://git@host/o/r"),
+            Some(Transport::Ssh)
+        );
+        assert_eq!(Transport::of_url("/home/me/repo"), None);
+        assert_eq!(Transport::of_url("file:///x"), None);
+        assert_eq!(Transport::parse(" SSH "), Some(Transport::Ssh));
+        assert_eq!(Transport::parse("http"), Some(Transport::Https));
+        assert_eq!(Transport::parse("ftp"), None);
+    }
+
     use super::*;
 
     #[test]

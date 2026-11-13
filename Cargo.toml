@@ -43,6 +43,8 @@ notify-rust  = "4"
 toml         = "1"
 topcoat      = "0.10"
 toml_edit    = "0.25"
+sha2         = "0.10"
+base64       = "0.22"
 
 # GUI (Iced)
 iced         = { version = "0.14", features = ["advanced", "canvas", "tokio"] }

@@ -1801,6 +1801,7 @@ name = "gitkraft"
 version = "1.4.1"
 dependencies = [
  "chrono",
+ "dirs",
  "futures",
  "gitkraft-ci",
  "gitkraft-core",
@@ -1868,12 +1869,15 @@ dependencies = [
 name = "gitkraft-platforms"
 version = "1.4.1"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "gitkraft-settings",
  "notify-rust",
  "reqwest",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tracing",

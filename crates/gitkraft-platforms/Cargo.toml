@@ -19,6 +19,8 @@ thiserror   = { workspace = true }
 reqwest     = { workspace = true }
 tokio       = { workspace = true }
 tracing     = { workspace = true }
+sha2        = { workspace = true }
+base64      = { workspace = true }
 notify-rust = { workspace = true, optional = true }
 
 [features]
@@ -28,6 +30,7 @@ desktop = ["dep:notify-rust"]
 
 [dev-dependencies]
 tokio = { workspace = true }
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

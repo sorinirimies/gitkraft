@@ -93,6 +93,7 @@ pub fn key_outcome(hub: &mut HubState, key: KeyEvent) -> Outcome {
     }
     match hub.view {
         View::Pulse => pulse_key(hub, key),
+        View::Keys => keys_key(hub, key),
         View::Dashboard => dashboard_key(hub, key),
     }
 }
@@ -173,6 +174,29 @@ fn pulse_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
     Outcome::Stay
 }
 
+fn open_keys(hub: &mut HubState) {
+    hub.view = View::Keys;
+    if hub.keys.data.is_none() && !hub.keys.loading {
+        hub.load_keys();
+    }
+}
+
+fn keys_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
+    match key.code {
+        KeyCode::Char('q') | KeyCode::Tab | KeyCode::BackTab => hub.view = View::Dashboard,
+        KeyCode::Down | KeyCode::Char('j') => hub.move_key(1),
+        KeyCode::Up | KeyCode::Char('k') => hub.move_key(-1),
+        KeyCode::Char('g') | KeyCode::Home => hub.move_key(isize::MIN / 2),
+        KeyCode::Char('G') | KeyCode::End => hub.move_key(isize::MAX / 2),
+        KeyCode::Char('r') => hub.load_keys(),
+        KeyCode::Char('d') | KeyCode::Delete => hub.ask(Action::RevokeKey),
+        KeyCode::Char('s') => hub.setup_keys_host(),
+        KeyCode::Char('t') => hub.test_keys_host(),
+        _ => {}
+    }
+    Outcome::Stay
+}
+
 fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
     let alt = key.modifiers.contains(KeyModifiers::ALT);
     match key.code {
@@ -181,6 +205,7 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
         KeyCode::BackTab => hub.next_section(-1),
         KeyCode::Right if alt => move_section(hub, 1),
         KeyCode::Left if alt => move_section(hub, -1),
+        KeyCode::Char('K') => open_keys(hub),
         KeyCode::Char('}') => move_section(hub, 1),
         KeyCode::Char('{') => move_section(hub, -1),
         KeyCode::Char(c @ '1'..='9') => hub.select_section((c as usize) - ('1' as usize)),
@@ -345,12 +370,15 @@ fn on_press(hub: &mut HubState, x: u16, y: u16) {
     match target {
         Target::ViewTab(v) => {
             hub.view = v;
-            if v == View::Pulse {
-                open_pulse(hub);
+            match v {
+                View::Pulse => open_pulse(hub),
+                View::Keys => open_keys(hub),
+                View::Dashboard => {}
             }
         }
         Target::Section(i) => hub.drag.press(x, y, Some(DragTarget::Section(i))),
         Target::Divider => hub.drag.press(x, y, Some(DragTarget::Divider)),
+        Target::Row(i) if hub.view == View::Keys => hub.keys.row = i,
         Target::Row(i) => {
             let double = hub.register_click(target);
             hub.focus = Focus::List;
@@ -399,6 +427,10 @@ fn on_press(hub: &mut HubState, x: u16, y: u16) {
 fn scroll(hub: &mut HubState, x: u16, y: u16, delta: isize) {
     if let Some(log) = hub.log.as_mut() {
         log.move_cursor(delta);
+        return;
+    }
+    if hub.view == View::Keys {
+        hub.move_key(delta);
         return;
     }
     match hub.hit_at(x, y) {
@@ -581,6 +613,113 @@ mod tests {
         };
         key_outcome(&mut s, alt_right);
         assert_eq!(s.active, 1);
+    }
+
+    fn with_keys(s: &mut HubState) {
+        use gitkraft_hub::keys::{KeyRow, KeysData};
+        use gitkraft_platforms::model::SshKey;
+        let row = |host: &str, id: &str, mine| KeyRow {
+            host: host.into(),
+            key: SshKey {
+                id: id.into(),
+                title: format!("t{id}"),
+                key: String::new(),
+                fingerprint: None,
+                created_at: None,
+            },
+            mine,
+        };
+        s.keys.data = Some(KeysData {
+            hosts: vec!["github.com".into(), "gitlab.com".into()],
+            rows: vec![row("github.com", "1", true), row("gitlab.com", "2", false)],
+            errors: vec![],
+        });
+    }
+
+    #[test]
+    fn keys_view_navigation_and_revoke_confirmation() {
+        let mut s = state();
+        chars(&mut s, "K");
+        assert_eq!(s.view, View::Keys);
+        with_keys(&mut s);
+        chars(&mut s, "j");
+        assert_eq!(s.keys.row, 1);
+        chars(&mut s, "j");
+        assert_eq!(s.keys.row, 1, "clamped");
+        chars(&mut s, "g");
+        assert_eq!(s.keys.row, 0);
+        chars(&mut s, "G");
+        assert_eq!(s.keys.row, 1);
+        assert_eq!(s.keys_host().as_deref(), Some("gitlab.com"));
+        chars(&mut s, "k");
+        chars(&mut s, "d");
+        let c = s.confirm.as_ref().expect("asks first");
+        assert!(
+            c.text.contains("t1")
+                && c.text.contains("github.com")
+                && c.text.contains("this machine's key"),
+            "{}",
+            c.text
+        );
+        assert_eq!(c.action, Action::RevokeKey);
+        s.confirm = None;
+        assert_eq!(key_outcome(&mut s, key(KeyCode::Tab)), Outcome::Stay);
+        assert_eq!(s.view, View::Dashboard);
+    }
+
+    #[test]
+    fn revoking_with_no_key_selected_says_so_and_setup_without_accounts_too() {
+        let mut s = state();
+        s.view = View::Keys;
+        chars(&mut s, "d");
+        assert!(s.confirm.is_none());
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, ok)| t.contains("select a key") && !ok)
+        );
+        chars(&mut s, "s");
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, ok)| t.contains("no account") && !ok)
+        );
+        assert_eq!(s.keys_host(), None);
+    }
+
+    #[test]
+    fn clicking_and_scrolling_in_the_keys_view_select_keys() {
+        let mut s = state();
+        s.view = View::Keys;
+        with_keys(&mut s);
+        s.set_hits(vec![
+            Hit {
+                rect: Rect::new(0, 3, 50, 1),
+                target: Target::Row(0),
+            },
+            Hit {
+                rect: Rect::new(0, 4, 50, 1),
+                target: Target::Row(1),
+            },
+        ]);
+        mouse(
+            &mut s,
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 5,
+                row: 4,
+                modifiers: KeyModifiers::NONE,
+            },
+        );
+        assert_eq!(s.keys.row, 1);
+        mouse(
+            &mut s,
+            MouseEvent {
+                kind: MouseEventKind::ScrollUp,
+                column: 5,
+                row: 4,
+                modifiers: KeyModifiers::NONE,
+            },
+        );
+        assert_eq!(s.keys.row, 0);
     }
 
     #[test]

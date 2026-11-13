@@ -10,6 +10,9 @@ pub struct AccountConfig {
     pub kind: PlatformKind,
     /// Host, e.g. `git.example.com`.
     pub host: String,
+    /// Which URL to use when gitkraft adds a remote or switches one (`ssh` or `https`).
+    #[serde(default)]
+    pub clone_via: Option<gitkraft_platforms::Transport>,
 }
 
 /// The whole `accounts.toml`.
@@ -31,6 +34,16 @@ impl AccountsFile {
         self.accounts
             .iter()
             .fold(HostMap::new(), |m, a| m.with(a.host.clone(), a.kind))
+    }
+}
+
+impl AccountsFile {
+    /// The transport chosen for `host`, if any.
+    pub fn clone_via(&self, host: &str) -> Option<gitkraft_platforms::Transport> {
+        self.accounts
+            .iter()
+            .find(|a| a.host.eq_ignore_ascii_case(host))
+            .and_then(|a| a.clone_via)
     }
 }
 

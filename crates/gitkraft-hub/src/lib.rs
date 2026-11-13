@@ -6,6 +6,7 @@
 
 pub mod accounts;
 mod hub;
+pub mod keys;
 pub mod markdown;
 pub mod poller;
 pub mod pulse;

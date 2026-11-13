@@ -55,6 +55,8 @@ pub enum HubView {
     Dashboard,
     /// Activity graphs.
     Pulse,
+    /// SSH keys of every account.
+    Keys,
 }
 
 /// Tabs of the PR detail.
@@ -144,6 +146,22 @@ pub enum HubMessage {
     DragDrop(usize),
     /// The button was released elsewhere.
     DragCancel,
+    /// SSH keys arrived.
+    KeysLoaded(Arc<gitkraft_hub::keys::KeysData>),
+    /// Pick a key row.
+    SelectKey(usize),
+    /// Ask before removing the selected key.
+    AskRevoke,
+    /// Confirmed.
+    ConfirmRevoke,
+    /// Not now.
+    CancelRevoke,
+    /// Create or reuse this machine's key for a host, register it, configure ssh.
+    SetupKeys(String),
+    /// Test `ssh -T git@host`.
+    TestKeys(String),
+    /// A key action finished.
+    KeysActionDone(Result<String, String>),
     /// Pulse numbers arrived.
     PulseLoaded {
         repo: String,
@@ -219,6 +237,19 @@ pub struct PulseState {
     pub days: u32,
 }
 
+/// SSH keys view state.
+#[derive(Debug, Default)]
+pub struct KeysState {
+    /// Loaded keys.
+    pub data: Option<Arc<gitkraft_hub::keys::KeysData>>,
+    /// Selected row.
+    pub row: usize,
+    /// A load is running.
+    pub loading: bool,
+    /// Waiting for a yes on removing the selected key.
+    pub confirm_revoke: bool,
+}
+
 /// The bell of the current repo.
 #[derive(Debug, Clone)]
 pub struct Bell {
@@ -255,6 +286,8 @@ pub struct HubState {
     pub drag: Option<(usize, usize)>,
     /// Pulse view.
     pub pulse: PulseState,
+    /// SSH keys view.
+    pub keys: KeysState,
     /// Status line text and success flag.
     pub notice: Option<(String, bool)>,
     /// Setup finished.
@@ -289,6 +322,7 @@ impl HubState {
             note: String::new(),
             drag: None,
             pulse: PulseState::default(),
+            keys: KeysState::default(),
             notice: None,
             ready: false,
             accounts: 0,
@@ -392,6 +426,9 @@ impl HubState {
                 self.view = v;
                 if v == HubView::Pulse && self.pulse.data.is_none() {
                     return self.load_pulse(30);
+                }
+                if v == HubView::Keys && self.keys.data.is_none() && !self.keys.loading {
+                    return self.load_keys();
                 }
                 Task::none()
             }
@@ -555,6 +592,92 @@ impl HubState {
             HubMessage::DragCancel => {
                 self.drag = None;
                 Task::none()
+            }
+            HubMessage::KeysLoaded(data) => {
+                self.keys.loading = false;
+                if let Some(e) = data.errors.first() {
+                    self.notice = Some((e.clone(), false));
+                }
+                self.keys.row = self.keys.row.min(data.rows.len().saturating_sub(1));
+                self.keys.data = Some(data);
+                Task::none()
+            }
+            HubMessage::SelectKey(i) => {
+                self.keys.row = i;
+                self.keys.confirm_revoke = false;
+                Task::none()
+            }
+            HubMessage::AskRevoke => {
+                if self.selected_key().is_some() {
+                    self.keys.confirm_revoke = true;
+                } else {
+                    self.notice = Some(("select a key first".into(), false));
+                }
+                Task::none()
+            }
+            HubMessage::CancelRevoke => {
+                self.keys.confirm_revoke = false;
+                Task::none()
+            }
+            HubMessage::ConfirmRevoke => {
+                self.keys.confirm_revoke = false;
+                let (Some(api), Some(row)) = (self.handle(), self.selected_key().cloned()) else {
+                    return Task::none();
+                };
+                Task::perform(
+                    async move { gitkraft_hub::keys::revoke(&api, &row.host, &row.key.id).await },
+                    HubMessage::KeysActionDone,
+                )
+            }
+            HubMessage::SetupKeys(host) => {
+                let Some(api) = self.handle() else {
+                    self.notice = Some(("no account to set up".into(), false));
+                    return Task::none();
+                };
+                self.notice = Some((format!("setting up ssh for {host}…"), true));
+                Task::perform(
+                    async move {
+                        let dir = ssh_dir();
+                        gitkraft_hub::keys::setup_host(
+                            &api,
+                            &host,
+                            &dir,
+                            &gitkraft_platforms::ssh::SystemSsh,
+                            &machine_name(),
+                        )
+                        .await
+                        .map(|t| t.lines().collect::<Vec<_>>().join(" · "))
+                    },
+                    HubMessage::KeysActionDone,
+                )
+            }
+            HubMessage::TestKeys(host) => {
+                self.notice = Some((format!("testing ssh to {host}…"), true));
+                Task::perform(
+                    async move {
+                        let (p, line) = tokio::task::spawn_blocking(move || {
+                            gitkraft_hub::keys::test_host(
+                                &gitkraft_platforms::ssh::SystemSsh,
+                                &host,
+                            )
+                        })
+                        .await
+                        .map_err(|e| e.to_string())?;
+                        if matches!(p, gitkraft_platforms::ssh::Probe::Authenticated { .. }) {
+                            Ok(line)
+                        } else {
+                            Err(line)
+                        }
+                    },
+                    HubMessage::KeysActionDone,
+                )
+            }
+            HubMessage::KeysActionDone(result) => {
+                match result {
+                    Ok(t) => self.notice = Some((t, true)),
+                    Err(e) => self.notice = Some((e, false)),
+                }
+                self.load_keys()
             }
             HubMessage::PulseLoaded { repo, days, data } => {
                 if self.pulse.repo.as_ref().map(RepoId::key).as_deref() == Some(&repo)
@@ -797,6 +920,41 @@ impl HubState {
             HubMessage::ContributionsLoaded(Arc::new(c))
         });
         Task::batch([pulse, contributions])
+    }
+
+    // ── SSH keys ─────────────────────────────────────────────────────────────
+
+    /// The selected key row.
+    pub fn selected_key(&self) -> Option<&gitkraft_hub::keys::KeyRow> {
+        self.keys.data.as_ref()?.rows.get(self.keys.row)
+    }
+
+    /// The host to act on: the selected key's, else the first account's.
+    pub fn keys_host(&self) -> Option<String> {
+        self.selected_key()
+            .map(|r| r.host.clone())
+            .or_else(|| self.keys.data.as_ref()?.hosts.first().cloned())
+    }
+
+    fn load_keys(&mut self) -> Task<HubMessage> {
+        let Some(api) = self.handle() else {
+            return Task::none();
+        };
+        self.keys.loading = true;
+        Task::perform(
+            async move {
+                let mine = tokio::task::spawn_blocking(|| {
+                    gitkraft_hub::keys::local_fingerprints(
+                        &ssh_dir(),
+                        &gitkraft_platforms::ssh::SystemSsh,
+                    )
+                })
+                .await
+                .unwrap_or_default();
+                Arc::new(gitkraft_hub::keys::load(&api, &mine).await)
+            },
+            HubMessage::KeysLoaded,
+        )
     }
 
     // ── Section order ────────────────────────────────────────────────────────
@@ -1053,6 +1211,20 @@ impl HubState {
             |()| HubMessage::Polled,
         )
     }
+}
+
+fn ssh_dir() -> PathBuf {
+    dirs::home_dir().map_or_else(|| PathBuf::from(".ssh"), |h| h.join(".ssh"))
+}
+
+fn machine_name() -> String {
+    std::process::Command::new("hostname")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "this machine".into())
 }
 
 fn read_config(path: Option<&std::path::Path>) -> NotifyConfig {
@@ -1382,6 +1554,82 @@ mod tests {
                 && s.notice
                     .as_ref()
                     .is_some_and(|(t, ok)| t.contains("accounts.toml") && !ok)
+        );
+    }
+
+    fn key_rows() -> Arc<gitkraft_hub::keys::KeysData> {
+        use gitkraft_hub::keys::{KeyRow, KeysData};
+        use gitkraft_platforms::model::SshKey;
+        let row = |host: &str, id: &str, mine| KeyRow {
+            host: host.into(),
+            key: SshKey {
+                id: id.into(),
+                title: format!("t{id}"),
+                key: String::new(),
+                fingerprint: None,
+                created_at: None,
+            },
+            mine,
+        };
+        Arc::new(KeysData {
+            hosts: vec!["github.com".into(), "gitlab.com".into()],
+            rows: vec![row("github.com", "1", true), row("gitlab.com", "2", false)],
+            errors: vec!["codeberg.org: 403".into()],
+        })
+    }
+
+    #[test]
+    fn keys_arrive_select_and_ask_before_removal() {
+        let mut s = state();
+        let _ = s.update(HubMessage::AskRevoke);
+        assert!(
+            !s.keys.confirm_revoke
+                && s.notice
+                    .as_ref()
+                    .is_some_and(|(t, ok)| t.contains("select a key") && !ok)
+        );
+        s.keys.loading = true;
+        let _ = s.update(HubMessage::KeysLoaded(key_rows()));
+        assert!(!s.keys.loading);
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, ok)| t == "codeberg.org: 403" && !ok)
+        );
+        let _ = s.update(HubMessage::SelectKey(1));
+        assert_eq!(s.keys_host().as_deref(), Some("gitlab.com"));
+        let _ = s.update(HubMessage::AskRevoke);
+        assert!(s.keys.confirm_revoke);
+        let _ = s.update(HubMessage::SelectKey(0));
+        assert!(!s.keys.confirm_revoke, "moving away cancels the question");
+        let _ = s.update(HubMessage::AskRevoke);
+        let _ = s.update(HubMessage::CancelRevoke);
+        assert!(!s.keys.confirm_revoke);
+        let _ = s.update(HubMessage::ConfirmRevoke);
+        assert!(!s.keys.confirm_revoke);
+    }
+
+    #[test]
+    fn a_shorter_key_list_keeps_the_selection_in_range_and_results_show_as_notices() {
+        let mut s = state();
+        s.keys.row = 9;
+        let _ = s.update(HubMessage::KeysLoaded(key_rows()));
+        assert_eq!(s.keys.row, 1);
+        let _ = s.update(HubMessage::KeysActionDone(Ok(
+            "removed key 2 from gitlab.com".into(),
+        )));
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, ok)| t.starts_with("removed") && *ok)
+        );
+        let _ = s.update(HubMessage::KeysActionDone(Err("403".into())));
+        assert!(s.notice.as_ref().is_some_and(|(t, ok)| t == "403" && !ok));
+        let _ = s.update(HubMessage::SetupKeys("github.com".into()));
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, ok)| t.contains("no account") && !ok)
         );
     }
 }

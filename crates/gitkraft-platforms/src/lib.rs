@@ -9,6 +9,7 @@
 //! | [`platform`] | `PlatformKind`, `RepoId`, remote-URL parsing, host detection |
 //! | [`account`], [`auth`] | accounts and token lookup (env, platform CLI) |
 //! | [`http`] | the `HttpClient` seam, the `reqwest` client, the ETag cache |
+//! | [`ssh`] | SSH keys: setup, `~/.ssh/config` block, registering keys on the platform |
 //! | [`notify`] | poll diffing, alerts, inbox, desktop dispatch, poller status |
 //! | [`backend`] | the per-account adapter used by every front-end |
 //! | [`testing`] | a fake client for tests |
@@ -26,6 +27,7 @@ pub mod http;
 pub mod model;
 pub mod notify;
 pub mod platform;
+pub mod ssh;
 pub mod testing;
 
 pub use account::{Account, Secret};
@@ -34,4 +36,4 @@ pub use error::{PlatformError, Result};
 pub use github_like::GitHubLike;
 pub use gitlab::{GitLab, ItemKind};
 pub use http::{CachedClient, DynClient, HttpClient, ReqwestClient};
-pub use platform::{HostMap, PlatformKind, RepoId, parse_remote_url, url_encode};
+pub use platform::{HostMap, PlatformKind, RepoId, Transport, parse_remote_url, url_encode};

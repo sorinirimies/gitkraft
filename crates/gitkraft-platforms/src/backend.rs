@@ -39,6 +39,33 @@ impl<C: HttpClient> Backend<C> {
         }
     }
 
+    fn api(&self) -> &Api<C> {
+        match self {
+            Self::GitHubLike(b) => &b.api,
+            Self::GitLab(b) => &b.api,
+        }
+    }
+
+    /// The platform kind of this account.
+    pub fn kind(&self) -> PlatformKind {
+        self.api().kind
+    }
+
+    /// SSH keys registered on the account.
+    pub async fn ssh_keys(&self) -> Result<Vec<crate::model::SshKey>> {
+        crate::ssh::remote::list(self.api()).await
+    }
+
+    /// Registers a public key (`<type> <base64>`) on the account.
+    pub async fn add_ssh_key(&self, title: &str, key: &str) -> Result<crate::model::SshKey> {
+        crate::ssh::remote::add(self.api(), title, key).await
+    }
+
+    /// Removes an SSH key from the account.
+    pub async fn delete_ssh_key(&self, id: &str) -> Result<()> {
+        crate::ssh::remote::delete(self.api(), id).await
+    }
+
     /// What this platform supports.
     pub fn capabilities(&self) -> Capabilities {
         match self {

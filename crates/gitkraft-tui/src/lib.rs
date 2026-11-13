@@ -14,6 +14,7 @@ pub mod events;
 pub mod features;
 pub mod layout;
 pub mod notify_cli;
+pub mod ssh_cli;
 pub mod utils;
 pub mod widgets;
 
