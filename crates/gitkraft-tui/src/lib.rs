@@ -11,6 +11,7 @@
 pub mod app;
 pub mod auth_cli;
 pub mod cli;
+pub mod clone_cli;
 pub mod events;
 pub mod features;
 pub mod layout;

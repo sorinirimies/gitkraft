@@ -62,6 +62,24 @@ pub fn run_git(dir: &Path, args: &[&str]) -> Result<()> {
     Ok(())
 }
 
+/// Clones `url` into `dest` with the system `git`, so ssh keys and credential helpers work as in a terminal.
+pub fn clone_repo(url: &str, dest: &Path) -> Result<()> {
+    let output = git_command(None)
+        .arg("clone")
+        .arg("--")
+        .arg(url)
+        .arg(dest)
+        .output()
+        .context("failed to spawn git")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "{}",
+            explain_git_error(&String::from_utf8_lossy(&output.stderr))
+        );
+    }
+    Ok(())
+}
+
 /// The host in git's `Could not resolve hostname x` / `ssh: connect to host x` lines, if any.
 fn host_in(stderr: &str) -> Option<String> {
     let at = stderr.find("git@")?;
@@ -110,6 +128,33 @@ pub fn explain_git_error(stderr: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_local_repository_can_be_cloned_and_a_missing_one_is_explained() {
+        let root = tempfile::tempdir().expect("tmp");
+        let src = root.path().join("src");
+        std::fs::create_dir_all(&src).expect("mk");
+        let run = |dir: &Path, args: &[&str]| {
+            let st = Command::new("git")
+                .current_dir(dir)
+                .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+                .args(args)
+                .status()
+                .expect("git");
+            assert!(st.success(), "{args:?}");
+        };
+        run(&src, &["init", "-q"]);
+        run(&src, &["commit", "-q", "--allow-empty", "-m", "first"]);
+        let dest = root.path().join("copy");
+        clone_repo(src.to_str().expect("utf8"), &dest).expect("clone");
+        assert!(dest.join(".git").exists());
+        let err = clone_repo(
+            root.path().join("nope").to_str().expect("utf8"),
+            &root.path().join("x"),
+        )
+        .expect_err("missing");
+        assert!(!err.to_string().is_empty());
+    }
 
     #[test]
     fn the_ssh_command_is_only_forced_when_the_user_set_none() {

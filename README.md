@@ -81,6 +81,9 @@ application's client id: `--client-id`, `GITKRAFT_OAUTH_CLIENT_ID` or `oauth_cli
 system keyring (macOS `security`, Linux `secret-tool`); `logout HOST` removes it. Lookup order: environment,
 keyring, `gh` / `glab`, git's credential helper.
 
+**Clone.** `gitkraft-tui clone owner/name` (or `host/owner/name`, or a URL) clones with your system `git`, over
+`--ssh` / `--https`, else the account's `clone_via` in `accounts.toml`, else https.
+
 **Git over SSH.** fetch, pull and push use your system `git` and `ssh` (agent, `~/.ssh/config`, keychain), and
 a failure says what to do. `gitkraft-tui ssh …` gets a key in place:
 
