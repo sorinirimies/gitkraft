@@ -96,6 +96,26 @@ impl<C: HttpClient> CiBackend<C> {
         }
     }
 
+    /// Files the run produced.
+    pub async fn artifacts(
+        &self,
+        repo: &RepoId,
+        run_id: u64,
+    ) -> Result<Vec<crate::model::Artifact>> {
+        match self {
+            Self::Actions(b) => b.artifacts(repo, run_id).await,
+            Self::GitLab(b) => b.artifacts(repo, run_id).await,
+        }
+    }
+
+    /// The bytes of an artifact (a zip archive).
+    pub async fn download_artifact(&self, repo: &RepoId, artifact_id: u64) -> Result<Vec<u8>> {
+        match self {
+            Self::Actions(b) => b.download_artifact(repo, artifact_id).await,
+            Self::GitLab(b) => b.download_artifact(repo, artifact_id).await,
+        }
+    }
+
     /// Workflows that can be started by hand (GitLab has no such list: it returns none).
     pub async fn list_workflows(&self, repo: &RepoId) -> Result<Vec<crate::model::Workflow>> {
         match self {

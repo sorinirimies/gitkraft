@@ -318,3 +318,59 @@ async fn runs_carry_their_workflow_file_for_dispatching_and_workflows_are_listed
     let lab = gitlab(&FakeClient::new());
     assert!(lab.list_workflows(&repo()).await.expect("none").is_empty());
 }
+
+#[tokio::test]
+async fn artifacts_are_listed_and_downloaded_on_github_and_gitlab() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/repos/o/r/actions/runs/101/artifacts",
+        r#"{"total_count":2,"artifacts":[{"id":5,"name":"dist","size_in_bytes":2048,"expired":false},{"id":6,"name":"old","size_in_bytes":1,"expired":true}]}"#,
+    );
+    fake.push(
+        "https://api.github.com/repos/o/r/actions/artifacts/5/zip",
+        gitkraft_platforms::http::Response {
+            status: 200,
+            headers: vec![],
+            body: vec![0x50, 0x4b, 3, 4],
+        },
+    );
+    let b = github(&fake);
+    let list = b.artifacts(&repo(), 101).await.expect("list");
+    assert_eq!(
+        (
+            list[0].name.as_str(),
+            list[0].size,
+            list[0].expired,
+            list[1].expired
+        ),
+        ("dist", 2048, false, true)
+    );
+    assert_eq!(
+        b.download_artifact(&repo(), 5).await.expect("zip"),
+        vec![0x50, 0x4b, 3, 4]
+    );
+    let req = fake.requests().pop().expect("request");
+    assert!(
+        req.headers
+            .iter()
+            .any(|(k, v)| k == "Accept" && v == "application/octet-stream")
+    );
+
+    let lab_fake = FakeClient::new();
+    lab_fake.push_json(
+        "https://gitlab.com/api/v4/projects/o%2Fr/pipelines/9/jobs",
+        r#"[{"id":31,"name":"build","artifacts_file":{"filename":"a.zip","size":99},"artifacts_expire_at":"2999-01-01T00:00:00Z"},{"id":32,"name":"test"},{"id":33,"name":"old","artifacts_file":{"size":1},"artifacts_expire_at":"2001-01-01T00:00:00Z"}]"#,
+    );
+    let lab = gitlab(&lab_fake);
+    let list = lab.artifacts(&repo(), 9).await.expect("list");
+    assert_eq!(list.len(), 2, "jobs without artifacts are skipped");
+    assert_eq!(
+        (
+            list[0].id,
+            list[0].name.as_str(),
+            list[0].expired,
+            list[1].expired
+        ),
+        (31, "build artifacts", false, true)
+    );
+}

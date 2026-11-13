@@ -136,6 +136,8 @@ pub enum HubMessage {
     Rerun(RerunScope),
     /// Cancel the run.
     CancelRun,
+    /// Download the selected run's artifacts.
+    Artifacts,
     /// Start the selected run's workflow again, with the note as `[WORKFLOW] REF key=value…`.
     Dispatch,
     /// An action finished.
@@ -555,6 +557,7 @@ impl HubState {
             HubMessage::Rerun(scope) => self.rerun(scope),
             HubMessage::CancelRun => self.cancel_run(),
             HubMessage::Dispatch => self.dispatch(),
+            HubMessage::Artifacts => self.artifacts(),
             HubMessage::ActionDone(result) => {
                 match result {
                     Ok(text) => {
@@ -1097,6 +1100,30 @@ impl HubState {
                 .await
                 .map(|()| "re-run started".to_string())
                 .map_err(|e| e.to_string())
+        })
+    }
+
+    fn artifacts(&mut self) -> Task<HubMessage> {
+        let Some(run) = self.selected_run() else {
+            self.notice = Some(("select a CI run first".into(), false));
+            return Task::none();
+        };
+        let dir = dirs::download_dir()
+            .or_else(|| dirs::home_dir().map(|h| h.join("Downloads")))
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("gitkraft-artifacts");
+        self.notice = Some((
+            format!("downloading artifacts of {} #{}…", run.name, run.number),
+            true,
+        ));
+        self.act(move |api| async move {
+            let (saved, skipped) =
+                gitkraft_hub::artifacts::download_all(&api, &run.repo, run.id, &dir).await?;
+            let mut t = format!("saved {} file(s) to {}", saved.len(), dir.display());
+            if !skipped.is_empty() {
+                t.push_str(&format!(" · skipped: {}", skipped.join(", ")));
+            }
+            Ok(t)
         })
     }
 

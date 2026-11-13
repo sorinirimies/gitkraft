@@ -150,6 +150,19 @@ impl Run {
     }
 }
 
+/// A file a run produced.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Artifact {
+    /// Platform id: an artifact id on GitHub / Gitea, a job id on GitLab.
+    pub id: u64,
+    /// Name.
+    pub name: String,
+    /// Size in bytes.
+    pub size: u64,
+    /// Gone from the server.
+    pub expired: bool,
+}
+
 /// A workflow that can be started by hand.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Workflow {

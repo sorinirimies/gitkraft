@@ -909,6 +909,46 @@ impl HubState {
         });
     }
 
+    // ── Artifacts ────────────────────────────────────────────────────────────
+
+    /// Downloads the selected run's artifacts into the downloads folder.
+    pub fn download_artifacts(&mut self) {
+        let Some(run) = self.selected_run().cloned() else {
+            self.set_notice("select a CI run first".into(), false);
+            return;
+        };
+        let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {
+            return;
+        };
+        let dir = dirs::download_dir()
+            .or_else(|| dirs::home_dir().map(|h| h.join("Downloads")))
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("gitkraft-artifacts");
+        self.set_notice(
+            format!("downloading artifacts of {} #{}…", run.name, run.number),
+            true,
+        );
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            let (text, ok) =
+                match gitkraft_hub::artifacts::download_all(&api, &run.repo, run.id, &dir).await {
+                    Ok((saved, skipped)) => {
+                        let mut t = format!("saved {} file(s) to {}", saved.len(), dir.display());
+                        if !skipped.is_empty() {
+                            t.push_str(&format!(" · skipped: {}", skipped.join(", ")));
+                        }
+                        (t, true)
+                    }
+                    Err(e) => (e, false),
+                };
+            let _ = tx.send(Msg::Done {
+                text,
+                ok,
+                reload: false,
+            });
+        });
+    }
+
     // ── Dispatch ─────────────────────────────────────────────────────────────
 
     /// Opens the dispatch prompt, prefilled from the selected run.

@@ -7,7 +7,7 @@ use gitkraft_platforms::{PlatformError, RepoId, Result, url_encode};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::model::{Job, RerunScope, Run, RunDetail, RunQuery, Status};
+use crate::model::{Artifact, Job, RerunScope, Run, RunDetail, RunQuery, Status};
 
 /// Adapter for GitLab CI.
 #[derive(Debug)]
@@ -140,6 +140,51 @@ impl<C: HttpClient> GitLabCi<C> {
                 self.dispatch(repo, "", &run.branch, &[]).await
             }
         }
+    }
+
+    /// Jobs of the pipeline that kept artifacts; the id is the job id.
+    pub(crate) async fn artifacts(&self, repo: &RepoId, pipeline_id: u64) -> Result<Vec<Artifact>> {
+        #[derive(Deserialize)]
+        struct File {
+            #[serde(default)]
+            size: u64,
+        }
+        #[derive(Deserialize)]
+        struct J {
+            id: u64,
+            #[serde(default)]
+            name: String,
+            #[serde(default)]
+            artifacts_file: Option<File>,
+            #[serde(default)]
+            artifacts_expire_at: Option<DateTime<Utc>>,
+        }
+        let jobs: Vec<J> = self
+            .api
+            .get(&format!(
+                "{}/pipelines/{pipeline_id}/jobs?per_page=100",
+                project(repo)
+            ))
+            .await?;
+        let now = Utc::now();
+        Ok(jobs
+            .into_iter()
+            .filter_map(|j| {
+                let f = j.artifacts_file?;
+                Some(Artifact {
+                    id: j.id,
+                    name: format!("{} artifacts", j.name),
+                    size: f.size,
+                    expired: j.artifacts_expire_at.is_some_and(|t| t < now),
+                })
+            })
+            .collect())
+    }
+
+    pub(crate) async fn download_artifact(&self, repo: &RepoId, job_id: u64) -> Result<Vec<u8>> {
+        self.api
+            .get_bytes(&format!("{}/jobs/{job_id}/artifacts", project(repo)))
+            .await
     }
 
     pub(crate) async fn rerun_job(&self, repo: &RepoId, job_id: u64) -> Result<()> {

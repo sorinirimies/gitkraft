@@ -8,7 +8,7 @@ use gitkraft_platforms::{PlatformKind, RepoId, Result};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::model::{Job, RerunScope, Run, RunDetail, RunQuery, Status, Step, Workflow};
+use crate::model::{Artifact, Job, RerunScope, Run, RunDetail, RunQuery, Status, Step, Workflow};
 use crate::timing::infer_needs;
 
 /// Adapter for GitHub and Gitea-family Actions.
@@ -132,6 +132,47 @@ impl<C: HttpClient> ActionsBackend<C> {
             .post_json(&format!("{}/runs/{run_id}/cancel", base(repo)), &json!({}))
             .await
             .map(|_| ())
+    }
+
+    pub(crate) async fn artifacts(&self, repo: &RepoId, run_id: u64) -> Result<Vec<Artifact>> {
+        #[derive(Deserialize)]
+        struct A {
+            id: u64,
+            #[serde(default)]
+            name: String,
+            #[serde(default)]
+            size_in_bytes: u64,
+            #[serde(default)]
+            expired: bool,
+        }
+        #[derive(Deserialize)]
+        struct As {
+            #[serde(default)]
+            artifacts: Vec<A>,
+        }
+        let r: As = self
+            .api
+            .get(&format!("{}/runs/{run_id}/artifacts", base(repo)))
+            .await?;
+        Ok(r.artifacts
+            .into_iter()
+            .map(|a| Artifact {
+                id: a.id,
+                name: a.name,
+                size: a.size_in_bytes,
+                expired: a.expired,
+            })
+            .collect())
+    }
+
+    pub(crate) async fn download_artifact(
+        &self,
+        repo: &RepoId,
+        artifact_id: u64,
+    ) -> Result<Vec<u8>> {
+        self.api
+            .get_bytes(&format!("{}/artifacts/{artifact_id}/zip", base(repo)))
+            .await
     }
 
     pub(crate) async fn list_workflows(&self, repo: &RepoId) -> Result<Vec<Workflow>> {

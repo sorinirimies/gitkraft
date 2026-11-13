@@ -303,6 +303,7 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
         KeyCode::Char('F') => hub.ask(Action::Rerun(RerunScope::All)),
         KeyCode::Char('X') => hub.ask(Action::CancelRun),
         KeyCode::Char('D') => hub.open_dispatch_prompt(),
+        KeyCode::Char('A') => hub.download_artifacts(),
         _ => {}
     }
     Outcome::Stay
@@ -765,6 +766,23 @@ mod tests {
             },
         );
         assert_eq!(s.keys.row, 0);
+    }
+
+    #[test]
+    fn artifacts_and_worktree_keys_explain_when_they_do_not_apply() {
+        let mut s = state();
+        chars(&mut s, "A");
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, ok)| t.contains("select a CI run") && !ok)
+        );
+        chars(&mut s, "w");
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, ok)| t.contains("no local checkout") && !ok),
+            "{:?}",
+            s.fresh_notice()
+        );
     }
 
     #[test]

@@ -91,6 +91,15 @@ impl<C: HttpClient> Api<C> {
         Ok(res.text())
     }
 
+    /// GET with an `Accept` override, returning the raw body (archives). Redirects are followed.
+    pub async fn get_bytes(&self, path: &str) -> Result<Vec<u8>> {
+        let mut req = self.request(Method::Get, path, None);
+        req.headers.retain(|(k, _)| k != "Accept");
+        req.headers
+            .push(("Accept".into(), "application/octet-stream".into()));
+        Ok(check(self.client.send(req).await?)?.body)
+    }
+
     /// POST a JSON body.
     pub async fn post_json(&self, path: &str, body: &serde_json::Value) -> Result<Response> {
         self.send(Method::Post, path, Some(body)).await
