@@ -1115,6 +1115,24 @@ async fn board_cards_have_a_move_button_and_a_move_sets_the_status() {
         page.body
     );
     assert!(page.body.contains("data-field=\"column\"") && page.body.contains("Move…"));
+    for needle in [
+        "shift_card",
+        "New card",
+        "data-column=\"ccolumn\"",
+        "new_card",
+    ] {
+        assert!(page.body.contains(needle), "missing {needle}");
+    }
+
+    // an untitled card and an unknown direction never reach the platform
+    let h2 = start().await;
+    for body in [
+        r#"{"action":"new_card","repo":"github.com/o/r","title":" "}"#,
+        r#"{"action":"shift_card","repo":"github.com/o/r","number":4,"way":"sideways"}"#,
+    ] {
+        let r = request(h2.addr, "POST", "/api/action", body).await;
+        assert_eq!(r.status, 400, "{body}: {}", r.body);
+    }
 
     let h = start().await;
     h.fake.push_json("https://api.github.com/graphql", boards);

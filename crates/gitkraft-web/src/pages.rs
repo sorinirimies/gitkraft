@@ -1126,7 +1126,7 @@ async fn community(cx: &Cx) -> Result<impl View> {
     .collect();
     // what the platform says is shown as a note: GitHub has no wiki API, the others have no discussions
     let mut note: Option<String> = None;
-    let mut list: Vec<(String, String, String, String)> = Vec::new();
+    let mut list: Vec<(String, String, String, String, String, String)> = Vec::new();
     let mut heading = String::new();
     let mut text: Option<String> = None;
     let mut comments: Vec<(String, String, String, String, bool, String)> = Vec::new();
@@ -1201,14 +1201,21 @@ async fn community(cx: &Cx) -> Result<impl View> {
                                     url_encode(&i.key)
                                 )
                             };
-                            let mv = if tab == Tab::Board && !i.key.is_empty() {
-                                act_json(
-                                    serde_json::json!({"action": "move_card", "repo": key, "number": i.key.parse::<u64>().unwrap_or(0), "board": i.board}),
-                                )
-                            } else {
-                                String::new()
+                            let card = |action: &str, way: Option<&str>| {
+                                if tab == Tab::Board && !i.key.is_empty() {
+                                    act_json(
+                                        serde_json::json!({"action": action, "repo": key, "number": i.key.parse::<u64>().unwrap_or(0), "board": i.board, "way": way}),
+                                    )
+                                } else {
+                                    String::new()
+                                }
                             };
-                            (href, i.title, i.meta, mv)
+                            let (mv, up, down) = (
+                                card("move_card", None),
+                                card("shift_card", Some("up")),
+                                card("shift_card", Some("down")),
+                            );
+                            (href, i.title, i.meta, mv, up, down)
                         })
                         .collect()
                 }
@@ -1220,6 +1227,8 @@ async fn community(cx: &Cx) -> Result<impl View> {
     let editable = !wiki_save.is_empty();
     let text = text.unwrap_or_default();
     let can_comment = !act.is_empty();
+    let new_card = (tab == Tab::Board && repo.is_some() && note.is_none())
+        .then(|| act_json(serde_json::json!({"action": "new_card", "repo": key})));
     let new_page = (tab == Tab::Wiki && repo.is_some() && !has_text && note.is_none())
         .then(|| act_json(serde_json::json!({"action": "wiki_save", "repo": key})));
     Ok(view! {
@@ -1229,10 +1238,18 @@ async fn community(cx: &Cx) -> Result<impl View> {
             <nav class="tabs">for (href, label, on) in tab_links { <a href=(href) class=(if on { "on" } else { "" })>(label)</a> }</nav>
             if repo.is_none() { <p class="dim">"Add repos to your dashboard sections to browse their discussions and wiki."</p> }
             if let Some(n) = note { <div class="note warn">(n)</div> }
-            for (href, title, meta, mv) in list {
+            for (href, title, meta, mv, up, down) in list {
                 <div class="row">if href.is_empty() { (title) } else { <a href=(href)>(title)</a> }" "<span class="meta small">(meta)</span>
                     if !mv.is_empty() { " "<button data-act=(mv) data-ask="Move to which column? (name, or the start of it)" data-field="column" onclick="actBtn(this)">"Move…"</button> }
+                    if !up.is_empty() { " "<button data-act=(up) title="One place up in its column" onclick="actBtn(this)">"↑"</button> }
+                    if !down.is_empty() { " "<button data-act=(down) title="One place down in its column" onclick="actBtn(this)">"↓"</button> }
                 </div>
+            }
+            if let Some(card) = new_card {
+                <h2>"New card"</h2>
+                <input id="ctitle" placeholder="Title">
+                <input id="ccolumn" placeholder="Column (optional)">
+                <div class="bar"><button class="primary" data-act=(card) data-title="ctitle" data-column="ccolumn" onclick="actBtn(this)">"Add card"</button></div>
             }
             if let Some(create) = new_page {
                 <h2>"New page"</h2>

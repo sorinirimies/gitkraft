@@ -1709,3 +1709,66 @@ async fn a_discussion_answer_is_marked_on_a_top_level_comment_only() {
         Err(PlatformError::Unsupported(_))
     ));
 }
+
+#[tokio::test]
+async fn cards_are_created_and_ordered_on_github_and_created_on_gitlab() {
+    let board = two_column_board();
+    let card = BoardCard {
+        number: Some(7),
+        item_id: Some("I".into()),
+        ..BoardCard::default()
+    };
+    let other = BoardCard {
+        item_id: Some("J".into()),
+        ..card.clone()
+    };
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"updateProjectV2ItemPosition":{"items":{"nodes":[]}}}}"#,
+    );
+    github(&fake)
+        .reorder_card(&board, &card, Some(&other))
+        .await
+        .expect("reorder");
+    let sent = sent_bodies(&fake).pop().unwrap_or_default();
+    assert!(
+        sent.contains("\"i\":\"I\"") && sent.contains("\"a\":\"J\""),
+        "{sent}"
+    );
+    assert!(matches!(
+        gitlab(&FakeClient::new())
+            .reorder_card(&board, &card, None)
+            .await,
+        Err(PlatformError::Unsupported(_))
+    ));
+
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"addProjectV2DraftIssue":{"projectItem":{"id":"N"}}}}"#,
+    );
+    github(&fake)
+        .create_card(&repo(), &board, "Idea", None)
+        .await
+        .expect("draft");
+    assert!(
+        sent_bodies(&fake)
+            .pop()
+            .unwrap_or_default()
+            .contains("\"t\":\"Idea\"")
+    );
+
+    let fake = FakeClient::new();
+    fake.push_json("https://gitlab.com/api/v4/projects/o%2Fr/issues", "{}");
+    gitlab(&fake)
+        .create_card(&repo(), &board, "Idea", Some(&board.columns[1]))
+        .await
+        .expect("issue");
+    let sent = sent_bodies(&fake).pop().unwrap_or_default();
+    assert!(
+        sent.contains("\"title\":\"Idea\"")
+            && sent.contains(&format!("\"labels\":\"{}\"", board.columns[1].name)),
+        "{sent}"
+    );
+}

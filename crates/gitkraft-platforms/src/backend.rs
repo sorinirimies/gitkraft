@@ -434,6 +434,37 @@ impl<C: HttpClient> Backend<C> {
         }
     }
 
+    /// Adds a card titled `title` to `board`, in column `to` when given (GitHub: a draft card;
+    /// GitLab: a new issue carrying the list's label).
+    pub async fn create_card(
+        &self,
+        repo: &RepoId,
+        board: &Board,
+        title: &str,
+        to: Option<&BoardColumn>,
+    ) -> Result<()> {
+        match self {
+            Self::GitHubLike(b) => b.create_card(board, title, to).await,
+            Self::GitLab(b) => b.create_card(repo, title, to).await,
+        }
+    }
+
+    /// Puts `card` right after `after` in its column, or first when `after` is `None` (GitHub
+    /// Projects v2; GitLab orders issues by its own rank, which has no API by number).
+    pub async fn reorder_card(
+        &self,
+        board: &Board,
+        card: &BoardCard,
+        after: Option<&BoardCard>,
+    ) -> Result<()> {
+        match self {
+            Self::GitHubLike(b) => b.reorder_card(board, card, after).await,
+            Self::GitLab(_) => Err(PlatformError::Unsupported(
+                "GitLab orders board cards by its own rank: drag them on the web",
+            )),
+        }
+    }
+
     /// The kanban boards of a repository: GitHub Projects (v2), GitLab issue boards.
     pub async fn boards(&self, repo: &RepoId) -> Result<Vec<Board>> {
         match self {

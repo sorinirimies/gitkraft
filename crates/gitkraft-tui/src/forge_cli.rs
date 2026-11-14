@@ -149,6 +149,10 @@ pub enum Forge {
     WikiSave(WikiSaveArgs),
     /// Move a board card to another column.
     BoardMove(BoardMoveArgs),
+    /// Add a card to a board.
+    BoardNew(BoardNewArgs),
+    /// Move a card up, down or to the top of its column.
+    BoardOrder(BoardOrderArgs),
     /// Merge a pull request.
     Merge(MergeArgs),
     /// Ask an AI why a CI run failed (needs a key, see `ai-key`; `--dry-run` shows what would be sent).
@@ -399,6 +403,35 @@ pub struct WikiSaveArgs {
     pub message: Option<String>,
 }
 
+/// `board-new`.
+#[derive(Debug, Args)]
+pub struct BoardNewArgs {
+    #[command(flatten)]
+    pub common: Common,
+    /// Title of the card.
+    pub title: String,
+    /// Column to put it in: its name, or a unique start of it.
+    #[arg(long)]
+    pub column: Option<String>,
+    /// The board, when the repository has several.
+    #[arg(long)]
+    pub board: Option<String>,
+}
+
+/// `board-order`.
+#[derive(Debug, Args)]
+pub struct BoardOrderArgs {
+    #[command(flatten)]
+    pub common: Common,
+    /// Issue or pull request number of the card.
+    pub number: u64,
+    /// `up`, `down` or `top`.
+    pub way: String,
+    /// The board, when the card is on several.
+    #[arg(long)]
+    pub board: Option<String>,
+}
+
 /// `board-move`.
 #[derive(Debug, Args)]
 pub struct BoardMoveArgs {
@@ -489,6 +522,8 @@ impl Forge {
             Self::Answer(a) => &a.common,
             Self::WikiSave(a) => &a.common,
             Self::BoardMove(a) => &a.common,
+            Self::BoardNew(a) => &a.common,
+            Self::BoardOrder(a) => &a.common,
             Self::Merge(a) => &a.common,
             Self::Rerun(a) => &a.common,
             Self::Explain(a) => &a.common,
@@ -870,6 +905,34 @@ impl Session {
                     a.board.as_deref(),
                     a.number,
                     &a.column,
+                )
+                .await
+                .map_err(|e| anyhow!(e))?;
+                Ok(format!("{done}\n"))
+            }
+            Forge::BoardNew(a) => {
+                let repo = self.repo(repo_flag)?;
+                let done = gitkraft_hub::community::new_card(
+                    &self.hub,
+                    &repo,
+                    a.board.as_deref(),
+                    &a.title,
+                    a.column.as_deref(),
+                )
+                .await
+                .map_err(|e| anyhow!(e))?;
+                Ok(format!("{done}\n"))
+            }
+            Forge::BoardOrder(a) => {
+                let repo = self.repo(repo_flag)?;
+                let shift =
+                    gitkraft_hub::community::Shift::parse(&a.way).map_err(|e| anyhow!(e))?;
+                let done = gitkraft_hub::community::reorder_card(
+                    &self.hub,
+                    &repo,
+                    a.board.as_deref(),
+                    a.number,
+                    shift,
                 )
                 .await
                 .map_err(|e| anyhow!(e))?;

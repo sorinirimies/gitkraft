@@ -17,11 +17,9 @@ and fix what differs:
 ## Boards and wiki, next steps
 
 Done: moving a card between columns (GitHub Status field, GitLab list labels), creating and
-editing wiki pages (GitLab / Gitea REST), replying inside a discussion thread, marking the answer (`answer` in the CLI, `A` in the TUI, MCP `mark_answer`). Still open:
+editing wiki pages (GitLab / Gitea REST), replying inside a discussion thread, marking the answer (`answer` in the CLI, `A` in the TUI, a button in the GUI and web, MCP `mark_answer`), creating and reordering cards (`board-new`, `board-order`, TUI `n` and `< > ^`, buttons in the GUI and web, MCP `new_card` and `reorder_card`; reordering is GitHub only), clickable items in the calendar day panel (a click opens them in the GUI and web, copies the address in the TUI). Still open:
 
 - GitHub wikis via the `.wiki.git` clone (they have no API).
-- Reorder cards inside a column; create cards.
-- Clickable items in the calendar day panel.
 
 ## Several remotes
 

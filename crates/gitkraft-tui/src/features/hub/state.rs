@@ -109,6 +109,8 @@ pub enum Target {
     Annotation(usize),
     /// A day of the contribution calendar.
     Day(chrono::NaiveDate),
+    /// An item of the open day's activity (position in listing order): a click copies its address.
+    DayItem(usize),
 }
 
 /// A clickable region of the last frame.
@@ -189,6 +191,8 @@ pub enum PromptPurpose {
     DiscussionReply,
     /// Where a catch-up starts: `YYYY-MM-DD`, or nothing for the whole thread.
     CatchUpSince,
+    /// A new board card: `title`, or `title | column`.
+    NewCard,
     /// Which comment answers the open discussion: `N`.
     DiscussionAnswer,
     /// The column to move the selected card to.
@@ -1316,6 +1320,92 @@ impl HubState {
         });
     }
 
+    /// Runs a board write in the background, then reloads the board.
+    fn board_write(
+        &mut self,
+        write: impl std::future::Future<Output = Result<String, String>> + Send + 'static,
+    ) {
+        let (Some(api), Some(rt), Some(repo)) =
+            (self.api.clone(), self.handle(), self.community.repo.clone())
+        else {
+            return;
+        };
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            match write.await {
+                Ok(text) => {
+                    let _ = tx.send(Msg::Done {
+                        text,
+                        ok: true,
+                        reload: false,
+                    });
+                    let result = gitkraft_hub::community::list(
+                        &api,
+                        &repo,
+                        gitkraft_hub::community::Tab::Board,
+                    )
+                    .await;
+                    let _ = tx.send(Msg::Community {
+                        repo: repo.key(),
+                        tab: CommunityTab::Board,
+                        result,
+                    });
+                }
+                Err(e) => done(&tx, Err(e), String::new(), false),
+            }
+        });
+    }
+
+    /// Adds a card: `typed` is `title` or `title | column`.
+    pub fn submit_new_card(&mut self, typed: &str) {
+        let (title, column) = match typed.split_once('|') {
+            Some((t, c)) => (t.trim().to_string(), Some(c.trim().to_string())),
+            None => (typed.trim().to_string(), None),
+        };
+        let (Some(api), Some(repo)) = (self.api.clone(), self.community.repo.clone()) else {
+            return;
+        };
+        let board = self
+            .community
+            .items
+            .as_ref()
+            .and_then(|i| i.get(self.community.row))
+            .map(|i| i.board.clone());
+        self.board_write(async move {
+            gitkraft_hub::community::new_card(
+                &api,
+                &repo,
+                board.as_deref(),
+                &title,
+                column.as_deref(),
+            )
+            .await
+        });
+    }
+
+    /// Moves the selected card inside its column.
+    pub fn shift_card(&mut self, shift: gitkraft_hub::community::Shift) {
+        let (Some(api), Some(repo)) = (self.api.clone(), self.community.repo.clone()) else {
+            return;
+        };
+        let Some(item) = self
+            .community
+            .items
+            .as_ref()
+            .and_then(|i| i.get(self.community.row))
+            .cloned()
+        else {
+            return;
+        };
+        let Ok(number) = item.key.parse::<u64>() else {
+            return self.set_notice("a draft card has no issue to move".into(), false);
+        };
+        self.board_write(async move {
+            gitkraft_hub::community::reorder_card(&api, &repo, Some(&item.board), number, shift)
+                .await
+        });
+    }
+
     /// Moves the selected board card into the column `typed` names.
     pub fn submit_move_card(&mut self, typed: &str) {
         let (Some(api), Some(rt), Some(repo)) =
@@ -1536,6 +1626,17 @@ impl HubState {
     }
 
     /// Shows what was done on `date`.
+    /// The address of the `n`-th item of the open day's activity, in the order the panel lists them.
+    pub fn day_item_url(&self, n: usize) -> Option<String> {
+        let r = self.pulse.day_data.as_ref()?;
+        r.activity
+            .groups()
+            .into_iter()
+            .flat_map(|(_, _, items)| items)
+            .nth(n)
+            .map(|e| e.url.clone())
+    }
+
     pub fn pick_day(&mut self, date: chrono::NaiveDate) {
         self.pulse.day = Some(date);
         self.pulse.day_data = None;
@@ -2266,6 +2367,10 @@ impl HubState {
                 Ok(since) => self.ai_pr(gitkraft_hub::review_ai::Action::CatchUp, since),
                 Err(e) => self.set_notice(e, false),
             }
+            return;
+        }
+        if prompt.purpose == PromptPurpose::NewCard {
+            self.submit_new_card(&prompt.buffer);
             return;
         }
         if prompt.purpose == PromptPurpose::DiscussionAnswer {

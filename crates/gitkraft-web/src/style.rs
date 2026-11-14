@@ -189,6 +189,7 @@ function actBtn(b){
   if(b.dataset.ask){const t=prompt(b.dataset.ask);if(!t)return;p[field]=t;}
   if(b.dataset.from){p[field]=document.getElementById(b.dataset.from).value;}
   if(b.dataset.title){p.title=document.getElementById(b.dataset.title).value;}
+  if(b.dataset.column){p.column=document.getElementById(b.dataset.column).value;}
   if(b.dataset.method){p.method=document.getElementById(b.dataset.method).value;}
   if(b.dataset.confirm&&!confirm(b.dataset.confirm))return;
   if(b.dataset.since){const s=prompt('Only what is new since (YYYY-MM-DD)? Empty for the whole thread');if(s===null)return;if(s.trim())p.since=s.trim();}

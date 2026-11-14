@@ -291,6 +291,61 @@ impl<C: HttpClient> GitHubLike<C> {
         .map(|_| ())
     }
 
+    /// Adds a draft card to a board, in column `to` when given. GitHub Projects (v2) only.
+    pub(crate) async fn create_card(
+        &self,
+        board: &Board,
+        title: &str,
+        to: Option<&BoardColumn>,
+    ) -> Result<()> {
+        self.require_github("Gitea and Forgejo have no project board API")?;
+        let (Some(project), Some(field)) = (board.project_id.as_deref(), board.field_id.as_deref())
+        else {
+            return Err(PlatformError::Unsupported(
+                "this board cannot take cards: load it again",
+            ));
+        };
+        let v = self
+            .graphql(
+                "mutation($p:ID!,$t:String!){addProjectV2DraftIssue(input:{projectId:$p,title:$t}){projectItem{id}}}",
+                &json!({ "p": project, "t": title }),
+            )
+            .await?;
+        let item = v["data"]["addProjectV2DraftIssue"]["projectItem"]["id"]
+            .as_str()
+            .ok_or_else(|| PlatformError::Parse("no item id in the answer".into()))?;
+        if let Some(option) = to.and_then(|c| c.option_id.as_deref()) {
+            self.graphql(
+                "mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){projectV2Item{id}}}",
+                &json!({ "p": project, "i": item, "f": field, "o": option }),
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
+    /// Puts `card` right after `after` in its column (`None`: at the top). GitHub Projects (v2) only.
+    pub(crate) async fn reorder_card(
+        &self,
+        board: &Board,
+        card: &BoardCard,
+        after: Option<&BoardCard>,
+    ) -> Result<()> {
+        let (Some(project), Some(item)) = (board.project_id.as_deref(), card.item_id.as_deref())
+        else {
+            return Err(PlatformError::Unsupported(
+                "this card cannot be moved: load the board again",
+            ));
+        };
+        let after = after.and_then(|a| a.item_id.as_deref());
+        self.graphql(
+            "mutation($p:ID!,$i:ID!,$a:ID){updateProjectV2ItemPosition(input:{projectId:$p,itemId:$i,afterId:$a}){items(first:1){nodes{id}}}}",
+            &json!({ "p": project, "i": item, "a": after }),
+        )
+        .await
+        .map(|_| ())
+    }
+
     /// The wiki's pages. Gitea family only; GitHub's wiki is a git repository.
     pub(crate) async fn wiki_pages(&self, repo: &RepoId) -> Result<Vec<WikiPage>> {
         self.require_gitea("GitHub wikis are git repositories: clone <repo>.wiki.git")?;
@@ -601,6 +656,24 @@ impl<C: HttpClient> GitLab<C> {
                 crate::http::Method::Put,
                 &format!("{}/issues/{number}", project(repo)),
                 Some(&json!({ "add_labels": add, "remove_labels": remove.join(",") })),
+            )
+            .await
+            .map(|_| ())
+    }
+
+    /// Opens an issue as a new card, in the list `to` names (a list is a label; `Open` has none).
+    pub(crate) async fn create_card(
+        &self,
+        repo: &RepoId,
+        title: &str,
+        to: Option<&BoardColumn>,
+    ) -> Result<()> {
+        let label = to.map(|c| c.name.as_str()).filter(|n| *n != "Open");
+        self.api
+            .send(
+                crate::http::Method::Post,
+                &format!("{}/issues", project(repo)),
+                Some(&json!({ "title": title, "labels": label.unwrap_or("") })),
             )
             .await
             .map(|_| ())

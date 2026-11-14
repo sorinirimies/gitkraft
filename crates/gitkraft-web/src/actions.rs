@@ -79,6 +79,31 @@ pub enum ActionRequest {
         #[serde(default)]
         message: Option<String>,
     },
+    /// Add a card to a board.
+    NewCard {
+        /// `host/owner/name`.
+        repo: String,
+        /// Title of the card.
+        title: String,
+        /// Column to put it in.
+        #[serde(default)]
+        column: Option<String>,
+        /// The board when the repository has several.
+        #[serde(default)]
+        board: Option<String>,
+    },
+    /// Move a card inside its column.
+    ShiftCard {
+        /// `host/owner/name`.
+        repo: String,
+        /// The card's issue or PR number.
+        number: u64,
+        /// `up`, `down` or `top`.
+        way: String,
+        /// The board when the card is on several.
+        #[serde(default)]
+        board: Option<String>,
+    },
     /// Move a board card to another column.
     MoveCard {
         /// `host/owner/name`.
@@ -315,6 +340,38 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
                 message.as_deref().unwrap_or_default(),
             )
             .await;
+            session.invalidate();
+            return out;
+        }
+        ActionRequest::NewCard {
+            repo,
+            title,
+            column,
+            board,
+        } => {
+            let repo = repo_of(&repo)?;
+            let out = gitkraft_hub::community::new_card(
+                hub,
+                &repo,
+                board.as_deref(),
+                &title,
+                column.as_deref(),
+            )
+            .await;
+            session.invalidate();
+            return out;
+        }
+        ActionRequest::ShiftCard {
+            repo,
+            number,
+            way,
+            board,
+        } => {
+            let repo = repo_of(&repo)?;
+            let shift = gitkraft_hub::community::Shift::parse(&way)?;
+            let out =
+                gitkraft_hub::community::reorder_card(hub, &repo, board.as_deref(), number, shift)
+                    .await;
             session.invalidate();
             return out;
         }

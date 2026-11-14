@@ -88,6 +88,32 @@ pub(crate) struct MoveCardArgs {
     pub board: Option<String>,
 }
 
+/// Add a card to a board.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub(crate) struct NewCardArgs {
+    /// `host/owner/name`; default: the current checkout.
+    pub repo: Option<String>,
+    /// Title of the card.
+    pub title: String,
+    /// Column (name or start of it); default: the board's own.
+    pub column: Option<String>,
+    /// Board name (or its start); default: the first board.
+    pub board: Option<String>,
+}
+
+/// Move a card inside its column.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub(crate) struct ReorderCardArgs {
+    /// `host/owner/name`; default: the current checkout.
+    pub repo: Option<String>,
+    /// Issue or pull request number of the card.
+    pub number: u64,
+    /// `up`, `down` or `top`.
+    pub way: String,
+    /// Board name (or its start) when the card is on several boards.
+    pub board: Option<String>,
+}
+
 /// Submit a review.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub(crate) struct ReviewArgs {
@@ -298,6 +324,50 @@ impl GitkraftServer {
         annotations(read_only_hint = false, destructive_hint = false)
     )]
     pub(crate) async fn move_card(&self, Parameters(a): Parameters<MoveCardArgs>) -> ToolResult {
+        self.move_card_inner(a).await
+    }
+
+    #[tool(
+        description = "Add a card to a board (GitHub Projects: a draft card; GitLab: a new issue in the list). Optionally into a column.",
+        annotations(read_only_hint = false, destructive_hint = false)
+    )]
+    pub(crate) async fn new_card(&self, Parameters(a): Parameters<NewCardArgs>) -> ToolResult {
+        let repo = self.repo(a.repo.as_deref())?;
+        let message = gitkraft_hub::community::new_card(
+            &self.hub,
+            &repo,
+            a.board.as_deref(),
+            &a.title,
+            a.column.as_deref(),
+        )
+        .await
+        .map_err(invalid)?;
+        out(&json!({"ok": true, "message": message}))
+    }
+
+    #[tool(
+        description = "Move a board card up, down or to the top of its column (GitHub Projects only).",
+        annotations(read_only_hint = false, destructive_hint = false)
+    )]
+    pub(crate) async fn reorder_card(
+        &self,
+        Parameters(a): Parameters<ReorderCardArgs>,
+    ) -> ToolResult {
+        let repo = self.repo(a.repo.as_deref())?;
+        let shift = gitkraft_hub::community::Shift::parse(&a.way).map_err(invalid)?;
+        let message = gitkraft_hub::community::reorder_card(
+            &self.hub,
+            &repo,
+            a.board.as_deref(),
+            a.number,
+            shift,
+        )
+        .await
+        .map_err(invalid)?;
+        out(&json!({"ok": true, "message": message}))
+    }
+
+    async fn move_card_inner(&self, a: MoveCardArgs) -> ToolResult {
         let repo = self.repo(a.repo.as_deref())?;
         let message = gitkraft_hub::community::move_card(
             &self.hub,

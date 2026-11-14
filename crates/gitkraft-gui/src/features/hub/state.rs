@@ -206,6 +206,12 @@ pub enum HubMessage {
     CommunityComment,
     /// Answer this comment of the open discussion next (`None` goes back to a top-level comment).
     CommunityReplyTo(Option<(u64, String)>),
+    /// Add a card: the note is `title` or `title | column`.
+    CommunityNewCard,
+    /// Move the selected card inside its column.
+    CommunityShift(gitkraft_hub::community::Shift),
+    /// Open an address (an entry of the calendar day) in the browser.
+    OpenUrl(String),
     /// Mark this comment (its id) of the open discussion as the answer.
     CommunityAnswer(u64),
     /// Move the selected board card to the column the note names.
@@ -917,6 +923,17 @@ impl HubState {
                 self.community.reply_to = to;
                 Task::none()
             }
+            HubMessage::OpenUrl(url) => {
+                if url.is_empty() {
+                    self.notice = Some(("this entry has no address".into(), false));
+                } else if let Err(e) = gitkraft_core::open_file_default(std::path::Path::new(&url))
+                {
+                    self.notice = Some((format!("could not open {url}: {e}"), false));
+                }
+                Task::none()
+            }
+            HubMessage::CommunityNewCard => self.new_card(),
+            HubMessage::CommunityShift(s) => self.shift_card(s),
             HubMessage::CommunityAnswer(id) => self.mark_answer(id),
             HubMessage::CommunityMove => self.move_card(),
             HubMessage::WikiEdit => {
@@ -1540,6 +1557,68 @@ impl HubState {
         let task = self.load_community();
         self.community.page = page;
         task
+    }
+
+    fn new_card(&mut self) -> Task<HubMessage> {
+        let typed = self.note.trim().to_string();
+        let (Some(api), Some(repo)) = (self.handle(), self.community.repo.clone()) else {
+            return Task::none();
+        };
+        if self.community.tab != gitkraft_hub::community::Tab::Board {
+            return Task::none();
+        }
+        let (title, column) = match typed.split_once('|') {
+            Some((t, c)) => (t.trim().to_string(), Some(c.trim().to_string())),
+            None => (typed, None),
+        };
+        let board = self
+            .community
+            .items
+            .as_ref()
+            .and_then(|l| l.get(self.community.row))
+            .map(|i| i.board.clone());
+        self.note.clear();
+        Task::perform(
+            async move {
+                gitkraft_hub::community::new_card(
+                    &api,
+                    &repo,
+                    board.as_deref(),
+                    &title,
+                    column.as_deref(),
+                )
+                .await
+            },
+            HubMessage::CommunityWritten,
+        )
+    }
+
+    fn shift_card(&mut self, shift: gitkraft_hub::community::Shift) -> Task<HubMessage> {
+        let (Some(api), Some(repo), Some(item)) = (
+            self.handle(),
+            self.community.repo.clone(),
+            self.community
+                .items
+                .as_ref()
+                .and_then(|l| l.get(self.community.row))
+                .cloned(),
+        ) else {
+            return Task::none();
+        };
+        if self.community.tab != gitkraft_hub::community::Tab::Board {
+            return Task::none();
+        }
+        let Ok(number) = item.key.parse::<u64>() else {
+            self.notice = Some(("a draft card has no issue to move".into(), false));
+            return Task::none();
+        };
+        Task::perform(
+            async move {
+                gitkraft_hub::community::reorder_card(&api, &repo, Some(&item.board), number, shift)
+                    .await
+            },
+            HubMessage::CommunityWritten,
+        )
     }
 
     fn mark_answer(&mut self, comment: u64) -> Task<HubMessage> {
@@ -3164,6 +3243,27 @@ mod tests {
                 .as_ref()
                 .is_some_and(|(m, ok)| m.contains("no key") && !ok)
         );
+    }
+
+    #[test]
+    fn a_day_entry_without_an_address_says_so() {
+        let mut s = state();
+        let _ = s.update(HubMessage::OpenUrl(String::new()));
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, ok)| t.contains("no address") && !ok)
+        );
+    }
+
+    #[test]
+    fn card_buttons_do_nothing_without_a_board() {
+        let mut s = state();
+        let _ = s.update(HubMessage::CommunityNewCard);
+        let _ = s.update(HubMessage::CommunityShift(
+            gitkraft_hub::community::Shift::Up,
+        ));
+        assert_eq!(s.notice, None);
     }
 
     #[test]

@@ -403,6 +403,122 @@ pub async fn move_card<C: HttpClient + Clone>(
         .map_err(|e| e.to_string())
 }
 
+/// Which way a card goes inside its column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shift {
+    /// One place up.
+    Up,
+    /// One place down.
+    Down,
+    /// To the top.
+    Top,
+}
+
+impl Shift {
+    /// `up`, `down` or `top`.
+    ///
+    /// # Errors
+    /// Anything else.
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.trim().to_lowercase().as_str() {
+            "up" => Ok(Self::Up),
+            "down" => Ok(Self::Down),
+            "top" => Ok(Self::Top),
+            other => Err(format!("'{other}' is not up, down or top")),
+        }
+    }
+}
+
+/// Adds a card titled `title` to a board, in the column `column` names (none: the board's default).
+/// `board` picks one board by name or prefix; without it the first board is used.
+///
+/// # Errors
+/// No account, an empty title, no board or column, a platform without boards, or it refuses.
+pub async fn new_card<C: HttpClient + Clone>(
+    hub: &Hub<C>,
+    repo: &RepoId,
+    board: Option<&str>,
+    title: &str,
+    column: Option<&str>,
+) -> Result<String, String> {
+    if title.trim().is_empty() {
+        return Err("a card needs a title".into());
+    }
+    let b = hub
+        .backend(&repo.host)
+        .ok_or_else(|| format!("no account for {}", repo.host))?;
+    let boards = b.boards(repo).await.map_err(|e| e.to_string())?;
+    let board = boards
+        .iter()
+        .find(|bd| {
+            board.is_none_or(|w| bd.name.to_lowercase().starts_with(&w.trim().to_lowercase()))
+        })
+        .ok_or_else(|| format!("{} has no such board", repo.full_name()))?;
+    let to = column
+        .filter(|c| !c.trim().is_empty())
+        .map(|c| pick_column(board, c))
+        .transpose()?;
+    b.create_card(repo, board, title.trim(), to)
+        .await
+        .map(|()| match to {
+            Some(c) => format!("card added to {} on {}", c.name, board.name),
+            None => format!("card added to {}", board.name),
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// Moves the card of issue or PR `number` inside its column. The board is read fresh.
+///
+/// # Errors
+/// No account, no such card, already at that end, a platform that cannot order, or it refuses.
+pub async fn reorder_card<C: HttpClient + Clone>(
+    hub: &Hub<C>,
+    repo: &RepoId,
+    board: Option<&str>,
+    number: u64,
+    shift: Shift,
+) -> Result<String, String> {
+    let b = hub
+        .backend(&repo.host)
+        .ok_or_else(|| format!("no account for {}", repo.host))?;
+    let boards = b.boards(repo).await.map_err(|e| e.to_string())?;
+    let (bd, col, i) = boards
+        .iter()
+        .filter(|bd| {
+            board.is_none_or(|w| bd.name.to_lowercase().starts_with(&w.trim().to_lowercase()))
+        })
+        .find_map(|bd| {
+            bd.columns.iter().find_map(|c| {
+                c.cards
+                    .iter()
+                    .position(|k| k.number == Some(number))
+                    .map(|i| (bd, c, i))
+            })
+        })
+        .ok_or_else(|| format!("#{number} is on no board of {}", repo.full_name()))?;
+    let after = match shift {
+        Shift::Top if i == 0 => return Err(format!("#{number} is already first")),
+        Shift::Up if i == 0 => return Err(format!("#{number} is already first")),
+        Shift::Down if i + 1 == col.cards.len() => {
+            return Err(format!("#{number} is already last"));
+        }
+        Shift::Top => None,
+        Shift::Up => i.checked_sub(2).and_then(|j| col.cards.get(j)),
+        Shift::Down => col.cards.get(i + 1),
+    };
+    b.reorder_card(bd, &col.cards[i], after)
+        .await
+        .map(|()| {
+            let way = match shift {
+                Shift::Up => "up",
+                Shift::Down => "down",
+                Shift::Top => "to the top",
+            };
+            format!("#{number} moved {way} in {}", col.name)
+        })
+        .map_err(|e| e.to_string())
+}
+
 /// Reads what a user typed to answer a comment of an open page: `N text`, where `N` is the 1-based
 /// place of the comment in [`Page::comments`], as the text front-ends number them.
 ///
@@ -749,6 +865,82 @@ mod tests {
                 .unwrap_err()
                 .contains("title")
         );
+    }
+
+    fn last_body(fake: &FakeClient) -> String {
+        String::from_utf8_lossy(
+            fake.requests()
+                .last()
+                .and_then(|r| r.body.clone())
+                .unwrap_or_default()
+                .as_slice(),
+        )
+        .into_owned()
+    }
+
+    const THREE_CARDS: &str = r#"{"data":{"repository":{"projectsV2":{"nodes":[{"id":"P","title":"Dev",
+        "field":{"id":"F","options":[{"id":"O1","name":"Todo"},{"id":"O2","name":"Doing"}]},
+        "items":{"nodes":[
+        {"id":"I1","fieldValueByName":{"name":"Todo"},"content":{"number":1,"title":"a","url":"u","assignees":{"nodes":[]}}},
+        {"id":"I2","fieldValueByName":{"name":"Todo"},"content":{"number":2,"title":"b","url":"u","assignees":{"nodes":[]}}},
+        {"id":"I3","fieldValueByName":{"name":"Todo"},"content":{"number":3,"title":"c","url":"u","assignees":{"nodes":[]}}}]}}]}}}}"#;
+
+    #[tokio::test]
+    async fn a_card_is_put_after_the_right_neighbour_and_the_ends_say_so() {
+        let repo = RepoId::new("github.com", "o", "r");
+        let ok = r#"{"data":{"updateProjectV2ItemPosition":{"items":{"nodes":[]}}}}"#;
+        for (number, shift, after) in [
+            (3, Shift::Up, "\"a\":\"I1\""),
+            (2, Shift::Up, "\"a\":null"),
+            (1, Shift::Down, "\"a\":\"I2\""),
+            (3, Shift::Top, "\"a\":null"),
+        ] {
+            let (hub, fake) = make_hub(PlatformKind::GitHub, "github.com");
+            fake.push_json("https://api.github.com/graphql", THREE_CARDS);
+            fake.push_json("https://api.github.com/graphql", ok);
+            let done = reorder_card(&hub, &repo, None, number, shift).await;
+            assert!(done.is_ok(), "{number} {shift:?}: {done:?}");
+            let sent = last_body(&fake);
+            assert!(sent.contains(after), "{number} {shift:?}: {sent}");
+        }
+        let (hub, fake) = make_hub(PlatformKind::GitHub, "github.com");
+        fake.push_json("https://api.github.com/graphql", THREE_CARDS);
+        let e = reorder_card(&hub, &repo, None, 1, Shift::Up)
+            .await
+            .unwrap_err();
+        assert!(e.contains("already first"), "{e}");
+        let (hub, fake) = make_hub(PlatformKind::GitHub, "github.com");
+        fake.push_json("https://api.github.com/graphql", THREE_CARDS);
+        let e = reorder_card(&hub, &repo, None, 3, Shift::Down)
+            .await
+            .unwrap_err();
+        assert!(e.contains("already last"), "{e}");
+        assert_eq!(Shift::parse("UP"), Ok(Shift::Up));
+        assert!(Shift::parse("sideways").is_err());
+    }
+
+    #[tokio::test]
+    async fn a_new_card_lands_in_the_named_column_and_needs_a_title() {
+        let repo = RepoId::new("github.com", "o", "r");
+        let (hub, fake) = make_hub(PlatformKind::GitHub, "github.com");
+        fake.push_json("https://api.github.com/graphql", THREE_CARDS);
+        fake.push_json(
+            "https://api.github.com/graphql",
+            r#"{"data":{"addProjectV2DraftIssue":{"projectItem":{"id":"I9"}}}}"#,
+        );
+        fake.push_json(
+            "https://api.github.com/graphql",
+            r#"{"data":{"updateProjectV2ItemFieldValue":{"projectV2Item":{"id":"I9"}}}}"#,
+        );
+        let done = new_card(&hub, &repo, None, " Ship it ", Some("doing")).await;
+        assert_eq!(done, Ok("card added to Doing on Dev".to_string()));
+        let sent = last_body(&fake);
+        assert!(
+            sent.contains("\"i\":\"I9\"") && sent.contains("\"o\":\"O2\""),
+            "{sent}"
+        );
+        let e = new_card(&hub, &repo, None, "  ", None).await.unwrap_err();
+        assert!(e.contains("title"), "{e}");
     }
 
     #[tokio::test]

@@ -146,6 +146,8 @@ fn read_tools_are_marked_read_only() {
             "mark_answer",
             "save_wiki_page",
             "move_card",
+            "new_card",
+            "reorder_card",
         ];
         assert_eq!(ro, Some(!writes.contains(&name)), "{name}: {t}");
     }

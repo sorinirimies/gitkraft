@@ -195,7 +195,7 @@ gitkraft-tui runs --status failed     # CI runs; then `run ID`, `log JOB --grep 
 gitkraft-tui day 2026-05-01           # what you did that day, over every account
 gitkraft-tui pulse --days 14 ; discussions ; boards ; wiki [PAGE] ; inbox
 gitkraft-tui comment 123 "looks good" ; merge 123 --method squash --when-green ; rerun RUN
-gitkraft-tui reply DISCUSSION COMMENT_ID "thanks" ; answer DISCUSSION COMMENT_ID ; board-move 12 Done ; wiki-save PAGE --edit
+gitkraft-tui reply DISCUSSION COMMENT_ID "thanks" ; answer DISCUSSION COMMENT_ID ; board-new "title" --column Todo ; board-order 12 up ; board-move 12 Done ; wiki-save PAGE --edit
 gitkraft-tui completions zsh > ~/.zfunc/_gitkraft-tui
 ```
 
@@ -271,7 +271,7 @@ the checkout it starts in is the default repository, so `repo` can be left out.
 | Write (`--write`) | |
 |---|---|
 | `comment`, `comment_discussion`, `review`, `set_open`, `edit_labels` | |
-| `reply_discussion`, `mark_answer`, `save_wiki_page`, `move_card` | answer a comment of a thread; mark the answer of a discussion; create or edit a wiki page; move a board card |
+| `reply_discussion`, `mark_answer`, `save_wiki_page`, `move_card`, `new_card`, `reorder_card` | answer a comment of a thread; mark the answer of a discussion; create or edit a wiki page; move a board card; add a card; reorder a card in its column |
 | `merge_pull_request` | now, `when_green` or `queue`; merge, squash or rebase. `force` also needs `--allow-force` |
 | `update_branch`, `cancel_auto_merge` | |
 | `ci_rerun`, `ci_cancel`, `dispatch_workflow` | inputs are checked against the workflow file |

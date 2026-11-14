@@ -1264,12 +1264,34 @@ fn community<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
         right = right.push(buttons);
     }
     if cs.tab == Tab::Board && cs.items.as_ref().is_some_and(|i| !i.is_empty()) {
-        right = right.push(note_input(hub, "Move the selected card to column…"));
-        right = right.push(
-            button(text("Move card").size(13))
-                .on_press(HubMessage::CommunityMove)
+        right = right.push(note_input(
+            hub,
+            "Column to move the selected card to, or a new card: title | column",
+        ));
+        let btn = |label: &'static str, msg: HubMessage| {
+            button(text(label).size(13))
+                .on_press(msg)
                 .style(theme::toolbar_button)
-                .padding([4, 10]),
+                .padding([4, 10])
+        };
+        right = right.push(
+            row![
+                btn("Move card", HubMessage::CommunityMove),
+                btn("New card", HubMessage::CommunityNewCard),
+                btn(
+                    "Up",
+                    HubMessage::CommunityShift(gitkraft_hub::community::Shift::Up)
+                ),
+                btn(
+                    "Down",
+                    HubMessage::CommunityShift(gitkraft_hub::community::Shift::Down)
+                ),
+                btn(
+                    "Top",
+                    HubMessage::CommunityShift(gitkraft_hub::community::Shift::Top)
+                ),
+            ]
+            .spacing(8),
         );
     }
     if cs.tab == Tab::Wiki && cs.error.is_none() {
@@ -1483,13 +1505,18 @@ fn day_panel<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
                         None => e.title.clone(),
                     };
                     col = col.push(
-                        row![
-                            text(label).size(12).color(c.text_primary),
-                            text(format!("· {}", e.repo))
-                                .size(12)
-                                .color(c.text_secondary),
-                        ]
-                        .spacing(6),
+                        button(
+                            row![
+                                text(label).size(12).color(c.text_primary),
+                                text(format!("· {}", e.repo))
+                                    .size(12)
+                                    .color(c.text_secondary),
+                            ]
+                            .spacing(6),
+                        )
+                        .on_press(HubMessage::OpenUrl(e.url.clone()))
+                        .style(theme::ghost_button)
+                        .padding([1, 4]),
                     );
                 }
             }

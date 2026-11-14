@@ -1642,7 +1642,7 @@ fn render_pulse(
             rows[0],
         ),
     }
-    render_day(hub, frame, day_area, theme);
+    render_day(hub, frame, day_area, theme, hits_out);
     // Numbers.
     let repo_name = hub
         .pulse
@@ -1739,7 +1739,13 @@ fn render_pulse(
 }
 
 /// What was done on the picked calendar day, like GitHub's panel under the calendar.
-fn render_day(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme) {
+fn render_day(
+    hub: &HubState,
+    frame: &mut Frame,
+    area: Rect,
+    theme: &UiTheme,
+    hits_out: &mut Vec<Hit>,
+) {
     let Some(day) = hub.pulse.day else {
         frame.render_widget(
             Paragraph::new(" click a day, or ←→ weeks · ↑↓ days · t today").style(muted(theme)),
@@ -1758,6 +1764,8 @@ fn render_day(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme) {
         );
         return;
     };
+    // (line, item) pairs: which line of the panel shows which item, for the mouse
+    let mut item_lines: Vec<(usize, usize)> = Vec::new();
     let mut lines = vec![Line::from(Span::styled(
         r.activity.headline(),
         Style::default()
@@ -1774,6 +1782,7 @@ fn render_day(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme) {
                 Some(n) => format!("  #{n} {}", e.title),
                 None => format!("  {}", e.title),
             };
+            item_lines.push((lines.len(), item_lines.len()));
             lines.push(Line::from(vec![
                 Span::styled(label, Style::default().fg(theme.text_primary)),
                 Span::styled(format!(" · {}", e.repo), muted(theme)),
@@ -1797,6 +1806,15 @@ fn render_day(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme) {
             "  … (more than fits)",
             muted(theme),
         )));
+    }
+    let inner = block.inner(area);
+    for (line, item) in item_lines {
+        if line < lines.len().min(room.max(1)) && (line as u16) < inner.height {
+            hits_out.push(Hit {
+                rect: Rect::new(inner.x, inner.y + line as u16, inner.width, 1),
+                target: Target::DayItem(item),
+            });
+        }
     }
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
@@ -1822,7 +1840,7 @@ fn hints(hub: &HubState) -> &'static str {
                 "j/k select · Enter open · e edit in editor · U upload edit · n new page · [ ] repo · d/w/b tabs · q back"
             }
             super::state::CommunityTab::Board => {
-                "j/k select · Enter open card · m move to column · [ ] repo · r refresh · d/w/b tabs · q back"
+                "j/k select · Enter open card · m move to column · n new card · < > ^ reorder · [ ] repo · d/w/b tabs · q back"
             }
         };
     }
@@ -1873,6 +1891,7 @@ fn render_status(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme)
             PromptPurpose::Labels => "labels: +add -remove \"two words\"",
             PromptPurpose::DiscussionComment => "comment on the discussion",
             PromptPurpose::CatchUpSince => "catch up since YYYY-MM-DD (Enter: whole thread)",
+            PromptPurpose::NewCard => "new card: title, or title | column",
             PromptPurpose::DiscussionAnswer => "answer: N (the [n] of the comment that solves it)",
             PromptPurpose::DiscussionReply => "reply: N text (N is the [n] of the comment)",
             PromptPurpose::MoveCard => "move the card to column",
@@ -2370,6 +2389,19 @@ mod tests {
             term.backend().buffer()[(rect.x, rect.y)]
                 .modifier
                 .contains(Modifier::REVERSED)
+        );
+        // every listed item is a click target; one without an address says so
+        let hub = app.hub.as_mut().expect("hub");
+        let item = hub
+            .hits
+            .iter()
+            .find(|h| h.target == Target::DayItem(0))
+            .map(|h| h.rect)
+            .expect("the item is clickable");
+        click(hub, item.x + 1, item.y);
+        assert!(
+            hub.fresh_notice()
+                .is_some_and(|(t, ok)| t.contains("no address") && !ok)
         );
     }
 

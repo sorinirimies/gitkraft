@@ -79,6 +79,8 @@ fn read_only_servers_have_no_write_tools_and_write_servers_have_all() {
         "mark_answer",
         "save_wiki_page",
         "move_card",
+        "new_card",
+        "reorder_card",
     ] {
         assert!(
             !names.iter().any(|n| n == t),
@@ -103,6 +105,8 @@ fn read_only_servers_have_no_write_tools_and_write_servers_have_all() {
         "mark_answer",
         "save_wiki_page",
         "move_card",
+        "new_card",
+        "reorder_card",
     ] {
         assert!(names.iter().any(|n| n == t), "{t} in {names:?}");
     }
@@ -499,6 +503,57 @@ async fn boards_come_back_as_columns_of_cards() {
     );
     assert_eq!(v["boards"][0]["name"], "Roadmap");
     assert_eq!(v["boards"][0]["columns"][0]["cards"][0]["number"], 4);
+}
+
+#[tokio::test]
+async fn cards_are_added_and_ordered_through_the_platform() {
+    let boards = r#"{"data":{"repository":{"projectsV2":{"nodes":[{"id":"P","title":"Dev",
+        "field":{"id":"F","options":[{"id":"O1","name":"Todo"}]},
+        "items":{"nodes":[
+        {"id":"I1","fieldValueByName":{"name":"Todo"},"content":{"number":1,"title":"a","url":"u","assignees":{"nodes":[]}}},
+        {"id":"I2","fieldValueByName":{"name":"Todo"},"content":{"number":2,"title":"b","url":"u","assignees":{"nodes":[]}}}]}}]}}}}"#;
+    let (s, fake) = rig(write());
+    fake.push_json("https://api.github.com/graphql", boards);
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"updateProjectV2ItemPosition":{"items":{"nodes":[]}}}}"#,
+    );
+    let ok = s
+        .reorder_card(Parameters(ReorderCardArgs {
+            repo: None,
+            number: 2,
+            way: "up".into(),
+            board: None,
+        }))
+        .await
+        .expect("reorder");
+    assert!(
+        json(&ok)["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("up")
+    );
+    let bad = s
+        .reorder_card(Parameters(ReorderCardArgs {
+            repo: None,
+            number: 2,
+            way: "sideways".into(),
+            board: None,
+        }))
+        .await;
+    assert!(bad.is_err());
+    let empty = s
+        .new_card(Parameters(NewCardArgs {
+            repo: None,
+            title: " ".into(),
+            column: None,
+            board: None,
+        }))
+        .await;
+    assert!(
+        empty.is_err(),
+        "an untitled card never reaches the platform"
+    );
 }
 
 #[tokio::test]

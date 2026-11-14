@@ -328,6 +328,21 @@ fn community_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
                 buffer: String::new(),
             });
         }
+        KeyCode::Char('n') if hub.community.tab == CommunityTab::Board => {
+            hub.prompt = Some(Prompt {
+                purpose: PromptPurpose::NewCard,
+                buffer: String::new(),
+            });
+        }
+        KeyCode::Char('<') if hub.community.tab == CommunityTab::Board => {
+            hub.shift_card(gitkraft_hub::community::Shift::Up)
+        }
+        KeyCode::Char('>') if hub.community.tab == CommunityTab::Board => {
+            hub.shift_card(gitkraft_hub::community::Shift::Down)
+        }
+        KeyCode::Char('^') if hub.community.tab == CommunityTab::Board => {
+            hub.shift_card(gitkraft_hub::community::Shift::Top)
+        }
         KeyCode::Char('e') if hub.community.tab == CommunityTab::Wiki => hub.start_wiki_edit(),
         KeyCode::Char('n') if hub.community.tab == CommunityTab::Wiki => {
             hub.prompt = Some(Prompt {
@@ -639,6 +654,15 @@ fn on_press(hub: &mut HubState, x: u16, y: u16) {
             }
         }
         Target::Day(date) => hub.pick_day(date),
+        Target::DayItem(n) => match hub.day_item_url(n) {
+            Some(url) if !url.is_empty() => {
+                match arboard::Clipboard::new().and_then(|mut c| c.set_text(url.clone())) {
+                    Ok(()) => hub.set_notice(format!("copied {url}"), true),
+                    Err(e) => hub.set_notice(format!("clipboard: {e}"), false),
+                }
+            }
+            _ => hub.set_notice("this entry has no address".into(), false),
+        },
         Target::ListArea | Target::DetailArea => {}
     }
 }
@@ -1537,6 +1561,12 @@ mod tests {
         assert_eq!(
             s.prompt.as_ref().map(|p| p.purpose),
             Some(PromptPurpose::MoveCard)
+        );
+        s.prompt = None;
+        press(&mut s, KeyCode::Char('n'));
+        assert_eq!(
+            s.prompt.as_ref().map(|p| p.purpose),
+            Some(PromptPurpose::NewCard)
         );
         s.prompt = None;
         s.community.tab = CommunityTab::Wiki;
