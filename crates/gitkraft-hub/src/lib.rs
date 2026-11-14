@@ -20,5 +20,6 @@ pub mod labels;
 pub mod markdown;
 pub mod poller;
 pub mod pulse;
+pub mod review_ai;
 
 pub use hub::{DayResult, Hub, PrDetail, SectionData, SectionResult, is_open, shared};
