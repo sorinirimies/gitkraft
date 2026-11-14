@@ -1835,7 +1835,7 @@ fn hints(hub: &HubState) -> &'static str {
         .map(|s| s.kind)
     {
         Some(SectionKind::Prs) => {
-            "a approve · x changes · c comment · m/M merge · W when green · Q queue · ! force · u update · S method · C close · w worktree · q back"
+            "a approve · x changes · c comment · m/M merge · W when green · Q queue · ! force · u update · S method · C close · w worktree · B summary · I catch-up · V review draft · q back"
         }
         Some(SectionKind::Issues) => "c comment · C close/reopen · r refresh · n bell · q back",
         Some(SectionKind::Ci) => {

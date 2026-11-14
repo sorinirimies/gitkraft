@@ -438,6 +438,9 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
         KeyCode::Char('D') => hub.open_dispatch_prompt(),
         KeyCode::Char('A') => hub.download_artifacts(),
         KeyCode::Char('E') => hub.explain_job(),
+        KeyCode::Char('B') => hub.ai_pr(gitkraft_hub::review_ai::Action::Summary),
+        KeyCode::Char('I') => hub.ai_pr(gitkraft_hub::review_ai::Action::CatchUp),
+        KeyCode::Char('V') => hub.ai_pr(gitkraft_hub::review_ai::Action::Review),
         _ => {}
     }
     Outcome::Stay
@@ -1074,6 +1077,28 @@ mod tests {
         assert!(has(&s));
         s.focus = Focus::List;
         assert!(!has(&s));
+    }
+
+    #[test]
+    fn the_ai_keys_need_a_selected_pull_request_and_the_hosts_opt_in() {
+        let mut s = state();
+        s.ai_dir = None;
+        s.slots[0].data = None;
+        chars(&mut s, "B");
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, ok)| t.contains("select a pull request") && !ok)
+        );
+        // a selected PR on a host that never opted in: refused, naming the command
+        let mut s = state();
+        s.ai_dir = None;
+        chars(&mut s, "V");
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, ok)| t.contains("ai-allow github.com review") && !ok),
+            "{:?}",
+            s.fresh_notice()
+        );
     }
 
     #[test]

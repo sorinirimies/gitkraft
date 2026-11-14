@@ -614,6 +614,18 @@ fn pr_detail<'a>(
         ("Comment", HubMessage::PostComment),
         ("Check out", HubMessage::Worktree),
         ("Labels", HubMessage::EditLabels),
+        (
+            "Summarize",
+            HubMessage::AiPr(gitkraft_hub::review_ai::Action::Summary),
+        ),
+        (
+            "Catch up",
+            HubMessage::AiPr(gitkraft_hub::review_ai::Action::CatchUp),
+        ),
+        (
+            "Review draft",
+            HubMessage::AiPr(gitkraft_hub::review_ai::Action::Review),
+        ),
     ];
     if hub.tab == PrTab::Diff {
         buttons.push(("Comment on line", HubMessage::InlineComment));

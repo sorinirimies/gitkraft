@@ -432,6 +432,8 @@ pub struct HubState {
     pub project: gitkraft_hub::project::Project,
     /// Which of them the lists show.
     pub scope: gitkraft_hub::project::Scope,
+    /// Where `ai-policy.toml` lives; `None` keeps every AI draft off.
+    pub ai_dir: Option<PathBuf>,
     /// Where each remote stands against the checked-out branch (as of the last fetch).
     pub sync: Vec<gitkraft_hub::project::RemoteSync>,
     /// Shared poller state (bell, inbox).
@@ -502,6 +504,7 @@ impl HubState {
             watched: Vec::new(),
             project: gitkraft_hub::project::Project::default(),
             scope: gitkraft_hub::project::Scope::All,
+            ai_dir: gitkraft_hub::commit_ai::global_dir(),
             sync: Vec::new(),
             engine: Arc::new(tokio::sync::Mutex::new(Engine::default())),
             notify_config: NotifyConfig::default(),
@@ -1087,6 +1090,53 @@ impl HubState {
                 gitkraft_hub::ai::explain_failure(&llm, &ctx)
                     .await
                     .map_err(|e| e.to_string())
+            }
+            .await;
+            let _ = tx.send(Msg::Log { title, result });
+        });
+    }
+
+    /// An AI draft about the selected pull request, shown in the log view: `B` summary, `I` catch-up,
+    /// `V` review notes. Refused unless its host opted in (`gitkraft-tui ai-allow`); changes nothing.
+    pub fn ai_pr(&mut self, action: gitkraft_hub::review_ai::Action) {
+        use gitkraft_hub::review_ai::{self, Action, Policy};
+        let Some(pr) = self.selected_pr().cloned() else {
+            self.set_notice("select a pull request first".into(), false);
+            return;
+        };
+        let policy = match &self.ai_dir {
+            Some(d) => Policy::load(d),
+            None => Ok(Policy::default()),
+        };
+        if let Err(e) = policy.and_then(|p| p.check(&pr.repo.host, action)) {
+            self.set_notice(e, false);
+            return;
+        }
+        let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {
+            return;
+        };
+        let tx = self.tx.clone();
+        let title = format!("AI {} · #{} {}", action.name(), pr.number, pr.title);
+        self.set_notice(format!("asking the AI about #{}…", pr.number), true);
+        rt.spawn(async move {
+            let result = async {
+                let detail = api
+                    .pr_detail(&pr.repo, pr.number)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let llm = tokio::task::spawn_blocking(gitkraft_hub::ai::remote_default)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .map_err(|e| e.to_string())?;
+                match action {
+                    Action::Summary => review_ai::summarize_pr(&llm, &detail).await,
+                    Action::CatchUp => review_ai::catch_up(&llm, &detail, None).await,
+                    Action::Review => review_ai::review_draft(&llm, &detail)
+                        .await
+                        .map(|n| n.iter().map(|n| format!("{}\n", n.render())).collect()),
+                    Action::Triage => Ok(String::new()),
+                }
+                .map_err(|e| e.to_string())
             }
             .await;
             let _ = tx.send(Msg::Log { title, result });

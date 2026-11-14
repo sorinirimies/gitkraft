@@ -210,7 +210,7 @@ More drafts, each **off until a host opts in, per action** (`gitkraft-tui ai-all
 `--deny` to turn off, no arguments to list; kept in `ai-policy.toml`, no secrets): `summarize N` (what, why, risk,
 open questions), `catch-up N --since 2026-05-01` (what happened in the thread), `review-draft N` (notes as
 `path:line: note` for you to edit and send), `triage` (inbox sorted into now / fyi / ignore; only notifications
-of hosts that allowed it are sent). All take `--dry-run` to show the redacted prompt. A model never acts.
+of hosts that allowed it are sent). All take `--dry-run` to show the redacted prompt. A model never acts. The same drafts are in the web (buttons on the PR page, Triage on the inbox), the GUI (PR buttons, palette) and the TUI hub (`B` summary, `I` catch-up, `V` review notes on a selected PR).
 
 Settings menu: `M` slides a menu open over any screen: theme (←/→), reduced motion (Space), the project's
 commit message style (opens `.gitkraft/ai.toml`, creating a starter), the settings file and the key reference.

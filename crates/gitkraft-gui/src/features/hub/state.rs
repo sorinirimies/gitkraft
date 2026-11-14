@@ -126,6 +126,8 @@ pub enum HubMessage {
     OpenLog,
     /// Ask the AI why the selected job (or the first failed one) failed.
     Explain,
+    /// An AI draft about the selected pull request (summary, catch-up or review notes).
+    AiPr(gitkraft_hub::review_ai::Action),
     /// A log arrived.
     LogLoaded(Result<(String, String), String>),
     /// Close the log.
@@ -415,6 +417,8 @@ pub struct HubState {
     pub project: gitkraft_hub::project::Project,
     /// Which of them the lists show.
     pub scope: gitkraft_hub::project::Scope,
+    /// Where `ai-policy.toml` lives; `None` keeps every AI draft off.
+    pub ai_dir: Option<std::path::PathBuf>,
     /// Where each remote stands against the checked-out branch (as of the last fetch).
     pub sync: Vec<gitkraft_hub::project::RemoteSync>,
     /// The command palette's search text while open.
@@ -457,6 +461,7 @@ impl HubState {
             watched: Vec::new(),
             project: gitkraft_hub::project::Project::default(),
             scope: gitkraft_hub::project::Scope::All,
+            ai_dir: gitkraft_hub::commit_ai::global_dir(),
             sync: Vec::new(),
             palette: None,
             checkouts: Vec::new(),
@@ -720,6 +725,7 @@ impl HubState {
             }
             HubMessage::OpenLog => self.open_log(),
             HubMessage::Explain => self.explain(),
+            HubMessage::AiPr(a) => self.ai_pr(a),
             HubMessage::LogLoaded(Ok((title, raw))) => {
                 let lines = parse_log(&raw);
                 let annotations = extract(&lines);
@@ -1313,6 +1319,52 @@ impl HubState {
         )
     }
 
+    /// An AI draft about the selected pull request, shown in the log view. Refused unless its host
+    /// opted in with `gitkraft-tui ai-allow`; changes nothing.
+    fn ai_pr(&mut self, action: gitkraft_hub::review_ai::Action) -> Task<HubMessage> {
+        use gitkraft_hub::review_ai::{self, Action, Policy};
+        let Some(pr) = self.selected_pr() else {
+            self.notice = Some(("select a pull request first".into(), false));
+            return Task::none();
+        };
+        let policy = match &self.ai_dir {
+            Some(d) => Policy::load(d),
+            None => Ok(Policy::default()),
+        };
+        if let Err(e) = policy.and_then(|p| p.check(&pr.repo.host, action)) {
+            self.notice = Some((e, false));
+            return Task::none();
+        }
+        let Some(api) = self.handle() else {
+            return Task::none();
+        };
+        let title = format!("AI {} · #{} {}", action.name(), pr.number, pr.title);
+        self.notice = Some((format!("asking the AI about #{}…", pr.number), true));
+        Task::perform(
+            async move {
+                let detail = api
+                    .pr_detail(&pr.repo, pr.number)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let llm = tokio::task::spawn_blocking(gitkraft_hub::ai::remote_default)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .map_err(|e| e.to_string())?;
+                match action {
+                    Action::Summary => review_ai::summarize_pr(&llm, &detail).await,
+                    Action::CatchUp => review_ai::catch_up(&llm, &detail, None).await,
+                    Action::Review => review_ai::review_draft(&llm, &detail)
+                        .await
+                        .map(|n| n.iter().map(|n| format!("{}\n", n.render())).collect()),
+                    Action::Triage => Ok(String::new()),
+                }
+                .map(|text| (title, text))
+                .map_err(|e| e.to_string())
+            },
+            HubMessage::LogLoaded,
+        )
+    }
+
     fn pick_day(&mut self, date: NaiveDate) -> Task<HubMessage> {
         self.pulse.day = Some(date);
         self.pulse.day_data = None;
@@ -1858,6 +1910,18 @@ impl HubState {
             );
             add("Pull request: request changes", HubMessage::RequestChanges);
             add("Pull request: comment", HubMessage::PostComment);
+            add(
+                "Pull request: AI summary",
+                HubMessage::AiPr(gitkraft_hub::review_ai::Action::Summary),
+            );
+            add(
+                "Pull request: AI catch-up on the thread",
+                HubMessage::AiPr(gitkraft_hub::review_ai::Action::CatchUp),
+            );
+            add(
+                "Pull request: AI review notes",
+                HubMessage::AiPr(gitkraft_hub::review_ai::Action::Review),
+            );
             add("Pull request: merge", HubMessage::Merge(MergeMethod::Merge));
             add(
                 "Pull request: squash and merge",
@@ -2425,6 +2489,28 @@ mod tests {
         });
         assert_eq!(s.active_data().map(SectionData::len), Some(0));
         assert_eq!(s.row, None);
+    }
+
+    #[test]
+    fn ai_drafts_need_a_pull_request_and_the_hosts_opt_in() {
+        use gitkraft_hub::review_ai::Action;
+        let mut s = state();
+        s.ai_dir = None;
+        let _ = s.update(HubMessage::AiPr(Action::Summary));
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, ok)| t.contains("select a pull request") && !ok)
+        );
+        let _ = s.update(HubMessage::SelectRow(0));
+        let _ = s.update(HubMessage::AiPr(Action::Review));
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, ok)| t.contains("ai-allow github.com review") && !ok),
+            "{:?}",
+            s.notice
+        );
     }
 
     #[test]
