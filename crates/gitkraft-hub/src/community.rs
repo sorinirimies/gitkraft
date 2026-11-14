@@ -85,6 +85,22 @@ pub async fn list<C: HttpClient + Clone>(
     let b = hub
         .backend(&repo.host)
         .ok_or_else(|| format!("no account for {}", repo.host))?;
+    if tab == Tab::Wiki && is_github(hub, repo) {
+        let (w, r) = (hub.wiki_git().clone(), repo.clone());
+        let pages =
+            crate::wiki_git::blocking(move || w.sync(&r).map(|d| crate::wiki_git::pages(&d)))
+                .await??;
+        return Ok(pages
+            .into_iter()
+            .map(|p| Item {
+                board: String::new(),
+                column: String::new(),
+                key: p.slug,
+                title: p.title,
+                meta: String::new(),
+            })
+            .collect());
+    }
     match tab {
         Tab::Discussions => b
             .discussions(repo, 50)
@@ -164,6 +180,20 @@ pub async fn page<C: HttpClient + Clone>(
     let b = hub
         .backend(&repo.host)
         .ok_or_else(|| format!("no account for {}", repo.host))?;
+    if tab == Tab::Wiki && is_github(hub, repo) {
+        let (w, r, slug) = (hub.wiki_git().clone(), repo.clone(), item.key.clone());
+        let text = crate::wiki_git::blocking(move || {
+            let dir = w.sync(&r)?;
+            crate::wiki_git::read(&dir, &slug)
+        })
+        .await??;
+        return Ok(Page {
+            key: item.key.clone(),
+            title: item.key.replace('-', " "),
+            text,
+            comments: Vec::new(),
+        });
+    }
     match tab {
         Tab::Discussions => {
             let n: u64 = item
@@ -296,6 +326,10 @@ pub fn parse_answer(typed: &str, page: &Page) -> Result<u64, String> {
         })
 }
 
+fn is_github<C: HttpClient + Clone>(hub: &Hub<C>, repo: &RepoId) -> bool {
+    hub.kind_of(&repo.host) == Some(gitkraft_platforms::PlatformKind::GitHub)
+}
+
 /// Creates (`slug` absent) or edits a wiki page.
 ///
 /// # Errors
@@ -319,6 +353,17 @@ pub async fn save_wiki<C: HttpClient + Clone>(
     } else {
         message.trim().to_string()
     };
+    if is_github(hub, repo) {
+        // a GitHub wiki is a git repository: the page is a file, the save a commit and a push
+        let name = slug.map_or_else(|| title.trim().replace(' ', "-"), str::to_string);
+        let (w, r, content, message) = (
+            hub.wiki_git().clone(),
+            repo.clone(),
+            content.to_string(),
+            message.clone(),
+        );
+        return crate::wiki_git::blocking(move || w.save(&r, &name, &content, &message)).await?;
+    }
     hub.backend(&repo.host)
         .ok_or_else(|| format!("no account for {}", repo.host))?
         .save_wiki_page(repo, slug, title.trim(), content, &message)
@@ -941,6 +986,52 @@ mod tests {
         );
         let e = new_card(&hub, &repo, None, "  ", None).await.unwrap_err();
         assert!(e.contains("title"), "{e}");
+    }
+
+    /// A git whose clone is a folder holding one page, and which remembers what was run.
+    #[derive(Debug, Default)]
+    struct WikiFakeGit(std::sync::Mutex<Vec<String>>);
+
+    impl crate::wiki_git::GitRunner for WikiFakeGit {
+        fn run(&self, _d: Option<&std::path::Path>, args: &[&str]) -> Result<String, String> {
+            self.0.lock().expect("lock").push(args.join(" "));
+            if args[0] == "clone" {
+                let dest = std::path::Path::new(args.last().copied().unwrap_or_default());
+                std::fs::create_dir_all(dest.join(".git")).map_err(|e| e.to_string())?;
+                std::fs::write(dest.join("Home.md"), "# Welcome\n").map_err(|e| e.to_string())?;
+            }
+            Ok(String::new())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_github_wiki_is_read_and_saved_through_its_git_repository() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let git = std::sync::Arc::new(WikiFakeGit::default());
+        let (hub, fake) = make_hub(PlatformKind::GitHub, "github.com");
+        let hub = hub.with_wiki_git(crate::wiki_git::WikiGit {
+            git: git.clone(),
+            cache: tmp.path().to_path_buf(),
+        });
+        let repo = RepoId::new("github.com", "o", "r");
+        let items = list(&hub, &repo, Tab::Wiki).await.expect("list");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].key, "Home");
+        let p = page(&hub, &repo, Tab::Wiki, &items[0]).await.expect("page");
+        assert_eq!(p.text, "# Welcome\n");
+        let done = save_wiki(&hub, &repo, None, "Getting Started", "hi\n", "").await;
+        assert_eq!(done, Ok("saved wiki page Getting-Started".to_string()));
+        let runs = git.0.lock().expect("lock").clone();
+        assert!(
+            runs.iter()
+                .any(|c| c.starts_with("add -- Getting-Started.md")),
+            "{runs:?}"
+        );
+        assert!(
+            runs.last().is_some_and(|c| c.starts_with("push")),
+            "{runs:?}"
+        );
+        assert!(fake.requests().is_empty(), "no API call: the wiki is git");
     }
 
     #[tokio::test]

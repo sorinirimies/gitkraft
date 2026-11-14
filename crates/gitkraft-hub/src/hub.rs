@@ -105,6 +105,7 @@ struct Entry<C> {
 /// One backend per account.
 pub struct Hub<C> {
     entries: Vec<Entry<C>>,
+    wiki: crate::wiki_git::WikiGit,
 }
 
 impl<C> std::fmt::Debug for Hub<C> {
@@ -142,7 +143,27 @@ impl<C: HttpClient + Clone> Hub<C> {
                 account,
             })
             .collect();
-        Self { entries }
+        Self {
+            entries,
+            wiki: crate::wiki_git::WikiGit::default(),
+        }
+    }
+
+    /// Uses `wiki` to reach GitHub wikis (tests give it a fake git and a temporary folder).
+    #[must_use]
+    pub fn with_wiki_git(mut self, wiki: crate::wiki_git::WikiGit) -> Self {
+        self.wiki = wiki;
+        self
+    }
+
+    /// How GitHub wikis are cloned.
+    pub fn wiki_git(&self) -> &crate::wiki_git::WikiGit {
+        &self.wiki
+    }
+
+    /// The platform of the account for `host`.
+    pub fn kind_of(&self, host: &str) -> Option<gitkraft_platforms::PlatformKind> {
+        self.entry(host).map(|e| e.account.kind)
     }
 
     /// Hosts of the accounts, in order.

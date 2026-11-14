@@ -73,7 +73,7 @@ async fn main() -> anyhow::Result<()> {
     let client = DynClient::new(std::sync::Arc::new(CachedClient::new(
         ReqwestClient::new().map_err(|e| anyhow::anyhow!(e.to_string()))?,
     )));
-    let hub = Hub::new(accounts, &client);
+    let hub = Hub::new(accounts, &client).with_wiki_git(gitkraft_hub::wiki_git::WikiGit::system());
     let theme = gitkraft_settings::persistence::load_settings()
         .map(|s| s.theme_index())
         .unwrap_or(0);

@@ -2462,7 +2462,9 @@ async fn setup(repos: Vec<Vec<String>>, sections: Vec<String>) -> Result<Setup, 
     ));
     let count = accounts.len();
     Ok(Setup {
-        api: ApiHandle(Arc::new(Hub::new(accounts, &client))),
+        api: ApiHandle(Arc::new(
+            Hub::new(accounts, &client).with_wiki_git(gitkraft_hub::wiki_git::WikiGit::system()),
+        )),
         watched,
         accounts: count,
     })

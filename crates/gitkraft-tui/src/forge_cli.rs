@@ -625,7 +625,12 @@ impl Session {
         let client = DynClient::new(std::sync::Arc::new(gitkraft_platforms::CachedClient::new(
             gitkraft_platforms::ReqwestClient::new().map_err(|e| anyhow!(e.to_string()))?,
         )));
-        Ok(Self::new(Hub::new(accounts, &client), default_repo, client).with_project(dir, project))
+        Ok(Self::new(
+            Hub::new(accounts, &client).with_wiki_git(gitkraft_hub::wiki_git::WikiGit::system()),
+            default_repo,
+            client,
+        )
+        .with_project(dir, project))
     }
 
     fn repo(&self, given: Option<&str>) -> Result<RepoId> {

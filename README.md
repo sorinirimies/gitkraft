@@ -53,7 +53,7 @@ serves the same on localhost.
 | Pull requests | description (Markdown), reviews, checks, diff, comments; approve, request changes, comment, merge, close |
 | Issues | list, comment, close / reopen |
 | CI | runs, jobs, steps, timeline, live log with errors extracted; re-run failed / all, cancel (GitHub / Gitea Actions, GitLab CI) |
-| Discussions, wiki & boards | GitHub discussions (list, read, comment); the wiki of GitLab, Gitea, Forgejo and Codeberg repos (list, read); boards (GitHub Projects v2, GitLab issue boards: cards by column, opened as their issue, moved to another column; Gitea has no board API). Discussion comments can be answered inside their thread and wiki pages created and edited (the TUI and GUI hand the page to your editor and send it back; the web page has a text box; the CLI reads a file, stdin or `--edit`). GitHub wikis are git repos (`<repo>.wiki.git`) with no API, so the tab says so. TUI key `T`, GUI tab, web `/community`, MCP tools `discussions`, `wiki` and `boards` |
+| Discussions, wiki & boards | GitHub discussions (list, read, comment); the wiki of GitLab, Gitea, Forgejo and Codeberg repos (list, read); boards (GitHub Projects v2, GitLab issue boards: cards by column, opened as their issue, moved to another column; Gitea has no board API). Discussion comments can be answered inside their thread and wiki pages created and edited (the TUI and GUI hand the page to your editor and send it back; the web page has a text box; the CLI reads a file, stdin or `--edit`). GitHub wikis have no API: they are git repos (`<repo>.wiki.git`), so gitkraft clones them into its cache (https, then ssh, never a password prompt), reads pages from there and saves by commit and push. A wiki needs its first page created on the web before it can be cloned. TUI key `T`, GUI tab, web `/community`, MCP tools `discussions`, `wiki` and `boards` |
 | Pulse | contribution calendar over all accounts (click a day, or use the arrow keys, for what you did that day: commits per repository, PRs, issues, reviews, comments), PRs / issues / CI per period, activity per day |
 | Notifications | per-project settings, desktop notifications, a bell with its state on every project |
 | Mouse | click, wheel, drag a section tab to reorder, drag the divider to resize (TUI and GUI) |
@@ -265,7 +265,7 @@ the checkout it starts in is the default repository, so `repo` can be left out.
 | `pulse` | PRs, issues, green and red CI over the last days |
 | `discussions` | GitHub discussions: the latest, or one with its comments |
 | `boards` | GitHub Projects (v2) or GitLab issue boards: columns of cards |
-| `wiki` | the wiki of a GitLab / Gitea / Forgejo / Codeberg repo: page list or one page (GitHub wikis are git repos) |
+| `wiki` | the wiki of a repo: page list or one page (GitHub wikis are read through their git repository) |
 | `activity_day` | what you did on one calendar day, over every account |
 
 | Write (`--write`) | |

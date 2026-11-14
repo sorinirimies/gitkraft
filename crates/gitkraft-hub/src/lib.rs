@@ -22,5 +22,6 @@ pub mod poller;
 pub mod project;
 pub mod pulse;
 pub mod review_ai;
+pub mod wiki_git;
 
 pub use hub::{DayResult, Hub, PrDetail, SectionData, SectionResult, is_open, shared};

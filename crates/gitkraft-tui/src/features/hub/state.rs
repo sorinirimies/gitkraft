@@ -686,7 +686,10 @@ impl HubState {
                 Err(e) => return drop(tx.send(Msg::SetupFailed(e.to_string()))),
             };
             let count = accounts.len();
-            let api = Arc::new(Hub::new(accounts, &client));
+            let api = Arc::new(
+                Hub::new(accounts, &client)
+                    .with_wiki_git(gitkraft_hub::wiki_git::WikiGit::system()),
+            );
             let _ = tx.send(Msg::Ready {
                 api,
                 client,

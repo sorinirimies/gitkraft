@@ -66,7 +66,7 @@ async fn run(cfg: Config) -> anyhow::Result<()> {
     let client = DynClient::new(std::sync::Arc::new(CachedClient::new(
         ReqwestClient::new().map_err(|e| anyhow::anyhow!(e.to_string()))?,
     )));
-    let hub = Hub::new(accounts, &client);
+    let hub = Hub::new(accounts, &client).with_wiki_git(gitkraft_hub::wiki_git::WikiGit::system());
     let service = GitkraftServer::new(hub, default_repo, cfg.policy)
         .with_project(dir, project)
         .serve(stdio())
