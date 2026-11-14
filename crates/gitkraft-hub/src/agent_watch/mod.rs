@@ -6,12 +6,14 @@
 //! [`config`] (jobs on disk), [`schedule`] (when a job is due), [`select`] (which repositories),
 //! [`scan`] (what is red), [`harness`] (who looks at it) and [`run`] (one job from start to report).
 
+pub mod app;
 pub mod config;
 pub mod harness;
 pub mod run;
 pub mod scan;
 pub mod schedule;
 pub mod select;
+pub mod state;
 pub mod store;
 
 use chrono::{DateTime, Local, NaiveDateTime};
@@ -21,6 +23,7 @@ pub use run::{Deps, Outcome, announce, execute, run_and_file, run_job};
 pub use scan::{Finding, FindingKind, Scan};
 pub use schedule::Schedule;
 pub use select::{Selector, Visibility};
+pub use state::{AgentAction, AgentsState, Flag, Pane};
 pub use store::{Report, Store};
 
 /// The local wall-clock time of `t`, what schedules are written in.

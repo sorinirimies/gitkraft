@@ -251,6 +251,7 @@ fn nav(session: &Session, active: &str) -> Vec<NavItem> {
         ("inbox", "/inbox", "Inbox"),
         ("community", "/community", "Discussions & wiki"),
         ("keys", "/keys", "SSH keys"),
+        ("agents", "/agents", "Agents"),
         ("notify", "/notify", "🔔 Notifications"),
     ] {
         items.push(NavItem {
@@ -1407,6 +1408,234 @@ async fn keys_page(cx: &Cx) -> Result<impl View> {
                     </tr>
                 }
             </table>
+        )
+    })
+}
+
+struct AgentRow {
+    select: String,
+    selected: bool,
+    name: String,
+    mark: &'static str,
+    schedule: String,
+    detail: String,
+}
+
+struct RepoRow {
+    toggle: String,
+    on: bool,
+    key: String,
+    tags: String,
+}
+
+#[page("/agents")]
+async fn agents_page(cx: &Cx) -> Result<impl View> {
+    use gitkraft_hub::agent_watch::{AgentAction as A, AgentsState, Flag};
+    let session: &Session = app_context(cx);
+    session.with_agents(|a| a.reload());
+    session.agent_repos(false).await;
+    let now = chrono::Local::now().naive_local();
+    let page = session.with_agents(|a| {
+        a.mark_seen();
+        let act = |op: A| act_json(serde_json::json!({"action": "agent", "op": op}));
+        let jobs: Vec<AgentRow> = a
+            .cfg
+            .jobs
+            .iter()
+            .enumerate()
+            .map(|(i, j)| {
+                let report = a.history.get(&j.name).and_then(|h| h.first());
+                let next = j
+                    .parsed_schedule()
+                    .ok()
+                    .and_then(|s| s.next(now, report.map(AgentsState::started)));
+                AgentRow {
+                    select: act(A::SelectJob(i)),
+                    selected: i == a.row,
+                    name: j.name.clone(),
+                    mark: if a.running.as_deref() == Some(j.name.as_str()) {
+                        "◌"
+                    } else if !j.enabled {
+                        "○"
+                    } else if report.is_some_and(|r| r.needs_you()) {
+                        "✘"
+                    } else {
+                        "●"
+                    },
+                    schedule: j.schedule.clone(),
+                    detail: format!(
+                        "next {} · {}",
+                        if j.enabled { AgentsState::when(next) } else { "paused".into() },
+                        report.map_or("never ran".to_string(), |r| r.line())
+                    ),
+                }
+            })
+            .collect();
+        let shown = a.shown_repos();
+        let watched = shown.iter().filter(|(_, w)| *w).count();
+        let total = a.repos.as_ref().map_or(0, Vec::len);
+        let repos: Vec<RepoRow> = shown
+            .iter()
+            .enumerate()
+            .map(|(i, (info, on))| RepoRow {
+                toggle: act(A::CheckRepo(i)),
+                on: *on,
+                key: info.repo.key(),
+                tags: [
+                    Some(if info.private { "private" } else { "public" }),
+                    info.fork.then_some("fork"),
+                    info.archived.then_some("archived"),
+                ]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(" · "),
+            })
+            .collect();
+        let job = a.job().map(|j| {
+            let flags: Vec<(String, bool, String)> = vec![
+                ("on".into(), j.enabled, act(A::ToggleEnabled)),
+                ("inbox".into(), j.notify.inbox, act(A::Flip(Flag::Inbox))),
+                ("system notification".into(), j.notify.system, act(A::Flip(Flag::System))),
+                ("forks".into(), j.projects.forks, act(A::Flip(Flag::Forks))),
+                ("archived".into(), j.projects.archived, act(A::Flip(Flag::Archived))),
+            ];
+            (
+                j.name.clone(),
+                [
+                    (format!("Schedule: {}", j.schedule), act(A::NextSchedule)),
+                    (format!("Harness: {}", j.harness.name()), act(A::NextHarness)),
+                    (format!("Visibility: {}", j.projects.visibility.name()), act(A::NextVisibility)),
+                    (format!("Host: {}", j.projects.describe()), act(A::NextHost)),
+                ],
+                flags,
+                j.model.clone().unwrap_or_default(),
+                act_json(serde_json::json!({"action": "agent_run", "job": j.name})),
+                if j.harness.headless() {
+                    "Findings go to the harness only on hosts that allowed it: gitkraft-tui ai-allow HOST watch"
+                } else {
+                    "This harness opens an editor with the prompt: no answer comes back here"
+                },
+            )
+        });
+        let report = a.latest().map(|r| {
+            (
+                format!(
+                    "{} · {}",
+                    r.started.with_timezone(&chrono::Local).format("%a %d %b %H:%M"),
+                    r.line()
+                ),
+                r.markdown(),
+                r.needs_you(),
+            )
+        });
+        let history: Vec<usize> = a
+            .job()
+            .and_then(|j| a.history.get(&j.name))
+            .map(|h| h.iter().rev().map(|r| r.findings.len()).collect())
+            .unwrap_or_default();
+        (
+            jobs,
+            repos,
+            format!("{watched} of {total} watched"),
+            job,
+            report,
+            history,
+            a.repo_errors.clone(),
+            a.load_error.clone(),
+            a.running.is_some(),
+            a.auto,
+        )
+    });
+    let (jobs, repos, count, job, report, history, errors, load_error, running, auto) = page;
+    let run_flag = if running { "yes" } else { "" };
+    let add = act_json(serde_json::json!({"action": "agent_add"}));
+    let model_act = act_json(serde_json::json!({"action": "agent_model"}));
+    let reload = act_json(serde_json::json!({"action": "agent_reload"}));
+    let auto_act = act_json(serde_json::json!({"action": "agent", "op": "toggle_auto"}));
+    let only = act_json(serde_json::json!({"action": "agent", "op": "only_checked"}));
+    let all = act_json(serde_json::json!({"action": "agent", "op": "all_again"}));
+    let max = history.iter().copied().max().unwrap_or(0).max(1);
+    let bars: Vec<(usize, usize)> = history.iter().map(|n| (*n, 4 + n * 40 / max)).collect();
+    let has_job = job.is_some();
+    Ok(view! {
+        shell(title: "Agents · GitKraft".to_string(), nav: nav(session, "agents"), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
+            <h1>"Agents"</h1>
+            <div class="meta" data-running=(run_flag)>
+                "Scheduled CI checks over the projects you pick, on any forge. "
+                (if auto { "The scheduler runs while this server is up." } else { "The scheduler is paused." })
+                if running { " A job is running…" }
+            </div>
+            if let Some(e) = load_error { <div class="err">(e)</div> }
+            <p>
+                <button data-act=(auto_act) onclick="actBtn(this)">(if auto { "Pause scheduler" } else { "Resume scheduler" })</button>
+                <button data-act=(reload) onclick="actBtn(this)">"Reload"</button>
+            </p>
+            <h2>"Jobs"</h2>
+            if jobs.is_empty() { <div class="meta">"No jobs yet. Name one below."</div> }
+            <table>
+                for r in jobs {
+                    <tr class=(if r.selected { "sel" } else { "" })>
+                        <td class="mark">(r.mark)</td>
+                        <td><button data-act=(r.select) onclick="actBtn(this)">(r.name)</button></td>
+                        <td>(r.schedule)</td>
+                        <td class="meta">(r.detail)</td>
+                    </tr>
+                }
+            </table>
+            <p>
+                <input id="agent-name" placeholder="new job name">
+                <button data-act=(add) data-from="agent-name" data-field="name" onclick="actBtn(this)">"Add job"</button>
+            </p>
+            if has_job {
+                if let Some((name, picks, flags, model, run, hint)) = job {
+                    <h2>(name)</h2>
+                    <p>
+                        for (label, act) in picks {
+                            <button data-act=(act) onclick="actBtn(this)">(label)</button>
+                        }
+                        <button data-act=(run) onclick="actBtn(this)">"Run now"</button>
+                    </p>
+                    <p>
+                        <input id="agent-model" value=(model) placeholder="model (empty: the harness default)">
+                        <button data-act=(model_act) data-from="agent-model" data-field="model" onclick="actBtn(this)">"Save model"</button>
+                    </p>
+                    <p>
+                        for (label, on, act) in flags {
+                            <button data-act=(act) onclick="actBtn(this)">(if on { "☑ " } else { "☐ " })(label)</button>
+                        }
+                    </p>
+                    <div class="meta small">(hint)</div>
+                }
+                if !bars.is_empty() {
+                    <h2>"Findings per run"</h2>
+                    <div class="bars">
+                        for (n, h) in bars {
+                            <span class="bar" title=(format!("{n} findings")) style=(format!("display:inline-block;width:10px;margin-right:2px;background:var(--red);height:{h}px"))></span>
+                        }
+                    </div>
+                }
+            }
+            <h2>"Repositories"</h2>
+            <div class="meta">(count)</div>
+            <p>
+                <button data-act=(only) onclick="actBtn(this)">"Only checked"</button>
+                <button data-act=(all) onclick="actBtn(this)">"All again"</button>
+            </p>
+            for e in errors { <div class="err">(e)</div> }
+            <table>
+                for r in repos {
+                    <tr>
+                        <td><button data-act=(r.toggle) onclick="actBtn(this)">(if r.on { "☑ " } else { "☐ " })(r.key)</button></td>
+                        <td class="meta">(r.tags)</td>
+                    </tr>
+                }
+            </table>
+            if let Some((title, md, bad)) = report {
+                <h2>"Last report"</h2>
+                <div class=(if bad { "err" } else { "meta" })>(title)</div>
+                <pre>(md)</pre>
+            }
         )
     })
 }

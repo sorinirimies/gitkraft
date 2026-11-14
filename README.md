@@ -258,7 +258,9 @@ In the TUI hub press `J` (or click the **Agents** tab): jobs with their next run
 the left, the selected job's schedule, harness, switches and a checkbox picker over every repository
 of every account on the right, a findings-per-run chart and the last report. `space` checks a
 repository, `o` keeps only the checked ones, `r` runs the job now, `s`/`h`/`v`/`H` cycle schedule,
-harness, visibility and host, `n`/`d` create and delete, `l` opens the report. While the hub is open
+harness, visibility and host, `n`/`d` create and delete, `l` opens the report. The GUI has the same
+view (**Agents** tab, checkbox picker, buttons) and so does the web page (`/agents`); all three share
+one state and one set of actions from `gitkraft-hub`, and each runs the due jobs itself while open. While the hub is open
 it also runs due jobs itself (`u` switches that off); the optional service covers the closed case.
 
 ```sh

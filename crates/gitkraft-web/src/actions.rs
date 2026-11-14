@@ -252,6 +252,29 @@ pub enum ActionRequest {
         /// Host name.
         host: String,
     },
+    /// A change on the Agents page.
+    Agent {
+        /// What to do.
+        op: gitkraft_hub::agent_watch::AgentAction,
+    },
+    /// Create an agent job.
+    AgentAdd {
+        /// Its name.
+        name: String,
+    },
+    /// Set the model of the selected agent job.
+    AgentModel {
+        /// Model name, empty for the harness default.
+        #[serde(default)]
+        model: String,
+    },
+    /// Run an agent job now (it goes on in the background).
+    AgentRun {
+        /// Job name.
+        job: String,
+    },
+    /// Read the jobs and the repository list again.
+    AgentReload,
     /// Turn notifications on or off for a project (`repo` empty: everything).
     NotifyToggle {
         /// `host/owner/name`, or empty for the global switch.
@@ -596,6 +619,38 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
                 Err(line)
             };
         }
+        ActionRequest::Agent { op } => {
+            return session.with_agents(|a| a.apply(&op));
+        }
+        ActionRequest::AgentAdd { name } => {
+            return session.with_agents(|a| a.add_job(&name));
+        }
+        ActionRequest::AgentModel { model } => {
+            return session.with_agents(|a| a.set_model(&model));
+        }
+        ActionRequest::AgentReload => {
+            session.with_agents(|a| a.reload());
+            session.agent_repos(true).await;
+            return Ok("reloaded".into());
+        }
+        ActionRequest::AgentRun { job } => {
+            let s = session.clone();
+            // fail fast on what can be known now; the run itself goes on after this answer
+            session.with_agents(|a| {
+                if let Some(r) = &a.running {
+                    return Err(format!("{r} is still running"));
+                }
+                a.cfg
+                    .job(&job)
+                    .map(|_| ())
+                    .ok_or_else(|| "no such job".to_string())
+            })?;
+            let name = job.clone();
+            tokio::spawn(async move {
+                let _ = s.run_agent(&name).await;
+            });
+            return Ok(format!("running {job}…"));
+        }
         ActionRequest::NotifyToggle { repo, on } => {
             return toggle_notifications(session, &repo, on);
         }
@@ -733,6 +788,7 @@ mod tests {
             ssh_dir: None,
             checkouts: Vec::new(),
             config_dir: None,
+            agents_store: None,
         };
         Session::new(hub, Dashboard { sections: vec![] }, paths, 0)
     }

@@ -21,7 +21,7 @@ path = "src/main.rs"
 
 [dependencies]
 gitkraft-hub       = { workspace = true }
-gitkraft-platforms = { workspace = true }
+gitkraft-platforms = { workspace = true, features = ["desktop"] }
 gitkraft-ci        = { workspace = true }
 gitkraft-settings  = { workspace = true }
 topcoat    = { workspace = true }

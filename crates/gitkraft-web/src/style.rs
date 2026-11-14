@@ -183,6 +183,7 @@ function gkDispatch(){
   const w=document.getElementById('d-workflow');
   act({action:'dispatch',repo:document.getElementById('d-repo').value,workflow:w?w.value:'',git_ref:document.getElementById('d-ref').value.trim(),inputs:document.getElementById('d-inputs').value});
 }
+if(document.querySelector('[data-running]'))setTimeout(()=>location.reload(),4000);
 function actBtn(b){
   const p=JSON.parse(b.dataset.act);
   const field=b.dataset.field||'body';

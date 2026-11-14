@@ -40,8 +40,10 @@ pub struct Paths {
     pub ssh_dir: Option<PathBuf>,
     /// Local checkouts a pull request may be put in a worktree of (the one the server started in, plus `--checkout`).
     pub checkouts: Vec<PathBuf>,
-    /// Where `ai-policy.toml` lives (default: the user's config directory).
+    /// Where `ai-policy.toml` and `agent-watch.toml` live (default: the user's config directory).
     pub config_dir: Option<PathBuf>,
+    /// Where agent-watch reports are filed; `None` keeps no reports (and the Agents page empty).
+    pub agents_store: Option<PathBuf>,
 }
 
 impl Paths {
@@ -54,6 +56,7 @@ impl Paths {
             ssh_dir: Some(gitkraft_hub::keys::ssh_dir()),
             checkouts: vec![PathBuf::from(".")],
             config_dir: gitkraft_hub::commit_ai::global_dir(),
+            agents_store: gitkraft_hub::agent_watch::Store::default_dir(),
         }
     }
 }
@@ -67,6 +70,8 @@ struct Inner {
     cache: Mutex<HashMap<usize, (Instant, SectionData)>>,
     /// The remotes of the first checkout (GitHub, Codeberg, Gitea, …).
     project: gitkraft_hub::project::Project,
+    /// The Agents page: jobs, reports and the repository list.
+    agents: Mutex<gitkraft_hub::agent_watch::AgentsState>,
 }
 
 /// Shared server state.
@@ -91,6 +96,16 @@ impl Session {
             .first()
             .map(|d| gitkraft_hub::project::Project::of_dir(d))
             .unwrap_or_default();
+        let agents = match (&paths.config_dir, &paths.agents_store) {
+            (Some(c), Some(s)) => {
+                gitkraft_hub::agent_watch::AgentsState::in_dirs(c.clone(), s.clone())
+            }
+            (Some(c), None) => gitkraft_hub::agent_watch::AgentsState {
+                dir: Some(c.clone()),
+                ..Default::default()
+            },
+            _ => gitkraft_hub::agent_watch::AgentsState::default(),
+        };
         Self {
             inner: Arc::new(Inner {
                 hub,
@@ -100,6 +115,7 @@ impl Session {
                 token: new_token(),
                 cache: Mutex::new(HashMap::new()),
                 project,
+                agents: Mutex::new(agents),
             }),
         }
     }
@@ -246,5 +262,92 @@ impl Session {
         };
         let text = self.dashboard().to_toml()?;
         files::write_atomic(path, &text).map_err(|e| e.to_string())
+    }
+
+    /// Reads or changes the Agents state; never held across an await.
+    pub fn with_agents<R>(
+        &self,
+        f: impl FnOnce(&mut gitkraft_hub::agent_watch::AgentsState) -> R,
+    ) -> R {
+        match self.inner.agents.lock() {
+            Ok(mut a) => f(&mut a),
+            Err(p) => f(&mut p.into_inner()),
+        }
+    }
+
+    /// The repositories every account can see, listed once and kept until `reload`.
+    pub async fn agent_repos(&self, reload: bool) {
+        let need = self.with_agents(|a| {
+            if reload {
+                a.repos = None;
+            }
+            a.repos.is_none() && !a.loading_repos
+        });
+        if !need {
+            return;
+        }
+        self.with_agents(|a| a.loading_repos = true);
+        let (repos, errors) = gitkraft_hub::agent_watch::scan::universe(&self.inner.hub).await;
+        self.with_agents(|a| {
+            a.loading_repos = false;
+            a.repos = Some(repos);
+            a.repo_errors = errors;
+        });
+    }
+
+    /// Runs the named job now: scan, agent, report, and (for the real session) the inbox and a
+    /// system notification. `quiet` is the scheduler asking.
+    ///
+    /// # Errors
+    /// No such job, one already running, another process holds the lock, or the report cannot be written.
+    pub async fn run_agent(&self, name: &str) -> Result<String, String> {
+        let (job, store, dir, known) = self.with_agents(|a| {
+            if let Some(r) = &a.running {
+                return Err(format!("{r} is still running"));
+            }
+            let job = a.cfg.job(name).cloned().ok_or("no such job")?;
+            let store = a.store.clone().ok_or("this session keeps no reports")?;
+            let dir = a
+                .dir
+                .clone()
+                .ok_or("this session has no config directory")?;
+            a.running = Some(name.to_string());
+            Ok((job, store, dir, a.repos.clone()))
+        })?;
+        let out =
+            gitkraft_hub::agent_watch::app::run_in_app(&self.inner.hub, &job, known, &store, &dir)
+                .await;
+        self.with_agents(|a| {
+            a.running = None;
+            a.reload();
+        });
+        let out = out?;
+        if self.inner.paths.use_state_dir {
+            let mut e = Engine::load();
+            gitkraft_hub::agent_watch::announce(
+                &out,
+                &mut e.inbox,
+                &gitkraft_platforms::notify::desktop::DesktopNotifier,
+                chrono::Utc::now(),
+            );
+            let _ = e.save();
+        }
+        Ok(format!("{name}: {}", out.report.line()))
+    }
+
+    /// The name of a job that is owed a run now, if the scheduler may start one.
+    pub fn agent_owed(&self) -> Option<String> {
+        self.with_agents(|a| {
+            a.reload();
+            if !a.auto || a.running.is_some() {
+                return None;
+            }
+            a.owed(chrono::Local::now().naive_local())
+        })
+    }
+
+    /// Whether this session is the user's real one (reports and notifications go to disk).
+    pub fn is_live(&self) -> bool {
+        self.inner.paths.use_state_dir
     }
 }

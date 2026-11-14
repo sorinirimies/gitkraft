@@ -2675,7 +2675,24 @@ impl HubState {
         let engine = self.engine.clone();
         let tx = self.tx.clone();
         rt.spawn(async move {
-            let result = agent_job(api, job.clone(), known, store, dir, engine).await;
+            let result =
+                match gitkraft_hub::agent_watch::app::run_in_app(&api, &job, known, &store, &dir)
+                    .await
+                {
+                    Ok(out) => {
+                        // the poller owns the inbox in memory: add to that one
+                        let mut e = engine.lock().await;
+                        gitkraft_hub::agent_watch::announce(
+                            &out,
+                            &mut e.inbox,
+                            &DesktopNotifier,
+                            chrono::Utc::now(),
+                        );
+                        let _ = e.save();
+                        Ok(out.report)
+                    }
+                    Err(e) => Err(e),
+                };
             let _ = tx.send(Msg::AgentRan {
                 job: job.name,
                 quiet,
@@ -3535,44 +3552,4 @@ mod tests {
             Some("not supported by this platform")
         );
     }
-}
-
-/// One agent job from lock to inbox, off the UI thread.
-async fn agent_job(
-    api: Arc<Api>,
-    job: gitkraft_hub::agent_watch::Job,
-    known: Option<Vec<gitkraft_platforms::model::RepoInfo>>,
-    store: gitkraft_hub::agent_watch::Store,
-    dir: PathBuf,
-    engine: Arc<tokio::sync::Mutex<Engine>>,
-) -> Result<gitkraft_hub::agent_watch::Report, String> {
-    use gitkraft_hub::agent_watch::{Deps, HarnessKind, harness::SystemExec, run_and_file};
-    let _lock = store
-        .try_lock()
-        .ok_or("another run is in progress (the service?)")?;
-    let all = match known {
-        Some(r) => r,
-        None => gitkraft_hub::agent_watch::scan::universe(&*api).await.0,
-    };
-    let policy = gitkraft_hub::review_ai::Policy::load(&dir)?;
-    let llm = if job.harness == HarnessKind::Builtin {
-        tokio::task::spawn_blocking(gitkraft_hub::ai::remote_default)
-            .await
-            .ok()
-            .and_then(Result::ok)
-    } else {
-        None
-    };
-    let deps = Deps {
-        llm: llm.as_ref(),
-        exec: Arc::new(SystemExec),
-        policy: &policy,
-        scratch: std::env::temp_dir(),
-    };
-    let out = run_and_file(&*api, &job, &all, &deps, &store).await?;
-    // the poller owns the inbox in memory: add to that one so nothing is overwritten
-    let mut e = engine.lock().await;
-    gitkraft_hub::agent_watch::announce(&out, &mut e.inbox, &DesktopNotifier, chrono::Utc::now());
-    let _ = e.save();
-    Ok(out.report)
 }

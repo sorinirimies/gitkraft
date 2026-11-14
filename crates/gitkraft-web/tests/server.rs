@@ -145,6 +145,7 @@ async fn start_with(checkouts: Vec<std::path::PathBuf>) -> Harness {
         ssh_dir: None,
         checkouts,
         config_dir: Some(dir.path().join("cfg")),
+        agents_store: Some(dir.path().join("reports")),
     };
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr = listener.local_addr().expect("addr");
@@ -560,6 +561,80 @@ async fn an_action_without_the_pages_token_is_refused_and_never_reaches_the_plat
         "{}",
         page.body
     );
+}
+
+#[tokio::test]
+async fn the_agents_page_lists_repositories_and_a_job_is_added_configured_and_saved() {
+    let h = start().await;
+    h.fake.push_json(
+        "https://api.github.com/user/repos",
+        r#"[{"name":"a","owner":{"login":"me"},"private":true,"fork":false,"archived":false,"default_branch":"main"},
+            {"name":"b","owner":{"login":"me"},"private":false,"fork":true,"archived":false,"default_branch":"main"}]"#,
+    );
+    let page = get(h.addr, "/agents").await;
+    assert_eq!(page.status, 200);
+    assert!(page.body.contains("No jobs yet"), "{}", page.body);
+    let post = |body: &'static str| request(h.addr, "POST", "/api/action", body);
+    let r = post(r#"{"action":"agent_add","name":"oss"}"#).await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    let page = get(h.addr, "/agents").await;
+    assert!(
+        page.body.contains("github.com/me/a")
+            && page.body.contains("private")
+            && page.body.contains("1 of 2 watched"),
+        "the fork is filtered out by default: {}",
+        page.body
+    );
+    let r = post(r#"{"action":"agent_add","name":"oss"}"#).await;
+    assert_eq!(r.status, 400, "a name is taken once: {}", r.body);
+    assert_eq!(
+        post(r#"{"action":"agent","op":"next_schedule"}"#)
+            .await
+            .status,
+        200
+    );
+    assert_eq!(
+        post(r#"{"action":"agent","op":{"check_repo":0}}"#)
+            .await
+            .status,
+        200
+    );
+    assert_eq!(
+        post(r#"{"action":"agent","op":{"flip":"system"}}"#)
+            .await
+            .status,
+        200
+    );
+    assert_eq!(
+        post(r#"{"action":"agent_model","model":"m1"}"#)
+            .await
+            .status,
+        200
+    );
+    let page = get(h.addr, "/agents").await;
+    for want in [
+        "oss",
+        "mon-fri 07:30",
+        "☐ github.com/me/a",
+        "Harness: builtin",
+        "m1",
+        "☐ system notification",
+        "☑ inbox",
+    ] {
+        assert!(page.body.contains(want), "{want} in {}", page.body);
+    }
+    let saved = std::fs::read_to_string(h.dir.path().join("cfg/agent-watch.toml")).expect("saved");
+    assert!(
+        saved.contains("oss") && saved.contains("github.com/me/a") && saved.contains("m1"),
+        "{saved}"
+    );
+    let r = post(r#"{"action":"agent_run","job":"nope"}"#).await;
+    assert_eq!(r.status, 400);
+    assert_eq!(
+        post(r#"{"action":"agent","op":"delete_job"}"#).await.status,
+        200
+    );
+    assert!(get(h.addr, "/agents").await.body.contains("No jobs yet"));
 }
 
 #[tokio::test]
@@ -1208,6 +1283,7 @@ async fn start_gitea() -> Harness {
         ssh_dir: None,
         checkouts: Vec::new(),
         config_dir: None,
+        agents_store: None,
     };
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr = listener.local_addr().expect("addr");

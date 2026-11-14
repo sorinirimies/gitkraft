@@ -5,7 +5,7 @@ Ideas not built yet, roughly in order. Anything here is a proposal, not a promis
 ## Agent-watch
 
 Core, CLI, the service and the TUI Agents view (`J` in the hub, with the in-app scheduler and an
-unread badge) are done. Open: the same view in the GUI and web, streaming output while a job runs,
+unread badge) and the same view in the GUI and web are done. Open: streaming output while a job runs,
 editing a job's prompt and globs in the app, and a real run against a live harness.
 
 ## Verification (biggest risk)

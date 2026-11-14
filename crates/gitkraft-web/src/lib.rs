@@ -79,7 +79,23 @@ pub async fn serve(session: Session, opts: ServerOptions) -> std::io::Result<()>
             eprintln!("gitkraft-web: could not open a browser ({e}); visit {url}");
         }
     }
+    if session.is_live() {
+        spawn_agent_scheduler(session.clone());
+    }
     topcoat::serve(listener, router(session)).await
+}
+
+/// While the server runs it starts the agent jobs that are due, like the TUI and GUI do.
+fn spawn_agent_scheduler(session: Session) {
+    tokio::spawn(async move {
+        let mut every = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            every.tick().await;
+            if let Some(name) = session.agent_owed() {
+                let _ = session.run_agent(&name).await;
+            }
+        }
+    });
 }
 
 fn open_in_browser(url: &str) -> std::io::Result<()> {

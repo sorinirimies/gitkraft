@@ -65,6 +65,8 @@ pub enum HubView {
     Keys,
     /// Discussions and the wiki of one repository.
     Community,
+    /// Scheduled agents that watch the CI of the projects you pick.
+    Agents,
 }
 
 /// Tabs of the PR detail.
@@ -240,6 +242,28 @@ pub enum HubMessage {
     TestKeys(String),
     /// A key action finished.
     KeysActionDone(Result<String, String>),
+    /// A click in the Agents view.
+    Agent(gitkraft_hub::agent_watch::AgentAction),
+    /// The new-job name box changed.
+    AgentName(String),
+    /// The model box changed.
+    AgentModelInput(String),
+    /// Create the job named in the box.
+    AgentAdd,
+    /// Save the model box on the selected job.
+    AgentSetModel,
+    /// Reload jobs, reports and the repository list.
+    AgentReload,
+    /// Run a job now.
+    AgentRun(String),
+    /// The repositories of every account arrived.
+    AgentRepos(Arc<(Vec<gitkraft_platforms::model::RepoInfo>, Vec<String>)>),
+    /// A job finished; `quiet` when the scheduler started it.
+    AgentRan {
+        job: String,
+        quiet: bool,
+        result: Result<gitkraft_hub::agent_watch::Report, String>,
+    },
     /// Pulse numbers arrived.
     PulseLoaded {
         repo: String,
@@ -415,6 +439,12 @@ pub struct HubState {
     pub pulse: PulseState,
     /// SSH keys view.
     pub keys: KeysState,
+    /// Agents view.
+    pub agents: gitkraft_hub::agent_watch::AgentsState,
+    /// The new-job name box.
+    pub agent_name: String,
+    /// The model box.
+    pub agent_model: String,
     /// Discussions and wiki.
     pub community: CommunityState,
     /// Status line text and success flag.
@@ -466,6 +496,9 @@ impl HubState {
             drag: None,
             pulse: PulseState::default(),
             keys: KeysState::default(),
+            agents: gitkraft_hub::agent_watch::AgentsState::default(),
+            agent_name: String::new(),
+            agent_model: String::new(),
             community: CommunityState::default(),
             notice: None,
             ready: false,
@@ -607,6 +640,15 @@ impl HubState {
                 self.accounts = setup.accounts;
                 self.watched = setup.watched;
                 self.api = Some(setup.api);
+                if self.agents.dir.is_none() {
+                    self.agents = gitkraft_hub::agent_watch::AgentsState::system();
+                    self.agents.reload();
+                    self.agent_model = self
+                        .agents
+                        .job()
+                        .and_then(|j| j.model.clone())
+                        .unwrap_or_default();
+                }
                 if self.accounts == 0 {
                     self.notice = Some(("No accounts: set GITHUB_TOKEN / GITLAB_TOKEN / CODEBERG_TOKEN or log in with `gh`".into(), false));
                 }
@@ -624,6 +666,13 @@ impl HubState {
                 }
                 if v == HubView::Keys && self.keys.data.is_none() && !self.keys.loading {
                     return self.load_keys();
+                }
+                if v == HubView::Agents {
+                    self.agents.reload();
+                    self.agents.mark_seen();
+                    if self.agents.repos.is_none() {
+                        return self.load_agent_repos();
+                    }
                 }
                 if v == HubView::Community
                     && self.community.items.is_none()
@@ -998,6 +1047,70 @@ impl HubState {
                 }
                 self.keys.row = self.keys.row.min(data.rows.len().saturating_sub(1));
                 self.keys.data = Some(data);
+                Task::none()
+            }
+            HubMessage::Agent(a) => {
+                let r = self.agents.apply(&a);
+                if matches!(
+                    a,
+                    gitkraft_hub::agent_watch::AgentAction::SelectJob(_)
+                        | gitkraft_hub::agent_watch::AgentAction::AddJob(_)
+                        | gitkraft_hub::agent_watch::AgentAction::DeleteJob
+                ) {
+                    self.agent_model = self
+                        .agents
+                        .job()
+                        .and_then(|j| j.model.clone())
+                        .unwrap_or_default();
+                }
+                self.agent_note(r);
+                Task::none()
+            }
+            HubMessage::AgentName(t) => {
+                self.agent_name = t;
+                Task::none()
+            }
+            HubMessage::AgentModelInput(t) => {
+                self.agent_model = t;
+                Task::none()
+            }
+            HubMessage::AgentAdd => {
+                let name = std::mem::take(&mut self.agent_name);
+                let r = self
+                    .agents
+                    .apply(&gitkraft_hub::agent_watch::AgentAction::AddJob(name));
+                self.agent_model.clear();
+                self.agent_note(r);
+                Task::none()
+            }
+            HubMessage::AgentSetModel => {
+                let m = self.agent_model.clone();
+                let r = self
+                    .agents
+                    .apply(&gitkraft_hub::agent_watch::AgentAction::SetModel(m));
+                self.agent_note(r);
+                Task::none()
+            }
+            HubMessage::AgentReload => {
+                self.agents.reload();
+                self.agents.repos = None;
+                self.load_agent_repos()
+            }
+            HubMessage::AgentRepos(data) => {
+                self.agents.loading_repos = false;
+                self.agents.repos = Some(data.0.clone());
+                self.agents.repo_errors = data.1.clone();
+                Task::none()
+            }
+            HubMessage::AgentRun(name) => self.run_agent(&name, false),
+            HubMessage::AgentRan { job, quiet, result } => {
+                self.agents.running = None;
+                self.agents.reload();
+                match result {
+                    Ok(r) => self.notice = Some((format!("{job}: {}", r.line()), !r.needs_you())),
+                    Err(e) if !quiet => self.notice = Some((format!("{job}: {e}"), false)),
+                    Err(_) => {}
+                }
                 Task::none()
             }
             HubMessage::SelectKey(i) => {
@@ -2171,6 +2284,38 @@ impl HubState {
         add("Go to pulse", HubMessage::Show(HubView::Pulse));
         add("Go to SSH keys", HubMessage::Show(HubView::Keys));
         add(
+            "Go to agents (scheduled CI watchers)",
+            HubMessage::Show(HubView::Agents),
+        );
+        if self.view == HubView::Agents {
+            use gitkraft_hub::agent_watch::AgentAction as A;
+            if let Some(j) = self.agents.job() {
+                add(
+                    "Agents: run the selected job now",
+                    HubMessage::AgentRun(j.name.clone()),
+                );
+            }
+            add(
+                "Agents: pause or resume the job",
+                HubMessage::Agent(A::ToggleEnabled),
+            );
+            add("Agents: next schedule", HubMessage::Agent(A::NextSchedule));
+            add("Agents: next harness", HubMessage::Agent(A::NextHarness));
+            add(
+                "Agents: next visibility",
+                HubMessage::Agent(A::NextVisibility),
+            );
+            add("Agents: next host filter", HubMessage::Agent(A::NextHost));
+            add(
+                "Agents: watch only the checked repositories",
+                HubMessage::Agent(A::OnlyChecked),
+            );
+            add(
+                "Agents: switch the in-app scheduler",
+                HubMessage::Agent(A::ToggleAuto),
+            );
+        }
+        add(
             "Go to discussions and wiki",
             HubMessage::Show(HubView::Community),
         );
@@ -2369,7 +2514,95 @@ impl HubState {
         });
     }
 
+    fn agent_note(&mut self, r: Result<String, String>) {
+        match r {
+            Ok(t) if t.is_empty() => {}
+            Ok(t) => self.notice = Some((t, true)),
+            Err(e) => self.notice = Some((e, false)),
+        }
+    }
+
+    fn load_agent_repos(&mut self) -> Task<HubMessage> {
+        let Some(api) = self.handle() else {
+            return Task::none();
+        };
+        if self.agents.loading_repos {
+            return Task::none();
+        }
+        self.agents.loading_repos = true;
+        Task::perform(
+            async move { Arc::new(gitkraft_hub::agent_watch::scan::universe(&*api).await) },
+            HubMessage::AgentRepos,
+        )
+    }
+
+    /// Runs a job now: scan, agent, report, inbox, system notification. `quiet` is the scheduler
+    /// asking, which does not complain when it cannot start.
+    fn run_agent(&mut self, name: &str, quiet: bool) -> Task<HubMessage> {
+        if let Some(r) = &self.agents.running {
+            if !quiet {
+                self.notice = Some((format!("{r} is still running"), false));
+            }
+            return Task::none();
+        }
+        let Some(api) = self.handle() else {
+            return Task::none();
+        };
+        let (Some(job), Some(store), Some(dir)) = (
+            self.agents.cfg.job(name).cloned(),
+            self.agents.store.clone(),
+            self.agents.dir.clone(),
+        ) else {
+            return Task::none();
+        };
+        self.agents.running = Some(name.to_string());
+        if !quiet {
+            self.notice = Some((format!("running {name}…"), true));
+        }
+        let known = self.agents.repos.clone();
+        let engine = self.engine.clone();
+        Task::perform(
+            async move {
+                let result = match gitkraft_hub::agent_watch::app::run_in_app(
+                    &api, &job, known, &store, &dir,
+                )
+                .await
+                {
+                    Ok(out) => {
+                        let mut e = engine.lock().await;
+                        gitkraft_hub::agent_watch::announce(
+                            &out,
+                            &mut e.inbox,
+                            &DesktopNotifier,
+                            Utc::now(),
+                        );
+                        let _ = e.save();
+                        Ok(out.report)
+                    }
+                    Err(e) => Err(e),
+                };
+                (job.name, result)
+            },
+            move |(job, result)| HubMessage::AgentRan { job, quiet, result },
+        )
+    }
+
     fn tick(&mut self) -> Task<HubMessage> {
+        let scheduled = if self.agents.auto && self.agents.tick_due(std::time::Instant::now()) {
+            self.agents
+                .owed(chrono::Local::now().naive_local())
+                .map(|name| self.run_agent(&name, true))
+        } else {
+            None
+        };
+        let notify = self.tick_notify();
+        match scheduled {
+            Some(t) => Task::batch([t, notify]),
+            None => notify,
+        }
+    }
+
+    fn tick_notify(&mut self) -> Task<HubMessage> {
         if self.notify_file.is_some() {
             self.notify_config = read_config(self.notify_file.as_deref());
         }
@@ -2872,6 +3105,60 @@ mod tests {
             rows: vec![row("github.com", "1", true), row("gitlab.com", "2", false)],
             errors: vec!["codeberg.org: 403".into()],
         })
+    }
+
+    #[test]
+    fn the_agents_view_adds_configures_and_runs_jobs_from_messages() {
+        use gitkraft_hub::agent_watch::{AgentAction as A, AgentsState, Flag};
+        use gitkraft_platforms::RepoId;
+        use gitkraft_platforms::model::RepoInfo;
+        let tmp = tempfile::tempdir().expect("tmp");
+        let mut s = state();
+        s.agents = AgentsState::in_dirs(tmp.path().join("c"), tmp.path().join("r"));
+        let _ = s.update(HubMessage::Show(HubView::Agents));
+        assert_eq!(s.view, HubView::Agents);
+        let _ = s.update(HubMessage::AgentRepos(Arc::new((
+            vec![RepoInfo {
+                repo: RepoId::new("github.com", "me", "x"),
+                ..RepoInfo::default()
+            }],
+            vec!["codeberg.org: 403".into()],
+        ))));
+        assert_eq!(s.agents.repo_errors, ["codeberg.org: 403"]);
+        let _ = s.update(HubMessage::AgentAdd);
+        assert!(s.notice.as_ref().is_some_and(|(_, ok)| !ok));
+        let _ = s.update(HubMessage::AgentName("oss".into()));
+        let _ = s.update(HubMessage::AgentAdd);
+        assert!(s.agent_name.is_empty());
+        assert_eq!(s.agents.job().map(|j| j.name.as_str()), Some("oss"));
+        let _ = s.update(HubMessage::Agent(A::CheckRepo(0)));
+        assert_eq!(
+            s.agents.job().expect("job").projects.exclude,
+            ["github.com/me/x"]
+        );
+        let _ = s.update(HubMessage::Agent(A::Flip(Flag::Inbox)));
+        assert!(!s.agents.job().expect("job").notify.inbox);
+        let _ = s.update(HubMessage::AgentModelInput("m1".into()));
+        let _ = s.update(HubMessage::AgentSetModel);
+        assert_eq!(s.agents.job().expect("job").model.as_deref(), Some("m1"));
+        // no account behind the fake hub: running does nothing and leaves nothing "running"
+        let _ = s.update(HubMessage::AgentRun("oss".into()));
+        assert!(s.agents.running.is_none());
+        let _ = s.update(HubMessage::AgentRan {
+            job: "oss".into(),
+            quiet: false,
+            result: Err("boom".into()),
+        });
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, ok)| !ok && t.contains("boom"))
+        );
+        assert!(
+            s.palette_entries()
+                .iter()
+                .any(|(l, _)| l.contains("agents"))
+        );
     }
 
     #[test]

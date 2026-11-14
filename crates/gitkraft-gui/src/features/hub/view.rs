@@ -10,7 +10,8 @@ use gitkraft_platforms::model::{
 };
 use gitkraft_settings::notify::NotifyStatus;
 use iced::widget::{
-    Space, button, canvas, column, container, mouse_area, row, scrollable, text, text_input,
+    Space, button, canvas, checkbox, column, container, mouse_area, row, scrollable, text,
+    text_input,
 };
 use iced::{Alignment, Color, Element, Length};
 
@@ -33,6 +34,7 @@ pub fn view(app: &GitKraft) -> Element<'_, Message> {
         HubView::Pulse => pulse(hub, &c),
         HubView::Keys => keys(hub, &c),
         HubView::Community => community(hub, &c),
+        HubView::Agents => agents(hub, &c),
     };
     let screen = column![
         top_bar(hub, &c),
@@ -133,7 +135,7 @@ fn bell_label(hub: &HubState, c: &ThemeColors) -> (String, Color) {
 }
 
 fn top_bar<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
-    let tab = |label: &'static str, view: HubView| {
+    let tab = |label: String, view: HubView| {
         let on = hub.view == view;
         button(
             text(label)
@@ -152,10 +154,17 @@ fn top_bar<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
                 .style(theme::toolbar_button)
                 .padding([4, 10]),
             text("GitKraft Hub").size(15).color(c.accent),
-            tab("Dashboard", HubView::Dashboard),
-            tab("Pulse", HubView::Pulse),
-            tab("SSH keys", HubView::Keys),
-            tab("Discussions & wiki", HubView::Community),
+            tab("Dashboard".into(), HubView::Dashboard),
+            tab("Pulse".into(), HubView::Pulse),
+            tab("SSH keys".into(), HubView::Keys),
+            tab("Discussions & wiki".into(), HubView::Community),
+            tab(
+                match hub.agents.unseen() {
+                    0 => "Agents".into(),
+                    n => format!("Agents ●{n}"),
+                },
+                HubView::Agents
+            ),
             Space::new().width(Length::Fill),
             scope_button(hub, c),
             button(text("Commands ⌘P").size(12).color(c.text_secondary))
@@ -1467,6 +1476,348 @@ fn keys<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
     col.push(actions).height(Length::Fill).into()
 }
 
+// ── Agents ───────────────────────────────────────────────────────────────────
+
+fn agents<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
+    use gitkraft_hub::agent_watch::{AgentAction as A, AgentsState, Flag};
+    let a = &hub.agents;
+    let small = |label: String, msg: Option<HubMessage>| {
+        let mut b = button(text(label).size(12).color(c.text_primary))
+            .style(theme::toolbar_button)
+            .padding([4, 10]);
+        if let Some(m) = msg {
+            b = b.on_press(m);
+        }
+        b
+    };
+    let now = chrono::Local::now().naive_local();
+
+    // ── jobs ──
+    let mut jobs = column![].spacing(2);
+    if let Some(e) = &a.load_error {
+        jobs = jobs.push(text(format!("✘ {e}")).size(12).color(c.red));
+    }
+    if a.cfg.jobs.is_empty() {
+        jobs = jobs.push(
+            text("No jobs yet. Name one below: it checks the CI of the repositories you pick, on a schedule.")
+                .size(13)
+                .color(c.text_secondary),
+        );
+    }
+    for (i, job) in a.cfg.jobs.iter().enumerate() {
+        let selected = i == a.row;
+        let report = a.history.get(&job.name).and_then(|h| h.first());
+        let bad = report.is_some_and(|r| r.needs_you());
+        let unseen = report.is_some_and(|r| !r.seen && r.needs_you());
+        let mark_color = if !job.enabled {
+            c.text_secondary
+        } else if bad {
+            c.red
+        } else {
+            c.green
+        };
+        let next = job
+            .parsed_schedule()
+            .ok()
+            .and_then(|s| s.next(now, report.map(AgentsState::started)));
+        let result = report.map_or("never ran".to_string(), |r| {
+            format!("{}{}", if unseen { "● " } else { "" }, r.line())
+        });
+        let sel = c.selection;
+        let running = a.running.as_deref() == Some(job.name.as_str());
+        let line = container(
+            column![
+                row![
+                    text(if running {
+                        "◌"
+                    } else if job.enabled {
+                        "●"
+                    } else {
+                        "○"
+                    })
+                    .size(13)
+                    .color(mark_color),
+                    text(job.name.clone()).size(13).color(c.text_primary),
+                    text(job.schedule.clone()).size(12).color(c.text_secondary),
+                ]
+                .spacing(8),
+                text(format!(
+                    "next {} · {result}",
+                    if job.enabled {
+                        AgentsState::when(next)
+                    } else {
+                        "paused".into()
+                    }
+                ))
+                .size(11)
+                .color(c.text_secondary),
+            ]
+            .spacing(1),
+        )
+        .padding([5, 8])
+        .width(Length::Fill)
+        .style(move |_| container::Style {
+            background: selected.then(|| sel.into()),
+            ..container::Style::default()
+        });
+        jobs = jobs.push(mouse_area(line).on_press(HubMessage::Agent(A::SelectJob(i))));
+    }
+    let mut add = button(text("Add job").size(12).color(c.text_primary))
+        .style(theme::toolbar_button)
+        .padding([4, 10]);
+    if !hub.agent_name.trim().is_empty() {
+        add = add.on_press(HubMessage::AgentAdd);
+    }
+    let history = a
+        .job()
+        .and_then(|j| a.history.get(&j.name))
+        .filter(|h| !h.is_empty())
+        .map(|h| {
+            let values: Vec<f64> = h.iter().rev().map(|r| r.findings.len() as f64).collect();
+            column![
+                text("Findings per run").size(12).color(c.text_secondary),
+                canvas(Bars {
+                    values,
+                    color: c.red
+                })
+                .width(Length::Fill)
+                .height(Length::Fixed(70.0)),
+            ]
+            .spacing(4)
+        });
+    let mut left = column![
+        row![
+            text(format!(
+                "Jobs · scheduler {}",
+                if a.auto { "on" } else { "off" }
+            ))
+            .size(14)
+            .color(c.text_primary),
+            Space::new().width(Length::Fill),
+            small(
+                if a.auto {
+                    "Pause scheduler"
+                } else {
+                    "Resume scheduler"
+                }
+                .into(),
+                Some(HubMessage::Agent(A::ToggleAuto))
+            ),
+            small("Reload".into(), Some(HubMessage::AgentReload)),
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center),
+        scrollable(jobs).height(Length::Fill),
+        row![
+            text_input("new job name", &hub.agent_name)
+                .on_input(HubMessage::AgentName)
+                .on_submit(HubMessage::AgentAdd)
+                .size(13)
+                .width(Length::Fill),
+            add,
+        ]
+        .spacing(6),
+    ]
+    .spacing(8)
+    .width(Length::FillPortion(2));
+    if let Some(h) = history {
+        left = left.push(h);
+    }
+
+    // ── the selected job ──
+    let mut right = column![].spacing(8).width(Length::FillPortion(3));
+    match a.job() {
+        None => {
+            right = right.push(
+                text("Select or add a job to configure it.")
+                    .size(13)
+                    .color(c.text_secondary),
+            );
+        }
+        Some(job) => {
+            let report = a.latest();
+            let next = job
+                .parsed_schedule()
+                .ok()
+                .and_then(|s| s.next(now, report.map(AgentsState::started)));
+            let name = job.name.clone();
+            let toggle = |label: &str, on: bool, msg: HubMessage| {
+                checkbox(on)
+                    .label(label.to_string())
+                    .on_toggle(move |_| msg.clone())
+                    .size(14)
+                    .text_size(12)
+            };
+            let flags = row![
+                toggle("on", job.enabled, HubMessage::Agent(A::ToggleEnabled)),
+                toggle(
+                    "inbox",
+                    job.notify.inbox,
+                    HubMessage::Agent(A::Flip(Flag::Inbox))
+                ),
+                toggle(
+                    "system notification",
+                    job.notify.system,
+                    HubMessage::Agent(A::Flip(Flag::System))
+                ),
+                toggle(
+                    "forks",
+                    job.projects.forks,
+                    HubMessage::Agent(A::Flip(Flag::Forks))
+                ),
+                toggle(
+                    "archived",
+                    job.projects.archived,
+                    HubMessage::Agent(A::Flip(Flag::Archived))
+                ),
+            ]
+            .spacing(14);
+            let mut run = button(text("Run now").size(12).color(c.accent))
+                .style(theme::toolbar_button)
+                .padding([4, 10]);
+            if a.running.is_none() {
+                run = run.on_press(HubMessage::AgentRun(name.clone()));
+            }
+            let hint = if job.harness.headless() {
+                "Findings go to the harness only on hosts that allowed it: gitkraft-tui ai-allow HOST watch"
+            } else {
+                "This harness opens an editor with the prompt: no answer comes back here"
+            };
+            right = right
+                .push(
+                    row![
+                        text(name.clone()).size(14).color(c.text_primary),
+                        Space::new().width(Length::Fill),
+                        text(if a.running.is_some() {
+                            "running…"
+                        } else {
+                            ""
+                        })
+                        .size(12)
+                        .color(c.yellow),
+                        run,
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center),
+                )
+                .push(
+                    row![
+                        small(
+                            format!("Schedule: {}", job.schedule),
+                            Some(HubMessage::Agent(A::NextSchedule))
+                        ),
+                        small(
+                            format!("Harness: {}", job.harness.name()),
+                            Some(HubMessage::Agent(A::NextHarness))
+                        ),
+                        small(
+                            format!("Visibility: {}", job.projects.visibility.name()),
+                            Some(HubMessage::Agent(A::NextVisibility))
+                        ),
+                        small(
+                            format!("Host: {}", job.projects.describe()),
+                            Some(HubMessage::Agent(A::NextHost))
+                        ),
+                    ]
+                    .spacing(6),
+                )
+                .push(
+                    text(format!("next run {}", AgentsState::when(next)))
+                        .size(11)
+                        .color(c.text_secondary),
+                )
+                .push(
+                    row![
+                        text_input("model (empty: the harness default)", &hub.agent_model)
+                            .on_input(HubMessage::AgentModelInput)
+                            .on_submit(HubMessage::AgentSetModel)
+                            .size(13)
+                            .width(Length::Fill),
+                        small("Save model".into(), Some(HubMessage::AgentSetModel)),
+                    ]
+                    .spacing(6),
+                )
+                .push(flags)
+                .push(text(hint).size(11).color(c.text_secondary));
+        }
+    }
+
+    // repositories
+    let shown = a.shown_repos();
+    let watched = shown.iter().filter(|(_, w)| *w).count();
+    right = right.push(
+        row![
+            text(match &a.repos {
+                Some(r) => format!("Repositories · {watched} of {} watched", r.len()),
+                None if a.loading_repos => "Repositories · loading…".to_string(),
+                None => "Repositories".to_string(),
+            })
+            .size(13)
+            .color(c.text_primary),
+            Space::new().width(Length::Fill),
+            small(
+                "Only checked".into(),
+                Some(HubMessage::Agent(A::OnlyChecked))
+            ),
+            small("All again".into(), Some(HubMessage::Agent(A::AllAgain))),
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center),
+    );
+    let mut repos = column![].spacing(2);
+    for (i, (info, on)) in shown.iter().enumerate() {
+        let tags = [
+            Some(if info.private { "private" } else { "public" }),
+            info.fork.then_some("fork"),
+            info.archived.then_some("archived"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" · ");
+        repos = repos.push(
+            row![
+                checkbox(*on)
+                    .label(info.repo.key())
+                    .on_toggle(move |_| HubMessage::Agent(A::CheckRepo(i)))
+                    .size(14)
+                    .text_size(12),
+                text(tags).size(11).color(c.text_secondary),
+            ]
+            .spacing(10),
+        );
+    }
+    for e in &a.repo_errors {
+        repos = repos.push(text(format!("✘ {e}")).size(12).color(c.red));
+    }
+    right = right.push(scrollable(repos).height(Length::FillPortion(3)));
+
+    // the last report
+    if let Some(r) = a.latest() {
+        right = right
+            .push(
+                text(format!(
+                    "Last report · {} · {}",
+                    r.started
+                        .with_timezone(&chrono::Local)
+                        .format("%a %d %b %H:%M"),
+                    r.line()
+                ))
+                .size(13)
+                .color(if r.needs_you() { c.red } else { c.green }),
+            )
+            .push(
+                scrollable(text(r.markdown()).size(12).color(c.text_primary))
+                    .height(Length::FillPortion(2)),
+            );
+    }
+    row![left, right]
+        .spacing(18)
+        .padding(14)
+        .height(Length::Fill)
+        .into()
+}
+
 // ── Pulse ────────────────────────────────────────────────────────────────────
 
 /// What was done on the picked day, like GitHub's panel under the calendar.
@@ -1823,6 +2174,54 @@ mod tests {
         }
         // Without a hub the hub view is an empty placeholder, not a panic.
         let _ = view(&GitKraft::new());
+    }
+
+    #[test]
+    fn the_agents_view_builds_empty_and_with_jobs_repositories_and_a_report() {
+        use gitkraft_hub::agent_watch::{AgentsState, Report};
+        use gitkraft_platforms::RepoId;
+        use gitkraft_platforms::model::RepoInfo;
+        let tmp = tempfile::tempdir().expect("tmp");
+        let mut app = app();
+        {
+            let hub = app.hub.as_mut().expect("hub");
+            hub.view = HubView::Agents;
+            hub.agents = AgentsState::in_dirs(tmp.path().join("c"), tmp.path().join("r"));
+        }
+        let _ = view(&app);
+        let hub = app.hub.as_mut().expect("hub");
+        hub.agents.add_job("oss").expect("add");
+        hub.agents.repos = Some(vec![RepoInfo {
+            repo: RepoId::new("github.com", "me", "x"),
+            private: true,
+            ..RepoInfo::default()
+        }]);
+        hub.agents.repo_errors = vec!["codeberg.org: 403".into()];
+        let _ = view(&app);
+        let hub = app.hub.as_mut().expect("hub");
+        let now = chrono::Utc::now();
+        hub.agents
+            .store
+            .clone()
+            .expect("store")
+            .save(&Report {
+                job: "oss".into(),
+                started: now,
+                finished: now,
+                harness: "pi".into(),
+                model: None,
+                repos: 1,
+                workflows: 1,
+                findings: vec![],
+                errors: vec![],
+                summary: "all green".into(),
+                failed: None,
+                seen: false,
+            })
+            .expect("save");
+        hub.agents.reload();
+        hub.agents.running = Some("oss".into());
+        let _ = view(&app);
     }
 
     #[test]
