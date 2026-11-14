@@ -438,6 +438,7 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
         KeyCode::Char('D') => hub.open_dispatch_prompt(),
         KeyCode::Char('A') => hub.download_artifacts(),
         KeyCode::Char('E') => hub.explain_job(),
+        KeyCode::Char('P') => hub.ai_triage(),
         KeyCode::Char('B') => hub.ai_pr(gitkraft_hub::review_ai::Action::Summary),
         KeyCode::Char('I') => hub.ai_pr(gitkraft_hub::review_ai::Action::CatchUp),
         KeyCode::Char('V') => hub.ai_pr(gitkraft_hub::review_ai::Action::Review),
@@ -1077,6 +1078,16 @@ mod tests {
         assert!(has(&s));
         s.focus = Focus::List;
         assert!(!has(&s));
+    }
+
+    #[test]
+    fn triage_wants_an_inbox_section() {
+        let mut s = state();
+        chars(&mut s, "P");
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, ok)| t.contains("open an inbox") && !ok)
+        );
     }
 
     #[test]

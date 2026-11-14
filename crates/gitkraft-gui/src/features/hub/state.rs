@@ -126,6 +126,8 @@ pub enum HubMessage {
     OpenLog,
     /// Ask the AI why the selected job (or the first failed one) failed.
     Explain,
+    /// AI triage of the shown inbox: now, fyi or ignore, for the hosts that allowed it.
+    AiTriage,
     /// An AI draft about the selected pull request (summary, catch-up or review notes).
     AiPr(gitkraft_hub::review_ai::Action),
     /// A log arrived.
@@ -726,6 +728,7 @@ impl HubState {
             HubMessage::OpenLog => self.open_log(),
             HubMessage::Explain => self.explain(),
             HubMessage::AiPr(a) => self.ai_pr(a),
+            HubMessage::AiTriage => self.ai_triage(),
             HubMessage::LogLoaded(Ok((title, raw))) => {
                 let lines = parse_log(&raw);
                 let annotations = extract(&lines);
@@ -1365,6 +1368,44 @@ impl HubState {
         )
     }
 
+    /// AI triage of the shown inbox, in the log view. Nothing is marked or changed.
+    fn ai_triage(&mut self) -> Task<HubMessage> {
+        use gitkraft_hub::review_ai::Policy;
+        let Some(SectionData::Inbox(r)) = self.active_data() else {
+            self.notice = Some(("open an inbox section to triage it".into(), false));
+            return Task::none();
+        };
+        let mut items = r.items.clone();
+        items.truncate(30);
+        let policy = match &self.ai_dir {
+            Some(d) => Policy::load(d),
+            None => Ok(Policy::default()),
+        };
+        let policy = match policy {
+            Ok(p) => p,
+            Err(e) => {
+                self.notice = Some((e, false));
+                return Task::none();
+            }
+        };
+        let Some(_) = self.handle() else {
+            return Task::none();
+        };
+        self.notice = Some(("asking the AI to triage the inbox…".into(), true));
+        Task::perform(
+            async move {
+                let llm = tokio::task::spawn_blocking(gitkraft_hub::ai::remote_default)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .map_err(|e| e.to_string())?;
+                gitkraft_hub::review_ai::triage_report(&llm, items, &policy)
+                    .await
+                    .map(|text| ("AI triage".to_string(), text))
+            },
+            HubMessage::LogLoaded,
+        )
+    }
+
     fn pick_day(&mut self, date: NaiveDate) -> Task<HubMessage> {
         self.pulse.day = Some(date);
         self.pulse.day_data = None;
@@ -1903,6 +1944,12 @@ impl HubState {
         use gitkraft_platforms::model::MergeMethod;
         let mut v: Vec<(String, HubMessage)> = Vec::new();
         let mut add = |l: &str, m: HubMessage| v.push((l.to_string(), m));
+        if matches!(self.active_data(), Some(SectionData::Inbox(_))) {
+            add(
+                "Inbox: AI triage (now / fyi / ignore)",
+                HubMessage::AiTriage,
+            );
+        }
         if self.selected_pr().is_some() {
             add(
                 "Pull request: approve (note = text box)",
@@ -2489,6 +2536,19 @@ mod tests {
         });
         assert_eq!(s.active_data().map(SectionData::len), Some(0));
         assert_eq!(s.row, None);
+    }
+
+    #[test]
+    fn triage_wants_an_inbox_section() {
+        let mut s = state();
+        let _ = s.update(HubMessage::AiTriage);
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, ok)| t.contains("open an inbox") && !ok),
+            "{:?}",
+            s.notice
+        );
     }
 
     #[test]

@@ -1143,6 +1143,48 @@ impl HubState {
         });
     }
 
+    /// AI triage of the shown inbox (`P`): now / fyi / ignore, only for hosts that allowed it. A
+    /// draft in the log view; nothing is marked or changed.
+    pub fn ai_triage(&mut self) {
+        use gitkraft_hub::review_ai::Policy;
+        let Some(SectionData::Inbox(r)) = self.active_data() else {
+            self.set_notice("open an inbox section to triage it".into(), false);
+            return;
+        };
+        let mut items = r.items.clone();
+        items.truncate(30);
+        let policy = match &self.ai_dir {
+            Some(d) => Policy::load(d),
+            None => Ok(Policy::default()),
+        };
+        let policy = match policy {
+            Ok(p) => p,
+            Err(e) => {
+                self.set_notice(e, false);
+                return;
+            }
+        };
+        let (Some(_), Some(rt)) = (self.api.clone(), self.handle()) else {
+            return;
+        };
+        let tx = self.tx.clone();
+        self.set_notice("asking the AI to triage the inbox…".into(), true);
+        rt.spawn(async move {
+            let result = async {
+                let llm = tokio::task::spawn_blocking(gitkraft_hub::ai::remote_default)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .map_err(|e| e.to_string())?;
+                gitkraft_hub::review_ai::triage_report(&llm, items, &policy).await
+            }
+            .await;
+            let _ = tx.send(Msg::Log {
+                title: "AI triage".into(),
+                result,
+            });
+        });
+    }
+
     // ── Discussions and wiki ─────────────────────────────────────────────────
 
     /// The repo the Community view shows: the one picked, else the selection's, else the first watched.

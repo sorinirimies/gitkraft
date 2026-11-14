@@ -1841,6 +1841,9 @@ fn hints(hub: &HubState) -> &'static str {
         Some(SectionKind::Ci) => {
             "Enter log · f rerun failed · F rerun all · D run workflow · A artifacts · E AI explain · X cancel · r refresh · q back"
         }
+        Some(SectionKind::Inbox) => {
+            "Enter open · y copy url · z snooze · P AI triage · r refresh · n bell · q back"
+        }
         _ => {
             "Tab section · : palette · {/} move section · p pulse · K ssh keys · r refresh · n bell · q back"
         }
