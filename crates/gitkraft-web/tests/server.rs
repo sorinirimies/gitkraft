@@ -144,6 +144,7 @@ async fn start_with(checkouts: Vec<std::path::PathBuf>) -> Harness {
         use_state_dir: false,
         ssh_dir: None,
         checkouts,
+        config_dir: Some(dir.path().join("cfg")),
     };
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr = listener.local_addr().expect("addr");
@@ -1177,6 +1178,7 @@ async fn start_gitea() -> Harness {
         use_state_dir: false,
         ssh_dir: None,
         checkouts: Vec::new(),
+        config_dir: None,
     };
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr = listener.local_addr().expect("addr");
@@ -1332,4 +1334,48 @@ async fn a_single_forge_project_has_no_switcher() {
         "{}",
         page.body
     );
+}
+
+#[tokio::test]
+async fn pr_ai_drafts_are_refused_until_the_host_allows_them_and_the_buttons_exist() {
+    let h = start().await;
+    h.fake
+        .push_json("https://api.github.com/repos/o/r/pulls/1", r#"{"number":1,"title":"T","state":"open","user":{"login":"a"},"head":{"ref":"f","sha":"s"},"base":{"ref":"m"},"html_url":"u"}"#);
+    h.fake.push_json(
+        "https://api.github.com/repos/o/r/commits/s/status",
+        r#"{"state":"success"}"#,
+    );
+    h.fake
+        .push_json("https://api.github.com/repos/o/r/issues/1/comments", "[]");
+    h.fake
+        .push_json("https://api.github.com/repos/o/r/pulls/1/reviews", "[]");
+    h.fake
+        .push_status("https://api.github.com/repos/o/r/pulls/1.diff", 200, "diff");
+    let page = get(h.addr, "/pr?repo=github.com%2Fo%2Fr&n=1").await;
+    for needle in ["Summarize", "Catch up", "Review draft", "pr_ai"] {
+        assert!(
+            page.body.contains(needle),
+            "missing {needle}: {}",
+            page.body
+        );
+    }
+    let r = request(
+        h.addr,
+        "POST",
+        "/api/action",
+        r#"{"action":"pr_ai","repo":"github.com/o/r","number":1,"what":"summary"}"#,
+    )
+    .await;
+    assert_eq!(r.status, 400, "{}", r.body);
+    assert!(r.body.contains("ai-allow github.com summary"), "{}", r.body);
+    let r = request(
+        h.addr,
+        "POST",
+        "/api/action",
+        r#"{"action":"pr_ai","repo":"github.com/o/r","number":1,"what":"chat"}"#,
+    )
+    .await;
+    assert!(r.body.contains("summary, catch_up or review"), "{}", r.body);
+    let inbox = get(h.addr, "/inbox").await;
+    assert!(inbox.body.contains("Triage"), "{}", inbox.body);
 }

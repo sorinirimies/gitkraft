@@ -407,6 +407,61 @@ pub async fn triage(llm: &impl Llm, items: &[Notification]) -> Result<Vec<Triage
     Ok(parse_triage(&answer, items))
 }
 
+/// Triage for people: sends only the notifications of hosts that allowed it, and says what it left out.
+///
+/// # Errors
+/// No notification is allowed to be sent, or the model call fails.
+pub async fn triage_report(
+    llm: &impl Llm,
+    items: Vec<Notification>,
+    policy: &Policy,
+) -> Result<String, String> {
+    use std::fmt::Write;
+    let (sendable, held): (Vec<_>, Vec<_>) = items.into_iter().partition(|n| {
+        n.repo
+            .as_ref()
+            .is_some_and(|r| policy.allows(&r.host, Action::Triage))
+    });
+    if sendable.is_empty() {
+        return Err(
+            "no notification belongs to a host that allows triage: `gitkraft-tui ai-allow HOST triage`"
+                .into(),
+        );
+    }
+    let rated = triage(llm, &sendable).await.map_err(|e| e.to_string())?;
+    let mut o = String::new();
+    for (u, word) in [
+        (Urgency::Now, "now"),
+        (Urgency::Fyi, "fyi"),
+        (Urgency::Ignore, "ignore"),
+    ] {
+        for t in rated.iter().filter(|t| t.urgency == u) {
+            let n = sendable.iter().find(|n| n.id == t.id);
+            let title = n.map_or_else(String::new, |n| {
+                format!(
+                    "{} {} {}",
+                    n.repo.as_ref().map(|r| r.key()).unwrap_or_default(),
+                    n.number.map(|x| format!("#{x}")).unwrap_or_default(),
+                    n.title
+                )
+            });
+            let _ = writeln!(o, "{word:<7} {title} — {}", t.why);
+        }
+    }
+    let skipped = sendable.len() - rated.len();
+    if skipped > 0 {
+        let _ = writeln!(o, "({skipped} left unrated by the model)");
+    }
+    if !held.is_empty() {
+        let _ = writeln!(
+            o,
+            "({} notification(s) not sent: their host has not allowed triage)",
+            held.len()
+        );
+    }
+    Ok(o)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

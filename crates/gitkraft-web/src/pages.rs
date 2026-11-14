@@ -575,6 +575,9 @@ async fn pull_request(cx: &Cx) -> Result<impl View> {
     let worktree = with(serde_json::json!({"action": "worktree"}));
     let toggle = with(serde_json::json!({"action": "set_open", "kind": "pr", "open": !open}));
     let toggle_label = if open { "Close" } else { "Reopen" };
+    let ai_summary = with(serde_json::json!({"action": "pr_ai", "what": "summary"}));
+    let ai_catch_up = with(serde_json::json!({"action": "pr_ai", "what": "catch_up"}));
+    let ai_review = with(serde_json::json!({"action": "pr_ai", "what": "review"}));
     let labels: Vec<String> = pr.labels.iter().map(|l| l.name.clone()).collect();
     Ok(view! {
         shell(title: format!("{} · #{number}", pr.title), nav: nav(session, ""), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
@@ -607,8 +610,12 @@ async fn pull_request(cx: &Cx) -> Result<impl View> {
                     <button data-act=(cancel_auto) data-confirm="Cancel the scheduled merge or leave the merge queue?" onclick="actBtn(this)">"Cancel auto-merge"</button>
                 }
                 <button data-act=(worktree) title="Fetch this pull request into a worktree next to your local checkout" onclick="actBtn(this)">"Check out"</button>
+                <button data-act=(ai_summary) data-show="ai" title="AI summary of this pull request (a draft; the host must allow it with `gitkraft-tui ai-allow`)" onclick="actBtn(this)">"Summarize"</button>
+                <button data-act=(ai_catch_up) data-show="ai" title="AI catch-up on the thread (a draft)" onclick="actBtn(this)">"Catch up"</button>
+                <button data-act=(ai_review) data-show="ai" title="AI review notes to edit and send yourself (a draft)" onclick="actBtn(this)">"Review draft"</button>
                 <button class="danger" data-act=(toggle) data-confirm=(format!("{toggle_label} this pull request?")) onclick="actBtn(this)">(toggle_label)</button>
             </div>
+            <pre id="ai" class="panel" hidden="hidden"></pre>
             <nav class="tabs">
                 <a href=(format!("{base}&tab=overview")) class=(if tab == "overview" { "on" } else { "" })>"Overview"</a>
                 <a href=(format!("{base}&tab=diff")) class=(if tab == "diff" { "on" } else { "" })>"Diff"</a>
@@ -1278,9 +1285,12 @@ async fn inbox(cx: &Cx) -> Result<impl View> {
     let live = session.hub().load_section(&inbox_section).await;
     let rows = rows_of(&live);
     let errors = live.errors().to_vec();
+    let triage = act_json(serde_json::json!({"action": "triage"}));
     Ok(view! {
         shell(title: "Inbox · GitKraft".to_string(), nav: nav(session, "inbox"), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
             <h1>"Inbox"</h1>
+            <div class="bar"><button data-act=(triage) data-show="ai" title="AI sorts the inbox into now / fyi / ignore (a draft; hosts must allow it with `gitkraft-tui ai-allow HOST triage`)" onclick="actBtn(this)">"Triage"</button></div>
+            <pre id="ai" class="panel" hidden="hidden"></pre>
             for e in errors { <div class="note err">(e)</div> }
             <table>
                 for r in rows {

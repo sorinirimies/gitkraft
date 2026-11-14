@@ -167,6 +167,20 @@ pub enum ActionRequest {
         #[serde(default)]
         job_id: Option<u64>,
     },
+    /// An AI draft about a pull request (changes nothing): `summary`, `catch_up` or `review`.
+    PrAi {
+        /// `host/owner/name`.
+        repo: String,
+        /// Pull request number.
+        number: u64,
+        /// `summary`, `catch_up` or `review`.
+        what: String,
+        /// `YYYY-MM-DD`, for `catch_up`.
+        #[serde(default)]
+        since: Option<String>,
+    },
+    /// AI triage of the inbox (changes nothing).
+    Triage,
     /// Start a workflow by hand.
     Dispatch {
         /// `host/owner/name`.
@@ -412,6 +426,29 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
                 .map_err(|e| e.to_string())?;
             return explain_with(session, &llm, &repo, run_id, job_id).await;
         }
+        ActionRequest::PrAi {
+            repo,
+            number,
+            what,
+            since,
+        } => {
+            let repo = repo_of(&repo)?;
+            let action = gitkraft_hub::review_ai::Action::parse(&what)
+                .ok_or("what must be summary, catch_up or review")?;
+            session.ai_policy()?.check(&repo.host, action)?;
+            let llm = tokio::task::spawn_blocking(gitkraft_hub::ai::remote_default)
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+            return pr_ai_with(session, &llm, &repo, number, action, since.as_deref()).await;
+        }
+        ActionRequest::Triage => {
+            let llm = tokio::task::spawn_blocking(gitkraft_hub::ai::remote_default)
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+            return triage_with(session, &llm).await;
+        }
         ActionRequest::Dispatch {
             repo,
             workflow,
@@ -516,6 +553,64 @@ pub(crate) async fn explain_with(
     Ok(format!("{} / {}\n\n{text}", ctx.workflow, ctx.job))
 }
 
+/// An AI draft about a pull request; refused unless the host allowed `action`.
+pub(crate) async fn pr_ai_with(
+    session: &Session,
+    llm: &impl gitkraft_hub::ai::Llm,
+    repo: &RepoId,
+    number: u64,
+    action: gitkraft_hub::review_ai::Action,
+    since: Option<&str>,
+) -> Result<String, String> {
+    use gitkraft_hub::review_ai::{self, Action};
+    session.ai_policy()?.check(&repo.host, action)?;
+    let since = since
+        .filter(|s| !s.is_empty())
+        .map(|d| {
+            d.parse::<chrono::NaiveDate>()
+                .map_err(|_| "since must be YYYY-MM-DD".to_string())
+                .map(|d| d.and_time(chrono::NaiveTime::MIN).and_utc())
+        })
+        .transpose()?;
+    let detail = session
+        .hub()
+        .pr_detail(repo, number)
+        .await
+        .map_err(|e| e.to_string())?;
+    match action {
+        Action::Summary => review_ai::summarize_pr(llm, &detail).await,
+        Action::CatchUp => review_ai::catch_up(llm, &detail, since).await,
+        Action::Review => review_ai::review_draft(llm, &detail)
+            .await
+            .map(|notes| notes.iter().map(|n| format!("{}\n", n.render())).collect()),
+        Action::Triage => return Err("triage is about the inbox, not a pull request".into()),
+    }
+    .map_err(|e| e.to_string())
+}
+
+/// AI triage of the inbox, for the hosts that allowed it.
+pub(crate) async fn triage_with(
+    session: &Session,
+    llm: &impl gitkraft_hub::ai::Llm,
+) -> Result<String, String> {
+    use gitkraft_hub::SectionData;
+    let SectionData::Inbox(r) = session
+        .hub()
+        .load_section(&gitkraft_hub::args::section(
+            "web",
+            gitkraft_settings::dashboard::SectionKind::Inbox,
+            None,
+            gitkraft_platforms::model::StateFilter::Open,
+        ))
+        .await
+    else {
+        return Err("unexpected section data".into());
+    };
+    let mut items = r.items;
+    items.truncate(30);
+    gitkraft_hub::review_ai::triage_report(llm, items, &session.ai_policy()?).await
+}
+
 fn toggle_notifications(session: &Session, repo: &str, on: bool) -> Result<String, String> {
     let path = session
         .notify_path()
@@ -559,11 +654,54 @@ mod tests {
             use_state_dir: false,
             ssh_dir: None,
             checkouts: Vec::new(),
+            config_dir: None,
         };
         Session::new(hub, Dashboard { sections: vec![] }, paths, 0)
     }
 
     const BASE: &str = "https://api.github.com/repos/o/r/actions";
+
+    #[tokio::test]
+    async fn a_pr_draft_goes_to_the_model_only_after_the_host_opted_in() {
+        use gitkraft_hub::review_ai::{Action, Policy};
+        let dir = tempfile::tempdir().expect("tmp");
+        let mut p = Policy::default();
+        p.allow("github.com", &[Action::Summary]);
+        p.save(dir.path()).expect("save");
+        let fake = FakeClient::new();
+        let mut account =
+            Account::new(PlatformKind::GitHub, "github.com").with_token(Secret::new("t"));
+        account.me = Some("me".into());
+        let s = Session::new(
+            Hub::new(vec![account], &DynClient::new(fake.clone())),
+            Dashboard { sections: vec![] },
+            Paths {
+                config_dir: Some(dir.path().to_path_buf()),
+                ..Paths::default()
+            },
+            0,
+        );
+        let repo = RepoId::from_key("github.com/o/r").expect("repo");
+        let llm = FakeLlm::saying("What: x");
+        let off = pr_ai_with(&s, &llm, &repo, 7, Action::Review, None).await;
+        assert!(off.expect_err("off").contains("ai-allow github.com review"));
+        assert!(llm.prompts().is_empty());
+        fake.push_json(
+            "https://api.github.com/repos/o/r/pulls/7",
+            r#"{"number":7,"title":"T","state":"open","user":{"login":"a"},"head":{"ref":"f","sha":"s"},"base":{"ref":"m"},"html_url":"u"}"#,
+        );
+        fake.push_json(
+            "https://api.github.com/repos/o/r/commits/s/status",
+            r#"{"state":"success"}"#,
+        );
+        fake.push_json("https://api.github.com/repos/o/r/issues/7/comments", "[]");
+        fake.push_json("https://api.github.com/repos/o/r/pulls/7/reviews", "[]");
+        fake.push_status("https://api.github.com/repos/o/r/pulls/7.diff", 200, "diff");
+        let ok = pr_ai_with(&s, &llm, &repo, 7, Action::Summary, None).await;
+        assert_eq!(ok.expect("sent"), "What: x");
+        let bad = pr_ai_with(&s, &llm, &repo, 7, Action::Summary, Some("soon")).await;
+        assert!(bad.expect_err("date").contains("YYYY-MM-DD"));
+    }
 
     fn failed_run(fake: &FakeClient) {
         fake.push_json(

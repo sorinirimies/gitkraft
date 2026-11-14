@@ -40,6 +40,8 @@ pub struct Paths {
     pub ssh_dir: Option<PathBuf>,
     /// Local checkouts a pull request may be put in a worktree of (the one the server started in, plus `--checkout`).
     pub checkouts: Vec<PathBuf>,
+    /// Where `ai-policy.toml` lives (default: the user's config directory).
+    pub config_dir: Option<PathBuf>,
 }
 
 impl Paths {
@@ -51,6 +53,7 @@ impl Paths {
             use_state_dir: true,
             ssh_dir: Some(gitkraft_hub::keys::ssh_dir()),
             checkouts: vec![PathBuf::from(".")],
+            config_dir: gitkraft_hub::commit_ai::global_dir(),
         }
     }
 }
@@ -130,6 +133,17 @@ impl Session {
             .into_iter()
             .find(|(r, _)| r == repo)
             .map(|(_, p)| p)
+    }
+
+    /// The AI policy: which hosts allow which drafts. Off until the user ran `ai-allow`.
+    ///
+    /// # Errors
+    /// The policy file is unreadable.
+    pub fn ai_policy(&self) -> Result<gitkraft_hub::review_ai::Policy, String> {
+        match &self.inner.paths.config_dir {
+            Some(d) => gitkraft_hub::review_ai::Policy::load(d),
+            None => Ok(gitkraft_hub::review_ai::Policy::default()),
+        }
     }
 
     /// The remotes of the checkout the server runs in.

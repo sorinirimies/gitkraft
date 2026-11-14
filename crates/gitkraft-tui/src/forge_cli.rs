@@ -1199,7 +1199,7 @@ impl Session {
         a: &TriageArgs,
         json: bool,
     ) -> Result<String> {
-        use gitkraft_hub::review_ai::{self, Action, Policy, Urgency};
+        use gitkraft_hub::review_ai::{self, Action, Policy};
         let SectionData::Inbox(r) = self
             .hub
             .load_section(&args::section(
@@ -1217,58 +1217,30 @@ impl Session {
         let Some(llm) = llm else {
             return Ok(format!("{}\n", review_ai::triage_prompt(&items)));
         };
-        // only the hosts that opted in are sent; the others are said out loud
         let policy = Policy::load(&self.policy_dir()?).map_err(|e| anyhow!(e))?;
-        let (sendable, held): (Vec<_>, Vec<_>) = items.into_iter().partition(|n| {
-            n.repo
-                .as_ref()
-                .is_some_and(|r| policy.allows(&r.host, Action::Triage))
-        });
-        if sendable.is_empty() {
-            bail!(
-                "no notification belongs to a host that allows triage: `gitkraft-tui ai-allow HOST triage`"
-            );
-        }
-        let rated = review_ai::triage(llm, &sendable).await?;
-        let title_of = |id: &str| {
-            sendable
-                .iter()
-                .find(|n| n.id == id)
-                .map(|n| {
-                    format!(
-                        "{} {} {}",
-                        n.repo.as_ref().map(RepoId::key).unwrap_or_default(),
-                        n.number.map(|x| format!("#{x}")).unwrap_or_default(),
-                        n.title
-                    )
-                })
-                .unwrap_or_default()
-        };
         if json {
-            return json_of(&serde_json::json!({"triaged": rated, "not_sent": held.len()}));
-        }
-        let mut o = String::new();
-        for (u, word) in [
-            (Urgency::Now, "now"),
-            (Urgency::Fyi, "fyi"),
-            (Urgency::Ignore, "ignore"),
-        ] {
-            for t in rated.iter().filter(|t| t.urgency == u) {
-                let _ = writeln!(o, "{word:<7} {} — {}", title_of(&t.id), t.why);
+            let sendable: Vec<_> = items
+                .iter()
+                .filter(|n| {
+                    n.repo
+                        .as_ref()
+                        .is_some_and(|r| policy.allows(&r.host, Action::Triage))
+                })
+                .cloned()
+                .collect();
+            if sendable.is_empty() {
+                bail!(
+                    "no notification belongs to a host that allows triage: `gitkraft-tui ai-allow HOST triage`"
+                );
             }
-        }
-        let skipped = sendable.len() - rated.len();
-        if skipped > 0 {
-            let _ = writeln!(o, "({skipped} left unrated by the model)");
-        }
-        if !held.is_empty() {
-            let _ = writeln!(
-                o,
-                "({} notification(s) not sent: their host has not allowed triage)",
-                held.len()
+            let rated = review_ai::triage(llm, &sendable).await?;
+            return json_of(
+                &serde_json::json!({"triaged": rated, "not_sent": items.len() - sendable.len()}),
             );
         }
-        Ok(o)
+        review_ai::triage_report(llm, items, &policy)
+            .await
+            .map_err(|e| anyhow!(e))
     }
 
     fn remotes(&self, json: bool) -> Result<String> {
