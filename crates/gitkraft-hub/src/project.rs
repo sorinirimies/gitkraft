@@ -462,6 +462,61 @@ pub async fn mirror_runs<C: gitkraft_platforms::HttpClient + Clone>(
     (group_mirrors(&runs), failed)
 }
 
+/// What pushing the branch to one remote did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PushResult {
+    /// Git's name for the remote.
+    pub remote: String,
+    /// What happened: git's last line when it worked, the reason when it did not.
+    pub outcome: Result<String, String>,
+}
+
+/// Pushes the checked-out branch of `dir` to every forge remote, one after the other, so one
+/// refusing (a protected branch, a down server) never stops the rest. Never forced: a remote that
+/// has moved on says so and is left alone. Aliases are not pushed twice.
+///
+/// # Errors
+/// Detached head or no branch name, or no forge remote at all.
+pub fn push_all(
+    git: &dyn crate::wiki_git::GitRunner,
+    dir: &Path,
+    project: &Project,
+) -> Result<(String, Vec<PushResult>), String> {
+    let branch = git
+        .run(Some(dir), &["rev-parse", "--abbrev-ref", "HEAD"])?
+        .trim()
+        .to_string();
+    if branch.is_empty() || branch == "HEAD" {
+        return Err("detached head: check a branch out before pushing".into());
+    }
+    if project.remotes.is_empty() {
+        return Err("this checkout has no forge remote".into());
+    }
+    let results = project
+        .remotes
+        .iter()
+        .map(|r| PushResult {
+            remote: r.name.clone(),
+            outcome: git
+                .run(Some(dir), &["push", "--quiet", &r.name, &branch])
+                .map(|_| format!("{branch} pushed")),
+        })
+        .collect();
+    Ok((branch, results))
+}
+
+/// One line per remote for `results`, and whether every push worked.
+pub fn push_report(branch: &str, results: &[PushResult]) -> (String, bool) {
+    let mut out = format!("push {branch}\n");
+    for r in results {
+        match &r.outcome {
+            Ok(m) => out.push_str(&format!("  ✔ {:<14} {m}\n", r.remote)),
+            Err(e) => out.push_str(&format!("  ✘ {:<14} {e}\n", r.remote)),
+        }
+    }
+    (out, results.iter().all(|r| r.outcome.is_ok()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -696,5 +751,96 @@ mod tests {
         assert!(s[0].state.is_ok() && !s[1].state.is_ok());
         assert_eq!(SyncState::Behind(3).label(), "behind 3");
         assert!(sync_status(tempfile::tempdir().expect("t").path(), &project).is_empty());
+    }
+
+    #[derive(Debug, Default)]
+    struct PushGit {
+        calls: std::sync::Mutex<Vec<String>>,
+        head: String,
+        refuse: Vec<String>,
+    }
+
+    impl crate::wiki_git::GitRunner for PushGit {
+        fn run(&self, _d: Option<&Path>, args: &[&str]) -> Result<String, String> {
+            self.calls.lock().expect("lock").push(args.join(" "));
+            match args {
+                ["rev-parse", ..] => Ok(format!("{}\n", self.head)),
+                ["push", _, remote, _] if self.refuse.iter().any(|r| r == remote) => {
+                    Err("! [rejected] main -> main (non-fast-forward)".into())
+                }
+                _ => Ok(String::new()),
+            }
+        }
+    }
+
+    fn two_remotes() -> Project {
+        Project::from_remotes(&[
+            ("origin".into(), "git@github.com:o/r.git".into()),
+            ("codeberg".into(), "ssh://git@codeberg.org/o/r.git".into()),
+            ("mirror".into(), "https://github.com/o/r.git".into()),
+            ("backup".into(), "/srv/backup/r.git".into()),
+        ])
+    }
+
+    #[test]
+    fn a_push_goes_to_every_forge_remote_and_one_refusal_does_not_stop_the_rest() {
+        let git = PushGit {
+            head: "main".into(),
+            refuse: vec!["origin".into()],
+            ..PushGit::default()
+        };
+        let (branch, results) = push_all(&git, Path::new("."), &two_remotes()).expect("push");
+        assert_eq!(branch, "main");
+        let names: Vec<_> = results.iter().map(|r| r.remote.as_str()).collect();
+        assert_eq!(
+            names,
+            ["origin", "codeberg"],
+            "the alias and the plain path are not pushed"
+        );
+        assert!(
+            results[0]
+                .outcome
+                .as_ref()
+                .is_err_and(|e| e.contains("non-fast-forward"))
+        );
+        assert!(results[1].outcome.is_ok());
+        assert!(
+            git.calls
+                .lock()
+                .expect("lock")
+                .iter()
+                .all(|c| !c.contains("force") && !c.contains(" -f")),
+            "never forced"
+        );
+        let (text, all_ok) = push_report(&branch, &results);
+        assert!(
+            !all_ok && text.contains("✘ origin") && text.contains("✔ codeberg"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn a_detached_head_or_no_forge_remote_is_refused_before_anything_is_pushed() {
+        let detached = PushGit {
+            head: "HEAD".into(),
+            ..PushGit::default()
+        };
+        assert!(
+            push_all(&detached, Path::new("."), &two_remotes())
+                .is_err_and(|e| e.contains("detached"))
+        );
+        let git = PushGit {
+            head: "main".into(),
+            ..PushGit::default()
+        };
+        assert!(
+            push_all(&git, Path::new("."), &Project::default())
+                .is_err_and(|e| e.contains("no forge remote"))
+        );
+        assert_eq!(
+            git.calls.lock().expect("lock").len(),
+            1,
+            "only the branch was read"
+        );
     }
 }

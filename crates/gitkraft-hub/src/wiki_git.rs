@@ -245,6 +245,33 @@ impl WikiGit {
     }
 }
 
+/// A git for tests of programs that push: it records every command, answers `rev-parse` with `head`
+/// and refuses pushes to the remotes in `refuse` as a moved-on remote would.
+#[derive(Debug, Default)]
+pub struct ScriptedGit {
+    /// Every command run, joined by spaces.
+    pub calls: std::sync::Mutex<Vec<String>>,
+    /// The branch `rev-parse --abbrev-ref HEAD` gives (`HEAD` when detached).
+    pub head: String,
+    /// Remotes whose push is rejected.
+    pub refuse: Vec<String>,
+}
+
+impl GitRunner for ScriptedGit {
+    fn run(&self, _dir: Option<&Path>, args: &[&str]) -> Result<String, String> {
+        if let Ok(mut c) = self.calls.lock() {
+            c.push(args.join(" "));
+        }
+        match args {
+            ["rev-parse", ..] => Ok(format!("{}\n", self.head)),
+            ["push", _, remote, _] if self.refuse.iter().any(|r| r == remote) => {
+                Err("! [rejected] main -> main (non-fast-forward)".into())
+            }
+            _ => Ok(String::new()),
+        }
+    }
+}
+
 /// Runs blocking work on its own thread, so an async caller is not held up by a subprocess.
 pub async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,

@@ -79,6 +79,7 @@ fn read_only_servers_have_no_write_tools_and_write_servers_have_all() {
         "mark_answer",
         "save_wiki_page",
         "move_card",
+        "push_all_remotes",
         "new_card",
         "reorder_card",
     ] {
@@ -105,6 +106,7 @@ fn read_only_servers_have_no_write_tools_and_write_servers_have_all() {
         "mark_answer",
         "save_wiki_page",
         "move_card",
+        "push_all_remotes",
         "new_card",
         "reorder_card",
     ] {
@@ -503,6 +505,39 @@ async fn boards_come_back_as_columns_of_cards() {
     );
     assert_eq!(v["boards"][0]["name"], "Roadmap");
     assert_eq!(v["boards"][0]["columns"][0]["cards"][0]["number"], 4);
+}
+
+#[tokio::test]
+async fn a_push_goes_to_every_forge_remote_and_reports_each() {
+    use gitkraft_hub::wiki_git::ScriptedGit;
+    let (s, _) = two_forges();
+    let write_server = GitkraftServer::new(
+        Hub::new(vec![], &DynClient::new(FakeClient::new())),
+        None,
+        write(),
+    )
+    .with_project(
+        std::env::temp_dir(),
+        gitkraft_hub::project::Project::from_remotes(&[
+            ("origin".to_string(), "git@github.com:me/p.git".to_string()),
+            (
+                "codeberg".to_string(),
+                "ssh://git@codeberg.org/me/p.git".to_string(),
+            ),
+        ]),
+    )
+    .with_git(std::sync::Arc::new(ScriptedGit {
+        head: "main".into(),
+        refuse: vec!["origin".into()],
+        ..ScriptedGit::default()
+    }));
+    let res = write_server.push_all_remotes().await.expect("pushed");
+    let v = json(&res);
+    assert_eq!(v["branch"], "main");
+    assert_eq!(v["ok"], false, "origin refused");
+    assert_eq!(v["remotes"][1]["ok"], true, "codeberg still got it");
+    // a read-only server has no such tool
+    assert!(!s.tool_names().iter().any(|n| n == "push_all_remotes"));
 }
 
 #[tokio::test]

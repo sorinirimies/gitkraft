@@ -328,6 +328,39 @@ impl GitkraftServer {
     }
 
     #[tool(
+        description = "Push the checked-out branch of the checkout the server runs in to every forge remote (GitHub, Codeberg, Gitea…), one result per remote. Never forced: a remote that moved on refuses and says so; the others still get the push.",
+        annotations(read_only_hint = false, destructive_hint = false)
+    )]
+    pub(crate) async fn push_all_remotes(&self) -> ToolResult {
+        let dir = self
+            .dir
+            .clone()
+            .ok_or_else(|| invalid("the server does not run in a checkout"))?;
+        let (git, project) = (self.git.clone(), self.project.clone());
+        let (branch, results) = gitkraft_hub::wiki_git::blocking(move || {
+            gitkraft_hub::project::push_all(git.as_ref(), &dir, &project)
+        })
+        .await
+        .map_err(invalid)?
+        .map_err(invalid)?;
+        let rows: Vec<_> = results
+            .iter()
+            .map(|r| {
+                json!({
+                    "remote": r.remote,
+                    "ok": r.outcome.is_ok(),
+                    "message": r.outcome.as_ref().unwrap_or_else(|e| e),
+                })
+            })
+            .collect();
+        out(&json!({
+            "branch": branch,
+            "ok": results.iter().all(|r| r.outcome.is_ok()),
+            "remotes": rows,
+        }))
+    }
+
+    #[tool(
         description = "Add a card to a board (GitHub Projects: a draft card; GitLab: a new issue in the list). Optionally into a column.",
         annotations(read_only_hint = false, destructive_hint = false)
     )]

@@ -146,6 +146,7 @@ fn read_tools_are_marked_read_only() {
             "mark_answer",
             "save_wiki_page",
             "move_card",
+            "push_all_remotes",
             "new_card",
             "reorder_card",
         ];

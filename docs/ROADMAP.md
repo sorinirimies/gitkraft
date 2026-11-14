@@ -24,8 +24,9 @@ editing wiki pages (GitLab / Gitea REST), replying inside a discussion thread, m
 
 Done: `Project` (the remotes of a checkout), `Scope`, branch state per remote, mirrored CI runs
 folded by commit (`gitkraft-hub/src/project.rs`), shown in the TUI, GUI, web, CLI and MCP.
-Open: push to every remote in one go (`push --all-remotes`, with a per-remote result), PR/issue
-mirroring across forges, and a per-remote default branch.
+Pushing the current branch to every forge remote is done (`push-all`, MCP `push_all_remotes`; one
+result per remote, never forced). Open: PR/issue mirroring across forges and a per-remote default
+branch (needs a real multi-forge test setup first).
 
 ## MCP
 

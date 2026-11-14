@@ -115,6 +115,8 @@ pub enum Forge {
     Accounts(Common),
     /// The remotes of this checkout: forge, account and whether each has your branch.
     Remotes(Common),
+    /// Push the current branch to every forge remote, one result per remote. Never forced.
+    PushAll(Common),
     /// Notifications of every account.
     Inbox(Common),
     /// Pull requests: yours, or those of a repository with `-R`.
@@ -523,6 +525,7 @@ impl Forge {
             Self::WikiSave(a) => &a.common,
             Self::BoardMove(a) => &a.common,
             Self::BoardNew(a) => &a.common,
+            Self::PushAll(c) => c,
             Self::BoardOrder(a) => &a.common,
             Self::Merge(a) => &a.common,
             Self::Rerun(a) => &a.common,
@@ -545,6 +548,8 @@ pub struct Session {
     dir: Option<PathBuf>,
     /// Where `ai-policy.toml` lives (default: the config directory).
     config_dir: Option<PathBuf>,
+    /// The git that pushes run through.
+    git: std::sync::Arc<dyn gitkraft_hub::wiki_git::GitRunner>,
 }
 
 fn json_of<T: Serialize>(v: &T) -> Result<String> {
@@ -580,7 +585,15 @@ impl Session {
             project: Project::default(),
             dir: None,
             config_dir: None,
+            git: std::sync::Arc::new(gitkraft_hub::wiki_git::SystemGit),
         }
+    }
+
+    /// Runs pushes through `git` instead of the system one (tests).
+    #[must_use]
+    pub fn with_git(mut self, git: std::sync::Arc<dyn gitkraft_hub::wiki_git::GitRunner>) -> Self {
+        self.git = git;
+        self
     }
 
     /// Keeps the AI policy under `dir` instead of the user's config directory.
@@ -677,6 +690,7 @@ impl Session {
         match cmd {
             Forge::Accounts(_) => self.accounts(json).await,
             Forge::Remotes(_) => self.remotes(json),
+            Forge::PushAll(_) => self.push_all(json),
             Forge::Inbox(_) => self.inbox(json).await,
             Forge::Prs(a) => self.items(a, true, json).await,
             Forge::Issues(a) => self.items(a, false, json).await,
@@ -1333,6 +1347,33 @@ impl Session {
             .map_err(|e| anyhow!(e))
     }
 
+    fn push_all(&self, json: bool) -> Result<String> {
+        let dir = self
+            .dir
+            .as_deref()
+            .ok_or_else(|| anyhow!("this is not a checkout"))?;
+        let (branch, results) =
+            project::push_all(self.git.as_ref(), dir, &self.project).map_err(|e| anyhow!(e))?;
+        let (text, all_ok) = project::push_report(&branch, &results);
+        if json {
+            let rows: Vec<_> = results
+                .iter()
+                .map(|r| {
+                    serde_json::json!({
+                        "remote": r.remote,
+                        "ok": r.outcome.is_ok(),
+                        "message": r.outcome.as_ref().unwrap_or_else(|e| e),
+                    })
+                })
+                .collect();
+            return json_of(&serde_json::json!({"branch": branch, "ok": all_ok, "remotes": rows}));
+        }
+        if !all_ok {
+            bail!("{}", text.trim_end());
+        }
+        Ok(text)
+    }
+
     fn remotes(&self, json: bool) -> Result<String> {
         if self.project.remotes.is_empty() {
             bail!("this is not a checkout with a known forge remote");
@@ -1802,6 +1843,46 @@ mod tests {
             DynClient::new(FakeClient::new()),
         );
         assert!(none.run(&forge(&["remotes"])).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn push_all_pushes_every_forge_remote_and_a_refusal_fails_the_command() {
+        use gitkraft_hub::wiki_git::ScriptedGit;
+        let (s, _) = two_forges();
+        let git = std::sync::Arc::new(ScriptedGit {
+            head: "main".into(),
+            ..ScriptedGit::default()
+        });
+        let s = s.with_git(git.clone());
+        let t = s.run(&forge(&["push-all"])).await.expect("pushed");
+        assert!(t.contains("✔ origin") && t.contains("✔ codeberg"), "{t}");
+        assert!(
+            t.contains("✔ lan"),
+            "every forge remote, accounts or not: {t}"
+        );
+        assert!(
+            git.calls
+                .lock()
+                .expect("lock")
+                .iter()
+                .all(|c| !c.contains("force")),
+            "never forced"
+        );
+        let (s, _) = two_forges();
+        let git = std::sync::Arc::new(ScriptedGit {
+            head: "main".into(),
+            refuse: vec!["codeberg".into()],
+            ..ScriptedGit::default()
+        });
+        let e = s
+            .with_git(git)
+            .run(&forge(&["push-all"]))
+            .await
+            .expect_err("one refused");
+        assert!(
+            e.to_string().contains("✘ codeberg") && e.to_string().contains("✔ origin"),
+            "{e}"
+        );
     }
 
     #[tokio::test]

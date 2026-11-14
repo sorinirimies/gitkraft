@@ -35,6 +35,8 @@ pub struct GitkraftServer {
     /// The remotes of the checkout the server runs in.
     pub(crate) project: gitkraft_hub::project::Project,
     pub(crate) dir: Option<std::path::PathBuf>,
+    /// The git that pushes run through.
+    pub(crate) git: Arc<dyn gitkraft_hub::wiki_git::GitRunner>,
     pub(crate) policy: Policy,
     tool_router: ToolRouter<Self>,
 }
@@ -99,9 +101,17 @@ impl GitkraftServer {
             default_repo,
             project: gitkraft_hub::project::Project::default(),
             dir: None,
+            git: Arc::new(gitkraft_hub::wiki_git::SystemGit),
             policy,
             tool_router,
         }
+    }
+
+    /// Runs pushes through `git` instead of the system one (tests).
+    #[must_use]
+    pub fn with_git(mut self, git: Arc<dyn gitkraft_hub::wiki_git::GitRunner>) -> Self {
+        self.git = git;
+        self
     }
 
     /// Tells the server which checkout it runs in and the remotes of it.
