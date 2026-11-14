@@ -120,6 +120,29 @@ pub enum ActionRequest {
         /// Run id.
         run_id: u64,
     },
+    /// Ask the AI why a CI job failed (a draft: it changes nothing).
+    Explain {
+        /// `host/owner/name`.
+        repo: String,
+        /// Run id.
+        run_id: u64,
+        /// The job to explain; absent or not failed: the first failed one.
+        #[serde(default)]
+        job_id: Option<u64>,
+    },
+    /// Start a workflow by hand.
+    Dispatch {
+        /// `host/owner/name`.
+        repo: String,
+        /// Workflow file such as `ci.yml`; empty where there are none (GitLab).
+        #[serde(default)]
+        workflow: String,
+        /// Branch or tag.
+        git_ref: String,
+        /// `key=value` pairs separated by spaces or new lines.
+        #[serde(default)]
+        inputs: String,
+    },
     /// Fetch a pull request into a worktree next to the local checkout.
     Worktree {
         /// `host/owner/name`.
@@ -320,6 +343,36 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
                 .await
                 .map(|()| "run cancelled".to_string())
         }
+        ActionRequest::Explain {
+            repo,
+            run_id,
+            job_id,
+        } => {
+            let repo = repo_of(&repo)?;
+            let llm = tokio::task::spawn_blocking(gitkraft_hub::ai::remote_default)
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+            return explain_with(session, &llm, &repo, run_id, job_id).await;
+        }
+        ActionRequest::Dispatch {
+            repo,
+            workflow,
+            git_ref,
+            inputs,
+        } => {
+            let repo = repo_of(&repo)?;
+            let ci = hub.ci(&repo.host).ok_or("no account for this host")?;
+            if workflow.contains(char::is_whitespace) || git_ref.contains(char::is_whitespace) {
+                return Err("workflow and branch must not contain spaces".into());
+            }
+            let needs = !workflow.is_empty();
+            let text = format!("{workflow} {git_ref} {}", inputs.replace('\n', " "));
+            let d = gitkraft_hub::dispatch::parse(&text, needs)?;
+            let out = gitkraft_hub::dispatch::start(ci, &repo, &d).await;
+            session.invalidate();
+            return out;
+        }
         ActionRequest::Worktree { repo, number } => {
             let repo = repo_of(&repo)?;
             let kind = hub
@@ -381,6 +434,31 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
     result.map_err(|e| e.to_string())
 }
 
+/// Asks `llm` why a job of the run failed.
+pub(crate) async fn explain_with(
+    session: &Session,
+    llm: &impl gitkraft_hub::ai::Llm,
+    repo: &RepoId,
+    run_id: u64,
+    job_id: Option<u64>,
+) -> Result<String, String> {
+    let ci = session
+        .hub()
+        .ci(&repo.host)
+        .ok_or("no account for this host")?;
+    let detail = ci
+        .run_detail(repo, run_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let job = gitkraft_hub::ai::failed_job(&detail.jobs, job_id)
+        .ok_or_else(|| format!("no failed job in run {run_id}"))?;
+    let ctx = gitkraft_hub::ai::failure_context(ci, &detail.run, job).await?;
+    let text = gitkraft_hub::ai::explain_failure(llm, &ctx)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(format!("{} / {}\n\n{text}", ctx.workflow, ctx.job))
+}
+
 fn toggle_notifications(session: &Session, repo: &str, on: bool) -> Result<String, String> {
     let path = session
         .notify_path()
@@ -400,4 +478,96 @@ fn toggle_notifications(session: &Session, repo: &str, on: bool) -> Result<Strin
         if on { "on" } else { "off" },
         key.as_deref().unwrap_or("all projects")
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use gitkraft_hub::Hub;
+    use gitkraft_hub::ai::FakeLlm;
+    use gitkraft_platforms::testing::FakeClient;
+    use gitkraft_platforms::{Account, DynClient, PlatformKind, Secret};
+    use gitkraft_settings::dashboard::Dashboard;
+
+    use super::*;
+    use crate::session::Paths;
+
+    fn session(fake: &FakeClient) -> Session {
+        let mut account =
+            Account::new(PlatformKind::GitHub, "github.com").with_token(Secret::new("t"));
+        account.me = Some("me".into());
+        let hub = Hub::new(vec![account], &DynClient::new(fake.clone()));
+        let paths = Paths {
+            dashboard: None,
+            notify: None,
+            use_state_dir: false,
+            ssh_dir: None,
+            checkouts: Vec::new(),
+        };
+        Session::new(hub, Dashboard { sections: vec![] }, paths, 0)
+    }
+
+    const BASE: &str = "https://api.github.com/repos/o/r/actions";
+
+    fn failed_run(fake: &FakeClient) {
+        fake.push_json(
+            &format!("{BASE}/runs/5"),
+            r#"{"id":5,"name":"CI","run_number":9,"status":"completed","conclusion":"failure","head_branch":"main"}"#,
+        );
+        fake.push_json(
+            &format!("{BASE}/runs/5/jobs"),
+            r#"{"jobs":[{"id":10,"name":"lint","status":"completed","conclusion":"success","steps":[]},{"id":11,"name":"build","status":"completed","conclusion":"failure","steps":[]}]}"#,
+        );
+    }
+
+    #[tokio::test]
+    async fn explain_sends_the_redacted_log_of_the_failed_job_and_returns_the_answer() {
+        let fake = FakeClient::new();
+        failed_run(&fake);
+        fake.push_status(
+            &format!("{BASE}/jobs/11/logs"),
+            200,
+            "error[E0425]: no x\nGITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789\n",
+        );
+        let llm = FakeLlm::saying("Cause: typo");
+        let repo = RepoId::from_key("github.com/o/r").expect("repo");
+        let out = explain_with(&session(&fake), &llm, &repo, 5, None)
+            .await
+            .expect("answer");
+        assert!(out.starts_with("CI / build"), "{out}");
+        assert!(out.contains("Cause: typo"));
+        let prompts = llm.prompts();
+        assert!(prompts[0].1.contains("E0425"));
+        assert!(
+            !prompts[0].1.contains("ghp_abcdefghijkl"),
+            "secret reached the model"
+        );
+    }
+
+    #[tokio::test]
+    async fn explain_names_the_requested_job_only_when_it_failed_and_refuses_a_run_without_failures()
+     {
+        let fake = FakeClient::new();
+        failed_run(&fake);
+        fake.push_status(&format!("{BASE}/jobs/11/logs"), 200, "boom");
+        let repo = RepoId::from_key("github.com/o/r").expect("repo");
+        // Job 10 passed: the failed one is explained instead.
+        let out = explain_with(&session(&fake), &FakeLlm::saying("x"), &repo, 5, Some(10))
+            .await
+            .expect("answer");
+        assert!(out.contains("CI / build"));
+
+        let fake = FakeClient::new();
+        fake.push_json(
+            &format!("{BASE}/runs/5"),
+            r#"{"id":5,"name":"CI","status":"completed","conclusion":"success"}"#,
+        );
+        fake.push_json(
+            &format!("{BASE}/runs/5/jobs"),
+            r#"{"jobs":[{"id":10,"name":"lint","status":"completed","conclusion":"success","steps":[]}]}"#,
+        );
+        let err = explain_with(&session(&fake), &FakeLlm::saying("x"), &repo, 5, None)
+            .await
+            .expect_err("nothing to explain");
+        assert!(err.contains("no failed job"), "{err}");
+    }
 }

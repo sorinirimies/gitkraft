@@ -432,6 +432,40 @@ pub async fn suggest(
     })
 }
 
+/// Splits a message into its subject line and the body after it, for a front-end whose commit
+/// input has one line.
+#[must_use]
+pub fn split_message(message: &str) -> (String, String) {
+    let message = message.trim();
+    match message.split_once('\n') {
+        Some((subject, body)) => (subject.trim().to_string(), body.trim().to_string()),
+        None => (message.to_string(), String::new()),
+    }
+}
+
+/// The global settings folder (`<config dir>/gitkraft`), where a user-wide `ai.toml` lives.
+#[must_use]
+pub fn global_dir() -> Option<std::path::PathBuf> {
+    dirs::config_dir().map(|d| d.join("gitkraft"))
+}
+
+/// A drafted message for what is staged in the repository at `dir`, in the style of its
+/// `.gitkraft/ai.toml` over the global one. Reads files and git, so call it off the UI thread.
+///
+/// # Errors
+/// Nothing staged, a broken style file, or the model call.
+pub async fn draft(
+    llm: &impl Llm,
+    dir: &Path,
+    global: Option<&Path>,
+) -> Result<Suggestion, String> {
+    let style = RawStyle::load(dir, global)?;
+    let input = gather(dir, style.examples_from_history.unwrap_or(8))?;
+    suggest(llm, &style, &input)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -595,5 +629,47 @@ mod tests {
         assert!(got.diff.contains("+hello") && got.diff.contains("[redacted]"));
         assert!(!got.diff.contains("abcdef123456") && !got.diff.contains("lots"));
         assert!(got.diff.contains("Cargo.lock") && got.recent.is_empty());
+    }
+
+    #[test]
+    fn a_message_splits_into_subject_and_body() {
+        assert_eq!(
+            split_message("  feat: a\n\n  why  \n"),
+            ("feat: a".to_string(), "why".to_string())
+        );
+        assert_eq!(split_message("only"), ("only".to_string(), String::new()));
+    }
+
+    #[tokio::test]
+    async fn a_draft_describes_the_staged_change_in_the_project_style() {
+        let dir = tempfile::tempdir().expect("dir");
+        let repo = git2::Repository::init(dir.path()).expect("init");
+        std::fs::write(dir.path().join("a.txt"), "hello\n").expect("write");
+        let mut index = repo.index().expect("index");
+        index.add_path(Path::new("a.txt")).expect("add");
+        index.write().expect("write index");
+        std::fs::create_dir_all(dir.path().join(".gitkraft")).expect("dir");
+        std::fs::write(
+            dir.path().join(".gitkraft/ai.toml"),
+            "[commit]\nformat = \"plain\"\n",
+        )
+        .expect("style");
+        let llm = crate::ai::FakeLlm::saying(r#"{"type":"feat","subject":"Add a","body":"why"}"#);
+        let s = draft(&llm, dir.path(), None).await.expect("draft");
+        assert!(s.message.starts_with("Add a"), "{}", s.message);
+        assert!(
+            llm.prompts()[0].1.contains("a.txt"),
+            "the diff reaches the model"
+        );
+
+        // Nothing staged: an error before any model call.
+        let empty = tempfile::tempdir().expect("dir");
+        git2::Repository::init(empty.path()).expect("init");
+        let llm = crate::ai::FakeLlm::saying("x");
+        let err = draft(&llm, empty.path(), None)
+            .await
+            .expect_err("nothing staged");
+        assert!(err.contains("nothing is staged"), "{err}");
+        assert!(llm.prompts().is_empty());
     }
 }

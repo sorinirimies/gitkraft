@@ -109,15 +109,6 @@ macro_rules! require_selection {
 /// `BackgroundResult::RepoLoaded` variant.
 pub type RepoPayload = gitkraft_core::RepoSnapshot;
 
-/// Splits a message into its subject line and the body after the blank line.
-fn split_message(message: &str) -> (String, String) {
-    let message = message.trim();
-    match message.split_once('\n') {
-        Some((subject, body)) => (subject.trim().to_string(), body.trim().to_string()),
-        None => (message.to_string(), String::new()),
-    }
-}
-
 /// Results produced by background tasks and sent back to the main loop.
 #[derive(Debug)]
 pub enum BackgroundResult {
@@ -935,7 +926,7 @@ impl App {
                     self.tab_mut().is_loading = false;
                     match res {
                         Ok((message, warnings)) => {
-                            let (subject, body) = split_message(&message);
+                            let (subject, body) = gitkraft_hub::commit_ai::split_message(&message);
                             self.input_buffer = subject;
                             self.commit_body = body;
                             self.input_mode = InputMode::Input;
@@ -4776,10 +4767,13 @@ mod tests {
     #[test]
     fn a_message_splits_into_subject_and_body() {
         assert_eq!(
-            split_message("fix: a\n\nwhy\nmore\n"),
+            gitkraft_hub::commit_ai::split_message("fix: a\n\nwhy\nmore\n"),
             ("fix: a".to_string(), "why\nmore".to_string())
         );
-        assert_eq!(split_message(" only "), ("only".to_string(), String::new()));
+        assert_eq!(
+            gitkraft_hub::commit_ai::split_message(" only "),
+            ("only".to_string(), String::new())
+        );
     }
 
     #[test]

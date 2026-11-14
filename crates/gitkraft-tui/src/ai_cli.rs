@@ -3,14 +3,11 @@
 use std::path::Path;
 
 use anyhow::{Result, anyhow, bail};
-use gitkraft_hub::ai::{AiConfig, Llm, Remote};
+use gitkraft_hub::ai::{Llm, Remote};
 use gitkraft_hub::commit_ai::{self, RawStyle};
-use gitkraft_platforms::credentials::SystemKeyring;
-use gitkraft_platforms::{CachedClient, DynClient, ReqwestClient};
 
-/// The global settings folder (`<config dir>/gitkraft`).
 fn global_dir() -> Option<std::path::PathBuf> {
-    dirs::config_dir().map(|d| d.join("gitkraft"))
+    commit_ai::global_dir()
 }
 
 /// Writes the starter `.gitkraft/ai.toml` unless one exists.
@@ -67,13 +64,7 @@ pub async fn message(
 
 /// The model from the environment and the keyring.
 pub(crate) fn real_llm() -> Result<Remote> {
-    let env = |n: &str| std::env::var(n).ok();
-    let config = AiConfig::from_env(&env);
-    let key = config.key(&env, &SystemKeyring)?;
-    let client = DynClient::new(CachedClient::new(
-        ReqwestClient::new().map_err(|e| anyhow!(e.to_string()))?,
-    ));
-    Ok(Remote::new(client, config, key))
+    Ok(gitkraft_hub::ai::remote_default()?)
 }
 
 /// A drafted message for the repository at `dir`, blocking; for a background thread of a UI.
@@ -81,14 +72,12 @@ pub(crate) fn real_llm() -> Result<Remote> {
 /// # Errors
 /// Nothing staged, a broken style file, no key, or the model call.
 pub fn draft(dir: &Path) -> Result<commit_ai::Suggestion> {
-    let style = RawStyle::load(dir, global_dir().as_deref()).map_err(|e| anyhow!(e))?;
-    let input =
-        commit_ai::gather(dir, style.examples_from_history.unwrap_or(8)).map_err(|e| anyhow!(e))?;
     let llm = real_llm()?;
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
-    Ok(rt.block_on(commit_ai::suggest(&llm, &style, &input))?)
+    rt.block_on(commit_ai::draft(&llm, dir, global_dir().as_deref()))
+        .map_err(|e| anyhow!(e))
 }
 
 /// Runs the command for real: the model from the environment and the keyring.

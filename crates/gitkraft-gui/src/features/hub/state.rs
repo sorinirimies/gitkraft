@@ -122,6 +122,8 @@ pub enum HubMessage {
     SelectJob(usize),
     /// Open the log of the selected job.
     OpenLog,
+    /// Ask the AI why the selected job (or the first failed one) failed.
+    Explain,
     /// A log arrived.
     LogLoaded(Result<(String, String), String>),
     /// Close the log.
@@ -630,6 +632,7 @@ impl HubState {
                 Task::none()
             }
             HubMessage::OpenLog => self.open_log(),
+            HubMessage::Explain => self.explain(),
             HubMessage::LogLoaded(Ok((title, raw))) => {
                 let lines = parse_log(&raw);
                 let annotations = extract(&lines);
@@ -1118,6 +1121,46 @@ impl HubState {
                         .map_err(|e| e.to_string()),
                     None => Err("no account".to_string()),
                 }
+            },
+            HubMessage::LogLoaded,
+        )
+    }
+
+    /// Asks the AI about the selected job when it failed, else the first failed one; the answer
+    /// opens in the log view.
+    fn explain(&mut self) -> Task<HubMessage> {
+        let (Some(api), Some(row)) = (self.handle(), self.row) else {
+            return Task::none();
+        };
+        let Some(SectionData::Runs(r)) = self.active_data() else {
+            return Task::none();
+        };
+        let Some(run) = r.items.get(row).cloned() else {
+            return Task::none();
+        };
+        let Some(detail) = self.detail.run.as_ref() else {
+            self.notice = Some(("open the run first".into(), false));
+            return Task::none();
+        };
+        let wanted = detail.jobs.get(self.detail.job).map(|j| j.id);
+        let Some(job) = gitkraft_hub::ai::failed_job(&detail.jobs, wanted).cloned() else {
+            self.notice = Some(("no failed job to explain".into(), false));
+            return Task::none();
+        };
+        let title = format!("AI · {} · {}", run.name, job.name);
+        self.notice = Some((format!("asking the AI about {}…", job.name), true));
+        Task::perform(
+            async move {
+                let ci = api.ci(&run.repo.host).ok_or("no account")?;
+                let ctx = gitkraft_hub::ai::failure_context(ci, &run, &job).await?;
+                let llm = tokio::task::spawn_blocking(gitkraft_hub::ai::remote_default)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .map_err(|e| e.to_string())?;
+                gitkraft_hub::ai::explain_failure(&llm, &ctx)
+                    .await
+                    .map(|text| (title, text))
+                    .map_err(|e| e.to_string())
             },
             HubMessage::LogLoaded,
         )
@@ -1619,6 +1662,7 @@ impl HubState {
             );
             add("CI run: run the workflow again", HubMessage::Dispatch);
             add("CI run: download artifacts", HubMessage::Artifacts);
+            add("CI run: explain the failure with AI", HubMessage::Explain);
             add("CI run: cancel", HubMessage::CancelRun);
         }
         for (n, idx) in self.visible_sections().into_iter().enumerate() {

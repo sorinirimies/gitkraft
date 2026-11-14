@@ -153,12 +153,68 @@ pub(crate) fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
 
         Message::CommitMessageChanged(msg) => set_field!(state, commit_message, msg),
 
+        Message::DraftCommitMessage => {
+            let tab = state.active_tab_mut();
+            let Some(path) = tab.repo_path.clone() else {
+                return Task::none();
+            };
+            if tab.staged_changes.is_empty() {
+                tab.error_message =
+                    Some("Stage files first: the draft describes what is staged".into());
+                return Task::none();
+            }
+            tab.status_message = Some("Asking the AI for a commit message…".into());
+            Task::perform(
+                async move {
+                    let llm = tokio::task::spawn_blocking(gitkraft_hub::ai::remote_default)
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .map_err(|e| e.to_string())?;
+                    let global = gitkraft_hub::commit_ai::global_dir();
+                    gitkraft_hub::commit_ai::draft(&llm, &path, global.as_deref())
+                        .await
+                        .map(|s| (s.message, s.warnings))
+                },
+                Message::CommitDrafted,
+            )
+        }
+
+        Message::CommitDrafted(result) => {
+            let tab = state.active_tab_mut();
+            match result {
+                Ok((message, warnings)) => {
+                    let (subject, body) = gitkraft_hub::commit_ai::split_message(&message);
+                    tab.commit_message = subject;
+                    tab.commit_body = body;
+                    tab.error_message = None;
+                    tab.status_message = Some(if warnings.is_empty() {
+                        "Drafted: edit it, then commit.".into()
+                    } else {
+                        format!("Drafted, but: {}", warnings.join("; "))
+                    });
+                }
+                Err(e) => {
+                    tab.status_message = None;
+                    tab.error_message = Some(format!("AI draft failed: {e}"));
+                }
+            }
+            Task::none()
+        }
+
         Message::CreateCommit => {
             let msg;
             let staged_empty;
             {
                 let tab = state.active_tab();
-                msg = tab.commit_message.trim().to_string();
+                msg = if tab.commit_body.trim().is_empty() {
+                    tab.commit_message.trim().to_string()
+                } else {
+                    format!(
+                        "{}\n\n{}",
+                        tab.commit_message.trim(),
+                        tab.commit_body.trim()
+                    )
+                };
                 staged_empty = tab.staged_changes.is_empty();
             }
             if msg.is_empty() || staged_empty {
@@ -176,6 +232,7 @@ pub(crate) fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
                     {
                         let tab = state.active_tab_mut();
                         tab.commit_message.clear();
+                        tab.commit_body.clear();
                         tab.status_message = Some("Commit created.".into());
                     }
                     state.refresh_active_tab()

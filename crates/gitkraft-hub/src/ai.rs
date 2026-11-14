@@ -452,6 +452,65 @@ pub async fn explain_failure(llm: &impl Llm, ctx: &FailureContext) -> Result<Str
     llm.complete(EXPLAIN_SYSTEM, &failure_prompt(ctx)).await
 }
 
+/// The model chosen by the environment (`GITKRAFT_AI_*`) and the keyring, reached through `client`.
+///
+/// Reads the keyring, which may block: call it off the UI thread.
+///
+/// # Errors
+/// No key for a provider that needs one.
+pub fn remote_from_env(client: DynClient) -> Result<Remote, AiError> {
+    let env = |n: &str| std::env::var(n).ok();
+    let config = AiConfig::from_env(&env);
+    let key = config.key(&env, &gitkraft_platforms::credentials::SystemKeyring)?;
+    Ok(Remote::new(client, config, key))
+}
+
+/// [`remote_from_env`] over the real network (no cache: a model answer must never be a stale one).
+///
+/// Reads the keyring, which may block: call it off the UI thread.
+///
+/// # Errors
+/// No HTTP client, or no key for a provider that needs one.
+pub fn remote_default() -> Result<Remote, AiError> {
+    let http =
+        gitkraft_platforms::ReqwestClient::new().map_err(|e| AiError::Transport(e.to_string()))?;
+    remote_from_env(DynClient::new(http))
+}
+
+/// Reads the log of `job` and gathers what the model is told about its failure.
+///
+/// # Errors
+/// The log cannot be fetched.
+pub async fn failure_context<C: gitkraft_platforms::HttpClient + Clone>(
+    ci: &gitkraft_ci::CiBackend<C>,
+    run: &gitkraft_ci::Run,
+    job: &gitkraft_ci::Job,
+) -> Result<FailureContext, String> {
+    let log = ci
+        .job_log(&run.repo, job.id)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(FailureContext {
+        repo: run.repo.key(),
+        workflow: run.name.clone(),
+        job: job.name.clone(),
+        branch: run.branch.clone(),
+        log: gitkraft_ci::log::strip_ansi(&log),
+    })
+}
+
+/// The job to explain: `wanted` if it failed, otherwise the first failed one.
+#[must_use]
+pub fn failed_job(jobs: &[gitkraft_ci::Job], wanted: Option<u64>) -> Option<&gitkraft_ci::Job> {
+    wanted
+        .and_then(|id| jobs.iter().find(|j| j.id == id))
+        .filter(|j| j.status == gitkraft_ci::Status::Failed)
+        .or_else(|| {
+            jobs.iter()
+                .find(|j| j.status == gitkraft_ci::Status::Failed)
+        })
+}
+
 /// A model that answers from a queue, for tests of the code around it.
 #[derive(Debug, Default)]
 pub struct FakeLlm {
@@ -671,5 +730,28 @@ mod tests {
         assert!(
             system.contains("Cause") && user.contains("Job: test") && user.contains("error: x")
         );
+    }
+
+    #[test]
+    fn the_job_to_explain_is_the_wanted_one_if_it_failed_else_the_first_failed() {
+        use gitkraft_ci::{Job, Status};
+        let job = |id, status| Job {
+            id,
+            status,
+            ..Job::default()
+        };
+        let jobs = [
+            job(1, Status::Success),
+            job(2, Status::Failed),
+            job(3, Status::Failed),
+        ];
+        assert_eq!(failed_job(&jobs, Some(3)).map(|j| j.id), Some(3));
+        assert_eq!(
+            failed_job(&jobs, Some(1)).map(|j| j.id),
+            Some(2),
+            "it passed"
+        );
+        assert_eq!(failed_job(&jobs, None).map(|j| j.id), Some(2));
+        assert_eq!(failed_job(&jobs[..1], None).map(|j| j.id), None);
     }
 }

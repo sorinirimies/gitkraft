@@ -167,11 +167,23 @@ document.addEventListener('keydown',e=>{
   if(step){e.preventDefault();gkDayStep(r,step[0],step[1]);}
   else if(e.key==='Enter'||e.key===' '){e.preventDefault();gkDay(r);}
 });
+async function actShow(p,id){
+  const el=document.getElementById(id);el.hidden=false;el.textContent='Asking…';
+  const r=await fetch('/api/action',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({token:document.querySelector('meta[name=gk-token]').content},p))});
+  const t=await r.text();
+  if(!r.ok){el.textContent=t;return;}
+  try{el.textContent=JSON.parse(t).message;}catch(e){el.textContent=t;}
+}
+function gkDispatch(){
+  const w=document.getElementById('d-workflow');
+  act({action:'dispatch',repo:document.getElementById('d-repo').value,workflow:w?w.value:'',git_ref:document.getElementById('d-ref').value.trim(),inputs:document.getElementById('d-inputs').value});
+}
 function actBtn(b){
   const p=JSON.parse(b.dataset.act);
   if(b.dataset.from){p.body=document.getElementById(b.dataset.from).value;}
   if(b.dataset.method){p.method=document.getElementById(b.dataset.method).value;}
   if(b.dataset.confirm&&!confirm(b.dataset.confirm))return;
+  if(b.dataset.show){actShow(p,b.dataset.show);return;}
   act(p);
 }
 "#;

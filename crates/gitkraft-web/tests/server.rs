@@ -891,3 +891,138 @@ async fn the_boards_tab_lists_cards_with_their_column_and_opens_one_as_its_issue
         "cards are commented on in their issue"
     );
 }
+
+const RUN5: &str = r#"{"id":5,"name":"CI","run_number":9,"status":"completed","conclusion":"failure","head_branch":"main","actor":{"login":"alice"},"created_at":"2026-03-01T10:00:00Z"}"#;
+const JOBS5: &str =
+    r#"{"jobs":[{"id":11,"name":"build","status":"completed","conclusion":"failure","steps":[]}]}"#;
+
+#[tokio::test]
+async fn a_failed_run_offers_explain_artifacts_and_a_way_to_start_a_workflow() {
+    let h = start().await;
+    let base = "https://api.github.com/repos/o/r/actions";
+    h.fake.push_json(&format!("{base}/runs/5"), RUN5);
+    h.fake.push_json(&format!("{base}/runs/5/jobs"), JOBS5);
+    h.fake.push_json(
+        &format!("{base}/runs/5/artifacts"),
+        r#"{"artifacts":[{"id":3,"name":"dist","size_in_bytes":2048},{"id":4,"name":"old","expired":true}]}"#,
+    );
+    let page = get(h.addr, "/ci/run?repo=github.com%2Fo%2Fr&id=5").await;
+    assert_eq!(page.status, 200, "{}", page.body);
+    for needle in [
+        "Explain failure",
+        "&quot;action&quot;:&quot;explain&quot;",
+        "Run a workflow",
+        "/ci/dispatch?repo=github.com%2Fo%2Fr",
+        "Artifacts",
+        "dist",
+        "2.0 KB",
+        "id=\"ai\"",
+    ] {
+        assert!(
+            page.body.contains(needle),
+            "missing {needle:?}\n{}",
+            page.body
+        );
+    }
+    assert!(
+        !page.body.contains(">old<"),
+        "expired artifacts are not offered"
+    );
+
+    // A run that did not fail has nothing to explain.
+    let h = start().await;
+    h.fake.push_json(
+        &format!("{base}/runs/6"),
+        &RUN5
+            .replace("\"id\":5", "\"id\":6")
+            .replace("failure", "success"),
+    );
+    h.fake.push_json(
+        &format!("{base}/runs/6/jobs"),
+        &JOBS5.replace("failure", "success"),
+    );
+    let ok = get(h.addr, "/ci/run?repo=github.com%2Fo%2Fr&id=6").await;
+    assert!(!ok.body.contains("Explain failure"), "{}", ok.body);
+}
+
+#[tokio::test]
+async fn an_artifact_is_downloaded_as_a_zip_with_a_safe_file_name() {
+    let h = start().await;
+    let base = "https://api.github.com/repos/o/r/actions";
+    h.fake.push_json(
+        &format!("{base}/runs/5/artifacts"),
+        r#"{"artifacts":[{"id":3,"name":"../dist","size_in_bytes":4}]}"#,
+    );
+    h.fake.push(
+        &format!("{base}/artifacts/3/zip"),
+        gitkraft_platforms::http::Response {
+            status: 200,
+            headers: vec![],
+            body: b"PK\x03\x04".to_vec(),
+        },
+    );
+    let r = get(h.addr, "/ci/artifact?repo=github.com%2Fo%2Fr&id=5&job=3").await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    assert!(r.body.starts_with("PK"));
+    let missing = get(h.addr, "/ci/artifact?repo=github.com%2Fo%2Fr&id=5&job=99").await;
+    assert_eq!(
+        missing.status, 404,
+        "an id the run does not list is refused"
+    );
+}
+
+#[tokio::test]
+async fn the_dispatch_page_lists_workflows_and_the_action_starts_one() {
+    let h = start().await;
+    let base = "https://api.github.com/repos/o/r/actions";
+    h.fake.push_json(
+        &format!("{base}/workflows"),
+        r#"{"workflows":[{"id":1,"name":"CI","path":".github/workflows/ci.yml","state":"active"},{"id":2,"name":"Old","path":".github/workflows/old.yml","state":"disabled_manually"}]}"#,
+    );
+    let page = get(h.addr, "/ci/dispatch?repo=github.com%2Fo%2Fr").await;
+    assert_eq!(page.status, 200, "{}", page.body);
+    assert!(page.body.contains("CI (ci.yml)"), "{}", page.body);
+    assert!(
+        !page.body.contains("old.yml"),
+        "disabled workflows are not offered"
+    );
+    assert!(page.body.contains("gkDispatch()"));
+    assert_eq!(get(h.addr, "/ci/dispatch?repo=nope").await.status, 404);
+
+    h.fake
+        .push_status(&format!("{base}/workflows/ci.yml/dispatches"), 204, "");
+    let started = request(
+        h.addr,
+        "POST",
+        "/api/action",
+        r#"{"action":"dispatch","repo":"github.com/o/r","workflow":"ci.yml","git_ref":"main","inputs":"level=a"}"#,
+    )
+    .await;
+    assert_eq!(started.status, 200, "{}", started.body);
+    assert!(started.body.contains("started ci.yml on main"));
+    let sent = h.fake.requests();
+    let last = sent.last().expect("request");
+    assert!(last.url.ends_with("/workflows/ci.yml/dispatches"));
+    let body = String::from_utf8_lossy(last.body.as_deref().unwrap_or_default()).to_string();
+    assert!(
+        body.contains("\"ref\":\"main\"") && body.contains("\"level\":\"a\""),
+        "{body}"
+    );
+
+    let n = h.fake.requests().len();
+    for body in [
+        r#"{"action":"dispatch","repo":"github.com/o/r","workflow":"ci.yml","git_ref":"my branch"}"#,
+        r#"{"action":"dispatch","repo":"github.com/o/r","workflow":"ci.yml","git_ref":"main","inputs":"oops"}"#,
+    ] {
+        assert_eq!(
+            request(h.addr, "POST", "/api/action", body).await.status,
+            400,
+            "{body}"
+        );
+    }
+    assert_eq!(
+        h.fake.requests().len(),
+        n,
+        "bad input never reaches the platform"
+    );
+}

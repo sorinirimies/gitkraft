@@ -129,6 +129,8 @@ impl GitKraft {
 
             Message::CommitMessageChanged(_)
             | Message::CreateCommit
+            | Message::DraftCommitMessage
+            | Message::CommitDrafted(_)
             | Message::CommitCreated(_) => crate::features::commits::update::update(self, message),
 
             Message::CommitLogScrolled(abs_y, rel_y) => {

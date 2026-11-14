@@ -139,6 +139,10 @@ pub enum Message {
     CommitMessageChanged(String),
     /// User clicked "Commit".
     CreateCommit,
+    /// User asked the AI to draft a message for what is staged.
+    DraftCommitMessage,
+    /// The draft arrived: the message and the style rules it breaks.
+    CommitDrafted(Result<(String, Vec<String>), String>),
     /// Async commit creation completed.
     CommitCreated(Result<(), String>),
 

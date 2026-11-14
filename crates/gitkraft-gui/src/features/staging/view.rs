@@ -326,6 +326,25 @@ fn commit_view(state: &GitKraft) -> Element<'_, Message> {
     let commit_btn_content = row![commit_icon, Space::new().width(6), text("Commit").size(13),]
         .align_y(Alignment::Center);
 
+    let can_draft = !tab.staged_changes.is_empty();
+    let draft_btn = view_utils::on_press_maybe(
+        button(text("\u{2728} Draft with AI").size(12))
+            .padding([4, 10])
+            .width(Length::Fill)
+            .style(theme::toolbar_button),
+        can_draft.then_some(Message::DraftCommitMessage),
+    );
+    let body_hint: Element<'_, Message> = if tab.commit_body.is_empty() {
+        Space::new().height(0).into()
+    } else {
+        text(format!(
+            "+ body ({} lines) is committed with it",
+            tab.commit_body.lines().count()
+        ))
+        .size(10)
+        .color(c.muted)
+        .into()
+    };
     let commit_msg = can_commit.then_some(Message::CreateCommit);
     let commit_btn = view_utils::on_press_maybe(
         button(commit_btn_content)
@@ -351,6 +370,8 @@ fn commit_view(state: &GitKraft) -> Element<'_, Message> {
             column![
                 input,
                 char_hint,
+                body_hint,
+                draft_btn,
                 Space::new().height(4),
                 commit_btn,
                 Space::new().height(4),

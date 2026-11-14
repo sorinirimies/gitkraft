@@ -994,21 +994,11 @@ impl HubState {
         rt.spawn(async move {
             let result = async {
                 let ci = api.ci(&run.repo.host).ok_or("no account")?;
-                let log = ci
-                    .job_log(&run.repo, job.id)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                let ctx = gitkraft_hub::ai::FailureContext {
-                    repo: run.repo.key(),
-                    workflow: run.name.clone(),
-                    job: job.name.clone(),
-                    branch: run.branch.clone(),
-                    log: gitkraft_ci::log::strip_ansi(&log),
-                };
-                let llm = tokio::task::spawn_blocking(crate::ai_cli::real_llm)
+                let ctx = gitkraft_hub::ai::failure_context(ci, &run, &job).await?;
+                let llm = tokio::task::spawn_blocking(gitkraft_hub::ai::remote_default)
                     .await
                     .map_err(|e| e.to_string())?
-                    .map_err(|e| format!("{e:#}"))?;
+                    .map_err(|e| e.to_string())?;
                 gitkraft_hub::ai::explain_failure(&llm, &ctx)
                     .await
                     .map_err(|e| e.to_string())

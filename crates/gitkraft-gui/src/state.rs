@@ -122,6 +122,8 @@ pub struct RepoTab {
     pub selected_diff: Option<DiffInfo>,
     /// Text in the commit-message input.
     pub commit_message: String,
+    /// The body of a drafted message: the input holds one line, this is sent with it.
+    pub commit_body: String,
 
     // ── Stash ─────────────────────────────────────────────────────────────
     /// All stash entries.
@@ -257,6 +259,7 @@ impl RepoTab {
             commit_range_diffs: Vec::new(),
             selected_diff: None,
             commit_message: String::new(),
+            commit_body: String::new(),
             stashes: Vec::new(),
             remotes: Vec::new(),
             show_commit_detail: false,
@@ -2753,6 +2756,47 @@ mod tests {
             tab.commit_message, "WIP: fixing the bug",
             "commit_message must survive background repo refreshes"
         );
+    }
+
+    #[test]
+    fn an_ai_draft_fills_the_one_line_input_and_keeps_the_body_for_the_commit() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        let _ = state.update(Message::CommitDrafted(Ok((
+            "feat(ui): add a draft button\n\nExplains why.".to_string(),
+            vec!["subject is long".to_string()],
+        ))));
+        let tab = state.active_tab();
+        assert_eq!(tab.commit_message, "feat(ui): add a draft button");
+        assert_eq!(tab.commit_body, "Explains why.");
+        let status = tab.status_message.clone().unwrap_or_default();
+        assert!(status.contains("subject is long"), "{status}");
+    }
+
+    #[test]
+    fn a_failed_draft_is_an_error_and_leaves_what_the_user_typed() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().commit_message = "mine".into();
+        let _ = state.update(Message::CommitDrafted(Err("no key".into())));
+        let tab = state.active_tab();
+        assert_eq!(tab.commit_message, "mine");
+        assert!(
+            tab.error_message
+                .clone()
+                .unwrap_or_default()
+                .contains("no key")
+        );
+    }
+
+    #[test]
+    fn drafting_needs_staged_changes() {
+        use crate::message::Message;
+        let mut state = GitKraft::new();
+        state.active_tab_mut().repo_path = Some(std::path::PathBuf::from("/tmp/fake-repo"));
+        let _ = state.update(Message::DraftCommitMessage);
+        let err = state.active_tab().error_message.clone().unwrap_or_default();
+        assert!(err.contains("Stage files first"), "{err}");
     }
 
     // ── PreviewFile / OpenFiles message tests ─────────────────────────────

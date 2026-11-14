@@ -762,23 +762,18 @@ impl Session {
         repo_flag: Option<&str>,
         json: bool,
     ) -> Result<String> {
-        use gitkraft_hub::ai::{self, AiConfig, FailureContext, Remote};
+        use gitkraft_hub::ai::{self, AiConfig, Remote};
         let repo = self.repo(repo_flag)?;
         let ci = self.ci(&repo)?;
         let detail = ci.run_detail(&repo, a.run_id).await?;
         let job = match a.job_id {
             Some(id) => detail.jobs.iter().find(|j| j.id == id),
-            None => detail.jobs.iter().find(|j| j.status == Status::Failed),
+            None => ai::failed_job(&detail.jobs, None),
         }
         .ok_or_else(|| anyhow!("no failed job in run {}: pass a job id", a.run_id))?;
-        let log = ci.job_log(&repo, job.id).await?;
-        let ctx = FailureContext {
-            repo: repo.key(),
-            workflow: detail.run.name.clone(),
-            job: job.name.clone(),
-            branch: detail.run.branch.clone(),
-            log: gitkraft_ci::log::strip_ansi(&log),
-        };
+        let ctx = ai::failure_context(ci, &detail.run, job)
+            .await
+            .map_err(|e| anyhow!(e))?;
         if a.dry_run {
             return Ok(format!("{}\n", ai::failure_prompt(&ctx)));
         }

@@ -14,7 +14,13 @@ use gitkraft_settings::notify::{StatusInput, status};
 use topcoat::{
     Result,
     context::{Cx, app_context},
-    router::{error::not_found, page, query_params},
+    router::{
+        Body,
+        error::not_found,
+        page, query_params,
+        response::{IntoResponse, Response},
+        route,
+    },
     view::{Child, Unescaped, View, component, view},
 };
 
@@ -594,6 +600,29 @@ async fn ci_run(cx: &Cx) -> Result<impl View> {
     );
     let cancel = act_json(serde_json::json!({"action": "cancel", "repo": key, "run_id": id}));
     let active = run.status.is_active();
+    let failed = detail.jobs.iter().any(|j| j.status == Status::Failed);
+    let explain = act_json(serde_json::json!({"action": "explain", "repo": key, "run_id": id}));
+    let dispatch_href = format!("/ci/dispatch?repo={}", url_encode(&key));
+    // Platforms without artifacts (Woodpecker) answer with an error: the section is just absent.
+    let artifacts: Vec<(String, String, String)> = ci
+        .artifacts(&repo, id)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|a| !a.expired)
+        .map(|a| {
+            (
+                format!(
+                    "/ci/artifact?repo={}&id={}&job={}",
+                    url_encode(&key),
+                    id,
+                    a.id
+                ),
+                a.name,
+                format_bytes(a.size),
+            )
+        })
+        .collect();
     Ok(view! {
         shell(title: format!("{} #{}", run.name, run.number), nav: nav(session, ""), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
             <h1><span class=(class)>(mark)</span>" "(format!("{} #{}", run.name, run.number))</h1>
@@ -603,10 +632,21 @@ async fn ci_run(cx: &Cx) -> Result<impl View> {
                 <button data-act=(rerun_failed) data-confirm="Re-run the failed jobs?" onclick="actBtn(this)">"Re-run failed"</button>
                 <button data-act=(rerun_all) data-confirm="Re-run every job?" onclick="actBtn(this)">"Re-run all"</button>
                 if active { <button class="danger" data-act=(cancel) data-confirm="Cancel this run?" onclick="actBtn(this)">"Cancel"</button> }
+                if failed { <button data-act=(explain) data-show="ai" title="Ask the AI why it failed (a draft)" onclick="actBtn(this)">"Explain failure"</button> }
+                <a class="btn" href=(dispatch_href)>"Run a workflow…"</a>
                 if active { <meta http-equiv="refresh" content="10"> }
             </div>
+            <pre id="ai" class="panel" hidden="hidden"></pre>
             <h2>"Timeline"</h2>
             <div class="panel">(timeline)</div>
+            if !artifacts.is_empty() {
+                <h2>"Artifacts"</h2>
+                <table>
+                    for (href, name, size) in artifacts {
+                        <tr><td><a href=(href)>(name)</a></td><td class="meta">(size)</td></tr>
+                    }
+                </table>
+            }
             <h2>"Jobs"</h2>
             <table>
                 for (href, m, c, name, secs) in jobs {
@@ -615,6 +655,118 @@ async fn ci_run(cx: &Cx) -> Result<impl View> {
             </table>
         )
     })
+}
+
+/// `12.3 MB`.
+fn format_bytes(n: u64) -> String {
+    const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
+    let mut v = n as f64;
+    let mut u = 0;
+    while v >= 1024.0 && u < UNITS.len() - 1 {
+        v /= 1024.0;
+        u += 1;
+    }
+    if u == 0 {
+        format!("{n} B")
+    } else {
+        format!("{v:.1} {}", UNITS[u])
+    }
+}
+
+/// The form that starts a workflow by hand.
+#[page("/ci/dispatch")]
+async fn ci_dispatch(cx: &Cx) -> Result<impl View> {
+    let params = query_params::<ItemParams>(cx)?;
+    let session: &Session = app_context(cx);
+    let repo =
+        RepoId::from_key(params.repo.as_deref().unwrap_or_default()).ok_or_else(not_found)?;
+    let ci = session.hub().ci(&repo.host).ok_or_else(not_found)?;
+    let workflows: Vec<(String, String)> = ci
+        .list_workflows(&repo)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|w| w.active)
+        .map(|w| (w.file, w.name))
+        .collect();
+    let key = repo.key();
+    let back = format!("/ci/dispatch?repo={}", url_encode(&key));
+    Ok(view! {
+        shell(title: format!("Run a workflow · {}", repo.full_name()), nav: nav(session, ""), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
+            <h1>"Run a workflow"</h1>
+            <div class="meta">(repo.full_name())" · "<a href=(back)>"reload"</a></div>
+            <div class="panel">
+                <input type="hidden" id="d-repo" value=(key)>
+                if workflows.is_empty() {
+                    <div class="meta">"No workflow files: this platform starts a pipeline on a branch."</div>
+                } else {
+                    <label>"Workflow "
+                        <select id="d-workflow">
+                            for (file, name) in workflows { <option value=(file.clone())>(format!("{name} ({file})"))</option> }
+                        </select>
+                    </label>
+                }
+                <label>"Branch or tag "<input id="d-ref" value="main"></label>
+                <label>"Inputs (key=value, one per line)"<textarea id="d-inputs" rows="4"></textarea></label>
+                <button class="primary" onclick="gkDispatch()">"Start"</button>
+            </div>
+        )
+    })
+}
+
+/// Downloads an artifact zip of a run.
+#[route(GET "/ci/artifact")]
+async fn ci_artifact(cx: &Cx) -> Result<ZipDownload> {
+    let params = query_params::<ItemParams>(cx)?;
+    let session: &Session = app_context(cx);
+    let repo =
+        RepoId::from_key(params.repo.as_deref().unwrap_or_default()).ok_or_else(not_found)?;
+    let run: u64 = params
+        .id
+        .as_deref()
+        .and_then(|j| j.parse().ok())
+        .ok_or_else(not_found)?;
+    let artifact: u64 = params
+        .job
+        .as_deref()
+        .and_then(|j| j.parse().ok())
+        .ok_or_else(not_found)?;
+    let ci = session.hub().ci(&repo.host).ok_or_else(not_found)?;
+    let name = ci
+        .artifacts(&repo, run)
+        .await
+        .map_err(|_| not_found())?
+        .into_iter()
+        .find(|a| a.id == artifact)
+        .map(|a| a.name)
+        .ok_or_else(not_found)?;
+    let bytes = ci
+        .download_artifact(&repo, artifact)
+        .await
+        .map_err(|_| not_found())?;
+    Ok(ZipDownload {
+        file: format!("{run}-{}.zip", gitkraft_hub::artifacts::safe_name(&name)),
+        bytes,
+    })
+}
+
+/// A zip sent as a download.
+#[derive(Debug)]
+struct ZipDownload {
+    file: String,
+    bytes: Vec<u8>,
+}
+
+impl IntoResponse for ZipDownload {
+    fn into_response(self, _cx: &Cx) -> Result<Response> {
+        Ok(Response::builder()
+            .header("Content-Type", "application/zip")
+            .header(
+                "Content-Disposition",
+                format!("attachment; filename=\"{}\"", self.file),
+            )
+            .body(Body::from(self.bytes))?)
+    }
 }
 
 #[page("/ci/log")]
@@ -650,6 +802,12 @@ async fn ci_log(cx: &Cx) -> Result<impl View> {
             )
         })
         .collect();
+    let explain = act_json(serde_json::json!({
+        "action": "explain",
+        "repo": repo.key(),
+        "run_id": params.id.as_deref().and_then(|i| i.parse::<u64>().ok()).unwrap_or(0),
+        "job_id": job,
+    }));
     let back = params
         .id
         .as_deref()
@@ -660,6 +818,8 @@ async fn ci_log(cx: &Cx) -> Result<impl View> {
         shell(title: format!("Log · job {job}"), nav: nav(session, ""), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
             <h1>(format!("Log of job {job}"))</h1>
             <div class="meta"><a href=(back)>"← back to the run"</a>" · "(format!("{} lines", lines.len()))</div>
+            <div class="bar"><button data-act=(explain) data-show="ai" title="Ask the AI about this job (a draft)" onclick="actBtn(this)">"Explain failure"</button></div>
+            <pre id="ai" class="panel" hidden="hidden"></pre>
             if !found.is_empty() {
                 <h2>(format!("{} problems found", found.len()))</h2>
                 <div class="panel">

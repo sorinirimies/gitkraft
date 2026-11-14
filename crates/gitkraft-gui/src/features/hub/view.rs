@@ -902,6 +902,13 @@ fn run_detail<'a>(hub: &'a HubState, run: &'a gitkraft_ci::Run, c: &ThemeColors)
             HubMessage::Rerun(gitkraft_ci::RerunScope::All),
         ),
     ];
+    if hub.detail.run.as_ref().is_some_and(|d| {
+        d.jobs
+            .iter()
+            .any(|j| j.status == gitkraft_ci::Status::Failed)
+    }) {
+        buttons.push(("Explain failure", HubMessage::Explain));
+    }
     if active {
         buttons.push(("Cancel", HubMessage::CancelRun));
     }
