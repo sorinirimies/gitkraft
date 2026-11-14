@@ -106,6 +106,17 @@ pub fn entries_for(hub: &HubState) -> Vec<Entry> {
             d,
         ));
     }
+    if hub.selected_pr().is_some() {
+        out.extend([
+            e("Pull request: AI summary", 'B', d),
+            e("Pull request: AI catch-up on the thread", 'I', d),
+            e("Pull request: AI review notes", 'V', d),
+        ]);
+    }
+    if matches!(hub.active_data(), Some(gitkraft_hub::SectionData::Inbox(_))) {
+        out.push(e("Inbox: AI triage (now / fyi / ignore)", 'P', d));
+    }
+    out.push(e("Settings menu (theme, motion, commit style)", ',', d));
     out.extend([
         e("Section: move left", '{', d),
         e("Section: move right", '}', d),

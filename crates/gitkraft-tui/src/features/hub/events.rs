@@ -38,6 +38,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         app.upload_wiki_after_editor = app.editor.is_terminal_editor();
         app.open_path_in_editor(path, "wiki page");
     }
+    if let Some(hub) = app.hub.as_mut()
+        && std::mem::take(&mut hub.open_settings)
+    {
+        app.open_menu();
+    }
     match outcome {
         Outcome::Stay => {}
         Outcome::Close => {
@@ -439,6 +444,7 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
         KeyCode::Char('A') => hub.download_artifacts(),
         KeyCode::Char('E') => hub.explain_job(),
         KeyCode::Char('P') => hub.ai_triage(),
+        KeyCode::Char(',') => hub.open_settings = true,
         KeyCode::Char('B') => hub.ai_pr(gitkraft_hub::review_ai::Action::Summary),
         KeyCode::Char('I') => hub.ai_pr(gitkraft_hub::review_ai::Action::CatchUp),
         KeyCode::Char('V') => hub.ai_pr(gitkraft_hub::review_ai::Action::Review),
@@ -1078,6 +1084,13 @@ mod tests {
         assert!(has(&s));
         s.focus = Focus::List;
         assert!(!has(&s));
+    }
+
+    #[test]
+    fn comma_asks_for_the_settings_menu() {
+        let mut s = state();
+        chars(&mut s, ",");
+        assert!(s.open_settings);
     }
 
     #[test]

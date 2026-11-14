@@ -374,6 +374,8 @@ pub struct HubState {
     pub wiki_draft: Option<gitkraft_hub::community::WikiDraft>,
     /// The draft was just written and the app should open it in the editor.
     pub open_draft: bool,
+    /// Set by `,`: the app slides the settings menu open over the hub.
+    pub open_settings: bool,
     /// Active view.
     pub view: View,
     /// Focused pane.
@@ -485,6 +487,7 @@ impl HubState {
             prompt: None,
             wiki_draft: None,
             open_draft: false,
+            open_settings: false,
             confirm: None,
             drag: Drag::default(),
             hits: Vec::new(),

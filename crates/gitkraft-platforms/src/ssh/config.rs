@@ -40,6 +40,53 @@ pub fn has_block(text: &str, host: &str) -> bool {
     span(text, host).is_some()
 }
 
+/// The `IdentityFile` ssh would use for `host`: the first one of the first `Host` block (gitkraft's
+/// or the user's own) whose patterns match. `*` and `?` wildcards and `!negations` are honoured.
+pub fn identity_for(text: &str, host: &str) -> Option<String> {
+    let mut matching = false;
+    for line in text.lines() {
+        let line = line.trim();
+        let Some((word, rest)) = line.split_once(char::is_whitespace) else {
+            continue;
+        };
+        let rest = rest.trim().trim_start_matches('=').trim();
+        if word.eq_ignore_ascii_case("host") {
+            let mut hit = false;
+            let mut denied = false;
+            for p in rest.split_whitespace() {
+                match p.strip_prefix('!') {
+                    Some(n) if glob(n, host) => denied = true,
+                    Some(_) => {}
+                    None if glob(p, host) => hit = true,
+                    None => {}
+                }
+            }
+            matching = hit && !denied;
+        } else if word.eq_ignore_ascii_case("match") {
+            matching = false;
+        } else if matching && word.eq_ignore_ascii_case("identityfile") {
+            return Some(rest.trim_matches('"').to_string());
+        }
+    }
+    None
+}
+
+/// `*` and `?` matching, as in `ssh_config(5)` patterns (case-insensitive).
+fn glob(pattern: &str, text: &str) -> bool {
+    fn go(p: &[u8], t: &[u8]) -> bool {
+        match p.split_first() {
+            None => t.is_empty(),
+            Some((b'*', rest)) => (0..=t.len()).any(|i| go(rest, &t[i..])),
+            Some((b'?', rest)) => !t.is_empty() && go(rest, &t[1..]),
+            Some((c, rest)) => t.first().is_some_and(|x| x == c) && go(rest, &t[1..]),
+        }
+    }
+    go(
+        pattern.to_ascii_lowercase().as_bytes(),
+        text.to_ascii_lowercase().as_bytes(),
+    )
+}
+
 /// Adds or replaces the block for `host`.
 pub fn upsert(text: &str, host: &str, identity_file: &str, macos: bool) -> String {
     let new = block(host, identity_file, macos);
@@ -127,5 +174,35 @@ mod tests {
     fn a_file_without_a_final_newline_is_handled() {
         let out = upsert("Host a", "h", "k", false);
         assert!(out.starts_with("Host a\n\n# >>>"));
+    }
+
+    #[test]
+    fn the_identity_ssh_would_use_comes_from_the_first_matching_host_block() {
+        let cfg = "Host *.internal\n  IdentityFile ~/.ssh/int\n\nHost github.com gist.github.com\n  User git\n  IdentityFile ~/.ssh/work\n  IdentityFile ~/.ssh/second\n\nHost *\n  IdentityFile ~/.ssh/any\n";
+        assert_eq!(
+            identity_for(cfg, "github.com").as_deref(),
+            Some("~/.ssh/work")
+        );
+        assert_eq!(
+            identity_for(cfg, "git.internal").as_deref(),
+            Some("~/.ssh/int")
+        );
+        assert_eq!(
+            identity_for(cfg, "codeberg.org").as_deref(),
+            Some("~/.ssh/any")
+        );
+        assert_eq!(identity_for("", "github.com"), None);
+        let neg = "Host * !github.com\n  IdentityFile x\n";
+        assert_eq!(identity_for(neg, "github.com"), None);
+        let m = "Match host github.com\n  IdentityFile x\n";
+        assert_eq!(
+            identity_for(m, "github.com"),
+            None,
+            "Match blocks are not interpreted"
+        );
+        assert_eq!(
+            identity_for("host GitHub.com\nidentityfile = \"k\"\n", "github.com").as_deref(),
+            Some("k")
+        );
     }
 }

@@ -116,7 +116,7 @@ gitkraft-tui ssh switch ssh            # rewrite origin from https to ssh (or ba
 ```
 
 Setup is idempotent, edits only a marked block of `~/.ssh/config` (and saves a backup first), and never sees a
-passphrase (`--passphrase` lets `ssh-keygen` ask). The Hub's **SSH keys** view (`K`) does the same from the UI.
+passphrase (`--passphrase` lets `ssh-keygen` ask). The Hub's **SSH keys** view (`K`) does the same from the UI. `ssh status` honours your own `~/.ssh/config`: a `Host` entry with an `IdentityFile` (even outside `~/.ssh`) is the key reported, ahead of gitkraft's. The settings menu opens from the hub with `,` or the palette.
 `clone_via = "ssh" | "https"` per `[[account]]` records which transport you prefer.
 
 **Workflow inputs.** `D` (and the GUI's Dispatch) reads `workflow_dispatch.inputs` from the workflow file: defaults

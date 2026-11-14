@@ -254,20 +254,35 @@ fn status_text(only: Option<String>, ssh_dir: &Path, tools: &impl SshTools) -> S
         .collect();
     let mut out = String::new();
     for h in hosts {
-        let key = ssh_dir.join(key_name(&h));
-        let public = local_keys(ssh_dir).into_iter().find(|k| k.path == key);
-        let in_agent = public
-            .as_ref()
-            .is_some_and(|k| agent.contains(&k.public.fingerprint()));
+        // ssh_config wins: a key the user wired up themselves is the one in use
+        let own = gitkraft_platforms::ssh::config::identity_for(&cfg, &h).map(|p| expand(&p));
+        let key = own.clone().unwrap_or_else(|| ssh_dir.join(key_name(&h)));
+        let fingerprint = local_keys(ssh_dir)
+            .into_iter()
+            .find(|k| k.path == key)
+            .map(|k| k.public.fingerprint())
+            .or_else(|| {
+                // a key outside ~/.ssh: read its .pub next to it
+                let mut p = key.clone().into_os_string();
+                p.push(".pub");
+                std::fs::read_to_string(p)
+                    .ok()
+                    .and_then(|l| PublicKey::parse(l.trim()))
+                    .map(|k| k.fingerprint())
+            });
+        let present = fingerprint.is_some() || (own.is_some() && key.exists());
+        let in_agent = fingerprint.as_ref().is_some_and(|f| agent.contains(f));
         out.push_str(&format!(
             "{h}\n  key      {}\n  config   {}\n  agent    {}\n  {}\n",
-            if public.is_some() {
+            if present {
                 format!("{} ✔", key.display())
             } else {
                 "none (run ssh setup)".into()
             },
             if gitkraft_platforms::ssh::config::has_block(&cfg, &h) {
                 "block present ✔"
+            } else if own.is_some() {
+                "your own Host entry ✔"
             } else {
                 "no gitkraft block"
             },
@@ -276,6 +291,14 @@ fn status_text(only: Option<String>, ssh_dir: &Path, tools: &impl SshTools) -> S
         ));
     }
     out
+}
+
+/// `~/` expanded; other paths as written.
+fn expand(p: &str) -> PathBuf {
+    match (p.strip_prefix("~/"), dirs::home_dir()) {
+        (Some(rest), Some(home)) => home.join(rest),
+        _ => PathBuf::from(p),
+    }
 }
 
 /// What to hand to `ssh -T` for `host`: the login and port this checkout's remote URLs use for it
@@ -737,5 +760,37 @@ mod tests {
         .await
         .expect_err("none");
         assert!(err.to_string().contains("no token for x.org"));
+    }
+
+    #[test]
+    fn status_prefers_the_users_own_host_entry_and_a_key_outside_the_ssh_dir() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let elsewhere = tempfile::tempdir().expect("tmp");
+        let key = elsewhere.path().join("work_key");
+        std::fs::write(&key, "private").expect("key");
+        std::fs::write(
+            elsewhere.path().join("work_key.pub"),
+            format!("{FAKE_PUBLIC_KEY} me\n"),
+        )
+        .expect("pub");
+        std::fs::write(
+            dir.path().join("config"),
+            format!("Host git.example.org\n  IdentityFile {}\n", key.display()),
+        )
+        .expect("cfg");
+        let out = status_text(
+            Some("git.example.org".into()),
+            dir.path(),
+            &FakeSsh::default(),
+        );
+        assert!(
+            out.contains(&format!("key      {} ✔", key.display())),
+            "{out}"
+        );
+        assert!(out.contains("your own Host entry ✔"), "{out}");
+        assert!(!out.contains("run ssh setup"), "{out}");
+        // without any entry it still points at gitkraft's own key name
+        let out = status_text(Some("other.org".into()), dir.path(), &FakeSsh::default());
+        assert!(out.contains("none (run ssh setup)"), "{out}");
     }
 }
