@@ -1670,3 +1670,42 @@ async fn a_github_card_moves_by_setting_its_status_and_a_gitlab_issue_by_swappin
             .is_err()
     );
 }
+
+#[tokio::test]
+async fn a_discussion_answer_is_marked_on_a_top_level_comment_only() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"repository":{"discussion":{"comments":{"nodes":[{"databaseId":9,"id":"C_9"}]}}}}}"#,
+    );
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"markDiscussionCommentAsAnswer":{"discussion":{"id":"D"}}}}"#,
+    );
+    github(&fake)
+        .mark_discussion_answer(&repo(), 5, 9)
+        .await
+        .expect("marked");
+    let sent = sent_bodies(&fake).pop().unwrap_or_default();
+    assert!(
+        sent.contains("markDiscussionCommentAsAnswer") && sent.contains("C_9"),
+        "{sent}"
+    );
+
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"repository":{"discussion":{"comments":{"nodes":[{"databaseId":9,"id":"C_9"}]}}}}}"#,
+    );
+    let err = github(&fake)
+        .mark_discussion_answer(&repo(), 5, 10)
+        .await
+        .expect_err("a reply or unknown id");
+    assert!(err.to_string().contains("comment 10"), "{err}");
+    assert!(matches!(
+        gitlab(&FakeClient::new())
+            .mark_discussion_answer(&repo(), 5, 1)
+            .await,
+        Err(PlatformError::Unsupported(_))
+    ));
+}

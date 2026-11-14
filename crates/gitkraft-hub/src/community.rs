@@ -255,6 +255,47 @@ pub async fn reply<C: HttpClient + Clone>(
         .map_err(|e| e.to_string())
 }
 
+/// Marks a comment of a discussion as its answer.
+///
+/// # Errors
+/// No account, not GitHub, or the comment is not a top-level one of that discussion.
+pub async fn mark_answer<C: HttpClient + Clone>(
+    hub: &Hub<C>,
+    repo: &RepoId,
+    number: u64,
+    comment_id: u64,
+) -> Result<String, String> {
+    hub.backend(&repo.host)
+        .ok_or_else(|| format!("no account for {}", repo.host))?
+        .mark_discussion_answer(repo, number, comment_id)
+        .await
+        .map(|()| format!("comment {comment_id} marked as the answer"))
+        .map_err(|e| e.to_string())
+}
+
+/// Reads which comment to mark as the answer: `N`, the 1-based place of the comment on the page.
+///
+/// # Errors
+/// Not a number, or a number outside the page.
+pub fn parse_answer(typed: &str, page: &Page) -> Result<u64, String> {
+    let n = typed
+        .trim()
+        .trim_start_matches(['[', '#'])
+        .trim_end_matches(']');
+    let n: usize = n
+        .parse()
+        .map_err(|_| format!("'{typed}' is not a comment number"))?;
+    n.checked_sub(1)
+        .and_then(|i| page.comments.get(i))
+        .map(|c| c.id)
+        .ok_or_else(|| {
+            format!(
+                "there is no comment {n}: the page has {}",
+                page.comments.len()
+            )
+        })
+}
+
 /// Creates (`slug` absent) or edits a wiki page.
 ///
 /// # Errors
@@ -646,6 +687,16 @@ mod tests {
             let e = parse_reply(typed, &p).unwrap_err();
             assert!(e.contains(needle), "{typed}: {e}");
         }
+    }
+
+    #[test]
+    fn an_answer_is_named_by_the_place_of_the_comment() {
+        let p = thread();
+        assert_eq!(parse_answer("2", &p), Ok(91));
+        assert_eq!(parse_answer(" [3] ", &p), Ok(92));
+        assert!(parse_answer("9", &p).is_err_and(|e| e.contains("page has 3")));
+        assert!(parse_answer("two", &p).is_err_and(|e| e.contains("not a comment number")));
+        assert!(parse_answer("0", &p).is_err());
     }
 
     #[tokio::test]

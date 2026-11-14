@@ -76,6 +76,7 @@ fn read_only_servers_have_no_write_tools_and_write_servers_have_all() {
         "update_branch",
         "comment_discussion",
         "reply_discussion",
+        "mark_answer",
         "save_wiki_page",
         "move_card",
     ] {
@@ -99,6 +100,7 @@ fn read_only_servers_have_no_write_tools_and_write_servers_have_all() {
         "dispatch_workflow",
         "comment_discussion",
         "reply_discussion",
+        "mark_answer",
         "save_wiki_page",
         "move_card",
     ] {
@@ -497,6 +499,38 @@ async fn boards_come_back_as_columns_of_cards() {
     );
     assert_eq!(v["boards"][0]["name"], "Roadmap");
     assert_eq!(v["boards"][0]["columns"][0]["cards"][0]["number"], 4);
+}
+
+#[tokio::test]
+async fn an_answer_is_marked_through_the_platform() {
+    let (s, fake) = rig(write());
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"repository":{"discussion":{"comments":{"nodes":[{"databaseId":9,"id":"C_9"}]}}}}}"#,
+    );
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"markDiscussionCommentAsAnswer":{"discussion":{"id":"D"}}}}"#,
+    );
+    let ok = s
+        .mark_answer(Parameters(DiscussionAnswerArgs {
+            repo: None,
+            number: 5,
+            comment_id: 9,
+        }))
+        .await
+        .expect("marked");
+    assert!(
+        json(&ok)["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("answer")
+    );
+    assert!(
+        sent(&fake)
+            .last()
+            .is_some_and(|(_, b)| b.contains("markDiscussionCommentAsAnswer"))
+    );
 }
 
 #[tokio::test]

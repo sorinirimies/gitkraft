@@ -202,6 +202,41 @@ impl<C: HttpClient> GitHubLike<C> {
         .map(|_| ())
     }
 
+    /// Marks a comment of a discussion as its answer (only categories that take answers, such as
+    /// Q&A, allow it; replies cannot be the answer). GitHub only.
+    pub(crate) async fn mark_discussion_answer(
+        &self,
+        repo: &RepoId,
+        number: u64,
+        comment_id: u64,
+    ) -> Result<()> {
+        self.require_github("discussions exist on GitHub only")?;
+        let v = self
+            .graphql(
+                "query($o:String!,$n:String!,$num:Int!){repository(owner:$o,name:$n){discussion(number:$num){ \
+                 comments(first:100){nodes{databaseId id}}}}}",
+                &json!({ "o": repo.owner, "n": repo.name, "num": number }),
+            )
+            .await?;
+        let id = v["data"]["repository"]["discussion"]["comments"]["nodes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|c| c["databaseId"].as_u64() == Some(comment_id))
+            .and_then(|c| c["id"].as_str())
+            .ok_or_else(|| {
+                PlatformError::NotFound(format!(
+                    "top-level comment {comment_id} in discussion #{number} (a reply cannot be the answer)"
+                ))
+            })?;
+        self.graphql(
+            "mutation($id:ID!){markDiscussionCommentAsAnswer(input:{id:$id}){discussion{id}}}",
+            &json!({ "id": id }),
+        )
+        .await
+        .map(|_| ())
+    }
+
     /// Writes a wiki page: `slug` set edits that page, absent creates one called `title`.
     /// Gitea family only; GitHub's wiki is a git repository.
     pub(crate) async fn save_wiki_page(

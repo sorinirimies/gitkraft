@@ -143,6 +143,7 @@ fn read_tools_are_marked_read_only() {
             "dispatch_workflow",
             "comment_discussion",
             "reply_discussion",
+            "mark_answer",
             "save_wiki_page",
             "move_card",
         ];

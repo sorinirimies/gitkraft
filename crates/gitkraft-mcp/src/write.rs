@@ -36,6 +36,17 @@ pub(crate) struct DiscussionCommentArgs {
     pub body: String,
 }
 
+/// Mark a comment of a discussion as its answer.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub(crate) struct DiscussionAnswerArgs {
+    /// `host/owner/name`; default: the current checkout.
+    pub repo: Option<String>,
+    /// Discussion number.
+    pub number: u64,
+    /// The `id` of the top-level comment that answers it (from the `discussions` tool).
+    pub comment_id: u64,
+}
+
 /// Answer a comment of a discussion.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub(crate) struct DiscussionReplyArgs {
@@ -241,6 +252,22 @@ impl GitkraftServer {
         let message = gitkraft_hub::community::reply(hub, &repo, a.number, a.comment_id, &a.body)
             .await
             .map_err(invalid)?;
+        out(&json!({"ok": true, "message": message}))
+    }
+
+    #[tool(
+        description = "Mark a top-level comment of a GitHub discussion as its answer (Q&A style categories only). Find comment ids with the `discussions` tool.",
+        annotations(read_only_hint = false, destructive_hint = false)
+    )]
+    pub(crate) async fn mark_answer(
+        &self,
+        Parameters(a): Parameters<DiscussionAnswerArgs>,
+    ) -> ToolResult {
+        let repo = self.repo(a.repo.as_deref())?;
+        let message =
+            gitkraft_hub::community::mark_answer(&self.hub, &repo, a.number, a.comment_id)
+                .await
+                .map_err(invalid)?;
         out(&json!({"ok": true, "message": message}))
     }
 

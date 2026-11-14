@@ -17,10 +17,9 @@ and fix what differs:
 ## Boards and wiki, next steps
 
 Done: moving a card between columns (GitHub Status field, GitLab list labels), creating and
-editing wiki pages (GitLab / Gitea REST), replying inside a discussion thread. Still open:
+editing wiki pages (GitLab / Gitea REST), replying inside a discussion thread, marking the answer (`answer` in the CLI, `A` in the TUI, MCP `mark_answer`). Still open:
 
 - GitHub wikis via the `.wiki.git` clone (they have no API).
-- Mark a discussion comment as the answer.
 - Reorder cards inside a column; create cards.
 - Clickable items in the calendar day panel.
 

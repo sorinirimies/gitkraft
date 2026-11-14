@@ -187,6 +187,8 @@ pub enum PromptPurpose {
     DiscussionComment,
     /// An answer to a comment of the open discussion: `N text`.
     DiscussionReply,
+    /// Which comment answers the open discussion: `N`.
+    DiscussionAnswer,
     /// The column to move the selected card to.
     MoveCard,
     /// The title of a new wiki page.
@@ -1221,6 +1223,38 @@ impl HubState {
         });
     }
 
+    /// Marks a comment of the open discussion as its answer: `typed` is `N`.
+    pub fn submit_discussion_answer(&mut self, typed: &str) {
+        let Some(d) = self.community.detail.as_ref() else {
+            return;
+        };
+        let comment = match gitkraft_hub::community::parse_answer(typed, &d.page) {
+            Ok(v) => v,
+            Err(e) => return self.set_notice(e, false),
+        };
+        let (Some(api), Some(rt), Some(repo)) =
+            (self.api.clone(), self.handle(), self.community.repo.clone())
+        else {
+            return;
+        };
+        let Ok(number) = d.page.key.parse::<u64>() else {
+            return;
+        };
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            match gitkraft_hub::community::mark_answer(&api, &repo, number, comment).await {
+                Ok(text) => {
+                    let _ = tx.send(Msg::Done {
+                        text,
+                        ok: true,
+                        reload: false,
+                    });
+                }
+                Err(e) => done(&tx, Err(e), String::new(), false),
+            }
+        });
+    }
+
     /// Answers a comment of the open discussion: `typed` is `N text`.
     pub fn submit_discussion_reply(&mut self, typed: &str) {
         let Some(d) = self.community.detail.as_ref() else {
@@ -2212,6 +2246,10 @@ impl HubState {
         }
         if prompt.purpose == PromptPurpose::DiscussionReply {
             self.submit_discussion_reply(&prompt.buffer);
+            return;
+        }
+        if prompt.purpose == PromptPurpose::DiscussionAnswer {
+            self.submit_discussion_answer(&prompt.buffer);
             return;
         }
         if prompt.purpose == PromptPurpose::MoveCard {

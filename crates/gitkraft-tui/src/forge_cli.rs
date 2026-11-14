@@ -143,6 +143,8 @@ pub enum Forge {
     Comment(CommentArgs),
     /// Answer a comment of a discussion (find the comment id with `discussions NUMBER --json`).
     Reply(ReplyArgs),
+    /// Mark a comment of a discussion as the answer.
+    Answer(AnswerArgs),
     /// Create or edit a wiki page from a file, stdin or your editor.
     WikiSave(WikiSaveArgs),
     /// Move a board card to another column.
@@ -347,6 +349,17 @@ pub struct CommentArgs {
     pub issue: bool,
 }
 
+/// `answer`.
+#[derive(Debug, Args)]
+pub struct AnswerArgs {
+    #[command(flatten)]
+    pub common: Common,
+    /// Discussion number.
+    pub number: u64,
+    /// Id of the top-level comment that answers it.
+    pub comment_id: u64,
+}
+
 /// `reply`.
 #[derive(Debug, Args)]
 pub struct ReplyArgs {
@@ -473,6 +486,7 @@ impl Forge {
             Self::Wiki(a) => &a.common,
             Self::Comment(a) => &a.common,
             Self::Reply(a) => &a.common,
+            Self::Answer(a) => &a.common,
             Self::WikiSave(a) => &a.common,
             Self::BoardMove(a) => &a.common,
             Self::Merge(a) => &a.common,
@@ -838,6 +852,14 @@ impl Session {
                 )
                 .await
                 .map_err(|e| anyhow!(e))?;
+                Ok(format!("{done}\n"))
+            }
+            Forge::Answer(a) => {
+                let repo = self.repo(repo_flag)?;
+                let done =
+                    gitkraft_hub::community::mark_answer(&self.hub, &repo, a.number, a.comment_id)
+                        .await
+                        .map_err(|e| anyhow!(e))?;
                 Ok(format!("{done}\n"))
             }
             Forge::BoardMove(a) => {

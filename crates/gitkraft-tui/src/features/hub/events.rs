@@ -312,6 +312,16 @@ fn community_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
                 hub.set_notice("only discussion comments take replies".into(), false);
             }
         }
+        KeyCode::Char('A') if hub.community.detail.is_some() => {
+            if hub.community.tab == CommunityTab::Discussions {
+                hub.prompt = Some(Prompt {
+                    purpose: PromptPurpose::DiscussionAnswer,
+                    buffer: String::new(),
+                });
+            } else {
+                hub.set_notice("only discussions have an answer".into(), false);
+            }
+        }
         KeyCode::Char('m') if hub.community.tab == CommunityTab::Board => {
             hub.prompt = Some(Prompt {
                 purpose: PromptPurpose::MoveCard,
@@ -1493,6 +1503,12 @@ mod tests {
         assert_eq!(
             s.prompt.as_ref().map(|p| p.purpose),
             Some(PromptPurpose::DiscussionReply)
+        );
+        s.prompt = None;
+        press(&mut s, KeyCode::Char('A'));
+        assert_eq!(
+            s.prompt.as_ref().map(|p| p.purpose),
+            Some(PromptPurpose::DiscussionAnswer)
         );
         s.prompt = None;
 

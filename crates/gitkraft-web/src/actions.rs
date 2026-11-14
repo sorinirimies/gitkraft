@@ -45,6 +45,15 @@ pub enum ActionRequest {
         body: String,
     },
     /// Answer a comment of a GitHub discussion.
+    /// Mark a comment as the answer of its discussion.
+    DiscussionAnswer {
+        /// `host/owner/name`.
+        repo: String,
+        /// Discussion number.
+        number: u64,
+        /// The comment's id.
+        comment_id: u64,
+    },
     DiscussionReply {
         /// `host/owner/name`.
         repo: String,
@@ -267,6 +276,16 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
                 .comment_on_discussion(&repo, number, body.trim())
                 .await
                 .map(|()| "comment posted".to_string())
+        }
+        ActionRequest::DiscussionAnswer {
+            repo,
+            number,
+            comment_id,
+        } => {
+            let repo = repo_of(&repo)?;
+            let out = gitkraft_hub::community::mark_answer(hub, &repo, number, comment_id).await;
+            session.invalidate();
+            return out;
         }
         ActionRequest::DiscussionReply {
             repo,

@@ -1872,6 +1872,7 @@ fn render_status(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme)
             PromptPurpose::Inline => "inline comment",
             PromptPurpose::Labels => "labels: +add -remove \"two words\"",
             PromptPurpose::DiscussionComment => "comment on the discussion",
+            PromptPurpose::DiscussionAnswer => "answer: N (the [n] of the comment that solves it)",
             PromptPurpose::DiscussionReply => "reply: N text (N is the [n] of the comment)",
             PromptPurpose::MoveCard => "move the card to column",
             PromptPurpose::NewWikiPage => "title of the new wiki page",

@@ -389,6 +389,21 @@ impl<C: HttpClient> Backend<C> {
         }
     }
 
+    /// Marks a top-level comment of a discussion as the answer (GitHub only).
+    pub async fn mark_discussion_answer(
+        &self,
+        repo: &RepoId,
+        number: u64,
+        comment_id: u64,
+    ) -> Result<()> {
+        match self {
+            Self::GitHubLike(b) => b.mark_discussion_answer(repo, number, comment_id).await,
+            Self::GitLab(_) => Err(PlatformError::Unsupported(
+                "discussions exist on GitHub only",
+            )),
+        }
+    }
+
     /// Writes a wiki page: `slug` set edits it, absent creates a page called `title`
     /// (GitLab, Gitea family; GitHub's wiki is a git repository).
     pub async fn save_wiki_page(
