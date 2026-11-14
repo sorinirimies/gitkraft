@@ -188,6 +188,14 @@ impl<C: HttpClient> Backend<C> {
         }
     }
 
+    /// Every repository the account can see, private ones included.
+    pub async fn list_repositories(&self) -> Result<Vec<crate::model::RepoInfo>> {
+        match self {
+            Self::GitHubLike(b) => b.list_repositories().await,
+            Self::GitLab(b) => b.list_repositories().await,
+        }
+    }
+
     /// The labels the project has.
     pub async fn list_labels(&self, repo: &RepoId) -> Result<Vec<String>> {
         match self {

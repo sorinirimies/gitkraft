@@ -739,6 +739,30 @@ async fn labels_are_added_and_removed_by_name_or_id_depending_on_the_platform() 
     );
 }
 
+#[tokio::test]
+async fn every_repository_of_the_account_is_listed_private_ones_and_nested_groups_included() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/user/repos",
+        r#"[{"name":"a","owner":{"login":"me"},"private":false,"fork":false,"archived":false,"default_branch":"main"},
+            {"name":"b","owner":{"login":"org"},"private":true,"fork":true,"archived":true,"default_branch":null}]"#,
+    );
+    let rs = github(&fake).list_repositories().await.expect("repos");
+    assert_eq!(rs.len(), 2);
+    assert_eq!(rs[0].repo, RepoId::new("github.com", "me", "a"));
+    assert_eq!(rs[0].default_branch.as_deref(), Some("main"));
+    assert!(rs[1].private && rs[1].fork && rs[1].archived);
+
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://gitlab.com/api/v4/projects",
+        r#"[{"path":"p","path_with_namespace":"g/sub/p","visibility":"internal","archived":false,"forked_from_project":{"id":1},"default_branch":"trunk"}]"#,
+    );
+    let rs = gitlab(&fake).list_repositories().await.expect("projects");
+    assert_eq!(rs[0].repo, RepoId::new("gitlab.com", "g/sub", "p"));
+    assert!(rs[0].private && rs[0].fork, "internal is not public");
+}
+
 fn body_of(req: &gitkraft_platforms::http::Request) -> serde_json::Value {
     serde_json::from_slice(req.body.as_deref().unwrap_or_default()).unwrap_or_default()
 }

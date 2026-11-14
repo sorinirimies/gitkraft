@@ -29,6 +29,13 @@ fn run_command(cmd: Cmd) -> anyhow::Result<()> {
             let c = gitkraft_tui::notify_cli::parse(&args).unwrap_or_else(|e| usage(e));
             print(gitkraft_tui::notify_cli::run(c))
         }
+        Cmd::Agents { args } => {
+            let cli = gitkraft_tui::agents_cli::parse(&args).unwrap_or_else(|e| usage(e));
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?;
+            print(rt.block_on(gitkraft_tui::agents_cli::run(cli)))
+        }
         Cmd::Login { args } => {
             let c =
                 gitkraft_tui::auth_cli::parse(&with("login", args)).unwrap_or_else(|e| usage(e));

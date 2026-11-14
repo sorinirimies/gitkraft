@@ -1406,7 +1406,7 @@ impl HubState {
                     Action::Review => review_ai::review_draft(&llm, &detail)
                         .await
                         .map(|n| n.iter().map(|n| format!("{}\n", n.render())).collect()),
-                    Action::Triage => Ok(String::new()),
+                    Action::Triage | Action::Watch => Ok(String::new()),
                 }
                 .map(|text| (title, text))
                 .map_err(|e| e.to_string())

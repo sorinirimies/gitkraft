@@ -2,6 +2,13 @@
 
 Ideas not built yet, roughly in order. Anything here is a proposal, not a promise.
 
+## Agent-watch
+
+Core, CLI and the service are done (`gitkraft-hub::agent_watch`, `gitkraft-tui agents`). Open:
+an Agents view in the TUI, GUI and web (jobs, next run, live output, run now, pause, a project
+picker over every account), an unread badge for reports, the same scheduler running inside an open
+GUI or TUI, and a real run against a live harness.
+
 ## Verification (biggest risk)
 
 Everything below has only run against fake HTTP responses. Run each against a real server

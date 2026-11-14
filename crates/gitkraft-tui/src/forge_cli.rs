@@ -58,6 +58,12 @@ pub enum Cmd {
         #[arg(num_args = 0.., trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Scheduled agents that watch the CI of the projects you pick (`agents --help`).
+    Agents {
+        /// Arguments of the agents command.
+        #[arg(num_args = 0.., trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Log in to a host (device flow, or `--token`).
     Login {
         /// `HOST [--token ..]`.

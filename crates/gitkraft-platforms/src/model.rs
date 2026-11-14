@@ -14,6 +14,21 @@ pub struct User {
     pub avatar_url: Option<String>,
 }
 
+/// A repository an account can see, for choosing what to watch.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct RepoInfo {
+    /// Where it lives.
+    pub repo: crate::platform::RepoId,
+    /// Not visible to everyone (private or, on GitLab, internal).
+    pub private: bool,
+    /// A fork of another repository.
+    pub fork: bool,
+    /// Read-only, kept for history.
+    pub archived: bool,
+    /// The branch CI is judged on, when the platform says.
+    pub default_branch: Option<String>,
+}
+
 /// A label with its hex colour (no leading `#`).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Label {

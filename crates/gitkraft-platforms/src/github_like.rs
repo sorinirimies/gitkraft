@@ -11,8 +11,8 @@ use crate::http::{HttpClient, Method};
 use crate::model::{
     ActivityDay, ActivityEntry, ActivityKind, Capabilities, ChecksState, Comment, DayActivity,
     Issue, ItemState, Label, ListQuery, MergeMethod, MergeOptions, MergeOutcome, MergeTiming,
-    Notification, NotificationReason, PullRequest, Review, ReviewVerdict, StateFilter, SubjectKind,
-    UpdateStyle, User,
+    Notification, NotificationReason, PullRequest, RepoInfo, Review, ReviewVerdict, StateFilter,
+    SubjectKind, UpdateStyle, User,
 };
 use crate::platform::{PlatformKind, RepoId};
 use gitkraft_settings::dashboard::Involvement;
@@ -292,6 +292,49 @@ impl<C: HttpClient> GitHubLike<C> {
             )
             .await
             .map(|_| ())
+    }
+
+    /// Every repository the token's user owns, belongs to through an organisation or
+    /// collaborates on, private ones included (up to 1000).
+    pub(crate) async fn list_repositories(&self) -> Result<Vec<RepoInfo>> {
+        #[derive(Deserialize)]
+        struct Owner {
+            login: String,
+        }
+        #[derive(Deserialize)]
+        struct R {
+            name: String,
+            owner: Owner,
+            #[serde(default)]
+            private: bool,
+            #[serde(default)]
+            fork: bool,
+            #[serde(default)]
+            archived: bool,
+            default_branch: Option<String>,
+        }
+        const PER: usize = 100;
+        let mut out = Vec::new();
+        for page in 1..=10 {
+            let path = if self.is_github() {
+                format!("/user/repos?per_page={PER}&page={page}&sort=pushed")
+            } else {
+                format!("/user/repos?limit={PER}&page={page}")
+            };
+            let rs: Vec<R> = self.api.get(&path).await?;
+            let n = rs.len();
+            out.extend(rs.into_iter().map(|r| RepoInfo {
+                repo: RepoId::new(&self.host, r.owner.login, r.name),
+                private: r.private,
+                fork: r.fork,
+                archived: r.archived,
+                default_branch: r.default_branch,
+            }));
+            if n < PER {
+                break;
+            }
+        }
+        Ok(out)
     }
 
     pub(crate) async fn list_labels(&self, repo: &RepoId) -> Result<Vec<String>> {

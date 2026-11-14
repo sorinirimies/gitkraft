@@ -8,6 +8,7 @@
 //!
 //! Call [`run`] with an optional repository path to start the TUI application.
 
+pub mod agents_cli;
 pub mod ai_cli;
 pub mod anim;
 pub mod app;

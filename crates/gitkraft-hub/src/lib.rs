@@ -5,6 +5,7 @@
 //! contribution calendar.
 
 pub mod accounts;
+pub mod agent_watch;
 pub mod ai;
 pub mod args;
 pub mod artifacts;

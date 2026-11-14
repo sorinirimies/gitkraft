@@ -242,6 +242,26 @@ to the draft. It never commits for you: `git commit -e -m "$(gitkraft-tui commit
 A forced merge is not offered here; use the UI, where it is a deliberate act. `notify`, `login`,
 `logout`, `clone` and `ssh` are described under their own sections.
 
+### Agent-watch: scheduled agents that watch your CI
+
+Jobs in `agent-watch.toml` (config dir, no secrets) check the CI of the repositories you pick on any
+forge, public and private, and tell you when something is red. A job has a schedule (`daily 08:00`,
+`mon-fri 07:30`, `weekly`, `every 6h`; a slot missed while the machine slept is run once on wake), a
+selection (hosts, public/private/all, `host/owner/name` globs to include and exclude; forks and
+archived repos off by default) and a harness: GitKraft's own model, `pi -p`, the Copilot CLI, or VS
+Code / Zed opened with the prompt. A green scan costs nothing: no agent is called. Red items go to the
+harness with instructions that forbid acting; nothing is pushed, merged or re-run. Findings land in the
+report folder, in GitKraft's inbox (one entry each) and as one system notification. A host must allow
+the `watch` action (`gitkraft-tui ai-allow HOST watch`) before an agent sees its data.
+
+```sh
+gitkraft-tui agents add oss --schedule "mon-fri 07:30" --harness pi --visibility public --host github.com
+gitkraft-tui agents repos oss        # what it would watch
+gitkraft-tui agents run oss --dry-run
+gitkraft-tui agents install          # a per-minute launchd / systemd tick: `agents run-due`
+gitkraft-tui agents list | report oss
+```
+
 ### MCP server: your forges for an AI assistant
 
 `gitkraft-mcp` speaks the [Model Context Protocol](https://modelcontextprotocol.io) on stdio and gives an

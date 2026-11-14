@@ -659,7 +659,9 @@ pub(crate) async fn pr_ai_with(
         Action::Review => review_ai::review_draft(llm, &detail)
             .await
             .map(|notes| notes.iter().map(|n| format!("{}\n", n.render())).collect()),
-        Action::Triage => return Err("triage is about the inbox, not a pull request".into()),
+        Action::Triage | Action::Watch => {
+            return Err("that action is not about a pull request".into());
+        }
     }
     .map_err(|e| e.to_string())
 }

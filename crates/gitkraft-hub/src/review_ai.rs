@@ -28,11 +28,19 @@ pub enum Action {
     Review,
     /// Sort the inbox.
     Triage,
+    /// Look at red CI on a schedule (agent-watch).
+    Watch,
 }
 
 impl Action {
     /// Every action.
-    pub const ALL: [Self; 4] = [Self::Summary, Self::CatchUp, Self::Review, Self::Triage];
+    pub const ALL: [Self; 5] = [
+        Self::Summary,
+        Self::CatchUp,
+        Self::Review,
+        Self::Triage,
+        Self::Watch,
+    ];
 
     /// The word used in the policy file and on the command line.
     #[must_use]
@@ -42,6 +50,7 @@ impl Action {
             Self::CatchUp => "catch_up",
             Self::Review => "review",
             Self::Triage => "triage",
+            Self::Watch => "watch",
         }
     }
 
