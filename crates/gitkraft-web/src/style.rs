@@ -169,12 +169,15 @@ document.addEventListener('keydown',e=>{
   if(step){e.preventDefault();gkDayStep(r,step[0],step[1]);}
   else if(e.key==='Enter'||e.key===' '){e.preventDefault();gkDay(r);}
 });
-async function actShow(p,id){
+async function actShow(p,id,into){
   const el=document.getElementById(id);el.hidden=false;el.textContent='Asking…';
   const r=await fetch('/api/action',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({token:document.querySelector('meta[name=gk-token]').content},p))});
   const t=await r.text();
   if(!r.ok){el.textContent=t;return;}
-  try{el.textContent=JSON.parse(t).message;}catch(e){el.textContent=t;}
+  let m=t;try{m=JSON.parse(t).message;}catch(e){}
+  const box=into&&document.getElementById(into);
+  if(box){box.value=m.trim();el.textContent='Draft is in the comment box below: edit it, then send it yourself.';box.focus();}
+  else el.textContent=m;
 }
 function gkDispatch(){
   const w=document.getElementById('d-workflow');
@@ -188,7 +191,8 @@ function actBtn(b){
   if(b.dataset.title){p.title=document.getElementById(b.dataset.title).value;}
   if(b.dataset.method){p.method=document.getElementById(b.dataset.method).value;}
   if(b.dataset.confirm&&!confirm(b.dataset.confirm))return;
-  if(b.dataset.show){actShow(p,b.dataset.show);return;}
+  if(b.dataset.since){const s=prompt('Only what is new since (YYYY-MM-DD)? Empty for the whole thread');if(s===null)return;if(s.trim())p.since=s.trim();}
+  if(b.dataset.show){actShow(p,b.dataset.show,b.dataset.into);return;}
   act(p);
 }
 "#;

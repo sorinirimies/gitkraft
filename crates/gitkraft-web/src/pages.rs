@@ -611,8 +611,8 @@ async fn pull_request(cx: &Cx) -> Result<impl View> {
                 }
                 <button data-act=(worktree) title="Fetch this pull request into a worktree next to your local checkout" onclick="actBtn(this)">"Check out"</button>
                 <button data-act=(ai_summary) data-show="ai" title="AI summary of this pull request (a draft; the host must allow it with `gitkraft-tui ai-allow`)" onclick="actBtn(this)">"Summarize"</button>
-                <button data-act=(ai_catch_up) data-show="ai" title="AI catch-up on the thread (a draft)" onclick="actBtn(this)">"Catch up"</button>
-                <button data-act=(ai_review) data-show="ai" title="AI review notes to edit and send yourself (a draft)" onclick="actBtn(this)">"Review draft"</button>
+                <button data-act=(ai_catch_up) data-show="ai" data-since="1" title="AI catch-up on the thread (a draft)" onclick="actBtn(this)">"Catch up"</button>
+                <button data-act=(ai_review) data-show="ai" data-into="note" title="AI review notes to edit and send yourself (a draft)" onclick="actBtn(this)">"Review draft"</button>
                 <button class="danger" data-act=(toggle) data-confirm=(format!("{toggle_label} this pull request?")) onclick="actBtn(this)">(toggle_label)</button>
             </div>
             <pre id="ai" class="panel" hidden="hidden"></pre>
@@ -1129,7 +1129,7 @@ async fn community(cx: &Cx) -> Result<impl View> {
     let mut list: Vec<(String, String, String, String)> = Vec::new();
     let mut heading = String::new();
     let mut text: Option<String> = None;
-    let mut comments: Vec<(String, String, String, String, bool)> = Vec::new();
+    let mut comments: Vec<(String, String, String, String, bool, String)> = Vec::new();
     let mut act = String::new();
     let mut wiki_save = String::new();
     if let Some(repo) = &repo {
@@ -1161,7 +1161,14 @@ async fn community(cx: &Cx) -> Result<impl View> {
                                 } else {
                                     String::new()
                                 };
-                                (c.author, String::new(), c.body, reply, c.reply)
+                                let answer = if tab == Tab::Discussions && !c.reply {
+                                    act_json(
+                                        serde_json::json!({"action": "discussion_answer", "repo": key, "number": number, "comment_id": c.id}),
+                                    )
+                                } else {
+                                    String::new()
+                                };
+                                (c.author, String::new(), c.body, reply, c.reply, answer)
                             })
                             .collect();
                         if tab == Tab::Wiki {
@@ -1239,9 +1246,10 @@ async fn community(cx: &Cx) -> Result<impl View> {
                 <textarea id="wiki" rows="18">(text.clone())</textarea>
                 <div class="bar"><button class="primary" data-act=(wiki_save.clone()) data-from="wiki" data-field="content" onclick="actBtn(this)">"Save page"</button></div>
             }
-            for (who, when, body, reply, is_reply) in comments {
+            for (who, when, body, reply, is_reply, answer) in comments {
                 <div class=(if is_reply { "comment reply" } else { "comment" })><b>(who)</b>" "<span class="meta small">(when)</span><pre>(body)</pre>
                     if !reply.is_empty() { <button data-act=(reply) data-ask="Your reply" onclick="actBtn(this)">"Reply"</button> }
+                    if !answer.is_empty() { <button data-act=(answer) data-confirm="Mark this comment as the answer?" title="Mark as the discussion's answer" onclick="actBtn(this)">"Mark as answer"</button> }
                 </div>
             }
             if can_comment {

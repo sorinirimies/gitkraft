@@ -462,6 +462,35 @@ pub async fn triage_report(
     Ok(o)
 }
 
+/// A `YYYY-MM-DD` the user typed as a start of day; empty means "the whole thread" (`None`).
+///
+/// # Errors
+/// Text that is not a date.
+pub fn parse_since(typed: &str) -> Result<Option<DateTime<Utc>>, String> {
+    let t = typed.trim();
+    if t.is_empty() {
+        return Ok(None);
+    }
+    t.parse::<chrono::NaiveDate>()
+        .map(|d| Some(d.and_time(chrono::NaiveTime::MIN).and_utc()))
+        .map_err(|_| {
+            format!("'{t}' is not a date: use YYYY-MM-DD, or nothing for the whole thread")
+        })
+}
+
+/// What stands for a line break when a draft goes into a one-line prompt.
+pub const LINE_BREAK: &str = " ⏎ ";
+
+/// A multi-line draft as one line for a single-line prompt (see [`from_one_line`]).
+pub fn to_one_line(text: &str) -> String {
+    text.trim().lines().collect::<Vec<_>>().join(LINE_BREAK)
+}
+
+/// Undoes [`to_one_line`] before the text is sent.
+pub fn from_one_line(text: &str) -> String {
+    text.replace(LINE_BREAK, "\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -664,5 +693,22 @@ mod tests {
             triage(&none, &[]).await.expect("ok").is_empty(),
             "no call for an empty inbox"
         );
+    }
+
+    #[test]
+    fn a_draft_survives_a_trip_through_a_one_line_prompt() {
+        let draft = "a.rs:3 rename this\nb.rs:9 missing test\n";
+        let line = to_one_line(draft);
+        assert!(!line.contains('\n') && line.contains("rename this ⏎ b.rs:9"));
+        assert_eq!(from_one_line(&line), draft.trim());
+        assert_eq!(from_one_line("one line"), "one line");
+    }
+
+    #[test]
+    fn a_since_date_is_a_start_of_day_and_nothing_means_everything() {
+        assert_eq!(parse_since("  "), Ok(None));
+        let d = parse_since("2026-05-01").expect("date").expect("some");
+        assert_eq!(d.to_rfc3339(), "2026-05-01T00:00:00+00:00");
+        assert!(parse_since("yesterday").is_err_and(|e| e.contains("YYYY-MM-DD")));
     }
 }

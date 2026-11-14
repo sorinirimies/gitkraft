@@ -455,9 +455,9 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
         KeyCode::Char('E') => hub.explain_job(),
         KeyCode::Char('P') => hub.ai_triage(),
         KeyCode::Char(',') => hub.open_settings = true,
-        KeyCode::Char('B') => hub.ai_pr(gitkraft_hub::review_ai::Action::Summary),
-        KeyCode::Char('I') => hub.ai_pr(gitkraft_hub::review_ai::Action::CatchUp),
-        KeyCode::Char('V') => hub.ai_pr(gitkraft_hub::review_ai::Action::Review),
+        KeyCode::Char('B') => hub.ai_pr(gitkraft_hub::review_ai::Action::Summary, None),
+        KeyCode::Char('I') => open_prompt(hub, PromptPurpose::CatchUpSince),
+        KeyCode::Char('V') => hub.ai_pr(gitkraft_hub::review_ai::Action::Review, None),
         _ => {}
     }
     Outcome::Stay
@@ -1101,6 +1101,22 @@ mod tests {
         let mut s = state();
         chars(&mut s, ",");
         assert!(s.open_settings);
+    }
+
+    #[test]
+    fn a_catch_up_asks_where_to_start_and_a_bad_date_is_refused() {
+        let mut s = state();
+        chars(&mut s, "I");
+        assert_eq!(
+            s.prompt.as_ref().map(|p| p.purpose),
+            Some(PromptPurpose::CatchUpSince)
+        );
+        s.prompt.as_mut().expect("prompt").buffer = "yesterday".into();
+        s.submit_prompt();
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, ok)| t.contains("YYYY-MM-DD") && !ok)
+        );
     }
 
     #[test]

@@ -1053,6 +1053,17 @@ async fn discussion_comments_have_reply_buttons_and_a_reply_reaches_the_platform
     );
     assert!(page.body.contains("comment reply"), "replies are indented");
     assert!(page.body.contains("data-ask=\"Your reply\""));
+    assert!(
+        page.body
+            .contains("&quot;action&quot;:&quot;discussion_answer&quot;")
+            && page.body.contains("Mark as answer"),
+        "top-level comments can be marked as the answer"
+    );
+    assert_eq!(
+        page.body.matches("discussion_answer").count(),
+        1,
+        "a reply cannot be the answer"
+    );
 
     let h = start().await;
     h.fake.push_json(
@@ -1352,7 +1363,14 @@ async fn pr_ai_drafts_are_refused_until_the_host_allows_them_and_the_buttons_exi
     h.fake
         .push_status("https://api.github.com/repos/o/r/pulls/1.diff", 200, "diff");
     let page = get(h.addr, "/pr?repo=github.com%2Fo%2Fr&n=1").await;
-    for needle in ["Summarize", "Catch up", "Review draft", "pr_ai"] {
+    for needle in [
+        "Summarize",
+        "Catch up",
+        "Review draft",
+        "pr_ai",
+        "data-since=\"1\"",
+        "data-into=\"note\"",
+    ] {
         assert!(
             page.body.contains(needle),
             "missing {needle}: {}",

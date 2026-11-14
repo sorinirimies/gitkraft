@@ -1219,6 +1219,14 @@ fn community<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
                             .style(theme::ghost_button)
                             .padding([1, 6]),
                     );
+                    if !cm.reply {
+                        head = head.push(
+                            button(text("Mark as answer").size(11))
+                                .on_press(HubMessage::CommunityAnswer(cm.id))
+                                .style(theme::ghost_button)
+                                .padding([1, 6]),
+                        );
+                    }
                 }
                 detail = detail
                     .push(head)

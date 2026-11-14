@@ -130,6 +130,8 @@ pub enum HubMessage {
     AiTriage,
     /// An AI draft about the selected pull request (summary, catch-up or review notes).
     AiPr(gitkraft_hub::review_ai::Action),
+    /// Review notes from the model: they go into the comment box to be edited and posted.
+    ReviewDrafted(Result<String, String>),
     /// A log arrived.
     LogLoaded(Result<(String, String), String>),
     /// Close the log.
@@ -204,6 +206,8 @@ pub enum HubMessage {
     CommunityComment,
     /// Answer this comment of the open discussion next (`None` goes back to a top-level comment).
     CommunityReplyTo(Option<(u64, String)>),
+    /// Mark this comment (its id) of the open discussion as the answer.
+    CommunityAnswer(u64),
     /// Move the selected board card to the column the note names.
     CommunityMove,
     /// Write the open wiki page to a file and open it in the editor.
@@ -728,6 +732,19 @@ impl HubState {
             HubMessage::OpenLog => self.open_log(),
             HubMessage::Explain => self.explain(),
             HubMessage::AiPr(a) => self.ai_pr(a),
+            HubMessage::ReviewDrafted(result) => {
+                match result {
+                    Ok(text) => {
+                        self.note = text.trim().to_string();
+                        self.notice = Some((
+                            "review draft is in the comment box: edit it, then Comment".into(),
+                            true,
+                        ));
+                    }
+                    Err(e) => self.notice = Some((format!("review draft: {e}"), false)),
+                }
+                Task::none()
+            }
             HubMessage::AiTriage => self.ai_triage(),
             HubMessage::LogLoaded(Ok((title, raw))) => {
                 let lines = parse_log(&raw);
@@ -900,6 +917,7 @@ impl HubState {
                 self.community.reply_to = to;
                 Task::none()
             }
+            HubMessage::CommunityAnswer(id) => self.mark_answer(id),
             HubMessage::CommunityMove => self.move_card(),
             HubMessage::WikiEdit => {
                 self.start_wiki_edit(None);
@@ -1325,6 +1343,18 @@ impl HubState {
     /// An AI draft about the selected pull request, shown in the log view. Refused unless its host
     /// opted in with `gitkraft-tui ai-allow`; changes nothing.
     fn ai_pr(&mut self, action: gitkraft_hub::review_ai::Action) -> Task<HubMessage> {
+        // a catch-up starts at the date typed in the box (YYYY-MM-DD); empty is the whole thread
+        let since = if action == gitkraft_hub::review_ai::Action::CatchUp {
+            match gitkraft_hub::review_ai::parse_since(&self.note) {
+                Ok(s) => s,
+                Err(e) => {
+                    self.notice = Some((e, false));
+                    return Task::none();
+                }
+            }
+        } else {
+            None
+        };
         use gitkraft_hub::review_ai::{self, Action, Policy};
         let Some(pr) = self.selected_pr() else {
             self.notice = Some(("select a pull request first".into(), false));
@@ -1343,8 +1373,8 @@ impl HubState {
         };
         let title = format!("AI {} · #{} {}", action.name(), pr.number, pr.title);
         self.notice = Some((format!("asking the AI about #{}…", pr.number), true));
-        Task::perform(
-            async move {
+        let draft = async move {
+            {
                 let detail = api
                     .pr_detail(&pr.repo, pr.number)
                     .await
@@ -1355,7 +1385,7 @@ impl HubState {
                     .map_err(|e| e.to_string())?;
                 match action {
                     Action::Summary => review_ai::summarize_pr(&llm, &detail).await,
-                    Action::CatchUp => review_ai::catch_up(&llm, &detail, None).await,
+                    Action::CatchUp => review_ai::catch_up(&llm, &detail, since).await,
                     Action::Review => review_ai::review_draft(&llm, &detail)
                         .await
                         .map(|n| n.iter().map(|n| format!("{}\n", n.render())).collect()),
@@ -1363,9 +1393,17 @@ impl HubState {
                 }
                 .map(|text| (title, text))
                 .map_err(|e| e.to_string())
-            },
-            HubMessage::LogLoaded,
-        )
+            }
+        };
+        // review notes are meant to be edited and posted; the others are read
+        if action == Action::Review {
+            Task::perform(
+                async move { draft.await.map(|(_, text)| text) },
+                HubMessage::ReviewDrafted,
+            )
+        } else {
+            Task::perform(draft, HubMessage::LogLoaded)
+        }
     }
 
     /// AI triage of the shown inbox, in the log view. Nothing is marked or changed.
@@ -1502,6 +1540,26 @@ impl HubState {
         let task = self.load_community();
         self.community.page = page;
         task
+    }
+
+    fn mark_answer(&mut self, comment: u64) -> Task<HubMessage> {
+        let (Some(api), Some(repo), Some(number)) = (
+            self.handle(),
+            self.community.repo.clone(),
+            self.community
+                .page
+                .as_ref()
+                .and_then(|p| p.key.parse::<u64>().ok()),
+        ) else {
+            return Task::none();
+        };
+        if self.community.tab != gitkraft_hub::community::Tab::Discussions {
+            return Task::none();
+        }
+        Task::perform(
+            async move { gitkraft_hub::community::mark_answer(&api, &repo, number, comment).await },
+            HubMessage::CommunityWritten,
+        )
     }
 
     fn move_card(&mut self) -> Task<HubMessage> {
@@ -2539,6 +2597,21 @@ mod tests {
     }
 
     #[test]
+    fn a_catch_up_reads_its_start_date_from_the_box() {
+        use gitkraft_hub::review_ai::Action;
+        let mut s = state();
+        s.note = "soon".into();
+        let _ = s.update(HubMessage::AiPr(Action::CatchUp));
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, ok)| t.contains("YYYY-MM-DD") && !ok),
+            "{:?}",
+            s.notice
+        );
+    }
+
+    #[test]
     fn triage_wants_an_inbox_section() {
         let mut s = state();
         let _ = s.update(HubMessage::AiTriage);
@@ -3076,6 +3149,30 @@ mod tests {
                 .wiki_draft
                 .as_ref()
                 .is_some_and(|d| d.slug.is_none())
+        );
+    }
+
+    #[test]
+    fn a_review_draft_fills_the_comment_box() {
+        let mut s = state();
+        let _ = s.update(HubMessage::ReviewDrafted(Ok("a.rs:3 rename\n".into())));
+        assert_eq!(s.note, "a.rs:3 rename");
+        let _ = s.update(HubMessage::ReviewDrafted(Err("no key".into())));
+        assert_eq!(s.note, "a.rs:3 rename", "a failure keeps what is there");
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(m, ok)| m.contains("no key") && !ok)
+        );
+    }
+
+    #[test]
+    fn marking_an_answer_needs_an_open_discussion() {
+        let mut s = state();
+        let _ = s.update(HubMessage::CommunityAnswer(9));
+        assert_eq!(
+            s.notice, None,
+            "no page open: nothing is sent, nothing said"
         );
     }
 

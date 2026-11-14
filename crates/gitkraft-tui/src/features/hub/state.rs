@@ -187,6 +187,8 @@ pub enum PromptPurpose {
     DiscussionComment,
     /// An answer to a comment of the open discussion: `N text`.
     DiscussionReply,
+    /// Where a catch-up starts: `YYYY-MM-DD`, or nothing for the whole thread.
+    CatchUpSince,
     /// Which comment answers the open discussion: `N`.
     DiscussionAnswer,
     /// The column to move the selected card to.
@@ -340,6 +342,8 @@ enum Msg {
         key: String,
         result: Result<Vec<Comment>, String>,
     },
+    /// An AI draft to edit before it is posted as a comment on the selected item.
+    Draft(Result<String, String>),
     Log {
         title: String,
         result: Result<String, String>,
@@ -1103,7 +1107,11 @@ impl HubState {
 
     /// An AI draft about the selected pull request, shown in the log view: `B` summary, `I` catch-up,
     /// `V` review notes. Refused unless its host opted in (`gitkraft-tui ai-allow`); changes nothing.
-    pub fn ai_pr(&mut self, action: gitkraft_hub::review_ai::Action) {
+    pub fn ai_pr(
+        &mut self,
+        action: gitkraft_hub::review_ai::Action,
+        since: Option<chrono::DateTime<chrono::Utc>>,
+    ) {
         use gitkraft_hub::review_ai::{self, Action, Policy};
         let Some(pr) = self.selected_pr().cloned() else {
             self.set_notice("select a pull request first".into(), false);
@@ -1135,7 +1143,7 @@ impl HubState {
                     .map_err(|e| e.to_string())?;
                 match action {
                     Action::Summary => review_ai::summarize_pr(&llm, &detail).await,
-                    Action::CatchUp => review_ai::catch_up(&llm, &detail, None).await,
+                    Action::CatchUp => review_ai::catch_up(&llm, &detail, since).await,
                     Action::Review => review_ai::review_draft(&llm, &detail)
                         .await
                         .map(|n| n.iter().map(|n| format!("{}\n", n.render())).collect()),
@@ -1144,7 +1152,12 @@ impl HubState {
                 .map_err(|e| e.to_string())
             }
             .await;
-            let _ = tx.send(Msg::Log { title, result });
+            // review notes are meant to be edited and posted; the others are read
+            let _ = tx.send(if action == Action::Review {
+                Msg::Draft(result)
+            } else {
+                Msg::Log { title, result }
+            });
         });
     }
 
@@ -2248,6 +2261,13 @@ impl HubState {
             self.submit_discussion_reply(&prompt.buffer);
             return;
         }
+        if prompt.purpose == PromptPurpose::CatchUpSince {
+            match gitkraft_hub::review_ai::parse_since(&prompt.buffer) {
+                Ok(since) => self.ai_pr(gitkraft_hub::review_ai::Action::CatchUp, since),
+                Err(e) => self.set_notice(e, false),
+            }
+            return;
+        }
         if prompt.purpose == PromptPurpose::DiscussionAnswer {
             self.submit_discussion_answer(&prompt.buffer);
             return;
@@ -2268,7 +2288,7 @@ impl HubState {
             return;
         };
         let tx = self.tx.clone();
-        let body = prompt.buffer.trim().to_string();
+        let body = gitkraft_hub::review_ai::from_one_line(prompt.buffer.trim());
         let target = self
             .selected_pr()
             .map(|p| (p.repo.clone(), p.number, ItemKind::PullRequest))
@@ -2544,6 +2564,19 @@ impl HubState {
                     self.images.set_ready(&url, protocol);
                 }
                 Err(e) => self.images.set_failed(&url, e),
+            },
+            Msg::Draft(result) => match result {
+                Ok(text) => {
+                    self.prompt = Some(Prompt {
+                        purpose: PromptPurpose::Comment,
+                        buffer: gitkraft_hub::review_ai::to_one_line(&text),
+                    });
+                    self.set_notice(
+                        "review draft: edit with Backspace and typing, Enter posts it as a comment, Esc drops it".into(),
+                        true,
+                    );
+                }
+                Err(e) => self.set_notice(format!("review draft: {e}"), false),
             },
             Msg::Log { title, result } => match result {
                 Ok(raw) => {
@@ -3192,6 +3225,18 @@ mod tests {
             s.fresh_notice()
                 .is_some_and(|(t, ok)| t.contains("accounts.toml") && !ok)
         );
+    }
+
+    #[test]
+    fn a_review_draft_lands_in_the_comment_prompt_to_be_edited() {
+        let mut s = fixtures::state();
+        s.apply(Msg::Draft(Ok("a.rs:3 rename\nb.rs:9 test\n".into())));
+        let p = s.prompt.as_ref().expect("prompt");
+        assert_eq!(p.purpose, PromptPurpose::Comment);
+        assert_eq!(p.buffer, "a.rs:3 rename ⏎ b.rs:9 test");
+        s.prompt = None;
+        s.apply(Msg::Draft(Err("no key".into())));
+        assert!(s.prompt.is_none(), "a failed draft opens nothing");
     }
 
     #[test]

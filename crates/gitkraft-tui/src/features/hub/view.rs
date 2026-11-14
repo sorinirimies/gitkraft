@@ -1872,6 +1872,7 @@ fn render_status(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme)
             PromptPurpose::Inline => "inline comment",
             PromptPurpose::Labels => "labels: +add -remove \"two words\"",
             PromptPurpose::DiscussionComment => "comment on the discussion",
+            PromptPurpose::CatchUpSince => "catch up since YYYY-MM-DD (Enter: whole thread)",
             PromptPurpose::DiscussionAnswer => "answer: N (the [n] of the comment that solves it)",
             PromptPurpose::DiscussionReply => "reply: N text (N is the [n] of the comment)",
             PromptPurpose::MoveCard => "move the card to column",
