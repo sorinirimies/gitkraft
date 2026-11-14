@@ -256,6 +256,22 @@ fn render_title(
     let (text, color) = bell_text(hub, true);
     let text = format!(" {text} ");
     let w = text.chars().count() as u16;
+    let scope = hub.scope_text();
+    if !scope.is_empty() {
+        let st = format!(" {scope} ");
+        let sw = st.chars().count() as u16;
+        if x + sw + w < area.x + area.width {
+            let rect = Rect::new(area.x + area.width - w - sw, area.y, sw, 1);
+            frame.render_widget(
+                Paragraph::new(Span::styled(st, Style::default().fg(theme.text_secondary))),
+                rect,
+            );
+            hits.push(Hit {
+                rect,
+                target: Target::Scope,
+            });
+        }
+    }
     if w < area.width {
         let rect = Rect::new(area.x + area.width - w, area.y, w, 1);
         frame.render_widget(
@@ -371,7 +387,24 @@ fn render_dashboard(
     }
 }
 
-fn row_line(data: &SectionData, i: usize, width: usize, theme: &UiTheme) -> Line<'static> {
+use gitkraft_hub::project::short_host;
+
+/// The repository name, with its forge when the project spans several.
+fn repo_label(repo: &gitkraft_platforms::RepoId, multi: bool) -> String {
+    if multi {
+        format!("{}@{} ", repo.name, short_host(&repo.host))
+    } else {
+        format!("{} ", repo.name)
+    }
+}
+
+fn row_line(
+    data: &SectionData,
+    i: usize,
+    width: usize,
+    theme: &UiTheme,
+    multi: bool,
+) -> Line<'static> {
     let m = muted(theme);
     match data {
         SectionData::Prs(r) => {
@@ -384,7 +417,7 @@ fn row_line(data: &SectionData, i: usize, width: usize, theme: &UiTheme) -> Line
             };
             let head = format!(" #{} ", p.number);
             let tail = format!("  {} · {}", p.author.login, age(p.updated_at));
-            let repo = format!("{} ", p.repo.name);
+            let repo = repo_label(&p.repo, multi);
             let room =
                 width.saturating_sub(head.len() + tail.chars().count() + repo.chars().count() + 3);
             Line::from(vec![
@@ -402,7 +435,7 @@ fn row_line(data: &SectionData, i: usize, width: usize, theme: &UiTheme) -> Line
             let it = &r.items[i];
             let head = format!(" #{} ", it.number);
             let tail = format!("  {} · {}", it.author.login, age(it.updated_at));
-            let repo = format!("{} ", it.repo.name);
+            let repo = repo_label(&it.repo, multi);
             let room =
                 width.saturating_sub(head.len() + tail.chars().count() + repo.chars().count() + 3);
             Line::from(vec![
@@ -418,8 +451,32 @@ fn row_line(data: &SectionData, i: usize, width: usize, theme: &UiTheme) -> Line
         }
         SectionData::Runs(r) => {
             let run = &r.items[i];
-            let tail = format!("  {} · {}", run.actor, age(run.created_at));
-            let head = format!(" {} #{} {} ", run.name, run.number, run.branch);
+            // the same commit built on the other forges: `≡ codeberg ✘`
+            let mirrors: String = if multi && !run.sha.is_empty() {
+                gitkraft_hub::project::mirror_siblings(&r.items, run)
+                    .into_iter()
+                    .map(|o| format!(" {} {}", short_host(&o.repo.host), o.status.glyph(false)))
+                    .collect::<String>()
+            } else {
+                String::new()
+            };
+            let mirrors = if mirrors.is_empty() {
+                mirrors
+            } else {
+                format!(" ≡{mirrors}")
+            };
+            let tail = format!("{mirrors}  {} · {}", run.actor, age(run.created_at));
+            let head = format!(
+                " {}{} #{} {} ",
+                if multi {
+                    format!("{} ", short_host(&run.repo.host))
+                } else {
+                    String::new()
+                },
+                run.name,
+                run.number,
+                run.branch
+            );
             let room = width.saturating_sub(head.chars().count() + tail.chars().count() + 2);
             Line::from(vec![
                 Span::styled(
@@ -446,7 +503,11 @@ fn row_line(data: &SectionData, i: usize, width: usize, theme: &UiTheme) -> Line
                     ("watching", theme.text_muted)
                 }
             };
-            let repo = n.repo.as_ref().map(|r| r.name.clone()).unwrap_or_default();
+            let repo = n
+                .repo
+                .as_ref()
+                .map(|r| repo_label(r, multi).trim_end().to_string())
+                .unwrap_or_default();
             let head = format!(" {why:<8} {repo} ");
             let tail = format!("  {}", age(n.updated_at));
             let room = width.saturating_sub(head.chars().count() + tail.chars().count() + 2);
@@ -471,6 +532,7 @@ fn render_list(
     hits: &mut Vec<Hit>,
 ) {
     let focused = hub.focus == Focus::List;
+    let multi = hub.is_multi();
     let block = Block::default()
         .borders(Borders::TOP)
         .border_style(Style::default().fg(if focused {
@@ -524,7 +586,7 @@ fn render_list(
     hub.offset = list::ensure_visible(hub.row, hub.offset, height);
     for (n, i) in (hub.offset..data.len()).take(height).enumerate() {
         let rect = Rect::new(inner.x, inner.y + n as u16, inner.width, 1);
-        let mut line = row_line(data, i, inner.width as usize, theme);
+        let mut line = row_line(data, i, inner.width as usize, theme, multi);
         if i == hub.row {
             let bg = if focused {
                 theme.sel_bg
@@ -1862,6 +1924,65 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn a_multi_forge_project_shows_the_remote_bar_and_names_the_forge_in_rows() {
+        let mut hub = state();
+        hub.project = gitkraft_hub::project::Project::from_remotes(&[
+            ("origin".to_string(), "git@github.com:o/r.git".to_string()),
+            (
+                "codeberg".to_string(),
+                "ssh://git@codeberg.org/o/r.git".to_string(),
+            ),
+        ]);
+        let mut app = app_with(hub);
+        let text = draw(&mut app, 140, 30);
+        assert!(text.contains("⎇ all remotes"), "{text}");
+        assert!(text.contains("codeberg"), "{text}");
+        assert!(text.contains("r@github"), "rows say which forge: {text}");
+        let hub = app.hub.as_ref().expect("hub");
+        assert_eq!(
+            hub.hits
+                .iter()
+                .filter(|h| matches!(h.target, Target::Scope))
+                .count(),
+            1
+        );
+        let single = draw(&mut app_with(state()), 140, 30);
+        assert!(
+            !single.contains("⎇") && !single.contains("r@github"),
+            "{single}"
+        );
+    }
+
+    #[test]
+    fn a_run_row_shows_how_the_same_commit_fared_on_the_other_forge() {
+        use gitkraft_ci::{Run, Status};
+        let run = |host: &str, status| Run {
+            repo: gitkraft_platforms::RepoId::new(host, "o", "r"),
+            name: "CI".into(),
+            sha: "abc".into(),
+            status,
+            ..Run::default()
+        };
+        let data = SectionData::Runs(SectionResult {
+            items: vec![
+                run("github.com", Status::Success),
+                run("codeberg.org", Status::Failed),
+            ],
+            errors: vec![],
+        });
+        let theme = crate::features::theme::palette::theme_for_index(0);
+        let text = |multi| {
+            row_line(&data, 0, 120, &theme, multi)
+                .spans
+                .iter()
+                .map(|s| s.content.to_string())
+                .collect::<String>()
+        };
+        assert!(text(true).contains("≡ codeberg"), "{}", text(true));
+        assert!(!text(false).contains('≡'));
     }
 
     #[test]

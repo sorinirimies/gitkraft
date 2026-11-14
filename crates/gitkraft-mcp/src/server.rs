@@ -32,6 +32,9 @@ Tools that change things exist only when the server runs with --write.";
 pub struct GitkraftServer {
     pub(crate) hub: Arc<Hub<DynClient>>,
     pub(crate) default_repo: Option<RepoId>,
+    /// The remotes of the checkout the server runs in.
+    pub(crate) project: gitkraft_hub::project::Project,
+    pub(crate) dir: Option<std::path::PathBuf>,
     pub(crate) policy: Policy,
     tool_router: ToolRouter<Self>,
 }
@@ -94,9 +97,23 @@ impl GitkraftServer {
         Self {
             hub: Arc::new(hub),
             default_repo,
+            project: gitkraft_hub::project::Project::default(),
+            dir: None,
             policy,
             tool_router,
         }
+    }
+
+    /// Tells the server which checkout it runs in and the remotes of it.
+    #[must_use]
+    pub fn with_project(
+        mut self,
+        dir: std::path::PathBuf,
+        project: gitkraft_hub::project::Project,
+    ) -> Self {
+        self.dir = Some(dir);
+        self.project = project;
+        self
     }
 
     #[cfg(test)]
@@ -110,6 +127,14 @@ impl GitkraftServer {
 
     /// `host/owner/name`, `owner/name` (the only or the github.com account), or the default repo.
     pub(crate) fn repo(&self, given: Option<&str>) -> Result<RepoId, McpError> {
+        // a remote's name (`codeberg`) reaches that forge's repository
+        if let Some(name) = given.map(str::trim)
+            && !name.contains('/')
+            && let Ok(mut one) = self.project.select(name)
+            && one.len() == 1
+        {
+            return Ok(one.remove(0));
+        }
         args::resolve_repo(
             given,
             self.default_repo.as_ref(),

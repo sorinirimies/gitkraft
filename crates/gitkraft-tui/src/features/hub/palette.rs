@@ -43,6 +43,9 @@ fn e(label: impl Into<String>, key: char, view: View) -> Entry {
 pub fn entries_for(hub: &HubState) -> Vec<Entry> {
     let d = View::Dashboard;
     let mut out = Vec::new();
+    if hub.is_multi() {
+        out.push(e("Remote: show the next forge (all → each → all)", 'o', d));
+    }
     if hub.selected_pr().is_some() {
         out.extend([
             e("Pull request: approve", 'a', d),

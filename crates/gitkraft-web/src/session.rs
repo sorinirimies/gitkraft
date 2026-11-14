@@ -62,6 +62,8 @@ struct Inner {
     theme: usize,
     token: String,
     cache: Mutex<HashMap<usize, (Instant, SectionData)>>,
+    /// The remotes of the first checkout (GitHub, Codeberg, Gitea, …).
+    project: gitkraft_hub::project::Project,
 }
 
 /// Shared server state.
@@ -81,6 +83,11 @@ impl std::fmt::Debug for Session {
 impl Session {
     /// A session over `hub`.
     pub fn new(hub: Hub<DynClient>, dashboard: Dashboard, paths: Paths, theme: usize) -> Self {
+        let project = paths
+            .checkouts
+            .first()
+            .map(|d| gitkraft_hub::project::Project::of_dir(d))
+            .unwrap_or_default();
         Self {
             inner: Arc::new(Inner {
                 hub,
@@ -89,6 +96,7 @@ impl Session {
                 theme,
                 token: new_token(),
                 cache: Mutex::new(HashMap::new()),
+                project,
             }),
         }
     }
@@ -122,6 +130,22 @@ impl Session {
             .into_iter()
             .find(|(r, _)| r == repo)
             .map(|(_, p)| p)
+    }
+
+    /// The remotes of the checkout the server runs in.
+    pub fn project(&self) -> &gitkraft_hub::project::Project {
+        &self.inner.project
+    }
+
+    /// Where each remote stands against the checked-out branch (read from git on every call, so a
+    /// fetch shows up without a restart).
+    pub fn sync(&self) -> Vec<gitkraft_hub::project::RemoteSync> {
+        self.inner
+            .paths
+            .checkouts
+            .first()
+            .map(|d| gitkraft_hub::project::sync_status(d, &self.inner.project))
+            .unwrap_or_default()
     }
 
     /// The hub.

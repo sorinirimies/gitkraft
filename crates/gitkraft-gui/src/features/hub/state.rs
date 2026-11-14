@@ -95,6 +95,8 @@ pub enum HubMessage {
     SelectRow(usize),
     /// Reload the active section.
     Refresh,
+    /// Show the next remote's items (all → each forge → all).
+    CycleScope,
     /// A section was loaded.
     SectionLoaded {
         idx: usize,
@@ -409,6 +411,12 @@ pub struct HubState {
     pub accounts: usize,
     /// Watched projects.
     pub watched: Vec<RepoId>,
+    /// The remotes of the first open checkout (GitHub, Codeberg, Gitea, …).
+    pub project: gitkraft_hub::project::Project,
+    /// Which of them the lists show.
+    pub scope: gitkraft_hub::project::Scope,
+    /// Where each remote stands against the checked-out branch (as of the last fetch).
+    pub sync: Vec<gitkraft_hub::project::RemoteSync>,
     /// The command palette's search text while open.
     pub palette: Option<String>,
     /// Open local checkouts, by project.
@@ -447,6 +455,9 @@ impl HubState {
             ready: false,
             accounts: 0,
             watched: Vec::new(),
+            project: gitkraft_hub::project::Project::default(),
+            scope: gitkraft_hub::project::Scope::All,
+            sync: Vec::new(),
             palette: None,
             checkouts: Vec::new(),
             notify_config: NotifyConfig::default(),
@@ -461,6 +472,7 @@ impl HubState {
     /// Opens the hub: loads the dashboard file and starts discovering accounts.
     pub fn open(tabs: Vec<(Option<std::path::PathBuf>, Vec<String>)>) -> (Self, Task<HubMessage>) {
         let checkouts = gitkraft_hub::checkout::local_checkouts(&tabs);
+        let first_dir = tabs.iter().find_map(|(p, _)| p.clone());
         let repos: Vec<Vec<String>> = tabs.into_iter().map(|(_, urls)| urls).collect();
         let mut notice = None;
         let dashboard = match files::dashboard_path()
@@ -475,6 +487,10 @@ impl HubState {
         };
         let mut state = Self::detached(dashboard);
         state.checkouts = checkouts;
+        if let Some(dir) = first_dir {
+            state.project = gitkraft_hub::project::Project::of_dir(&dir);
+            state.sync = gitkraft_hub::project::sync_status(&dir, &state.project);
+        }
         state.dashboard_file = files::dashboard_path().ok();
         state.notify_file = files::notify_config_path().ok();
         state.notify_config = read_config(state.notify_file.as_deref());
@@ -489,6 +505,39 @@ impl HubState {
             .collect();
         let task = Task::perform(setup(repos, sections), HubMessage::Ready);
         (state, task)
+    }
+
+    /// More than one forge is involved, so rows say which one they come from.
+    pub fn is_multi(&self) -> bool {
+        self.project.is_multi()
+    }
+
+    /// `⎇ all remotes  origin ✔  codeberg ↑1`: the scope and where each remote stands.
+    pub fn scope_text(&self) -> String {
+        use gitkraft_hub::project::SyncState::{Ahead, Behind, Diverged, InSync, Missing};
+        if self.project.remotes.is_empty() {
+            return String::new();
+        }
+        let mut out = format!("⎇ {}", self.scope.label(&self.project));
+        if self.project.is_multi() {
+            for r in &self.project.remotes {
+                let mark = match self
+                    .sync
+                    .iter()
+                    .find(|s| s.remote == r.name)
+                    .map(|s| s.state)
+                {
+                    Some(InSync) => " ✔".to_string(),
+                    Some(Ahead(n)) => format!(" ↑{n}"),
+                    Some(Behind(n)) => format!(" ↓{n}"),
+                    Some(Diverged { .. }) => " ⇄".to_string(),
+                    Some(Missing) => " ∅".to_string(),
+                    None => String::new(),
+                };
+                out.push_str(&format!("  {}{mark}", r.name));
+            }
+        }
+        out
     }
 
     /// Indexes into `dashboard.sections` of the shown sections.
@@ -574,6 +623,24 @@ impl HubState {
                 self.log = None;
                 self.on_selection()
             }
+            HubMessage::CycleScope => {
+                if !self.project.is_multi() {
+                    self.notice = Some((
+                        "this project has a single forge remote: nothing to switch".into(),
+                        false,
+                    ));
+                    return Task::none();
+                }
+                self.scope = self.scope.next(&self.project);
+                self.notice = Some((format!("showing {}", self.scope.label(&self.project)), true));
+                for slot in &mut self.slots {
+                    if let Some(data) = slot.data.as_mut() {
+                        std::sync::Arc::make_mut(data).retain_scope(&self.scope);
+                    }
+                }
+                self.row = None;
+                self.load_all()
+            }
             HubMessage::Refresh => match self.active_index() {
                 Some(i) => self.load_section(i),
                 None => Task::none(),
@@ -593,6 +660,8 @@ impl HubState {
                 if let Some(first) = data.errors().first() {
                     self.notice = Some((first.clone(), false));
                 }
+                let mut data = data;
+                std::sync::Arc::make_mut(&mut data).retain_scope(&self.scope);
                 slot.data = Some(data);
                 if self.active_index() == Some(idx) {
                     let len = self.active_data().map_or(0, SectionData::len);
@@ -1858,6 +1927,12 @@ impl HubState {
             HubMessage::Show(HubView::Community),
         );
         add("Refresh", HubMessage::Refresh);
+        if self.project.is_multi() {
+            add(
+                "Remote: show the next forge (all → each → all)",
+                HubMessage::CycleScope,
+            );
+        }
         add(
             "Notifications: toggle for this project",
             HubMessage::ToggleBell,
@@ -2260,6 +2335,57 @@ mod tests {
         .expect("valid");
         assert_eq!(saved, s.dashboard);
         assert!(!s.reorder_sections(5, 0));
+    }
+
+    #[test]
+    fn the_remote_switcher_cycles_forges_and_filters_loaded_and_arriving_rows() {
+        let mut s = state();
+        assert_eq!(s.scope_text(), "");
+        let _ = s.update(HubMessage::CycleScope);
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, ok)| !ok && t.contains("single forge"))
+        );
+        s.project = gitkraft_hub::project::Project::from_remotes(&[
+            ("origin".to_string(), "git@github.com:o/r.git".to_string()),
+            (
+                "codeberg".to_string(),
+                "ssh://git@codeberg.org/o/r.git".to_string(),
+            ),
+        ]);
+        s.sync = vec![gitkraft_hub::project::RemoteSync {
+            remote: "codeberg".into(),
+            repo: gitkraft_platforms::RepoId::new("codeberg.org", "o", "r"),
+            state: gitkraft_hub::project::SyncState::Behind(1),
+        }];
+        assert_eq!(s.scope_text(), "⎇ all remotes  origin  codeberg ↓1");
+        let before = s.active_data().map_or(0, SectionData::len);
+        assert!(before > 0);
+        let _ = s.update(HubMessage::CycleScope); // origin = github: the fixture rows stay
+        assert_eq!(s.active_data().map(SectionData::len), Some(before));
+        let _ = s.update(HubMessage::CycleScope); // codeberg: they go
+        assert_eq!(s.active_data().map(SectionData::len), Some(0));
+        s.slots[0].generation = 9;
+        let data = Arc::new(SectionData::Prs(SectionResult {
+            items: vec![PullRequest {
+                repo: gitkraft_platforms::RepoId::new("github.com", "o", "r"),
+                ..PullRequest::default()
+            }],
+            errors: vec![],
+        }));
+        let _ = s.update(HubMessage::SectionLoaded {
+            idx: 0,
+            generation: 9,
+            data,
+        });
+        assert_eq!(
+            s.active_data().map(SectionData::len),
+            Some(0),
+            "late rows are filtered too"
+        );
+        let _ = s.update(HubMessage::CycleScope);
+        assert_eq!(s.scope, gitkraft_hub::project::Scope::All);
     }
 
     #[test]

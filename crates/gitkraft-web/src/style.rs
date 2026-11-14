@@ -17,6 +17,7 @@ table{width:100%;border-collapse:collapse}
 td,th{padding:7px 8px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
 tr:hover td{background:var(--sel)}
 .mark{width:1.4em;text-align:center}.ok{color:var(--ok)}.err{color:var(--err)}.warn{color:var(--warn)}.mu{color:var(--muted)}.acc{color:var(--accent)}
+.scope{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}.scope a{padding:2px 10px;border:1px solid var(--border);border-radius:999px;font-size:12px;color:var(--text2);text-decoration:none}.scope a.on{background:var(--sel);color:var(--accent);border-color:var(--accent)}.scope:empty{display:none}
 .badge{display:inline-block;padding:1px 8px;border-radius:999px;border:1px solid var(--border);font-size:12px;color:var(--text2)}
 .badge.open{color:var(--ok);border-color:var(--ok)}.badge.merged{color:var(--accent);border-color:var(--accent)}.badge.closed{color:var(--err);border-color:var(--err)}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin:12px 0}

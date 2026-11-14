@@ -94,6 +94,19 @@ fn run_mark(s: Status) -> (&'static str, &'static str) {
 
 /// The rows of a section.
 pub fn rows_of(data: &SectionData) -> Vec<Row> {
+    rows_in(data, false)
+}
+
+/// The rows of a section; with `multi` (a project on several forges) each row names its forge and a
+/// run shows how the same commit fared on the others.
+pub fn rows_in(data: &SectionData, multi: bool) -> Vec<Row> {
+    let forge = |repo: &RepoId| {
+        if multi {
+            format!(" @{}", gitkraft_hub::project::short_host(&repo.host))
+        } else {
+            String::new()
+        }
+    };
     match data {
         SectionData::Prs(r) => r
             .items
@@ -111,8 +124,9 @@ pub fn rows_of(data: &SectionData) -> Vec<Row> {
                     class,
                     title: format!("#{} {}", p.number, p.title),
                     meta: format!(
-                        "{} · {} · {}",
+                        "{}{} · {} · {}",
                         p.repo.full_name(),
+                        forge(&p.repo),
                         p.author.login,
                         ago(p.updated_at)
                     ),
@@ -130,8 +144,9 @@ pub fn rows_of(data: &SectionData) -> Vec<Row> {
                     class,
                     title: format!("#{} {}", i.number, i.title),
                     meta: format!(
-                        "{} · {} · {}",
+                        "{}{} · {} · {}",
                         i.repo.full_name(),
+                        forge(&i.repo),
                         i.author.login,
                         ago(i.updated_at)
                     ),
@@ -151,7 +166,33 @@ pub fn rows_of(data: &SectionData) -> Vec<Row> {
                         "{} #{} · {} · {}",
                         run.name, run.number, run.branch, run.title
                     ),
-                    meta: format!("{} · {}", run.actor, ago(run.created_at)),
+                    meta: {
+                        let mirrors: String = if multi {
+                            gitkraft_hub::project::mirror_siblings(&r.items, run)
+                                .into_iter()
+                                .map(|o| {
+                                    format!(
+                                        " {} {}",
+                                        gitkraft_hub::project::short_host(&o.repo.host),
+                                        o.status.glyph(false)
+                                    )
+                                })
+                                .collect()
+                        } else {
+                            String::new()
+                        };
+                        let mirrors = if mirrors.is_empty() {
+                            mirrors
+                        } else {
+                            format!(" · ≡{mirrors}")
+                        };
+                        format!(
+                            "{}{} · {}{mirrors}",
+                            run.actor,
+                            forge(&run.repo),
+                            ago(run.created_at)
+                        )
+                    },
                 }
             })
             .collect(),
@@ -262,6 +303,79 @@ pub(crate) async fn shell(
 pub struct SectionParams {
     /// Index into the dashboard.
     pub s: Option<String>,
+    /// A remote's name: only that forge (default: all of them).
+    pub r: Option<String>,
+}
+
+/// One entry of the remote switcher.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScopeChip {
+    /// `all remotes` or `codeberg ↑1`.
+    pub label: String,
+    /// Where it links to.
+    pub href: String,
+    /// CSS class: `on` for the shown one.
+    pub class: &'static str,
+}
+
+/// The switcher of a project on several forges; empty for a single forge.
+pub fn scope_chips(
+    session: &Session,
+    section: Option<usize>,
+    current: Option<&str>,
+) -> Vec<ScopeChip> {
+    let project = session.project();
+    if !project.is_multi() {
+        return Vec::new();
+    }
+    let sync = session.sync();
+    let link = |r: Option<&str>| {
+        let mut q = Vec::new();
+        if let Some(s) = section {
+            q.push(format!("s={s}"));
+        }
+        if let Some(r) = r {
+            q.push(format!("r={}", url_encode(r)));
+        }
+        if q.is_empty() {
+            "/".to_string()
+        } else {
+            format!("/?{}", q.join("&"))
+        }
+    };
+    let mut chips = vec![ScopeChip {
+        label: "all remotes".into(),
+        href: link(None),
+        class: if current.is_none() { "on" } else { "" },
+    }];
+    for r in &project.remotes {
+        let mark = sync
+            .iter()
+            .find(|s| s.remote == r.name)
+            .map_or_else(String::new, |s| sync_glyph(s.state));
+        chips.push(ScopeChip {
+            label: format!("{}{mark}", r.name),
+            href: link(Some(&r.name)),
+            class: if current == Some(r.name.as_str()) {
+                "on"
+            } else {
+                ""
+            },
+        });
+    }
+    chips
+}
+
+/// ` ✔`, ` ↑2`, ` ↓1`, ` ⇄` or ` ∅`: where a remote stands against the branch.
+pub fn sync_glyph(s: gitkraft_hub::project::SyncState) -> String {
+    use gitkraft_hub::project::SyncState::{Ahead, Behind, Diverged, InSync, Missing};
+    match s {
+        InSync => " ✔".into(),
+        Ahead(n) => format!(" ↑{n}"),
+        Behind(n) => format!(" ↓{n}"),
+        Diverged { .. } => " ⇄".into(),
+        Missing => " ∅".into(),
+    }
 }
 
 #[page("/")]
@@ -276,12 +390,30 @@ async fn dashboard(cx: &Cx) -> Result<impl View> {
         .and_then(|s| s.parse::<usize>().ok())
         .filter(|i| dash.sections.get(*i).is_some_and(|s| !s.hidden))
         .or(first);
+    // `?r=codeberg` shows one forge; an unknown name shows everything
+    let remote = params
+        .r
+        .as_deref()
+        .filter(|r| session.project().select(r).is_ok_and(|v| v.len() == 1))
+        .map(str::to_string);
+    let scope = match remote
+        .as_deref()
+        .and_then(|r| session.project().select(r).ok())
+    {
+        Some(mut one) if one.len() == 1 => gitkraft_hub::project::Scope::Only(one.remove(0)),
+        _ => gitkraft_hub::project::Scope::All,
+    };
+    let multi = session.project().is_multi();
+    let chips = scope_chips(session, index, remote.as_deref());
     let (name, rows, errors) = match index {
         Some(i) => {
-            let data = session.section_data(i).await;
+            let data = session.section_data(i).await.map(|mut d| {
+                d.retain_scope(&scope);
+                d
+            });
             (
                 dash.sections[i].name.clone(),
-                data.as_ref().map(rows_of).unwrap_or_default(),
+                data.as_ref().map(|d| rows_in(d, multi)).unwrap_or_default(),
                 data.map(|d| d.errors().to_vec()).unwrap_or_default(),
             )
         }
@@ -296,6 +428,9 @@ async fn dashboard(cx: &Cx) -> Result<impl View> {
     Ok(view! {
         shell(title: format!("{name} · GitKraft"), nav: nav(session, &active), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
             <h1>(name.clone())</h1>
+            <div class="scope">
+                for c in chips { <a class=(c.class) href=(c.href)>(c.label)</a> }
+            </div>
             for e in errors { <div class="note err">(e)</div> }
             if empty { <p class="dim">"Nothing here."</p> }
             <table>

@@ -19,6 +19,7 @@ pub mod keys;
 pub mod labels;
 pub mod markdown;
 pub mod poller;
+pub mod project;
 pub mod pulse;
 pub mod review_ai;
 

@@ -157,6 +157,7 @@ fn top_bar<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
             tab("SSH keys", HubView::Keys),
             tab("Discussions & wiki", HubView::Community),
             Space::new().width(Length::Fill),
+            scope_button(hub, c),
             button(text("Commands ⌘P").size(12).color(c.text_secondary))
                 .on_press(HubMessage::PaletteToggle)
                 .style(theme::ghost_button)
@@ -173,6 +174,19 @@ fn top_bar<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
     .width(Length::Fill)
     .style(theme::header_style)
     .into()
+}
+
+/// The remote switcher: nothing for a single-forge project, else `⎇ all remotes  origin ✔ …`.
+fn scope_button<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
+    let label = hub.scope_text();
+    if label.is_empty() {
+        return Space::new().into();
+    }
+    button(text(label).size(12).color(c.text_secondary))
+        .on_press(HubMessage::CycleScope)
+        .style(theme::ghost_button)
+        .padding([4, 10])
+        .into()
 }
 
 fn tabs_bar<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
@@ -281,7 +295,18 @@ fn run_color(c: &ThemeColors, s: Status) -> Color {
 }
 
 /// `(mark, colour, title, meta)` of every row of a section.
-fn rows_of(data: &SectionData, c: &ThemeColors) -> Vec<(&'static str, Color, String, String)> {
+fn rows_of(
+    data: &SectionData,
+    c: &ThemeColors,
+    multi: bool,
+) -> Vec<(&'static str, Color, String, String)> {
+    let forge = |repo: &gitkraft_platforms::RepoId| {
+        if multi {
+            format!(" @{}", gitkraft_hub::project::short_host(&repo.host))
+        } else {
+            String::new()
+        }
+    };
     match data {
         SectionData::Prs(r) => r
             .items
@@ -298,8 +323,9 @@ fn rows_of(data: &SectionData, c: &ThemeColors) -> Vec<(&'static str, Color, Str
                     color,
                     format!("#{} {}", p.number, p.title),
                     format!(
-                        "{} · {} · {}",
+                        "{}{} · {} · {}",
                         p.repo.full_name(),
+                        forge(&p.repo),
                         p.author.login,
                         age(p.updated_at)
                     ),
@@ -315,8 +341,9 @@ fn rows_of(data: &SectionData, c: &ThemeColors) -> Vec<(&'static str, Color, Str
                     state_color(c, i.state),
                     format!("#{} {}", i.number, i.title),
                     format!(
-                        "{} · {} · {}",
+                        "{}{} · {} · {}",
                         i.repo.full_name(),
+                        forge(&i.repo),
                         i.author.login,
                         age(i.updated_at)
                     ),
@@ -331,7 +358,34 @@ fn rows_of(data: &SectionData, c: &ThemeColors) -> Vec<(&'static str, Color, Str
                     x.status.glyph(false),
                     run_color(c, x.status),
                     format!("{} #{} · {} · {}", x.name, x.number, x.branch, x.title),
-                    format!("{} · {}", x.actor, age(x.created_at)),
+                    {
+                        // the same commit on the other forges: `≡ codeberg ✘`
+                        let mirrors: String = if multi {
+                            gitkraft_hub::project::mirror_siblings(&r.items, x)
+                                .into_iter()
+                                .map(|o| {
+                                    format!(
+                                        " {} {}",
+                                        gitkraft_hub::project::short_host(&o.repo.host),
+                                        o.status.glyph(false)
+                                    )
+                                })
+                                .collect()
+                        } else {
+                            String::new()
+                        };
+                        let head = if multi {
+                            format!("{} · ", gitkraft_hub::project::short_host(&x.repo.host))
+                        } else {
+                            String::new()
+                        };
+                        let mirrors = if mirrors.is_empty() {
+                            mirrors
+                        } else {
+                            format!(" · ≡{mirrors}")
+                        };
+                        format!("{head}{} · {}{mirrors}", x.actor, age(x.created_at))
+                    },
                 )
             })
             .collect(),
@@ -368,7 +422,7 @@ fn dashboard<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
     let list: El<'a> = match (hub.active_index().map(|i| &hub.slots[i]), hub.active_data()) {
         (_, Some(data)) if !data.is_empty() => {
             let mut col = column![].spacing(2);
-            for (i, (mark, color, title, meta)) in rows_of(data, c).into_iter().enumerate() {
+            for (i, (mark, color, title, meta)) in rows_of(data, c, hub.is_multi()).into_iter().enumerate() {
                 let selected = hub.row == Some(i);
                 let sel = c.selection;
                 let line = container(
@@ -1775,7 +1829,7 @@ mod tests {
             items: vec![pr(ItemState::Open, true), pr(ItemState::Merged, false)],
             errors: vec![],
         });
-        let rows = rows_of(&data, &c);
+        let rows = rows_of(&data, &c, false);
         assert_eq!((rows[0].0, rows[1].0), ("◌", "●"));
         assert_eq!(rows[0].2, "#1 t");
         let runs = SectionData::Runs(SectionResult {
@@ -1786,7 +1840,34 @@ mod tests {
             }],
             errors: vec![],
         });
-        assert_eq!(rows_of(&runs, &c)[0].0, "✘");
+        assert_eq!(rows_of(&runs, &c, false)[0].0, "✘");
+    }
+
+    #[test]
+    fn rows_name_the_forge_and_the_mirrored_run_in_a_multi_forge_project() {
+        let c = crate::theme::ThemeColors::from_theme(&iced::Theme::Dark);
+        let run = |host: &str, status| gitkraft_ci::Run {
+            repo: gitkraft_platforms::RepoId::new(host, "o", "r"),
+            name: "CI".into(),
+            sha: "abc".into(),
+            status,
+            ..Default::default()
+        };
+        let runs = SectionData::Runs(SectionResult {
+            items: vec![
+                run("github.com", Status::Success),
+                run("codeberg.org", Status::Failed),
+            ],
+            errors: vec![],
+        });
+        let multi = rows_of(&runs, &c, true);
+        assert!(
+            multi[0].3.contains("github") && multi[0].3.contains("≡ codeberg"),
+            "{}",
+            multi[0].3
+        );
+        let single = rows_of(&runs, &c, false);
+        assert!(!single[0].3.contains('≡') && !single[0].3.contains("github"));
     }
 
     #[test]

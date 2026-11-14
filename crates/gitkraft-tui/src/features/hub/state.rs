@@ -93,6 +93,8 @@ pub enum Target {
     Divider,
     /// The notification bell.
     Bell,
+    /// The remote switcher in the title bar.
+    Scope,
     /// A PR detail tab.
     DetailTab(DetailTab),
     /// A job row in a run's detail.
@@ -285,6 +287,19 @@ pub struct KeysState {
     pub loading: bool,
 }
 
+/// A one-glyph reading of a remote's state: ✔ in sync, ↑n it lacks commits, ↓n it has more,
+/// ⇄ diverged, ∅ no such branch.
+pub fn sync_mark(s: gitkraft_hub::project::SyncState) -> String {
+    use gitkraft_hub::project::SyncState::{Ahead, Behind, Diverged, InSync, Missing};
+    match s {
+        InSync => " ✔".into(),
+        Ahead(n) => format!(" ↑{n}"),
+        Behind(n) => format!(" ↓{n}"),
+        Diverged { .. } => " ⇄".into(),
+        Missing => " ∅".into(),
+    }
+}
+
 /// A repo to watch, with its local checkout when there is one.
 #[derive(Debug, Clone)]
 pub struct Watched {
@@ -413,6 +428,12 @@ pub struct HubState {
     pub accounts: usize,
     /// Watched projects.
     pub watched: Vec<Watched>,
+    /// The remotes of the checkout the hub was opened from (GitHub, Codeberg, Gitea, …).
+    pub project: gitkraft_hub::project::Project,
+    /// Which of them the lists show.
+    pub scope: gitkraft_hub::project::Scope,
+    /// Where each remote stands against the checked-out branch (as of the last fetch).
+    pub sync: Vec<gitkraft_hub::project::RemoteSync>,
     /// Shared poller state (bell, inbox).
     pub engine: Arc<tokio::sync::Mutex<Engine>>,
     /// Parsed `notifications.toml`, refreshed every few seconds.
@@ -479,6 +500,9 @@ impl HubState {
             ready: false,
             accounts: 0,
             watched: Vec::new(),
+            project: gitkraft_hub::project::Project::default(),
+            scope: gitkraft_hub::project::Scope::All,
+            sync: Vec::new(),
             engine: Arc::new(tokio::sync::Mutex::new(Engine::default())),
             notify_config: NotifyConfig::default(),
             config_loaded: Instant::now(),
@@ -532,8 +556,57 @@ impl HubState {
             state.set_notice("could not start the network runtime".into(), false);
             return state;
         }
+        if let Some((path, _)) = repos.first() {
+            state.project = gitkraft_hub::project::Project::of_dir(path);
+            state.sync = gitkraft_hub::project::sync_status(path, &state.project);
+        }
         state.spawn_setup(repos);
         state
+    }
+
+    /// More than one forge is involved, so rows say which one they come from.
+    pub fn is_multi(&self) -> bool {
+        self.project.is_multi()
+    }
+
+    /// Shows the next remote's items (all remotes → each one → all) and reloads the lists.
+    pub fn cycle_scope(&mut self) {
+        if !self.project.is_multi() {
+            self.set_notice(
+                "this project has a single forge remote: nothing to switch".into(),
+                false,
+            );
+            return;
+        }
+        self.scope = self.scope.next(&self.project);
+        let text = format!("showing {}", self.scope.label(&self.project));
+        self.set_notice(text, true);
+        for slot in &mut self.slots {
+            if let Some(data) = slot.data.as_mut() {
+                data.retain_scope(&self.scope);
+            }
+        }
+        self.row = 0;
+        self.load_all();
+    }
+
+    /// `all remotes · origin ✔ codeberg ↑1`: the scope and where each remote stands.
+    pub fn scope_text(&self) -> String {
+        if self.project.remotes.is_empty() {
+            return String::new();
+        }
+        let mut out = format!("⎇ {}", self.scope.label(&self.project));
+        if self.project.is_multi() {
+            for r in &self.project.remotes {
+                let mark = self
+                    .sync
+                    .iter()
+                    .find(|s| s.remote == r.name)
+                    .map_or(String::new(), |s| sync_mark(s.state));
+                out.push_str(&format!("  {}{mark}", r.name));
+            }
+        }
+        out
     }
 
     // ── Setup ────────────────────────────────────────────────────────────────
@@ -2287,6 +2360,8 @@ impl HubState {
                     };
                     self.set_notice(text, false);
                 }
+                let mut data = data;
+                data.retain_scope(&self.scope);
                 let was_active = self.active_index() == Some(idx);
                 self.slots[idx].data = Some(data);
                 if was_active {
@@ -2751,6 +2826,75 @@ mod tests {
         s.select_section(2);
         s.ask(Action::Merge(MergeMethod::Merge));
         assert!(s.confirm.is_none());
+    }
+
+    fn two_forge_project() -> gitkraft_hub::project::Project {
+        gitkraft_hub::project::Project::from_remotes(&[
+            ("origin".to_string(), "git@github.com:o/r.git".to_string()),
+            (
+                "codeberg".to_string(),
+                "ssh://git@codeberg.org/o/r.git".to_string(),
+            ),
+        ])
+    }
+
+    #[test]
+    fn the_scope_key_cycles_the_forges_and_drops_the_others_rows_at_once() {
+        let mut s = fixtures::state();
+        assert_eq!(s.scope_text(), "", "no checkout, no remote bar");
+        s.cycle_scope();
+        assert!(
+            s.notice.is_some(),
+            "a single forge says there is nothing to switch"
+        );
+        s.project = two_forge_project();
+        s.sync = vec![gitkraft_hub::project::RemoteSync {
+            remote: "codeberg".into(),
+            repo: RepoId::new("codeberg.org", "o", "r"),
+            state: gitkraft_hub::project::SyncState::Ahead(2),
+        }];
+        assert_eq!(s.scope_text(), "⎇ all remotes  origin  codeberg ↑2");
+        let all = s.row_count();
+        assert!(all > 0);
+        s.cycle_scope(); // → origin (github): the fixture rows are github, they stay
+        assert_eq!(s.scope_text(), "⎇ origin (github.com)  origin  codeberg ↑2");
+        assert_eq!(s.row_count(), all);
+        s.cycle_scope(); // → codeberg: nothing of it is loaded
+        assert_eq!(s.row_count(), 0);
+        s.cycle_scope();
+        assert_eq!(s.scope, gitkraft_hub::project::Scope::All);
+    }
+
+    #[test]
+    fn rows_arriving_after_a_scope_change_are_filtered_too() {
+        let mut s = fixtures::state();
+        s.project = two_forge_project();
+        s.scope = gitkraft_hub::project::Scope::Only(RepoId::new("codeberg.org", "o", "r"));
+        s.slots[0].generation = 1;
+        s.apply(Msg::Section {
+            idx: 0,
+            generation: 1,
+            data: SectionData::Prs(SectionResult {
+                items: vec![fixtures::pr(1, "github pr")],
+                errors: vec![],
+            }),
+        });
+        assert_eq!(s.slots[0].data.as_ref().map(SectionData::len), Some(0));
+    }
+
+    #[test]
+    fn sync_marks_are_one_glyph_each() {
+        use gitkraft_hub::project::SyncState::*;
+        assert_eq!(sync_mark(InSync), " ✔");
+        assert_eq!(sync_mark(Behind(3)), " ↓3");
+        assert_eq!(
+            sync_mark(Diverged {
+                ahead: 1,
+                behind: 1
+            }),
+            " ⇄"
+        );
+        assert_eq!(sync_mark(Missing), " ∅");
     }
 
     #[test]

@@ -54,6 +54,8 @@ fn read_only_servers_have_no_write_tools_and_write_servers_have_all() {
         "my_pull_requests",
         "get_pull_request",
         "ci_runs",
+        "remotes",
+        "ci_runs_all_remotes",
         "ci_job_log",
         "pulse",
         "discussions",
@@ -561,4 +563,84 @@ async fn a_discussion_reply_a_card_move_and_a_wiki_save_reach_the_platform_or_sa
         }))
         .await;
     assert!(missing.is_err());
+}
+
+fn two_forges() -> (GitkraftServer, FakeClient) {
+    let fake = FakeClient::new();
+    let mut gh = Account::new(PlatformKind::GitHub, "github.com").with_token(Secret::new("t"));
+    gh.me = Some("me".into());
+    let mut cb = Account::new(PlatformKind::Gitea, "codeberg.org").with_token(Secret::new("t"));
+    cb.me = Some("me".into());
+    let hub = Hub::new(vec![gh, cb], &DynClient::new(fake.clone()));
+    let project = gitkraft_hub::project::Project::from_remotes(&[
+        ("origin".to_string(), "git@github.com:me/p.git".to_string()),
+        (
+            "codeberg".to_string(),
+            "ssh://git@codeberg.org/me/p.git".to_string(),
+        ),
+        ("lan".to_string(), "gitea@gitea.lan:me/p.git".to_string()),
+    ]);
+    let s = GitkraftServer::new(hub, project.primary().cloned(), Policy::default())
+        .with_project(std::env::temp_dir(), project);
+    (s, fake)
+}
+
+#[tokio::test]
+async fn the_remotes_tool_lists_every_forge_and_a_remote_name_picks_one() {
+    let (s, fake) = two_forges();
+    let v = json(&s.remotes().await.expect("remotes"));
+    let names: Vec<&str> = v["remotes"]
+        .as_array()
+        .expect("array")
+        .iter()
+        .filter_map(|r| r["remote"].as_str())
+        .collect();
+    assert_eq!(names, ["origin", "codeberg", "lan"]);
+    assert_eq!(v["remotes"][2]["account"], false);
+    let body = r#"{"workflow_runs":[]}"#;
+    fake.push_json("https://codeberg.org/api/v1/repos/me/p/actions/runs", body);
+    s.ci_runs(Parameters(RunsArgs {
+        repo: Some("codeberg".into()),
+        ..RunsArgs::default()
+    }))
+    .await
+    .expect("runs");
+    assert!(
+        fake.requests()
+            .iter()
+            .all(|r| r.url.contains("codeberg.org"))
+    );
+}
+
+#[tokio::test]
+async fn runs_of_all_remotes_come_folded_with_the_forges_that_could_not_be_asked() {
+    let (s, fake) = two_forges();
+    let run = |id: u32, c: &str| {
+        format!(
+            r#"{{"workflow_runs":[{{"id":{id},"name":"CI","status":"completed","conclusion":"{c}","head_branch":"main","head_sha":"abc","run_number":1,"event":"push","created_at":"2026-05-01T10:00:00Z","html_url":"u","actor":{{"login":"a"}}}}]}}"#
+        )
+    };
+    fake.push_json(
+        "https://api.github.com/repos/me/p/actions/runs",
+        &run(1, "success"),
+    );
+    fake.push_json(
+        "https://codeberg.org/api/v1/repos/me/p/actions/runs",
+        &run(2, "failure"),
+    );
+    let v = json(
+        &s.ci_runs_all_remotes(Parameters(RunsArgs::default()))
+            .await
+            .expect("runs"),
+    );
+    assert_eq!(v["groups"].as_array().map(Vec::len), Some(1));
+    assert_eq!(v["groups"][0]["status"], "Failed");
+    assert_eq!(v["groups"][0]["agree"], false);
+    assert!(
+        v["errors"][0]
+            .as_str()
+            .unwrap_or_default()
+            .contains("gitea.lan"),
+        "{v}"
+    );
 }

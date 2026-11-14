@@ -389,6 +389,7 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
                 hub.focus = Focus::Detail;
             }
         }
+        KeyCode::Char('o') => hub.cycle_scope(),
         KeyCode::Char('v') => cycle_tab(hub),
         KeyCode::Char('r') => {
             if let Some(i) = hub.active_index() {
@@ -589,6 +590,7 @@ fn on_press(hub: &mut HubState, x: u16, y: u16) {
             }
         }
         Target::Bell => hub.toggle_notifications(false),
+        Target::Scope => hub.cycle_scope(),
         Target::DetailTab(t) => {
             hub.detail.tab = Some(t);
             hub.detail.scroll = 0;

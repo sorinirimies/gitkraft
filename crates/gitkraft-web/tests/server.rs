@@ -1257,3 +1257,79 @@ async fn a_wiki_page_opens_in_an_editor_and_saving_it_patches_the_page_new_pages
         gitkraft_platforms::http::Method::Post
     );
 }
+
+#[tokio::test]
+async fn a_project_on_two_forges_gets_a_remote_switcher_and_rows_name_their_forge() {
+    let root = tempfile::tempdir().expect("tmp");
+    let mine = root.path().join("r");
+    std::fs::create_dir_all(&mine).expect("mk");
+    git(&mine, &["init", "-q"]);
+    git(
+        &mine,
+        &["remote", "add", "origin", "git@github.com:o/r.git"],
+    );
+    git(
+        &mine,
+        &[
+            "remote",
+            "add",
+            "codeberg",
+            "ssh://git@codeberg.org/o/r.git",
+        ],
+    );
+    let h = start_with(vec![mine.clone()]).await;
+    h.fake
+        .push_json("https://api.github.com/repos/o/r/pulls", PULLS);
+    let all = get(h.addr, "/").await;
+    assert_eq!(all.status, 200);
+    for needle in [
+        "class=\"scope\"",
+        "all remotes",
+        "href=\"/?s=0&amp;r=origin\"",
+        "href=\"/?s=0&amp;r=codeberg\"",
+        "o/r @github",
+    ] {
+        assert!(
+            all.body.contains(needle),
+            "missing {needle:?} in {}",
+            all.body
+        );
+    }
+    // only the other forge: the GitHub rows are filtered out
+    h.fake
+        .push_json("https://api.github.com/repos/o/r/pulls", PULLS);
+    let cb = get(h.addr, "/?s=0&r=codeberg").await;
+    assert!(!cb.body.contains("Second"), "{}", cb.body);
+    assert!(cb.body.contains("Nothing here."), "{}", cb.body);
+    assert!(
+        cb.body.contains("class=\"on\""),
+        "the shown remote is marked: {}",
+        cb.body
+    );
+    // an unknown remote shows everything
+    h.fake
+        .push_json("https://api.github.com/repos/o/r/pulls", PULLS);
+    let odd = get(h.addr, "/?r=nope").await;
+    assert!(odd.body.contains("Second"));
+}
+
+#[tokio::test]
+async fn a_single_forge_project_has_no_switcher() {
+    let root = tempfile::tempdir().expect("tmp");
+    let mine = root.path().join("r");
+    std::fs::create_dir_all(&mine).expect("mk");
+    git(&mine, &["init", "-q"]);
+    git(
+        &mine,
+        &["remote", "add", "origin", "git@github.com:o/r.git"],
+    );
+    let h = start_with(vec![mine]).await;
+    h.fake
+        .push_json("https://api.github.com/repos/o/r/pulls", PULLS);
+    let page = get(h.addr, "/").await;
+    assert!(
+        !page.body.contains("all remotes") && !page.body.contains("@github"),
+        "{}",
+        page.body
+    );
+}

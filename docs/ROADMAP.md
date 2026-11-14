@@ -24,6 +24,13 @@ editing wiki pages (GitLab / Gitea REST), replying inside a discussion thread. S
 - Reorder cards inside a column; create cards.
 - Clickable items in the calendar day panel.
 
+## Several remotes
+
+Done: `Project` (the remotes of a checkout), `Scope`, branch state per remote, mirrored CI runs
+folded by commit (`gitkraft-hub/src/project.rs`), shown in the TUI, GUI, web, CLI and MCP.
+Open: push to every remote in one go (`push --all-remotes`, with a per-remote result), PR/issue
+mirroring across forges, and a per-remote default branch.
+
 ## MCP
 
 - Resources: a PR, a CI run and a log as readable resources (prompts are done; resources mostly

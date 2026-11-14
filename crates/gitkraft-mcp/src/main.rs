@@ -39,7 +39,10 @@ async fn run(cfg: Config) -> anyhow::Result<()> {
         ),
         None => gitkraft_hub::accounts::repo_of_dir(&cwd),
     };
+    let project = gitkraft_hub::project::Project::of_dir(&cwd);
+    let default_repo = default_repo.or_else(|| project.primary().cloned());
     let extra: Vec<String> = default_repo.iter().map(RepoId::key).collect();
+    let dir = cwd.clone();
     let accounts =
         tokio::task::spawn_blocking(move || gitkraft_hub::accounts::discover_for(&cwd, &extra))
             .await?
@@ -65,6 +68,7 @@ async fn run(cfg: Config) -> anyhow::Result<()> {
     )));
     let hub = Hub::new(accounts, &client);
     let service = GitkraftServer::new(hub, default_repo, cfg.policy)
+        .with_project(dir, project)
         .serve(stdio())
         .await
         .map_err(|e| anyhow::anyhow!("MCP handshake failed: {e}"))?;

@@ -49,6 +49,7 @@ serves the same on localhost.
 | | |
 |---|---|
 | Dashboard | sections are saved queries (`dashboard.toml`): "Review requested", "My PRs", issues, CI of a repo, the inbox |
+| Several remotes | a checkout with GitHub, Codeberg, a Gitea and a GitLab remote is one project: the hub header shows `⎇ all remotes  origin ✔  codeberg ↑1  gitea ⇄` (✔ in sync, ↑ the remote lacks commits, ↓ it has more, ⇄ diverged, ∅ no such branch, from the last fetch). `o` in the TUI, the button in the GUI and the chips on the web page switch between all forges and one; rows say which forge they come from (`repo@codeberg`), and a CI run shows how the same commit fared on the other forges (`≡ codeberg ✘`). CLI: `gitkraft-tui remotes`, `-R codeberg` (a remote name works where a repository does), `runs --all-remotes`, `prs --all-remotes`; MCP: `remotes`, `ci_runs_all_remotes`, and a remote name as `repo`. Writes always name one remote |
 | Pull requests | description (Markdown), reviews, checks, diff, comments; approve, request changes, comment, merge, close |
 | Issues | list, comment, close / reopen |
 | CI | runs, jobs, steps, timeline, live log with errors extracted; re-run failed / all, cancel (GitHub / Gitea Actions, GitLab CI) |

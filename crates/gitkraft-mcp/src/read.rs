@@ -431,6 +431,50 @@ impl GitkraftServer {
     }
 
     #[tool(
+        description = "The remotes of the checkout the server runs in (GitHub, Codeberg, Gitea, GitLab…): which forge, whether an account is connected, and whether each has the checked-out branch (from the last fetch). Pass a remote's name as `repo` to any tool to use that forge.",
+        annotations(read_only_hint = true)
+    )]
+    pub(crate) async fn remotes(&self) -> ToolResult {
+        let sync = self
+            .dir
+            .as_deref()
+            .map(|d| gitkraft_hub::project::sync_status(d, &self.project))
+            .unwrap_or_default();
+        out(&json!({
+            "remotes": gitkraft_hub::project::remote_rows(&self.hub, &self.project, &sync),
+            "same_repository": self.project.aliases.iter().map(|(n, r)| json!({"remote": n, "repo": r.key()})).collect::<Vec<_>>(),
+        }))
+    }
+
+    #[tool(
+        description = "CI runs of every remote of the checkout, the same commit built on several forges folded into one entry with the worst status (`agree` is false when they differ).",
+        annotations(read_only_hint = true)
+    )]
+    pub(crate) async fn ci_runs_all_remotes(
+        &self,
+        Parameters(a): Parameters<RunsArgs>,
+    ) -> ToolResult {
+        let q = RunQuery {
+            branch: a.branch,
+            status: bad(a.status.as_deref().map(args::status).transpose())?,
+            page: 1,
+            per_page: clamp(a.limit, 20),
+        };
+        let (groups, errors) =
+            gitkraft_hub::project::mirror_runs(&self.hub, &self.project, &q).await;
+        let groups: Vec<_> = groups
+            .iter()
+            .map(|g| {
+                json!({
+                    "sha": g.sha, "workflow": g.name, "status": g.status(),
+                    "agree": g.agree(), "runs": g.runs,
+                })
+            })
+            .collect();
+        out(&json!({"groups": groups, "errors": errors}))
+    }
+
+    #[tool(
         description = "One CI run with its jobs (ids, status, stage, runner). Use ci_job_log for the output of a job.",
         annotations(read_only_hint = true)
     )]

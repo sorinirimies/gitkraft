@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use anyhow::{Result, anyhow, bail};
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use gitkraft_ci::{RerunScope, RunQuery};
+use gitkraft_hub::project::{self, Project};
 use gitkraft_hub::{Hub, SectionData, args};
 use gitkraft_platforms::model::{ItemState, ListQuery, MergeOptions, Page, StateFilter};
 use gitkraft_platforms::{DynClient, ItemKind, RepoId};
@@ -42,6 +43,10 @@ pub struct Common {
     /// Print JSON instead of text.
     #[arg(long, global = true)]
     pub json: bool,
+    /// Every remote of the checkout (GitHub, Codeberg, Gitea, …) at once, for `prs`, `issues` and
+    /// `runs`. `-R` also takes a remote's name, like `-R codeberg`.
+    #[arg(long, global = true)]
+    pub all_remotes: bool,
 }
 
 /// The commands.
@@ -108,6 +113,8 @@ pub enum Cmd {
 pub enum Forge {
     /// The connected accounts and what each supports.
     Accounts(Common),
+    /// The remotes of this checkout: forge, account and whether each has your branch.
+    Remotes(Common),
     /// Notifications of every account.
     Inbox(Common),
     /// Pull requests: yours, or those of a repository with `-R`.
@@ -390,7 +397,7 @@ impl Forge {
 
     fn common(&self) -> &Common {
         match self {
-            Self::Accounts(c) | Self::Inbox(c) | Self::Boards(c) => c,
+            Self::Accounts(c) | Self::Remotes(c) | Self::Inbox(c) | Self::Boards(c) => c,
             Self::Prs(a) | Self::Issues(a) => &a.common,
             Self::Show(a) => &a.common,
             Self::Runs(a) => &a.common,
@@ -417,6 +424,8 @@ pub struct Session {
     hub: Hub<DynClient>,
     default_repo: Option<RepoId>,
     client: DynClient,
+    project: Project,
+    dir: Option<PathBuf>,
 }
 
 fn json_of<T: Serialize>(v: &T) -> Result<String> {
@@ -449,7 +458,17 @@ impl Session {
             hub,
             default_repo,
             client,
+            project: Project::default(),
+            dir: None,
         }
+    }
+
+    /// Tells the session which checkout it runs in and the remotes of that checkout.
+    #[must_use]
+    pub fn with_project(mut self, dir: PathBuf, project: Project) -> Self {
+        self.dir = Some(dir);
+        self.project = project;
+        self
     }
 
     /// Finds the accounts the way the TUI does (env, keyring, `gh`/`glab`, git credentials).
@@ -461,7 +480,10 @@ impl Session {
             Some(r) => Some(r),
             None => gitkraft_hub::accounts::repo_of_dir(&cwd),
         };
+        let project = Project::of_dir(&cwd);
+        let default_repo = default_repo.or_else(|| project.primary().cloned());
         let extra: Vec<String> = default_repo.iter().map(RepoId::key).collect();
+        let dir = cwd.clone();
         let accounts =
             tokio::task::spawn_blocking(move || gitkraft_hub::accounts::discover_for(&cwd, &extra))
                 .await?
@@ -469,10 +491,18 @@ impl Session {
         let client = DynClient::new(std::sync::Arc::new(gitkraft_platforms::CachedClient::new(
             gitkraft_platforms::ReqwestClient::new().map_err(|e| anyhow!(e.to_string()))?,
         )));
-        Ok(Self::new(Hub::new(accounts, &client), default_repo, client))
+        Ok(Self::new(Hub::new(accounts, &client), default_repo, client).with_project(dir, project))
     }
 
     fn repo(&self, given: Option<&str>) -> Result<RepoId> {
+        // a remote's name (`-R codeberg`) beats a repository name
+        if let Some(name) = given
+            && !name.contains('/')
+            && let Ok(mut one) = self.project.select(name)
+            && one.len() == 1
+        {
+            return Ok(one.remove(0));
+        }
         args::resolve_repo(
             given,
             self.default_repo.as_ref(),
@@ -507,10 +537,12 @@ impl Session {
         let repo_flag = cmd.common().repo.as_deref();
         match cmd {
             Forge::Accounts(_) => self.accounts(json).await,
+            Forge::Remotes(_) => self.remotes(json),
             Forge::Inbox(_) => self.inbox(json).await,
             Forge::Prs(a) => self.items(a, true, json).await,
             Forge::Issues(a) => self.items(a, false, json).await,
             Forge::Show(a) => self.show(a, json).await,
+            Forge::Runs(a) if a.common.all_remotes => self.runs_everywhere(a, json).await,
             Forge::Runs(a) => {
                 let repo = self.repo(repo_flag)?;
                 let q = RunQuery {
@@ -932,7 +964,128 @@ impl Session {
         Ok(o)
     }
 
+    fn remotes(&self, json: bool) -> Result<String> {
+        if self.project.remotes.is_empty() {
+            bail!("this is not a checkout with a known forge remote");
+        }
+        let sync = self
+            .dir
+            .as_deref()
+            .map(|d| project::sync_status(d, &self.project))
+            .unwrap_or_default();
+        let rows = project::remote_rows(&self.hub, &self.project, &sync);
+        if json {
+            return json_of(&rows);
+        }
+        let mut o = String::new();
+        for r in &rows {
+            let _ = writeln!(
+                o,
+                "{:<10} {:<34} {:<16} {}",
+                r.remote,
+                r.repo,
+                r.branch.as_deref().unwrap_or("-"),
+                if r.account {
+                    "account ok"
+                } else {
+                    "no account: `gitkraft-tui login HOST`"
+                }
+            );
+        }
+        for (name, repo) in &self.project.aliases {
+            let _ = writeln!(o, "{name:<10} same repository as {}", repo.key());
+        }
+        o.push_str("(branch state is from the last fetch)\n");
+        Ok(o)
+    }
+
+    /// Runs of every remote, the same commit on several forges folded into one line.
+    async fn runs_everywhere(&self, a: &RunsArgs, json: bool) -> Result<String> {
+        let q = RunQuery {
+            branch: a.branch.clone(),
+            status: a
+                .status
+                .as_deref()
+                .map(args::status)
+                .transpose()
+                .map_err(|e| anyhow!(e))?,
+            page: 1,
+            per_page: a.limit.clamp(1, 100),
+        };
+        let (groups, failed) = project::mirror_runs(&self.hub, &self.project, &q).await;
+        if json {
+            let g: Vec<_> = groups
+                .iter()
+                .map(|g| {
+                    serde_json::json!({
+                        "sha": g.sha, "name": g.name, "status": format!("{:?}", g.status()),
+                        "agree": g.agree(), "runs": g.runs,
+                    })
+                })
+                .collect();
+            return json_of(&serde_json::json!({"groups": g, "errors": failed}));
+        }
+        let mut o = String::new();
+        for g in &groups {
+            let chips: Vec<String> = g
+                .runs
+                .iter()
+                .map(|r| format!("{} {:?}", r.repo.host, r.status))
+                .collect();
+            let _ = writeln!(
+                o,
+                "{:<8} {:<16} {}{}",
+                g.sha.chars().take(7).collect::<String>(),
+                g.name,
+                chips.join("  "),
+                if g.agree() {
+                    ""
+                } else {
+                    "   ! forges disagree"
+                }
+            );
+        }
+        errors(&mut o, &failed);
+        Ok(o)
+    }
+
     async fn items(&self, a: &ListArgs, prs: bool, json: bool) -> Result<String> {
+        if a.common.all_remotes {
+            let mut out = String::new();
+            let mut all = serde_json::Map::new();
+            for repo in self.project.repos() {
+                let one = ListArgs {
+                    common: Common {
+                        repo: Some(repo.key()),
+                        json,
+                        all_remotes: false,
+                    },
+                    who: a.who.clone(),
+                    state: a.state.clone(),
+                    label: a.label.clone(),
+                    limit: a.limit,
+                };
+                match Box::pin(self.items(&one, prs, json)).await {
+                    Ok(text) if json => {
+                        all.insert(
+                            repo.key(),
+                            serde_json::from_str(&text).unwrap_or(serde_json::Value::Null),
+                        );
+                    }
+                    Ok(text) => {
+                        let _ = writeln!(out, "── {}", repo.key());
+                        out.push_str(&text);
+                    }
+                    Err(e) if json => {
+                        all.insert(repo.key(), serde_json::json!({"error": e.to_string()}));
+                    }
+                    Err(e) => {
+                        let _ = writeln!(out, "── {}\n! {e}", repo.key());
+                    }
+                }
+            }
+            return if json { json_of(&all) } else { Ok(out) };
+        }
         let state = args::state_filter(Some(&a.state)).map_err(|e| anyhow!(e))?;
         if a.common.repo.is_some() {
             let repo = self.repo(a.common.repo.as_deref())?;
@@ -1230,6 +1383,110 @@ mod tests {
         let j = s2.run(&forge(&["runs", "--json"])).await.expect("json");
         let v: serde_json::Value = serde_json::from_str(&j).expect("valid json");
         assert_eq!(v[0]["id"], 5);
+    }
+
+    /// GitHub and Codeberg both mirror `me/p`.
+    fn two_forges() -> (Session, FakeClient) {
+        let fake = FakeClient::new();
+        let mut gh = Account::new(PlatformKind::GitHub, "github.com").with_token(Secret::new("t"));
+        gh.me = Some("me".into());
+        let mut cb = Account::new(PlatformKind::Gitea, "codeberg.org").with_token(Secret::new("t"));
+        cb.me = Some("me".into());
+        let hub = Hub::new(vec![gh, cb], &DynClient::new(fake.clone()));
+        let project = Project::from_remotes(&[
+            ("origin".to_string(), "git@github.com:me/p.git".to_string()),
+            (
+                "codeberg".to_string(),
+                "ssh://git@codeberg.org/me/p.git".to_string(),
+            ),
+            ("lan".to_string(), "gitea@gitea.lan:me/p.git".to_string()),
+        ]);
+        let s = Session::new(
+            hub,
+            project.primary().cloned(),
+            DynClient::new(fake.clone()),
+        )
+        .with_project(std::env::temp_dir(), project);
+        (s, fake)
+    }
+
+    #[tokio::test]
+    async fn remotes_lists_every_forge_with_its_account_and_aliases() {
+        let (s, _) = two_forges();
+        let t = s.run(&forge(&["remotes"])).await.expect("remotes");
+        assert!(
+            t.contains("github.com/me/p") && t.contains("codeberg.org/me/p"),
+            "{t}"
+        );
+        assert!(
+            t.contains("account ok") && t.contains("no account"),
+            "gitea.lan has none: {t}"
+        );
+        let j = s.run(&forge(&["remotes", "--json"])).await.expect("json");
+        let v: serde_json::Value = serde_json::from_str(&j).expect("json");
+        assert_eq!(v.as_array().map(Vec::len), Some(3));
+        assert_eq!(v[0]["remote"], "origin");
+        assert_eq!(v[2]["account"], false);
+        let none = Session::new(
+            Hub::new(vec![], &DynClient::new(FakeClient::new())),
+            None,
+            DynClient::new(FakeClient::new()),
+        );
+        assert!(none.run(&forge(&["remotes"])).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_remote_name_works_where_a_repository_does() {
+        let (s, fake) = two_forges();
+        let body = r#"{"workflow_runs":[{"id":9,"name":"CI","status":"completed","conclusion":"success","head_branch":"main","head_sha":"abc1234","run_number":1,"event":"push","created_at":"2026-05-01T10:00:00Z","html_url":"u","actor":{"login":"a"}}]}"#;
+        fake.push_json("https://codeberg.org/api/v1/repos/me/p/actions/runs", body);
+        let t = s
+            .run(&forge(&["runs", "-R", "codeberg"]))
+            .await
+            .expect("runs");
+        assert!(t.contains("Success"), "{t}");
+        assert!(
+            fake.requests()
+                .iter()
+                .all(|r| r.url.contains("codeberg.org")),
+            "only that forge was asked"
+        );
+    }
+
+    #[tokio::test]
+    async fn runs_of_all_remotes_fold_one_commit_and_flag_disagreement() {
+        let (s, fake) = two_forges();
+        let run = |id: u32, concl: &str| {
+            format!(
+                r#"{{"workflow_runs":[{{"id":{id},"name":"CI","status":"completed","conclusion":"{concl}","head_branch":"main","head_sha":"abcdef0123","run_number":1,"event":"push","created_at":"2026-05-01T10:00:00Z","html_url":"u","actor":{{"login":"a"}}}}]}}"#
+            )
+        };
+        fake.push_json(
+            "https://api.github.com/repos/me/p/actions/runs",
+            &run(1, "success"),
+        );
+        fake.push_json(
+            "https://codeberg.org/api/v1/repos/me/p/actions/runs",
+            &run(2, "failure"),
+        );
+        let t = s
+            .run(&forge(&["runs", "--all-remotes"]))
+            .await
+            .expect("runs");
+        assert_eq!(
+            t.lines().filter(|l| l.starts_with("abcdef0")).count(),
+            1,
+            "{t}"
+        );
+        assert!(
+            t.contains("github.com Success") && t.contains("codeberg.org Failed"),
+            "{t}"
+        );
+        assert!(t.contains("forges disagree"), "{t}");
+        assert!(
+            t.contains("gitea.lan"),
+            "the remote without an account is reported: {t}"
+        );
     }
 
     #[tokio::test]
