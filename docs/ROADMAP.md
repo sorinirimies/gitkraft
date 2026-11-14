@@ -16,9 +16,12 @@ and fix what differs:
 
 ## Boards and wiki, next steps
 
-- Move a card between columns (GitHub `updateProjectV2ItemFieldValue`, GitLab label change).
-- Edit and create wiki pages (GitLab / Gitea REST); GitHub wikis via the `.wiki.git` clone.
-- Reply to a discussion comment thread; mark an answer.
+Done: moving a card between columns (GitHub Status field, GitLab list labels), creating and
+editing wiki pages (GitLab / Gitea REST), replying inside a discussion thread. Still open:
+
+- GitHub wikis via the `.wiki.git` clone (they have no API).
+- Mark a discussion comment as the answer.
+- Reorder cards inside a column; create cards.
 - Clickable items in the calendar day panel.
 
 ## MCP

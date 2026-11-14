@@ -6,6 +6,7 @@
 
 pub mod accounts;
 pub mod ai;
+pub mod args;
 pub mod artifacts;
 pub mod checkout;
 pub mod clone;

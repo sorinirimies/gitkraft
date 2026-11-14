@@ -489,6 +489,8 @@ pub struct App {
     /// paths in the configured terminal editor, then resumes.
     /// Supports both single-file (`vec![path]`) and multi-file (`vec![a, b, c]`) opens.
     pub pending_editor_open: Option<Vec<std::path::PathBuf>>,
+    /// After the terminal editor exits, send the hub's wiki draft back.
+    pub upload_wiki_after_editor: bool,
 
     /// Timestamp of the last auto-refresh.
     pub last_auto_refresh: std::time::Instant,
@@ -582,6 +584,7 @@ impl App {
             active_tab_index: 0,
 
             pending_editor_open: None,
+            upload_wiki_after_editor: false,
 
             last_auto_refresh: std::time::Instant::now(),
             last_refresh_completed: std::time::Instant::now() - std::time::Duration::from_secs(100),

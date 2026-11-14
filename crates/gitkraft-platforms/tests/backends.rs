@@ -1,8 +1,10 @@
 //! Adapter tests against recorded responses; nothing touches the network.
 
+use gitkraft_platforms::http::Method;
 use gitkraft_platforms::model::{
-    ActivityKind, ChecksState, ItemState, ListQuery, MergeMethod, MergeOptions, MergeOutcome,
-    MergeTiming, NotificationReason, ReviewVerdict, StateFilter, SubjectKind, UpdateStyle,
+    ActivityKind, Board, BoardCard, BoardColumn, ChecksState, ItemState, ListQuery, MergeMethod,
+    MergeOptions, MergeOutcome, MergeTiming, NotificationReason, ReviewVerdict, StateFilter,
+    SubjectKind, UpdateStyle,
 };
 use gitkraft_platforms::testing::FakeClient;
 use gitkraft_platforms::{Account, Backend, ItemKind, PlatformError, PlatformKind, RepoId, Secret};
@@ -1460,5 +1462,211 @@ async fn an_actions_only_commit_is_judged_by_its_check_runs_not_the_empty_commit
         .await
         .ok(),
         Some(Some(ChecksState::Failure))
+    );
+}
+
+fn sent_bodies(fake: &FakeClient) -> Vec<String> {
+    fake.requests()
+        .iter()
+        .map(|r| String::from_utf8_lossy(r.body.as_deref().unwrap_or_default()).into_owned())
+        .collect()
+}
+
+#[tokio::test]
+async fn a_discussion_thread_reads_as_comment_then_replies_and_a_reply_goes_to_its_thread() {
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"repository":{"discussion":{"id":"D_1","number":5,"title":"t","url":"u","body":"b",
+            "updatedAt":"2026-05-01T10:00:00Z","isAnswered":false,"category":{"name":"Q&A"},
+            "author":{"login":"alice"},"commentCount":{"totalCount":3},"comments":{"nodes":[
+              {"databaseId":9,"id":"C_9","body":"top","createdAt":"2026-05-01T11:00:00Z","author":{"login":"bob"},
+               "replies":{"nodes":[{"databaseId":10,"body":"re","createdAt":"2026-05-01T12:00:00Z","author":{"login":"carol"}}]}},
+              {"databaseId":11,"id":"C_11","body":"other","createdAt":"2026-05-01T13:00:00Z","author":{"login":"dave"},"replies":{"nodes":[]}}]}}}}}"#,
+    );
+    let d = github(&fake).discussion(&repo(), 5).await.expect("detail");
+    let shape: Vec<(u64, Option<u64>)> = d.comments.iter().map(|c| (c.id, c.parent)).collect();
+    assert_eq!(shape, vec![(9, None), (10, Some(9)), (11, None)]);
+
+    // Answering the reply (10) goes to its thread's top-level comment (C_9).
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"repository":{"discussion":{"id":"D_1","comments":{"nodes":[
+            {"databaseId":9,"id":"C_9","replies":{"nodes":[{"databaseId":10}]}},
+            {"databaseId":11,"id":"C_11","replies":{"nodes":[]}}]}}}}}"#,
+    );
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"addDiscussionComment":{"comment":{"id":"C_new"}}}}"#,
+    );
+    github(&fake)
+        .reply_to_discussion(&repo(), 5, 10, "thanks")
+        .await
+        .expect("reply");
+    let sent = sent_bodies(&fake).pop().unwrap_or_default();
+    assert!(
+        sent.contains("replyToId") && sent.contains("\"to\":\"C_9\""),
+        "{sent}"
+    );
+    assert!(
+        sent.contains("\"id\":\"D_1\"") && sent.contains("thanks"),
+        "{sent}"
+    );
+
+    // A comment the discussion does not have, and a platform without discussions.
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"repository":{"discussion":{"id":"D_1","comments":{"nodes":[]}}}}}"#,
+    );
+    let err = github(&fake)
+        .reply_to_discussion(&repo(), 5, 99, "x")
+        .await
+        .expect_err("unknown comment");
+    assert!(err.to_string().contains("comment 99"), "{err}");
+    assert!(matches!(
+        gitlab(&FakeClient::new())
+            .reply_to_discussion(&repo(), 5, 1, "x")
+            .await,
+        Err(PlatformError::Unsupported(_))
+    ));
+}
+
+#[tokio::test]
+async fn wiki_pages_are_created_and_edited_on_gitea_and_gitlab_not_github() {
+    let fake = FakeClient::new();
+    fake.push_json("https://codeberg.org/api/v1/repos/o/r/wiki/new", "{}");
+    fake.push_json("https://codeberg.org/api/v1/repos/o/r/wiki/page/Home", "{}");
+    let g = gitea(&fake);
+    g.save_wiki_page(&repo(), None, "Home", "# Hi", "create")
+        .await
+        .expect("create");
+    g.save_wiki_page(&repo(), Some("Home"), "Home", "# Hi 2", "edit")
+        .await
+        .expect("edit");
+    let reqs = fake.requests();
+    assert_eq!(reqs[0].method, Method::Post);
+    assert_eq!(reqs[1].method, Method::Patch);
+    let sent = sent_bodies(&fake);
+    assert!(
+        sent[0].contains("\"title\":\"Home\"") && sent[0].contains("IyBIaQ=="),
+        "{}",
+        sent[0]
+    );
+    assert!(sent[1].contains("\"message\":\"edit\""));
+
+    let fake = FakeClient::new();
+    fake.push_json("https://gitlab.com/api/v4/projects/o%2Fr/wikis", "{}");
+    fake.push_json("https://gitlab.com/api/v4/projects/o%2Fr/wikis/home", "{}");
+    let l = gitlab(&fake);
+    l.save_wiki_page(&repo(), None, "Home", "# Hi", "")
+        .await
+        .expect("create");
+    l.save_wiki_page(&repo(), Some("home"), "Home", "# Hi 2", "")
+        .await
+        .expect("edit");
+    let reqs = fake.requests();
+    assert_eq!(
+        (reqs[0].method, reqs[1].method),
+        (Method::Post, Method::Put)
+    );
+    assert!(sent_bodies(&fake)[0].contains("\"format\":\"markdown\""));
+
+    assert!(matches!(
+        github(&FakeClient::new())
+            .save_wiki_page(&repo(), None, "t", "c", "m")
+            .await,
+        Err(PlatformError::Unsupported(_))
+    ));
+}
+
+fn two_column_board() -> Board {
+    let col = |name: &str, id: &str| BoardColumn {
+        name: name.into(),
+        option_id: Some(id.into()),
+        ..BoardColumn::default()
+    };
+    Board {
+        name: "Roadmap".into(),
+        columns: vec![col("Todo", "O1"), col("Doing", "O2"), col("Done", "O3")],
+        project_id: Some("P".into()),
+        field_id: Some("F".into()),
+    }
+}
+
+#[tokio::test]
+async fn a_github_card_moves_by_setting_its_status_and_a_gitlab_issue_by_swapping_list_labels() {
+    let board = two_column_board();
+    let card = BoardCard {
+        number: Some(7),
+        title: "t".into(),
+        item_id: Some("I".into()),
+        ..BoardCard::default()
+    };
+    let fake = FakeClient::new();
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"updateProjectV2ItemFieldValue":{"projectV2Item":{"id":"I"}}}}"#,
+    );
+    github(&fake)
+        .move_card(&repo(), &board, &card, &board.columns[1])
+        .await
+        .expect("move");
+    let sent = sent_bodies(&fake).pop().unwrap_or_default();
+    for want in ["\"p\":\"P\"", "\"i\":\"I\"", "\"f\":\"F\"", "\"o\":\"O2\""] {
+        assert!(sent.contains(want), "{want} in {sent}");
+    }
+    // Without the ids (an old load) it refuses instead of guessing.
+    let bare = BoardCard {
+        item_id: None,
+        ..card.clone()
+    };
+    assert!(
+        github(&FakeClient::new())
+            .move_card(&repo(), &board, &bare, &board.columns[1])
+            .await
+            .is_err()
+    );
+
+    let mut lboard = two_column_board();
+    lboard.columns.insert(
+        0,
+        BoardColumn {
+            name: "Open".into(),
+            ..BoardColumn::default()
+        },
+    );
+    let fake = FakeClient::new();
+    fake.push_json("https://gitlab.com/api/v4/projects/o%2Fr/issues/7", "{}");
+    gitlab(&fake)
+        .move_card(&repo(), &lboard, &card, &lboard.columns[2])
+        .await
+        .expect("move");
+    let sent = sent_bodies(&fake).pop().unwrap_or_default();
+    assert!(sent.contains("\"add_labels\":\"Doing\""), "{sent}");
+    assert!(sent.contains("\"remove_labels\":\"Todo,Done\""), "{sent}");
+    // Into "Open": every list label comes off and none goes on.
+    let fake = FakeClient::new();
+    fake.push_json("https://gitlab.com/api/v4/projects/o%2Fr/issues/7", "{}");
+    gitlab(&fake)
+        .move_card(&repo(), &lboard, &card, &lboard.columns[0])
+        .await
+        .expect("move");
+    let sent = sent_bodies(&fake).pop().unwrap_or_default();
+    assert!(
+        sent.contains("\"add_labels\":\"\"") && sent.contains("Todo,Doing,Done"),
+        "{sent}"
+    );
+    // A draft card has no issue to label.
+    let draft = BoardCard {
+        number: None,
+        ..card
+    };
+    assert!(
+        gitlab(&FakeClient::new())
+            .move_card(&repo(), &lboard, &draft, &lboard.columns[1])
+            .await
+            .is_err()
     );
 }

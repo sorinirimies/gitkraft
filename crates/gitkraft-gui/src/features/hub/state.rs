@@ -194,8 +194,20 @@ pub enum HubMessage {
     CommunityOpen(usize),
     /// The next (+1) or previous (-1) watched repository.
     CommunityRepo(isize),
-    /// Post the note as a comment on the open discussion.
+    /// Post the note as a comment on the open discussion (a reply when one is chosen).
     CommunityComment,
+    /// Answer this comment of the open discussion next (`None` goes back to a top-level comment).
+    CommunityReplyTo(Option<(u64, String)>),
+    /// Move the selected board card to the column the note names.
+    CommunityMove,
+    /// Write the open wiki page to a file and open it in the editor.
+    WikiEdit,
+    /// Start a new wiki page titled by the note.
+    WikiNew,
+    /// Send the edited wiki file back.
+    WikiUpload,
+    /// A write to the community view finished; reload what it changed.
+    CommunityWritten(Result<String, String>),
     /// SSH keys arrived.
     KeysLoaded(Arc<gitkraft_hub::keys::KeysData>),
     /// Pick a key row.
@@ -320,6 +332,12 @@ pub struct CommunityState {
     pub row: usize,
     /// The open page.
     pub page: Option<gitkraft_hub::community::Page>,
+    /// The comment the next send answers: its id and author.
+    pub reply_to: Option<(u64, String)>,
+    /// The wiki page being edited in an editor; [`HubMessage::WikiUpload`] sends it back.
+    pub wiki_draft: Option<gitkraft_hub::community::WikiDraft>,
+    /// The draft was just written: the app opens it in the editor.
+    pub open_draft: bool,
     /// Why the list could not be loaded.
     pub error: Option<String>,
     /// A load is running.
@@ -800,6 +818,66 @@ impl HubState {
                 self.load_community()
             }
             HubMessage::CommunityComment => self.comment_on_discussion(),
+            HubMessage::CommunityReplyTo(to) => {
+                self.community.reply_to = to;
+                Task::none()
+            }
+            HubMessage::CommunityMove => self.move_card(),
+            HubMessage::WikiEdit => {
+                self.start_wiki_edit(None);
+                Task::none()
+            }
+            HubMessage::WikiNew => {
+                let title = self.note.trim().to_string();
+                if title.is_empty() {
+                    self.notice = Some(("type the new page's title in the box".into(), false));
+                } else {
+                    self.start_wiki_edit(Some(title));
+                    self.note.clear();
+                }
+                Task::none()
+            }
+            HubMessage::WikiUpload => self.upload_wiki(),
+            HubMessage::CommunityWritten(result) => {
+                match result {
+                    Ok(text) => {
+                        self.notice = Some((text, true));
+                        // what was written shows: the list and the open page are read again
+                        let reopen = self
+                            .community
+                            .page
+                            .as_ref()
+                            .filter(|p| !p.key.is_empty())
+                            .map(|p| gitkraft_hub::community::Item {
+                                key: p.key.clone(),
+                                title: p.title.clone(),
+                                ..Default::default()
+                            });
+                        let list = self.load_community_keep_page();
+                        let (Some(item), Some(api), Some(repo)) =
+                            (reopen, self.handle(), self.community.repo.clone())
+                        else {
+                            return list;
+                        };
+                        let (tab, key) = (self.community.tab, repo.key());
+                        return Task::batch([
+                            list,
+                            Task::perform(
+                                async move {
+                                    gitkraft_hub::community::page(&api, &repo, tab, &item).await
+                                },
+                                move |result| HubMessage::CommunityPageLoaded {
+                                    repo: key.clone(),
+                                    tab,
+                                    result,
+                                },
+                            ),
+                        ]);
+                    }
+                    Err(e) => self.notice = Some((e, false)),
+                }
+                Task::none()
+            }
             HubMessage::KeysLoaded(data) => {
                 self.keys.loading = false;
                 if let Some(e) = data.errors.first() {
@@ -1256,6 +1334,98 @@ impl HubState {
         )
     }
 
+    /// Reads the list again without closing the open page.
+    fn load_community_keep_page(&mut self) -> Task<HubMessage> {
+        let page = self.community.page.take();
+        let task = self.load_community();
+        self.community.page = page;
+        task
+    }
+
+    fn move_card(&mut self) -> Task<HubMessage> {
+        let column = self.note.trim().to_string();
+        let (Some(api), Some(repo), Some(item)) = (
+            self.handle(),
+            self.community.repo.clone(),
+            self.community
+                .items
+                .as_ref()
+                .and_then(|l| l.get(self.community.row))
+                .cloned(),
+        ) else {
+            return Task::none();
+        };
+        if self.community.tab != gitkraft_hub::community::Tab::Board {
+            return Task::none();
+        }
+        let Ok(number) = item.key.parse::<u64>() else {
+            self.notice = Some(("a draft card has no issue to move".into(), false));
+            return Task::none();
+        };
+        self.note.clear();
+        Task::perform(
+            async move {
+                gitkraft_hub::community::move_card(&api, &repo, Some(&item.board), number, &column)
+                    .await
+            },
+            HubMessage::CommunityWritten,
+        )
+    }
+
+    fn start_wiki_edit(&mut self, new_title: Option<String>) {
+        let Some(repo) = self.community.repo.clone() else {
+            return;
+        };
+        if self.community.tab != gitkraft_hub::community::Tab::Wiki {
+            self.notice = Some(("only wiki pages are edited here".into(), false));
+            return;
+        }
+        let draft = match (&new_title, &self.community.page) {
+            (Some(t), _) => gitkraft_hub::community::WikiDraft::write(&repo, None, t, ""),
+            (None, Some(p)) => {
+                gitkraft_hub::community::WikiDraft::write(&repo, Some(&p.key), &p.title, &p.text)
+            }
+            (None, None) => {
+                self.notice = Some(("open a wiki page first".into(), false));
+                return;
+            }
+        };
+        match draft {
+            Ok(d) => {
+                self.notice = Some((
+                    format!("edit {}, save it, then press Upload", d.path.display()),
+                    true,
+                ));
+                self.community.wiki_draft = Some(d);
+                self.community.open_draft = true;
+            }
+            Err(e) => self.notice = Some((e, false)),
+        }
+    }
+
+    /// The file to open in the editor, once, after [`HubMessage::WikiEdit`] or [`HubMessage::WikiNew`].
+    pub fn take_draft_to_open(&mut self) -> Option<PathBuf> {
+        if std::mem::take(&mut self.community.open_draft) {
+            self.community.wiki_draft.as_ref().map(|d| d.path.clone())
+        } else {
+            None
+        }
+    }
+
+    fn upload_wiki(&mut self) -> Task<HubMessage> {
+        let (Some(api), Some(draft)) = (self.handle(), self.community.wiki_draft.clone()) else {
+            self.notice = Some((
+                "no wiki page is being edited: press Edit first".into(),
+                false,
+            ));
+            return Task::none();
+        };
+        Task::perform(
+            async move { gitkraft_hub::community::upload_draft(&api, &draft).await },
+            HubMessage::CommunityWritten,
+        )
+    }
+
     fn comment_on_discussion(&mut self) -> Task<HubMessage> {
         let body = self.note.trim().to_string();
         if self.community.tab != gitkraft_hub::community::Tab::Discussions {
@@ -1277,18 +1447,26 @@ impl HubState {
             return Task::none();
         }
         self.note.clear();
+        let reply_to = self.community.reply_to.take().map(|(id, _)| id);
         let item = gitkraft_hub::community::Item {
             key: page.key.clone(),
             title: page.title.clone(),
-            meta: String::new(),
+            ..Default::default()
         };
         let key = repo.key();
         Task::perform(
             async move {
-                let b = api.backend(&repo.host).ok_or("no account")?;
-                b.comment_on_discussion(&repo, number, &body)
-                    .await
-                    .map_err(|e| e.to_string())?;
+                match reply_to {
+                    Some(id) => {
+                        gitkraft_hub::community::reply(&api, &repo, number, id, &body).await?;
+                    }
+                    None => {
+                        let b = api.backend(&repo.host).ok_or("no account")?;
+                        b.comment_on_discussion(&repo, number, &body)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    }
+                }
                 // show the page again, now with the new comment
                 gitkraft_hub::community::page(
                     &api,
@@ -2567,6 +2745,78 @@ mod tests {
     }
 
     #[test]
+    fn replying_is_a_mode_of_the_comment_box_that_can_be_left() {
+        let mut s = state();
+        let _ = s.update(HubMessage::CommunityReplyTo(Some((9, "bob".into()))));
+        assert_eq!(s.community.reply_to, Some((9, "bob".to_string())));
+        let _ = s.update(HubMessage::CommunityReplyTo(None));
+        assert!(s.community.reply_to.is_none());
+        // Nothing is sent without an open discussion: the mode stays as it was.
+        let _ = s.update(HubMessage::CommunityReplyTo(Some((9, "bob".into()))));
+        let _ = s.update(HubMessage::CommunityComment);
+        assert!(s.community.reply_to.is_some());
+    }
+
+    #[test]
+    fn a_wiki_edit_needs_a_repo_a_page_or_a_title_and_opens_its_file_once() {
+        use gitkraft_hub::community::{Page, Tab};
+        let mut s = state();
+        let _ = s.update(HubMessage::WikiEdit);
+        assert!(s.take_draft_to_open().is_none(), "no repository yet");
+        s.community.repo = Some(RepoId::new("codeberg.org", "o", "r"));
+        let _ = s.update(HubMessage::WikiEdit);
+        assert!(
+            s.notice.as_ref().is_some_and(|(t, _)| t.contains("wiki")),
+            "{:?}",
+            s.notice
+        );
+        s.community.tab = Tab::Wiki;
+        let _ = s.update(HubMessage::WikiEdit);
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, _)| t.contains("open a wiki page"))
+        );
+        s.community.page = Some(Page {
+            key: "Home".into(),
+            title: "Home".into(),
+            text: "# Hi".into(),
+            comments: Vec::new(),
+        });
+        let _ = s.update(HubMessage::WikiEdit);
+        let path = s.take_draft_to_open().expect("file to open");
+        assert_eq!(std::fs::read_to_string(&path).unwrap_or_default(), "# Hi");
+        assert!(s.take_draft_to_open().is_none(), "only once");
+
+        // A new page needs the title typed first.
+        let _ = s.update(HubMessage::WikiNew);
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, ok)| !ok && t.contains("title"))
+        );
+        let _ = s.update(HubMessage::NoteInput("Roadmap".into()));
+        let _ = s.update(HubMessage::WikiNew);
+        assert!(s.take_draft_to_open().is_some());
+        assert!(s.note.is_empty());
+        assert!(
+            s.community
+                .wiki_draft
+                .as_ref()
+                .is_some_and(|d| d.slug.is_none())
+        );
+    }
+
+    #[test]
+    fn a_finished_write_shows_its_message_or_its_error() {
+        let mut s = state();
+        let _ = s.update(HubMessage::CommunityWritten(Err("no way".into())));
+        assert_eq!(s.notice, Some(("no way".to_string(), false)));
+        let _ = s.update(HubMessage::CommunityWritten(Ok("saved".into())));
+        assert_eq!(s.notice, Some(("saved".to_string(), true)));
+    }
+
+    #[test]
     fn a_picked_day_is_remembered_and_its_details_are_cleared_until_they_arrive() {
         let mut s = state();
         let today = Utc::now().date_naive();
@@ -2624,7 +2874,7 @@ mod tests {
         let item = |n: &str| Item {
             key: n.into(),
             title: format!("#{n} T"),
-            meta: String::new(),
+            ..Item::default()
         };
         let _ = s.update(HubMessage::CommunityLoaded {
             repo: "github.com/o/other".into(),

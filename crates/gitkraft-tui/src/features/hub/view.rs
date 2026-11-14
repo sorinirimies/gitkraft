@@ -1485,10 +1485,11 @@ fn render_community(
         .lines()
         .map(|l| Line::from(l.to_string()))
         .collect();
-    for (who, body) in &d.page.comments {
+    for (n, c) in d.page.comments.iter().enumerate() {
+        let (who, body) = (c.heading(), &c.body);
         lines.push(Line::default());
         lines.push(Line::from(Span::styled(
-            format!("── {who}"),
+            format!("── [{}] {who}", n + 1),
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
@@ -1751,7 +1752,17 @@ fn hints(hub: &HubState) -> &'static str {
         return "j/k select · : palette · s set up this machine · t test · d remove key · r refresh · Tab dashboard · q back";
     }
     if hub.view == View::Community {
-        return "j/k select · Enter open · Esc close · d discussions · w wiki · b boards · c comment · [ ] repo · r refresh · Tab dashboard · q back";
+        return match hub.community.tab {
+            super::state::CommunityTab::Discussions => {
+                "j/k select · Enter open · c comment · R reply · [ ] repo · r refresh · d/w/b tabs · Tab dashboard · q back"
+            }
+            super::state::CommunityTab::Wiki => {
+                "j/k select · Enter open · e edit in editor · U upload edit · n new page · [ ] repo · d/w/b tabs · q back"
+            }
+            super::state::CommunityTab::Board => {
+                "j/k select · Enter open card · m move to column · [ ] repo · r refresh · d/w/b tabs · q back"
+            }
+        };
     }
     if hub.view == View::Pulse {
         return "click a day or ←→↑↓ · t today · r refresh · [ ] repo · 1-4 days · Tab dashboard · q back";
@@ -1796,6 +1807,9 @@ fn render_status(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme)
             PromptPurpose::Inline => "inline comment",
             PromptPurpose::Labels => "labels: +add -remove \"two words\"",
             PromptPurpose::DiscussionComment => "comment on the discussion",
+            PromptPurpose::DiscussionReply => "reply: N text (N is the [n] of the comment)",
+            PromptPurpose::MoveCard => "move the card to column",
+            PromptPurpose::NewWikiPage => "title of the new wiki page",
         };
         Line::from(vec![
             Span::styled(format!(" {label} › "), Style::default().fg(theme.accent)),
@@ -2053,6 +2067,7 @@ mod tests {
                 },
                 body: "nice".into(),
                 created_at: None,
+                parent: None,
             }],
             reviews: vec![Review {
                 author: User {
@@ -2243,11 +2258,12 @@ mod tests {
                 key: "5".into(),
                 title: "#5 How do I clone?".into(),
                 meta: "Q&A · alice · 2 comments · answered".into(),
+                ..Default::default()
             },
             CommunityItem {
                 key: "6".into(),
                 title: "#6 Ideas".into(),
-                meta: String::new(),
+                ..Default::default()
             },
         ]);
         hub.community.detail = Some(CommunityDetail {
@@ -2255,7 +2271,12 @@ mod tests {
                 key: "5".into(),
                 title: "#5 How do I clone?".into(),
                 text: "the question".into(),
-                comments: vec![("bob".into(), "git clone it".into())],
+                comments: vec![gitkraft_hub::community::PageComment {
+                    id: 9,
+                    author: "bob".into(),
+                    body: "git clone it".into(),
+                    reply: false,
+                }],
             },
             scroll: 0,
         });
@@ -2267,7 +2288,7 @@ mod tests {
             "#6 Ideas",
             "Q&A · alice",
             "the question",
-            "── bob",
+            "── [1] bob",
             "git clone it",
         ] {
             assert!(text.contains(needle), "missing {needle:?} in\n{text}");

@@ -42,7 +42,17 @@ impl GitKraft {
                 Task::none()
             }
             Message::Hub(m) => match self.hub.as_mut() {
-                Some(hub) => hub.update(m.clone()).map(Message::Hub),
+                Some(hub) => {
+                    let task = hub.update(m.clone()).map(Message::Hub);
+                    // a wiki page written for editing opens in the chosen editor
+                    if let Some(path) = hub.take_draft_to_open()
+                        && let Err(e) = self.editor.open_file_or_default(&path)
+                    {
+                        hub.notice =
+                            Some((format!("could not open {}: {e}", path.display()), false));
+                    }
+                    task
+                }
                 None => Task::none(),
             },
 

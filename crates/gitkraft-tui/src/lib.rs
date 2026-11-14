@@ -283,6 +283,14 @@ where
             enable_raw_mode()?;
             execute!(io::stdout(), EnterAlternateScreen)?;
             terminal.clear()?;
+
+            // A wiki page edited in the terminal editor goes back to the platform now.
+            if std::mem::take(&mut app.upload_wiki_after_editor)
+                && opened
+                && let Some(hub) = app.hub.as_mut()
+            {
+                hub.upload_wiki_draft();
+            }
         }
         // ─────────────────────────────────────────────────────────────────
 

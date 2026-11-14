@@ -2,11 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use gitkraft_ci::RerunScope;
+use gitkraft_hub::args;
 use gitkraft_hub::dispatch::{Dispatch, start};
-use gitkraft_platforms::model::{
-    MergeMethod, MergeOptions, MergeTiming, ReviewVerdict, UpdateStyle,
-};
+use gitkraft_platforms::model::{MergeOptions, ReviewVerdict};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{schemars, tool, tool_router};
 use serde::Deserialize;
@@ -36,6 +34,47 @@ pub(crate) struct DiscussionCommentArgs {
     pub number: u64,
     /// Markdown text.
     pub body: String,
+}
+
+/// Answer a comment of a discussion.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub(crate) struct DiscussionReplyArgs {
+    /// `host/owner/name`; default: the current checkout.
+    pub repo: Option<String>,
+    /// Discussion number.
+    pub number: u64,
+    /// The `id` of the comment to answer (from the `discussions` tool); a reply goes to its thread.
+    pub comment_id: u64,
+    /// Markdown text.
+    pub body: String,
+}
+
+/// Create or edit a wiki page.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub(crate) struct WikiSaveArgs {
+    /// `host/owner/name`; default: the current checkout.
+    pub repo: Option<String>,
+    /// The slug of the page to edit (from the `wiki` tool); absent creates a new page.
+    pub slug: Option<String>,
+    /// Page title.
+    pub title: String,
+    /// The whole new Markdown content of the page.
+    pub content: String,
+    /// Commit message of the change; default `Update <title>`.
+    pub message: Option<String>,
+}
+
+/// Move a board card.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub(crate) struct MoveCardArgs {
+    /// `host/owner/name`; default: the current checkout.
+    pub repo: Option<String>,
+    /// Issue or pull request number of the card.
+    pub number: u64,
+    /// Target column: its name, or a unique start or part of it (case does not matter).
+    pub column: String,
+    /// Board name (or its start) when the card is on several boards.
+    pub board: Option<String>,
 }
 
 /// Submit a review.
@@ -150,28 +189,6 @@ pub(crate) struct DispatchArgs {
     pub inputs: BTreeMap<String, String>,
 }
 
-fn method(s: Option<&str>) -> Result<MergeMethod, rmcp::ErrorData> {
-    match s {
-        None | Some("merge") => Ok(MergeMethod::Merge),
-        Some("squash") => Ok(MergeMethod::Squash),
-        Some("rebase") => Ok(MergeMethod::Rebase),
-        Some(o) => Err(invalid(format!(
-            "method must be merge, squash or rebase, not '{o}'"
-        ))),
-    }
-}
-
-fn timing(s: Option<&str>) -> Result<MergeTiming, rmcp::ErrorData> {
-    match s {
-        None | Some("now") => Ok(MergeTiming::Now),
-        Some("when_green") => Ok(MergeTiming::WhenGreen),
-        Some("queue") => Ok(MergeTiming::Queue),
-        Some(o) => Err(invalid(format!(
-            "when must be now, when_green or queue, not '{o}'"
-        ))),
-    }
-}
-
 #[tool_router(router = write_router, vis = "pub(crate)")]
 impl GitkraftServer {
     #[tool(
@@ -212,21 +229,68 @@ impl GitkraftServer {
     }
 
     #[tool(
+        description = "Answer a comment of a GitHub discussion (a reply to a reply goes to the same thread). Find comment ids with the `discussions` tool.",
+        annotations(read_only_hint = false, destructive_hint = false)
+    )]
+    pub(crate) async fn reply_discussion(
+        &self,
+        Parameters(a): Parameters<DiscussionReplyArgs>,
+    ) -> ToolResult {
+        let repo = self.repo(a.repo.as_deref())?;
+        let hub = &self.hub;
+        let message = gitkraft_hub::community::reply(hub, &repo, a.number, a.comment_id, &a.body)
+            .await
+            .map_err(invalid)?;
+        out(&json!({"ok": true, "message": message}))
+    }
+
+    #[tool(
+        description = "Create or edit a wiki page (GitLab and Gitea/Forgejo/Codeberg; GitHub's wiki is a git repository). Send the whole new content: read the page with the `wiki` tool first.",
+        annotations(read_only_hint = false, destructive_hint = false)
+    )]
+    pub(crate) async fn save_wiki_page(
+        &self,
+        Parameters(a): Parameters<WikiSaveArgs>,
+    ) -> ToolResult {
+        let repo = self.repo(a.repo.as_deref())?;
+        let message = gitkraft_hub::community::save_wiki(
+            &self.hub,
+            &repo,
+            a.slug.as_deref(),
+            &a.title,
+            &a.content,
+            a.message.as_deref().unwrap_or_default(),
+        )
+        .await
+        .map_err(invalid)?;
+        out(&json!({"ok": true, "message": message}))
+    }
+
+    #[tool(
+        description = "Move a board card to another column (GitHub Projects v2 Status, GitLab issue board lists). See columns with the `boards` tool.",
+        annotations(read_only_hint = false, destructive_hint = false)
+    )]
+    pub(crate) async fn move_card(&self, Parameters(a): Parameters<MoveCardArgs>) -> ToolResult {
+        let repo = self.repo(a.repo.as_deref())?;
+        let message = gitkraft_hub::community::move_card(
+            &self.hub,
+            &repo,
+            a.board.as_deref(),
+            a.number,
+            &a.column,
+        )
+        .await
+        .map_err(invalid)?;
+        out(&json!({"ok": true, "message": message}))
+    }
+
+    #[tool(
         description = "Review a pull request: approve, request changes or comment.",
         annotations(read_only_hint = false, destructive_hint = false)
     )]
     pub(crate) async fn review(&self, Parameters(a): Parameters<ReviewArgs>) -> ToolResult {
         let repo = self.repo(a.repo.as_deref())?;
-        let verdict = match a.verdict.as_str() {
-            "approve" => ReviewVerdict::Approve,
-            "request_changes" => ReviewVerdict::RequestChanges,
-            "comment" => ReviewVerdict::Comment,
-            o => {
-                return Err(invalid(format!(
-                    "verdict must be approve, request_changes or comment, not '{o}'"
-                )));
-            }
-        };
+        let verdict = args::verdict(&a.verdict).map_err(invalid)?;
         let body = a.body.unwrap_or_default();
         if verdict != ReviewVerdict::Approve && body.trim().is_empty() {
             return Err(invalid("a review that is not an approval needs a body"));
@@ -256,8 +320,8 @@ impl GitkraftServer {
             ));
         }
         let options = MergeOptions {
-            method: method(a.method.as_deref())?,
-            timing: timing(a.when.as_deref())?,
+            method: args::merge_method(a.method.as_deref()).map_err(invalid)?,
+            timing: args::merge_timing(a.when.as_deref()).map_err(invalid)?,
             force,
         };
         let outcome = self
@@ -274,12 +338,7 @@ impl GitkraftServer {
     )]
     pub(crate) async fn update_branch(&self, Parameters(a): Parameters<UpdateArgs>) -> ToolResult {
         let repo = self.repo(a.repo.as_deref())?;
-        let style = match a.style.as_deref() {
-            None | Some("default") => UpdateStyle::Default,
-            Some("merge") => UpdateStyle::Merge,
-            Some("rebase") => UpdateStyle::Rebase,
-            Some(o) => return Err(invalid(format!("style must be merge or rebase, not '{o}'"))),
-        };
+        let style = args::update_style(a.style.as_deref()).map_err(invalid)?;
         self.backend(&repo)?
             .update_branch(&repo, a.number, style)
             .await
@@ -337,11 +396,7 @@ impl GitkraftServer {
     )]
     pub(crate) async fn ci_rerun(&self, Parameters(a): Parameters<RerunArgs>) -> ToolResult {
         let repo = self.repo(a.repo.as_deref())?;
-        let scope = match a.scope.as_deref() {
-            None | Some("failed") => RerunScope::Failed,
-            Some("all") => RerunScope::All,
-            Some(o) => return Err(invalid(format!("scope must be failed or all, not '{o}'"))),
-        };
+        let scope = args::rerun_scope(a.scope.as_deref().unwrap_or("failed")).map_err(invalid)?;
         let ci = self.ci(&repo)?;
         let run = ci
             .run_detail(&repo, a.run_id)

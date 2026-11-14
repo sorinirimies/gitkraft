@@ -1,9 +1,8 @@
 //! Actions the pages send as JSON: comment, review, merge, close, CI re-run, notification switch.
 
-use gitkraft_ci::{RerunScope, Run};
-use gitkraft_platforms::model::{
-    MergeMethod, MergeOptions, MergeTiming, ReviewVerdict, UpdateStyle,
-};
+use gitkraft_ci::Run;
+use gitkraft_hub::args;
+use gitkraft_platforms::model::{MergeOptions, ReviewVerdict};
 use gitkraft_platforms::{ItemKind, RepoId};
 use gitkraft_settings::files;
 use gitkraft_settings::notify::set_enabled;
@@ -44,6 +43,44 @@ pub enum ActionRequest {
         number: u64,
         /// Text.
         body: String,
+    },
+    /// Answer a comment of a GitHub discussion.
+    DiscussionReply {
+        /// `host/owner/name`.
+        repo: String,
+        /// Discussion number.
+        number: u64,
+        /// Id of the comment answered.
+        comment_id: u64,
+        /// Text.
+        body: String,
+    },
+    /// Create (no `slug`) or edit a wiki page.
+    WikiSave {
+        /// `host/owner/name`.
+        repo: String,
+        /// The page to edit.
+        #[serde(default)]
+        slug: Option<String>,
+        /// Title.
+        title: String,
+        /// The whole Markdown content.
+        content: String,
+        /// Change message.
+        #[serde(default)]
+        message: Option<String>,
+    },
+    /// Move a board card to another column.
+    MoveCard {
+        /// `host/owner/name`.
+        repo: String,
+        /// The card's issue or PR number.
+        number: u64,
+        /// Target column (name, start or part of it).
+        column: String,
+        /// The board when the card is on several.
+        #[serde(default)]
+        board: Option<String>,
     },
     /// Merge a PR.
     Merge {
@@ -217,6 +254,50 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
                 .await
                 .map(|()| "comment posted".to_string())
         }
+        ActionRequest::DiscussionReply {
+            repo,
+            number,
+            comment_id,
+            body,
+        } => {
+            let repo = repo_of(&repo)?;
+            let out = gitkraft_hub::community::reply(hub, &repo, number, comment_id, &body).await;
+            session.invalidate();
+            return out;
+        }
+        ActionRequest::WikiSave {
+            repo,
+            slug,
+            title,
+            content,
+            message,
+        } => {
+            let repo = repo_of(&repo)?;
+            let out = gitkraft_hub::community::save_wiki(
+                hub,
+                &repo,
+                slug.as_deref(),
+                &title,
+                &content,
+                message.as_deref().unwrap_or_default(),
+            )
+            .await;
+            session.invalidate();
+            return out;
+        }
+        ActionRequest::MoveCard {
+            repo,
+            number,
+            column,
+            board,
+        } => {
+            let repo = repo_of(&repo)?;
+            let out =
+                gitkraft_hub::community::move_card(hub, &repo, board.as_deref(), number, &column)
+                    .await;
+            session.invalidate();
+            return out;
+        }
         ActionRequest::Merge {
             repo,
             number,
@@ -226,18 +307,8 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
         } => {
             let repo = repo_of(&repo)?;
             let backend = hub.backend(&repo.host).ok_or("no account for this host")?;
-            let method = match method.as_deref() {
-                None | Some("merge") => MergeMethod::Merge,
-                Some("squash") => MergeMethod::Squash,
-                Some("rebase") => MergeMethod::Rebase,
-                Some(other) => return Err(format!("unknown merge method '{other}'")),
-            };
-            let timing = match when.as_deref() {
-                None | Some("now") => MergeTiming::Now,
-                Some("when_green") => MergeTiming::WhenGreen,
-                Some("queue") => MergeTiming::Queue,
-                Some(other) => return Err(format!("unknown merge timing '{other}'")),
-            };
+            let method = args::merge_method(method.as_deref())?;
+            let timing = args::merge_timing(when.as_deref())?;
             let options = MergeOptions {
                 method,
                 timing,
@@ -255,12 +326,7 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
         } => {
             let repo = repo_of(&repo)?;
             let backend = hub.backend(&repo.host).ok_or("no account for this host")?;
-            let style = match style.as_deref() {
-                None | Some("default") => UpdateStyle::Default,
-                Some("merge") => UpdateStyle::Merge,
-                Some("rebase") => UpdateStyle::Rebase,
-                Some(other) => return Err(format!("unknown update style '{other}'")),
-            };
+            let style = args::update_style(style.as_deref())?;
             backend
                 .update_branch(&repo, number, style)
                 .await
@@ -282,12 +348,7 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
         } => {
             let repo = repo_of(&repo)?;
             let backend = hub.backend(&repo.host).ok_or("no account for this host")?;
-            let verdict = match verdict.as_str() {
-                "approve" => ReviewVerdict::Approve,
-                "request_changes" => ReviewVerdict::RequestChanges,
-                "comment" => ReviewVerdict::Comment,
-                other => return Err(format!("unknown verdict '{other}'")),
-            };
+            let verdict = args::verdict(&verdict)?;
             if verdict == ReviewVerdict::RequestChanges && body.trim().is_empty() {
                 return Err("requesting changes needs a note".into());
             }
@@ -322,11 +383,7 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
         } => {
             let repo = repo_of(&repo)?;
             let ci = hub.ci(&repo.host).ok_or("no account for this host")?;
-            let scope = match scope.as_str() {
-                "all" => RerunScope::All,
-                "failed" => RerunScope::Failed,
-                other => return Err(format!("unknown scope '{other}'")),
-            };
+            let scope = args::rerun_scope(&scope)?;
             let run = Run {
                 id: run_id,
                 branch,

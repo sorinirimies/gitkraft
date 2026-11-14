@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use gitkraft_ci::CiBackend;
-use gitkraft_hub::Hub;
+use gitkraft_hub::{Hub, args};
 use gitkraft_platforms::{Backend, DynClient, ItemKind, RepoId};
 use rmcp::RoleServer;
 use rmcp::handler::server::router::tool::ToolRouter;
@@ -110,28 +110,13 @@ impl GitkraftServer {
 
     /// `host/owner/name`, `owner/name` (the only or the github.com account), or the default repo.
     pub(crate) fn repo(&self, given: Option<&str>) -> Result<RepoId, McpError> {
-        let Some(text) = given.map(str::trim).filter(|t| !t.is_empty()) else {
-            return self.default_repo.clone().ok_or_else(|| {
-                invalid(
-                    "pass repo as host/owner/name: the server was not started in a git checkout",
-                )
-            });
-        };
-        if let Some(id) = RepoId::from_key(text) {
-            return Ok(id);
-        }
-        let parts: Vec<&str> = text.split('/').collect();
-        if let [owner, name] = parts[..] {
-            let hosts = self.hub.hosts();
-            let host = match hosts.as_slice() {
-                [only] => Some(*only),
-                many => many.iter().copied().find(|h| *h == "github.com"),
-            };
-            if let Some(host) = host {
-                return Ok(RepoId::new(host, owner, name));
-            }
-        }
-        Err(invalid(format!("'{text}' is not host/owner/name")))
+        args::resolve_repo(
+            given,
+            self.default_repo.as_ref(),
+            &self.hub.hosts(),
+            "pass repo as host/owner/name: the server was not started in a git checkout",
+        )
+        .map_err(invalid)
     }
 
     pub(crate) fn backend(&self, repo: &RepoId) -> Result<&Backend<DynClient>, McpError> {

@@ -183,6 +183,12 @@ pub enum PromptPurpose {
     Labels,
     /// A comment on the open discussion.
     DiscussionComment,
+    /// An answer to a comment of the open discussion: `N text`.
+    DiscussionReply,
+    /// The column to move the selected card to.
+    MoveCard,
+    /// The title of a new wiki page.
+    NewWikiPage,
 }
 
 /// Actions that ask for confirmation first.
@@ -349,6 +355,10 @@ enum Msg {
 /// Everything the hub screen needs.
 #[derive(Debug)]
 pub struct HubState {
+    /// The wiki page being edited in an editor; `U` sends it back.
+    pub wiki_draft: Option<gitkraft_hub::community::WikiDraft>,
+    /// The draft was just written and the app should open it in the editor.
+    pub open_draft: bool,
     /// Active view.
     pub view: View,
     /// Focused pane.
@@ -450,6 +460,8 @@ impl HubState {
             detail: Detail::default(),
             log: None,
             prompt: None,
+            wiki_draft: None,
+            open_draft: false,
             confirm: None,
             drag: Drag::default(),
             hits: Vec::new(),
@@ -1038,6 +1050,180 @@ impl HubState {
                 tab,
                 result,
             });
+        });
+    }
+
+    /// Answers a comment of the open discussion: `typed` is `N text`.
+    pub fn submit_discussion_reply(&mut self, typed: &str) {
+        let Some(d) = self.community.detail.as_ref() else {
+            return;
+        };
+        let (comment, text) = match gitkraft_hub::community::parse_reply(typed, &d.page) {
+            Ok(v) => v,
+            Err(e) => return self.set_notice(e, false),
+        };
+        let (Some(api), Some(rt), Some(repo), Some(d)) = (
+            self.api.clone(),
+            self.handle(),
+            self.community.repo.clone(),
+            self.community.detail.as_ref(),
+        ) else {
+            return;
+        };
+        let Ok(number) = d.page.key.parse::<u64>() else {
+            return;
+        };
+        let (tx, tab) = (self.tx.clone(), self.community.tab);
+        let item = gitkraft_hub::community::Item {
+            key: d.page.key.clone(),
+            title: d.page.title.clone(),
+            ..Default::default()
+        };
+        rt.spawn(async move {
+            match gitkraft_hub::community::reply(&api, &repo, number, comment, &text).await {
+                Ok(text) => {
+                    let _ = tx.send(Msg::Done {
+                        text,
+                        ok: true,
+                        reload: false,
+                    });
+                    let result = gitkraft_hub::community::page(&api, &repo, tab, &item)
+                        .await
+                        .map(|page| CommunityDetail { page, scroll: 0 });
+                    let _ = tx.send(Msg::CommunityDetail {
+                        repo: repo.key(),
+                        tab,
+                        result,
+                    });
+                }
+                Err(e) => done(&tx, Err(e), String::new(), false),
+            }
+        });
+    }
+
+    /// Moves the selected board card into the column `typed` names.
+    pub fn submit_move_card(&mut self, typed: &str) {
+        let (Some(api), Some(rt), Some(repo)) =
+            (self.api.clone(), self.handle(), self.community.repo.clone())
+        else {
+            return;
+        };
+        let Some(item) = self
+            .community
+            .items
+            .as_ref()
+            .and_then(|i| i.get(self.community.row))
+            .cloned()
+        else {
+            return;
+        };
+        let Ok(number) = item.key.parse::<u64>() else {
+            return self.set_notice("a draft card has no issue to move".into(), false);
+        };
+        let (tx, column) = (self.tx.clone(), typed.to_string());
+        rt.spawn(async move {
+            match gitkraft_hub::community::move_card(
+                &api,
+                &repo,
+                Some(&item.board),
+                number,
+                &column,
+            )
+            .await
+            {
+                Ok(text) => {
+                    let _ = tx.send(Msg::Done {
+                        text,
+                        ok: true,
+                        reload: false,
+                    });
+                    let result = gitkraft_hub::community::list(
+                        &api,
+                        &repo,
+                        gitkraft_hub::community::Tab::Board,
+                    )
+                    .await;
+                    let _ = tx.send(Msg::Community {
+                        repo: repo.key(),
+                        tab: CommunityTab::Board,
+                        result,
+                    });
+                }
+                Err(e) => done(&tx, Err(e), String::new(), false),
+            }
+        });
+    }
+
+    /// Writes the open wiki page to a file and asks the app to open it in the editor.
+    pub fn start_wiki_edit(&mut self) {
+        let (Some(repo), Some(d)) = (self.community.repo.clone(), self.community.detail.as_ref())
+        else {
+            return;
+        };
+        if self.community.tab != CommunityTab::Wiki {
+            return self.set_notice("only wiki pages are edited here".into(), false);
+        }
+        match gitkraft_hub::community::WikiDraft::write(
+            &repo,
+            Some(&d.page.key),
+            &d.page.title,
+            &d.page.text,
+        ) {
+            Ok(draft) => {
+                self.wiki_draft = Some(draft);
+                self.open_draft = true;
+            }
+            Err(e) => self.set_notice(e, false),
+        }
+    }
+
+    /// Starts a new wiki page called `title`.
+    pub fn start_new_wiki_page(&mut self, title: &str) {
+        let Some(repo) = self.community.repo.clone() else {
+            return;
+        };
+        if title.trim().is_empty() {
+            return self.set_notice("a wiki page needs a title".into(), false);
+        }
+        match gitkraft_hub::community::WikiDraft::write(&repo, None, title.trim(), "") {
+            Ok(draft) => {
+                self.wiki_draft = Some(draft);
+                self.open_draft = true;
+            }
+            Err(e) => self.set_notice(e, false),
+        }
+    }
+
+    /// Sends the edited draft back to the platform (a file nobody changed is not sent).
+    pub fn upload_wiki_draft(&mut self) {
+        let (Some(api), Some(rt), Some(draft)) =
+            (self.api.clone(), self.handle(), self.wiki_draft.clone())
+        else {
+            return self.set_notice("no wiki page is being edited: press e on one".into(), false);
+        };
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            match gitkraft_hub::community::upload_draft(&api, &draft).await {
+                Ok(text) => {
+                    let _ = tx.send(Msg::Done {
+                        text,
+                        ok: true,
+                        reload: false,
+                    });
+                    let result = gitkraft_hub::community::list(
+                        &api,
+                        &draft.repo,
+                        gitkraft_hub::community::Tab::Wiki,
+                    )
+                    .await;
+                    let _ = tx.send(Msg::Community {
+                        repo: draft.repo.key(),
+                        tab: CommunityTab::Wiki,
+                        result,
+                    });
+                }
+                Err(e) => done(&tx, Err(e), String::new(), false),
+            }
         });
     }
 
@@ -1854,6 +2040,18 @@ impl HubState {
         }
         if prompt.purpose == PromptPurpose::DiscussionComment {
             self.submit_discussion_comment(prompt.buffer.trim());
+            return;
+        }
+        if prompt.purpose == PromptPurpose::DiscussionReply {
+            self.submit_discussion_reply(&prompt.buffer);
+            return;
+        }
+        if prompt.purpose == PromptPurpose::MoveCard {
+            self.submit_move_card(&prompt.buffer);
+            return;
+        }
+        if prompt.purpose == PromptPurpose::NewWikiPage {
+            self.start_new_wiki_page(&prompt.buffer);
             return;
         }
         if prompt.purpose == PromptPurpose::Labels {
@@ -2738,7 +2936,7 @@ mod tests {
         let item = |n: &str| CommunityItem {
             key: n.into(),
             title: format!("#{n} T"),
-            meta: String::new(),
+            ..Default::default()
         };
         s.apply(Msg::Community {
             repo: "github.com/o/other".into(),

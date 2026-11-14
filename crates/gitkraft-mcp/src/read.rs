@@ -1,9 +1,9 @@
 //! The tools that only read.
 
-use gitkraft_ci::{RunQuery, Status};
-use gitkraft_hub::SectionData;
+use gitkraft_ci::RunQuery;
+use gitkraft_hub::{SectionData, args};
 use gitkraft_platforms::model::{ListQuery, Page, StateFilter};
-use gitkraft_settings::dashboard::{Involvement, Section, SectionKind, SectionState};
+use gitkraft_settings::dashboard::SectionKind;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{schemars, tool, tool_router};
 use serde::Deserialize;
@@ -130,62 +130,9 @@ pub(crate) struct DayArgs {
     pub date: Option<String>,
 }
 
-fn state_filter(s: Option<&str>) -> Result<StateFilter, rmcp::ErrorData> {
-    match s {
-        None | Some("open") => Ok(StateFilter::Open),
-        Some("closed") => Ok(StateFilter::Closed),
-        Some("all") => Ok(StateFilter::All),
-        Some(o) => Err(invalid(format!(
-            "state must be open, closed or all, not '{o}'"
-        ))),
-    }
-}
-
-fn section_state(f: StateFilter) -> SectionState {
-    match f {
-        StateFilter::Open => SectionState::Open,
-        StateFilter::Closed => SectionState::Closed,
-        StateFilter::All => SectionState::All,
-    }
-}
-
-fn status_of(s: &str) -> Result<Status, rmcp::ErrorData> {
-    Ok(match s {
-        "queued" => Status::Queued,
-        "running" => Status::Running,
-        "success" => Status::Success,
-        "failed" => Status::Failed,
-        "cancelled" => Status::Cancelled,
-        o => {
-            return Err(invalid(format!(
-                "status must be queued, running, success, failed or cancelled, not '{o}'"
-            )));
-        }
-    })
-}
-
-fn section(kind: SectionKind, involvement: Option<Involvement>, state: SectionState) -> Section {
-    Section {
-        name: "mcp".into(),
-        kind,
-        repos: vec![],
-        involvement,
-        state,
-        label: None,
-        branch: None,
-        hidden: false,
-    }
-}
-
-fn involvement(s: Option<&str>) -> Result<Involvement, rmcp::ErrorData> {
-    match s {
-        None | Some("authored") => Ok(Involvement::Authored),
-        Some("assigned") => Ok(Involvement::Assigned),
-        Some("review_requested") => Ok(Involvement::ReviewRequested),
-        Some(o) => Err(invalid(format!(
-            "involvement must be authored, assigned or review_requested, not '{o}'"
-        ))),
-    }
+/// Words from a tool call, as the shared rules read them; a mistake is the caller's.
+fn bad<T>(r: Result<T, String>) -> Result<T, rmcp::ErrorData> {
+    r.map_err(invalid)
 }
 
 fn clamp(limit: Option<u32>, default: u32) -> u32 {
@@ -228,11 +175,11 @@ impl GitkraftServer {
         annotations(read_only_hint = true)
     )]
     pub(crate) async fn my_pull_requests(&self, Parameters(a): Parameters<MineArgs>) -> ToolResult {
-        let st = section_state(state_filter(a.state.as_deref())?);
-        let who = involvement(a.involvement.as_deref())?;
+        let st = bad(args::state_filter(a.state.as_deref()))?;
+        let who = bad(args::involvement(a.involvement.as_deref()))?;
         match self
             .hub
-            .load_section(&section(SectionKind::Prs, Some(who), st))
+            .load_section(&args::section("mcp", SectionKind::Prs, Some(who), st))
             .await
         {
             SectionData::Prs(r) => {
@@ -247,11 +194,11 @@ impl GitkraftServer {
         annotations(read_only_hint = true)
     )]
     pub(crate) async fn my_issues(&self, Parameters(a): Parameters<MineArgs>) -> ToolResult {
-        let st = section_state(state_filter(a.state.as_deref())?);
-        let who = involvement(a.involvement.as_deref())?;
+        let st = bad(args::state_filter(a.state.as_deref()))?;
+        let who = bad(args::involvement(a.involvement.as_deref()))?;
         match self
             .hub
-            .load_section(&section(SectionKind::Issues, Some(who), st))
+            .load_section(&args::section("mcp", SectionKind::Issues, Some(who), st))
             .await
         {
             SectionData::Issues(r) => {
@@ -268,7 +215,12 @@ impl GitkraftServer {
     pub(crate) async fn inbox(&self) -> ToolResult {
         match self
             .hub
-            .load_section(&section(SectionKind::Inbox, None, SectionState::Open))
+            .load_section(&args::section(
+                "mcp",
+                SectionKind::Inbox,
+                None,
+                StateFilter::Open,
+            ))
             .await
         {
             SectionData::Inbox(r) => out(&json!({"items": r.items, "errors": r.errors})),
@@ -286,7 +238,7 @@ impl GitkraftServer {
     ) -> ToolResult {
         let repo = self.repo(a.repo.as_deref())?;
         let q = ListQuery {
-            state: state_filter(a.state.as_deref())?,
+            state: bad(args::state_filter(a.state.as_deref()))?,
             author: a.author,
             assignee: a.assignee,
             label: a.label,
@@ -338,7 +290,7 @@ impl GitkraftServer {
     pub(crate) async fn list_issues(&self, Parameters(a): Parameters<ListArgs>) -> ToolResult {
         let repo = self.repo(a.repo.as_deref())?;
         let q = ListQuery {
-            state: state_filter(a.state.as_deref())?,
+            state: bad(args::state_filter(a.state.as_deref()))?,
             author: a.author,
             assignee: a.assignee,
             label: a.label,
@@ -466,7 +418,7 @@ impl GitkraftServer {
         let repo = self.repo(a.repo.as_deref())?;
         let q = RunQuery {
             branch: a.branch,
-            status: a.status.as_deref().map(status_of).transpose()?,
+            status: bad(a.status.as_deref().map(args::status).transpose())?,
             page: 1,
             per_page: clamp(a.limit, 20),
         };
@@ -503,29 +455,8 @@ impl GitkraftServer {
             .job_log(&repo, a.job_id)
             .await
             .map_err(|e| failed("ci_job_log", e))?;
-        let clean = gitkraft_ci::log::strip_ansi(&raw);
-        let lines: Vec<&str> = clean.lines().collect();
-        let total = lines.len();
-        let picked: Vec<String> = match a.grep.as_deref().filter(|g| !g.is_empty()) {
-            Some(g) => {
-                let g = g.to_lowercase();
-                lines
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, l)| l.to_lowercase().contains(&g))
-                    .take(200)
-                    .map(|(i, l)| format!("{}: {l}", i + 1))
-                    .collect()
-            }
-            None => {
-                let n = a.tail_lines.unwrap_or(150).max(1);
-                lines[total.saturating_sub(n)..]
-                    .iter()
-                    .map(|l| (*l).to_string())
-                    .collect()
-            }
-        };
-        out(&json!({"total_lines": total, "lines": picked}))
+        let x = args::log_excerpt(&raw, a.tail_lines.unwrap_or(150), a.grep.as_deref(), 200);
+        out(&json!({"total_lines": x.total_lines, "lines": x.lines}))
     }
 
     #[tool(

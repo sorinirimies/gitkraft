@@ -33,6 +33,7 @@ pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospa
 .log .ln.err{color:var(--err)}.log .ln.warn{color:var(--warn)}.log .ln.cmd{color:var(--accent)}.log .ln:target{background:var(--sel)}
 .log details{margin-left:1.5ch}.log summary{cursor:pointer;color:var(--text);font-weight:600}
 .tabs a{margin-right:14px;color:var(--text2)}.tabs a.on{color:var(--text);font-weight:600}
+.reply{margin-left:28px}
 .comment{border-left:3px solid var(--border);padding:4px 12px;margin:10px 0}.comment b{color:var(--accent)}
 img.shot{max-width:100%;border:1px solid var(--border);border-radius:6px;margin:6px 0}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
@@ -180,7 +181,10 @@ function gkDispatch(){
 }
 function actBtn(b){
   const p=JSON.parse(b.dataset.act);
-  if(b.dataset.from){p.body=document.getElementById(b.dataset.from).value;}
+  const field=b.dataset.field||'body';
+  if(b.dataset.ask){const t=prompt(b.dataset.ask);if(!t)return;p[field]=t;}
+  if(b.dataset.from){p[field]=document.getElementById(b.dataset.from).value;}
+  if(b.dataset.title){p.title=document.getElementById(b.dataset.title).value;}
   if(b.dataset.method){p.method=document.getElementById(b.dataset.method).value;}
   if(b.dataset.confirm&&!confirm(b.dataset.confirm))return;
   if(b.dataset.show){actShow(p,b.dataset.show);return;}

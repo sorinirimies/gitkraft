@@ -9,13 +9,11 @@ use std::path::PathBuf;
 
 use anyhow::{Result, anyhow, bail};
 use clap::{Args, CommandFactory, Parser, Subcommand};
-use gitkraft_ci::{RerunScope, RunQuery, Status};
-use gitkraft_hub::{Hub, SectionData};
-use gitkraft_platforms::model::{
-    ItemState, ListQuery, MergeMethod, MergeOptions, MergeTiming, Page, StateFilter,
-};
+use gitkraft_ci::{RerunScope, RunQuery};
+use gitkraft_hub::{Hub, SectionData, args};
+use gitkraft_platforms::model::{ItemState, ListQuery, MergeOptions, Page, StateFilter};
 use gitkraft_platforms::{DynClient, ItemKind, RepoId};
-use gitkraft_settings::dashboard::{Involvement, Section, SectionKind, SectionState};
+use gitkraft_settings::dashboard::SectionKind;
 use serde::Serialize;
 
 /// GitKraft: a Git IDE and an aggregate client for GitHub, GitLab, Gitea, Forgejo and Codeberg.
@@ -136,6 +134,12 @@ pub enum Forge {
     Wiki(WikiArgs),
     /// Comment on a pull request (or an issue with `--issue`).
     Comment(CommentArgs),
+    /// Answer a comment of a discussion (find the comment id with `discussions NUMBER --json`).
+    Reply(ReplyArgs),
+    /// Create or edit a wiki page from a file, stdin or your editor.
+    WikiSave(WikiSaveArgs),
+    /// Move a board card to another column.
+    BoardMove(BoardMoveArgs),
     /// Merge a pull request.
     Merge(MergeArgs),
     /// Ask an AI why a CI run failed (needs a key, see `ai-key`; `--dry-run` shows what would be sent).
@@ -272,6 +276,59 @@ pub struct CommentArgs {
     pub issue: bool,
 }
 
+/// `reply`.
+#[derive(Debug, Args)]
+pub struct ReplyArgs {
+    #[command(flatten)]
+    pub common: Common,
+    /// Discussion number.
+    pub number: u64,
+    /// Id of the comment to answer.
+    pub comment_id: u64,
+    /// The reply (Markdown).
+    pub body: String,
+}
+
+/// `wiki-save`.
+#[derive(Debug, Args)]
+pub struct WikiSaveArgs {
+    #[command(flatten)]
+    pub common: Common,
+    /// The page to edit (its slug); without it a new page is created and `--title` is needed.
+    pub page: Option<String>,
+    /// Title; the page's own when editing.
+    #[arg(long)]
+    pub title: Option<String>,
+    /// Read the content from this file; `-` is stdin (the default).
+    #[arg(
+        long,
+        value_name = "FILE",
+        default_value = "-",
+        conflicts_with = "edit"
+    )]
+    pub file: String,
+    /// Edit the page in $VISUAL / $EDITOR instead.
+    #[arg(long)]
+    pub edit: bool,
+    /// The change message (default `Update <title>`).
+    #[arg(short, long)]
+    pub message: Option<String>,
+}
+
+/// `board-move`.
+#[derive(Debug, Args)]
+pub struct BoardMoveArgs {
+    #[command(flatten)]
+    pub common: Common,
+    /// Issue or pull request number of the card.
+    pub number: u64,
+    /// Target column: its name, or a unique start or part of it.
+    pub column: String,
+    /// The board, when the card is on several.
+    #[arg(long)]
+    pub board: Option<String>,
+}
+
 /// `merge`.
 #[derive(Debug, Args)]
 pub struct MergeArgs {
@@ -344,6 +401,9 @@ impl Forge {
             Self::Discussions(a) => &a.common,
             Self::Wiki(a) => &a.common,
             Self::Comment(a) => &a.common,
+            Self::Reply(a) => &a.common,
+            Self::WikiSave(a) => &a.common,
+            Self::BoardMove(a) => &a.common,
             Self::Merge(a) => &a.common,
             Self::Rerun(a) => &a.common,
             Self::Explain(a) => &a.common,
@@ -357,52 +417,6 @@ pub struct Session {
     hub: Hub<DynClient>,
     default_repo: Option<RepoId>,
     client: DynClient,
-}
-
-fn state_filter(s: &str) -> Result<StateFilter> {
-    match s {
-        "open" => Ok(StateFilter::Open),
-        "closed" => Ok(StateFilter::Closed),
-        "all" => Ok(StateFilter::All),
-        o => bail!("state must be open, closed or all, not '{o}'"),
-    }
-}
-
-fn status_of(s: &str) -> Result<Status> {
-    Ok(match s {
-        "queued" => Status::Queued,
-        "running" => Status::Running,
-        "success" => Status::Success,
-        "failed" => Status::Failed,
-        "cancelled" => Status::Cancelled,
-        o => bail!("status must be queued, running, success, failed or cancelled, not '{o}'"),
-    })
-}
-
-fn section(kind: SectionKind, who: Option<Involvement>, state: StateFilter) -> Section {
-    Section {
-        name: "cli".into(),
-        kind,
-        repos: vec![],
-        involvement: who,
-        state: match state {
-            StateFilter::Open => SectionState::Open,
-            StateFilter::Closed => SectionState::Closed,
-            StateFilter::All => SectionState::All,
-        },
-        label: None,
-        branch: None,
-        hidden: false,
-    }
-}
-
-fn involvement(s: Option<&str>) -> Result<Involvement> {
-    match s {
-        None | Some("authored") => Ok(Involvement::Authored),
-        Some("assigned") => Ok(Involvement::Assigned),
-        Some("review" | "review_requested") => Ok(Involvement::ReviewRequested),
-        Some(o) => bail!("--who must be authored, assigned or review, not '{o}'"),
-    }
 }
 
 fn json_of<T: Serialize>(v: &T) -> Result<String> {
@@ -459,23 +473,13 @@ impl Session {
     }
 
     fn repo(&self, given: Option<&str>) -> Result<RepoId> {
-        let Some(text) = given.map(str::trim).filter(|t| !t.is_empty()) else {
-            return self.default_repo.clone().ok_or_else(|| {
-                anyhow!("not in a git checkout with a known remote: pass -R host/owner/name")
-            });
-        };
-        if let Some(id) = RepoId::from_key(text) {
-            return Ok(id);
-        }
-        let hosts = self.hub.hosts();
-        let host = match hosts.as_slice() {
-            [only] => Some(*only),
-            many => many.iter().copied().find(|h| *h == "github.com"),
-        };
-        match (text.split('/').collect::<Vec<_>>().as_slice(), host) {
-            ([owner, name], Some(host)) => Ok(RepoId::new(host, *owner, *name)),
-            _ => bail!("'{text}' is not host/owner/name"),
-        }
+        args::resolve_repo(
+            given,
+            self.default_repo.as_ref(),
+            &self.hub.hosts(),
+            "not in a git checkout with a known remote: pass -R host/owner/name",
+        )
+        .map_err(|e| anyhow!(e))
     }
 
     fn backend(&self, repo: &RepoId) -> Result<&gitkraft_platforms::Backend<DynClient>> {
@@ -511,7 +515,12 @@ impl Session {
                 let repo = self.repo(repo_flag)?;
                 let q = RunQuery {
                     branch: a.branch.clone(),
-                    status: a.status.as_deref().map(status_of).transpose()?,
+                    status: a
+                        .status
+                        .as_deref()
+                        .map(args::status)
+                        .transpose()
+                        .map_err(|e| anyhow!(e))?,
                     page: 1,
                     per_page: a.limit.clamp(1, 100),
                 };
@@ -557,26 +566,11 @@ impl Session {
             Forge::Log(a) => {
                 let repo = self.repo(repo_flag)?;
                 let raw = self.ci(&repo)?.job_log(&repo, a.job_id).await?;
-                let clean = gitkraft_ci::log::strip_ansi(&raw);
-                let lines: Vec<&str> = clean.lines().collect();
-                let picked: Vec<String> = match a.grep.as_deref().filter(|g| !g.is_empty()) {
-                    Some(g) => {
-                        let g = g.to_lowercase();
-                        lines
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, l)| l.to_lowercase().contains(&g))
-                            .map(|(i, l)| format!("{}: {l}", i + 1))
-                            .collect()
-                    }
-                    None => lines[lines.len().saturating_sub(a.tail.max(1))..]
-                        .iter()
-                        .map(|l| (*l).to_string())
-                        .collect(),
-                };
+                let x = args::log_excerpt(&raw, a.tail, a.grep.as_deref(), usize::MAX);
+                let picked = x.lines;
                 if json {
                     return json_of(
-                        &serde_json::json!({"total_lines": lines.len(), "lines": picked}),
+                        &serde_json::json!({"total_lines": x.total_lines, "lines": picked}),
                     );
                 }
                 Ok(picked.iter().fold(String::new(), |mut o, l| {
@@ -716,22 +710,45 @@ impl Session {
                     .await?;
                 Ok(format!("commented on {}#{}\n", repo.key(), a.number))
             }
+            Forge::Reply(a) => {
+                let repo = self.repo(repo_flag)?;
+                let done = gitkraft_hub::community::reply(
+                    &self.hub,
+                    &repo,
+                    a.number,
+                    a.comment_id,
+                    &a.body,
+                )
+                .await
+                .map_err(|e| anyhow!(e))?;
+                Ok(format!("{done}\n"))
+            }
+            Forge::BoardMove(a) => {
+                let repo = self.repo(repo_flag)?;
+                let done = gitkraft_hub::community::move_card(
+                    &self.hub,
+                    &repo,
+                    a.board.as_deref(),
+                    a.number,
+                    &a.column,
+                )
+                .await
+                .map_err(|e| anyhow!(e))?;
+                Ok(format!("{done}\n"))
+            }
+            Forge::WikiSave(a) => self.wiki_save(a, repo_flag).await,
             Forge::Merge(a) => {
                 let repo = self.repo(repo_flag)?;
                 let options = MergeOptions {
-                    method: match a.method.as_str() {
-                        "merge" => MergeMethod::Merge,
-                        "squash" => MergeMethod::Squash,
-                        "rebase" => MergeMethod::Rebase,
-                        o => bail!("method must be merge, squash or rebase, not '{o}'"),
-                    },
-                    timing: if a.queue {
-                        MergeTiming::Queue
+                    method: args::merge_method(Some(&a.method)).map_err(|e| anyhow!(e))?,
+                    timing: args::merge_timing(Some(if a.queue {
+                        "queue"
                     } else if a.when_green {
-                        MergeTiming::WhenGreen
+                        "when_green"
                     } else {
-                        MergeTiming::Now
-                    },
+                        "now"
+                    }))
+                    .map_err(|e| anyhow!(e))?,
                     force: false,
                 };
                 let outcome = self
@@ -754,6 +771,65 @@ impl Session {
                 Ok(format!("run {} is starting again\n", a.run_id))
             }
         }
+    }
+
+    async fn wiki_save(&self, a: &WikiSaveArgs, repo_flag: Option<&str>) -> Result<String> {
+        use gitkraft_hub::community::{WikiDraft, save_wiki, upload_draft};
+        let repo = self.repo(repo_flag)?;
+        // The page as it is now, for its title and as the editor's starting text.
+        let current = match &a.page {
+            Some(slug) => Some(self.backend(&repo)?.wiki_page(&repo, slug).await?),
+            None => None,
+        };
+        let title = a
+            .title
+            .clone()
+            .or_else(|| current.as_ref().map(|p| p.page.title.clone()))
+            .ok_or_else(|| anyhow!("a new page needs --title"))?;
+        if a.edit {
+            let draft = WikiDraft::write(
+                &repo,
+                a.page.as_deref(),
+                &title,
+                current.as_ref().map_or("", |p| p.content.as_str()),
+            )
+            .map_err(|e| anyhow!(e))?;
+            let editor = std::env::var("VISUAL")
+                .or_else(|_| std::env::var("EDITOR"))
+                .unwrap_or_else(|_| "vi".into());
+            let mut parts = editor.split_whitespace();
+            let program = parts.next().unwrap_or("vi");
+            let status = std::process::Command::new(program)
+                .args(parts)
+                .arg(&draft.path)
+                .status()
+                .map_err(|e| anyhow!("cannot run {program}: {e}"))?;
+            if !status.success() {
+                bail!("{program} did not finish cleanly: nothing was saved");
+            }
+            return Ok(format!(
+                "{}\n",
+                upload_draft(&self.hub, &draft)
+                    .await
+                    .map_err(|e| anyhow!(e))?
+            ));
+        }
+        let content = if a.file == "-" {
+            std::io::read_to_string(std::io::stdin())?
+        } else {
+            std::fs::read_to_string(&a.file).map_err(|e| anyhow!("{}: {e}", a.file))?
+        };
+        let done = save_wiki(
+            &self.hub,
+            &repo,
+            a.page.as_deref(),
+            &title,
+            &content,
+            a.message.as_deref().unwrap_or_default(),
+        )
+        .await
+        .map_err(|e| anyhow!(e))?;
+        Ok(format!("{done}\n"))
     }
 
     async fn explain(
@@ -828,7 +904,12 @@ impl Session {
     async fn inbox(&self, json: bool) -> Result<String> {
         let SectionData::Inbox(r) = self
             .hub
-            .load_section(&section(SectionKind::Inbox, None, StateFilter::Open))
+            .load_section(&args::section(
+                "cli",
+                SectionKind::Inbox,
+                None,
+                StateFilter::Open,
+            ))
             .await
         else {
             bail!("unexpected section data");
@@ -852,7 +933,7 @@ impl Session {
     }
 
     async fn items(&self, a: &ListArgs, prs: bool, json: bool) -> Result<String> {
-        let state = state_filter(&a.state)?;
+        let state = args::state_filter(Some(&a.state)).map_err(|e| anyhow!(e))?;
         if a.common.repo.is_some() {
             let repo = self.repo(a.common.repo.as_deref())?;
             let q = ListQuery {
@@ -892,7 +973,7 @@ impl Session {
                 o
             }));
         }
-        let who = involvement(a.who.as_deref())?;
+        let who = args::involvement(a.who.as_deref()).map_err(|e| anyhow!(e))?;
         let kind = if prs {
             SectionKind::Prs
         } else {
@@ -900,7 +981,7 @@ impl Session {
         };
         let data = self
             .hub
-            .load_section(&section(kind, Some(who), state))
+            .load_section(&args::section("cli", kind, Some(who), state))
             .await;
         match data {
             SectionData::Prs(r) => self.mine(json, &r.items, &r.errors, |p| {
@@ -1230,5 +1311,65 @@ mod tests {
         fake.push_json(&format!("{API}/actions/runs/5/jobs"), r#"{"jobs":[]}"#);
         let e = s.run(&forge(&["explain", "5"])).await.expect_err("none");
         assert!(e.to_string().contains("no failed job"));
+    }
+
+    #[tokio::test]
+    async fn reply_and_board_move_go_through_the_shared_helpers_and_report_their_errors() {
+        let (s, fake) = rig();
+        fake.push_json(
+            "https://api.github.com/graphql",
+            r#"{"data":{"repository":{"discussion":{"id":"D","comments":{"nodes":[{"databaseId":9,"id":"C_9","replies":{"nodes":[]}}]}}}}}"#,
+        );
+        fake.push_json(
+            "https://api.github.com/graphql",
+            r#"{"data":{"addDiscussionComment":{"comment":{"id":"n"}}}}"#,
+        );
+        let out = s
+            .run(&forge(&["reply", "5", "9", "thanks"]))
+            .await
+            .expect("reply");
+        assert!(out.contains("comment 9"), "{out}");
+        let err = s
+            .run(&forge(&["reply", "5", "9", " "]))
+            .await
+            .expect_err("empty");
+        assert!(err.to_string().contains("some text"));
+
+        let (s, fake) = rig();
+        fake.push_json(
+            "https://api.github.com/graphql",
+            r#"{"data":{"repository":{"projectsV2":{"nodes":[]}}}}"#,
+        );
+        let err = s
+            .run(&forge(&["board-move", "1", "Done"]))
+            .await
+            .expect_err("no card");
+        assert!(err.to_string().contains("no board"), "{err}");
+        assert!(
+            parse(&["board-move", "1"]).is_err(),
+            "the column is required"
+        );
+    }
+
+    #[tokio::test]
+    async fn wiki_save_reads_a_file_and_needs_a_title_for_a_new_page() {
+        let (s, _) = rig();
+        let err = s.run(&forge(&["wiki-save"])).await.expect_err("no title");
+        assert!(err.to_string().contains("--title"), "{err}");
+        assert!(parse(&["wiki-save", "--edit", "--file", "x"]).is_err());
+        let dir = tempfile::tempdir().expect("dir");
+        let file = dir.path().join("p.md");
+        std::fs::write(&file, "# Hi").expect("write");
+        let err = s
+            .run(&forge(&[
+                "wiki-save",
+                "--title",
+                "Home",
+                "--file",
+                &file.display().to_string(),
+            ]))
+            .await
+            .expect_err("github has no wiki api");
+        assert!(err.to_string().contains("git"), "{err}");
     }
 }

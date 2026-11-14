@@ -149,6 +149,9 @@ pub struct Comment {
     pub body: String,
     /// Creation time.
     pub created_at: Option<DateTime<Utc>>,
+    /// The comment this one answers (discussion replies); `None` for a top-level comment.
+    #[serde(default)]
+    pub parent: Option<u64>,
 }
 
 /// What a reviewer decided.
@@ -599,6 +602,9 @@ pub struct BoardCard {
     pub url: String,
     /// Assignee logins.
     pub assignees: Vec<String>,
+    /// The platform's id of the card on the board (GitHub: the project item), for moving it.
+    #[serde(default)]
+    pub item_id: Option<String>,
 }
 
 /// One column of a board.
@@ -608,6 +614,9 @@ pub struct BoardColumn {
     pub name: String,
     /// Cards, in the platform's order.
     pub cards: Vec<BoardCard>,
+    /// The platform's id of the column (GitHub: the Status option), for moving cards into it.
+    #[serde(default)]
+    pub option_id: Option<String>,
 }
 
 /// A kanban board.
@@ -617,4 +626,10 @@ pub struct Board {
     pub name: String,
     /// Columns, left to right.
     pub columns: Vec<BoardColumn>,
+    /// The platform's ids needed to move cards (GitHub: project id and Status field id).
+    #[serde(default)]
+    pub project_id: Option<String>,
+    /// See [`Board::project_id`].
+    #[serde(default)]
+    pub field_id: Option<String>,
 }

@@ -29,6 +29,15 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         Some(hub) => key_outcome(hub, key),
         None => Outcome::Close,
     };
+    // A wiki edit starts in the editor the user chose; a terminal editor is waited for and the page
+    // is sent when it exits, a GUI editor returns at once and `U` sends it.
+    if let Some(hub) = app.hub.as_mut()
+        && std::mem::take(&mut hub.open_draft)
+        && let Some(path) = hub.wiki_draft.as_ref().map(|d| d.path.clone())
+    {
+        app.upload_wiki_after_editor = app.editor.is_terminal_editor();
+        app.open_path_in_editor(path, "wiki page");
+    }
     match outcome {
         Outcome::Stay => {}
         Outcome::Close => {
@@ -288,6 +297,30 @@ fn community_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
                 hub.set_notice("wiki pages cannot be commented on".into(), false);
             }
         }
+        KeyCode::Char('R') if hub.community.detail.is_some() => {
+            if hub.community.tab == CommunityTab::Discussions {
+                hub.prompt = Some(Prompt {
+                    purpose: PromptPurpose::DiscussionReply,
+                    buffer: String::new(),
+                });
+            } else {
+                hub.set_notice("only discussion comments take replies".into(), false);
+            }
+        }
+        KeyCode::Char('m') if hub.community.tab == CommunityTab::Board => {
+            hub.prompt = Some(Prompt {
+                purpose: PromptPurpose::MoveCard,
+                buffer: String::new(),
+            });
+        }
+        KeyCode::Char('e') if hub.community.tab == CommunityTab::Wiki => hub.start_wiki_edit(),
+        KeyCode::Char('n') if hub.community.tab == CommunityTab::Wiki => {
+            hub.prompt = Some(Prompt {
+                purpose: PromptPurpose::NewWikiPage,
+                buffer: String::new(),
+            });
+        }
+        KeyCode::Char('U') if hub.community.tab == CommunityTab::Wiki => hub.upload_wiki_draft(),
         _ => {}
     }
     Outcome::Stay
@@ -1392,6 +1425,103 @@ mod tests {
         key(&mut s, KeyCode::Esc);
         assert_eq!(s.pulse.day, None);
         assert!(s.pulse.day_data.is_none());
+    }
+
+    #[test]
+    fn community_keys_reply_move_cards_and_edit_wiki_pages_only_where_they_apply() {
+        let mut s = state();
+        let press = |s: &mut HubState, c: KeyCode| {
+            let _ = key_outcome(s, KeyEvent::new(c, KeyModifiers::NONE));
+        };
+        press(&mut s, KeyCode::Char('T'));
+        // R needs an open discussion.
+        press(&mut s, KeyCode::Char('R'));
+        assert!(s.prompt.is_none());
+        s.community.detail = Some(Default::default());
+        press(&mut s, KeyCode::Char('R'));
+        assert_eq!(
+            s.prompt.as_ref().map(|p| p.purpose),
+            Some(PromptPurpose::DiscussionReply)
+        );
+        s.prompt = None;
+
+        // m is the board's key, e and n the wiki's: elsewhere they do nothing.
+        press(&mut s, KeyCode::Char('m'));
+        press(&mut s, KeyCode::Char('n'));
+        assert!(s.prompt.is_none() && !s.open_draft);
+        s.community.tab = CommunityTab::Board;
+        press(&mut s, KeyCode::Char('m'));
+        assert_eq!(
+            s.prompt.as_ref().map(|p| p.purpose),
+            Some(PromptPurpose::MoveCard)
+        );
+        s.prompt = None;
+        s.community.tab = CommunityTab::Wiki;
+        press(&mut s, KeyCode::Char('n'));
+        assert_eq!(
+            s.prompt.as_ref().map(|p| p.purpose),
+            Some(PromptPurpose::NewWikiPage)
+        );
+        s.prompt = None;
+        press(&mut s, KeyCode::Char('U'));
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, _)| t.contains("no wiki page")),
+            "nothing to upload yet"
+        );
+    }
+
+    #[test]
+    fn a_wiki_edit_writes_the_page_to_a_file_and_asks_the_app_to_open_it() {
+        let mut s = state();
+        let _ = key_outcome(
+            &mut s,
+            KeyEvent::new(KeyCode::Char('T'), KeyModifiers::NONE),
+        );
+        s.community.repo = Some(gitkraft_platforms::RepoId::new("codeberg.org", "o", "r"));
+        s.community.tab = CommunityTab::Wiki;
+        s.community.detail = Some(super::super::state::CommunityDetail {
+            page: gitkraft_hub::community::Page {
+                key: "Home".into(),
+                title: "Home".into(),
+                text: "# Hi\n".into(),
+                comments: Vec::new(),
+            },
+            scroll: 0,
+        });
+        let _ = key_outcome(
+            &mut s,
+            KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE),
+        );
+        assert!(s.open_draft);
+        let draft = s.wiki_draft.clone().expect("draft");
+        assert_eq!(
+            std::fs::read_to_string(&draft.path).unwrap_or_default(),
+            "# Hi\n"
+        );
+        assert_eq!(draft.slug.as_deref(), Some("Home"));
+
+        // A new page starts empty and has no slug; an empty title is refused.
+        s.open_draft = false;
+        s.start_new_wiki_page("  ");
+        assert!(!s.open_draft);
+        s.start_new_wiki_page("Roadmap");
+        assert!(s.open_draft);
+        assert_eq!(s.wiki_draft.as_ref().and_then(|d| d.slug.clone()), None);
+    }
+
+    #[test]
+    fn a_reply_that_names_no_comment_is_an_error_not_a_request() {
+        let mut s = state();
+        s.community.repo = Some(gitkraft_platforms::RepoId::new("github.com", "o", "r"));
+        s.community.detail = Some(Default::default());
+        s.submit_discussion_reply("thanks");
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, ok)| !ok && t.contains("number")),
+            "{:?}",
+            s.fresh_notice()
+        );
     }
 
     #[test]

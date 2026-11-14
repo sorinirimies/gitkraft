@@ -142,6 +142,9 @@ fn read_tools_are_marked_read_only() {
             "ci_cancel",
             "dispatch_workflow",
             "comment_discussion",
+            "reply_discussion",
+            "save_wiki_page",
+            "move_card",
         ];
         assert_eq!(ro, Some(!writes.contains(&name)), "{name}: {t}");
     }

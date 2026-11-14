@@ -327,7 +327,7 @@ async fn actions_post_json_and_report_success_or_the_reason() {
         ),
         (
             r#"{"action":"merge","repo":"github.com/o/r","number":7,"method":"fast-forward"}"#,
-            "unknown merge method",
+            "method must be merge, squash or rebase",
         ),
         (
             r#"{"action":"comment","repo":"nope","number":7,"kind":"pr","body":"x"}"#,
@@ -654,7 +654,7 @@ async fn nonsense_merge_requests_are_refused_before_any_call() {
     for (body, needle) in [
         (
             r#"{"action":"merge","repo":"github.com/o/r","number":7,"when":"soon"}"#,
-            "unknown merge timing",
+            "when must be now, when_green or queue",
         ),
         (
             r#"{"action":"merge","repo":"github.com/o/r","number":7,"when":"when_green","force":true}"#,
@@ -662,7 +662,7 @@ async fn nonsense_merge_requests_are_refused_before_any_call() {
         ),
         (
             r#"{"action":"update_branch","repo":"github.com/o/r","number":7,"style":"squash"}"#,
-            "unknown update style",
+            "style must be merge or rebase",
         ),
     ] {
         let r = request(h.addr, "POST", "/api/action", body).await;
@@ -1024,5 +1024,236 @@ async fn the_dispatch_page_lists_workflows_and_the_action_starts_one() {
         h.fake.requests().len(),
         n,
         "bad input never reaches the platform"
+    );
+}
+
+#[tokio::test]
+async fn discussion_comments_have_reply_buttons_and_a_reply_reaches_the_platform() {
+    let h = start().await;
+    h.fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"repository":{"discussion":{"id":"D","number":5,"title":"T","url":"u","body":"q","updatedAt":"2026-05-01T10:00:00Z","isAnswered":false,"category":{"name":"Q&A"},"author":{"login":"alice"},"commentCount":{"totalCount":2},"comments":{"nodes":[{"databaseId":9,"id":"C_9","body":"top","createdAt":"2026-05-01T11:00:00Z","author":{"login":"bob"},"replies":{"nodes":[{"databaseId":10,"body":"nested","createdAt":"2026-05-01T12:00:00Z","author":{"login":"carol"}}]}}]}}}}}"#,
+    );
+    let page = get(
+        h.addr,
+        "/community?repo=github.com%2Fo%2Fr&tab=discussions&n=5",
+    )
+    .await;
+    assert_eq!(page.status, 200, "{}", page.body);
+    assert!(
+        page.body
+            .contains("&quot;action&quot;:&quot;discussion_reply&quot;"),
+        "{}",
+        page.body
+    );
+    assert!(
+        page.body.contains("&quot;comment_id&quot;:9")
+            && page.body.contains("&quot;comment_id&quot;:10")
+    );
+    assert!(page.body.contains("comment reply"), "replies are indented");
+    assert!(page.body.contains("data-ask=\"Your reply\""));
+
+    let h = start().await;
+    h.fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"repository":{"discussion":{"id":"D_1","comments":{"nodes":[{"databaseId":9,"id":"C_9","replies":{"nodes":[]}}]}}}}}"#,
+    );
+    h.fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"addDiscussionComment":{"comment":{"id":"n"}}}}"#,
+    );
+    let ok = request(
+        h.addr,
+        "POST",
+        "/api/action",
+        r#"{"action":"discussion_reply","repo":"github.com/o/r","number":5,"comment_id":9,"body":"thanks"}"#,
+    )
+    .await;
+    assert_eq!(ok.status, 200, "{}", ok.body);
+    let sent = String::from_utf8_lossy(
+        h.fake
+            .requests()
+            .last()
+            .and_then(|r| r.body.clone())
+            .unwrap_or_default()
+            .as_slice(),
+    )
+    .into_owned();
+    assert!(sent.contains("replyToId") && sent.contains("C_9"), "{sent}");
+    let empty = request(
+        h.addr,
+        "POST",
+        "/api/action",
+        r#"{"action":"discussion_reply","repo":"github.com/o/r","number":5,"comment_id":9,"body":" "}"#,
+    )
+    .await;
+    assert_eq!(empty.status, 400);
+}
+
+#[tokio::test]
+async fn board_cards_have_a_move_button_and_a_move_sets_the_status() {
+    let boards = r#"{"data":{"repository":{"projectsV2":{"nodes":[{"id":"P","title":"Roadmap","field":{"id":"F","options":[{"id":"O1","name":"Todo"},{"id":"O2","name":"Done"}]},"items":{"nodes":[{"id":"I4","fieldValueByName":{"name":"Todo"},"content":{"number":4,"title":"Add it","url":"u","assignees":{"nodes":[]}}}]}}]}}}}"#;
+    let h = start().await;
+    h.fake.push_json("https://api.github.com/graphql", boards);
+    let page = get(h.addr, "/community?tab=boards").await;
+    assert!(
+        page.body
+            .contains("&quot;action&quot;:&quot;move_card&quot;"),
+        "{}",
+        page.body
+    );
+    assert!(page.body.contains("data-field=\"column\"") && page.body.contains("Move…"));
+
+    let h = start().await;
+    h.fake.push_json("https://api.github.com/graphql", boards);
+    h.fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"updateProjectV2ItemFieldValue":{"projectV2Item":{"id":"I4"}}}}"#,
+    );
+    let ok = request(
+        h.addr,
+        "POST",
+        "/api/action",
+        r#"{"action":"move_card","repo":"github.com/o/r","number":4,"column":"don","board":"Roadmap"}"#,
+    )
+    .await;
+    assert_eq!(ok.status, 200, "{}", ok.body);
+    assert!(
+        ok.body.contains("#4 moved to Done on Roadmap"),
+        "{}",
+        ok.body
+    );
+    let sent = String::from_utf8_lossy(
+        h.fake
+            .requests()
+            .last()
+            .and_then(|r| r.body.clone())
+            .unwrap_or_default()
+            .as_slice(),
+    )
+    .into_owned();
+    assert!(
+        sent.contains("\"o\":\"O2\"") && sent.contains("\"i\":\"I4\""),
+        "{sent}"
+    );
+}
+
+#[tokio::test]
+async fn a_wiki_save_is_refused_on_github_with_the_reason_and_validated_before_any_call() {
+    let h = start().await;
+    let r = request(
+        h.addr,
+        "POST",
+        "/api/action",
+        r#"{"action":"wiki_save","repo":"github.com/o/r","slug":"Home","title":"Home","content":"Hi"}"#,
+    )
+    .await;
+    assert_eq!(r.status, 400);
+    assert!(r.body.contains("git"), "{}", r.body);
+    let blank = request(
+        h.addr,
+        "POST",
+        "/api/action",
+        r#"{"action":"wiki_save","repo":"github.com/o/r","title":" ","content":"x"}"#,
+    )
+    .await;
+    assert!(blank.body.contains("title"), "{}", blank.body);
+    assert!(h.fake.requests().is_empty(), "nothing reached the platform");
+}
+
+async fn start_gitea() -> Harness {
+    let fake = FakeClient::new();
+    let mut account =
+        Account::new(PlatformKind::Gitea, "codeberg.org").with_token(Secret::new("t"));
+    account.me = Some("me".into());
+    let hub = Hub::new(vec![account], &DynClient::new(fake.clone()));
+    let dashboard = Dashboard {
+        sections: vec![section("Mine", SectionKind::Prs, &["codeberg.org/o/r"])],
+    };
+    let dir = tempfile::tempdir().expect("tmp");
+    let paths = Paths {
+        dashboard: None,
+        notify: Some(dir.path().join("notifications.toml")),
+        use_state_dir: false,
+        ssh_dir: None,
+        checkouts: Vec::new(),
+    };
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let session = Session::new(hub, dashboard, paths, 0);
+    TOKENS
+        .lock()
+        .expect("lock")
+        .push((addr, session.token().to_string()));
+    tokio::spawn(async move {
+        let _ = topcoat::serve(listener, router(session)).await;
+    });
+    Harness { addr, fake, dir }
+}
+
+#[tokio::test]
+async fn a_wiki_page_opens_in_an_editor_and_saving_it_patches_the_page_new_pages_are_posted() {
+    let api = "https://codeberg.org/api/v1/repos/o/r/wiki";
+    let h = start_gitea().await;
+    h.fake.push_json(
+        &format!("{api}/pages"),
+        r#"[{"title":"Home","sub_url":"Home"}]"#,
+    );
+    let list = get(h.addr, "/community?tab=wiki").await;
+    assert!(
+        list.body.contains("New page") && list.body.contains("wiki-new"),
+        "{}",
+        list.body
+    );
+    assert!(list.body.contains("Home"));
+
+    // "# Hi <b>" in base64
+    h.fake.push_json(
+        &format!("{api}/page/Home"),
+        r#"{"title":"Home","sub_url":"Home","content_base64":"IyBIaSA8Yj4="}"#,
+    );
+    let page = get(
+        h.addr,
+        "/community?repo=codeberg.org%2Fo%2Fr&tab=wiki&page=Home",
+    )
+    .await;
+    assert_eq!(page.status, 200, "{}", page.body);
+    assert!(page.body.contains("<textarea id=\"wiki\""), "{}", page.body);
+    assert!(
+        page.body.contains("# Hi &lt;b&gt;"),
+        "escaped: {}",
+        page.body
+    );
+    assert!(
+        page.body.contains("Save page")
+            && page
+                .body
+                .contains("&quot;action&quot;:&quot;wiki_save&quot;")
+    );
+
+    h.fake.push_json(&format!("{api}/page/Home"), "{}");
+    let saved = request(
+        h.addr,
+        "POST",
+        "/api/action",
+        r#"{"action":"wiki_save","repo":"codeberg.org/o/r","slug":"Home","title":"Home","content":"changed"}"#,
+    )
+    .await;
+    assert_eq!(saved.status, 200, "{}", saved.body);
+    let last = h.fake.requests().pop().expect("request");
+    assert_eq!(last.method, gitkraft_platforms::http::Method::Patch);
+
+    h.fake.push_json(&format!("{api}/new"), "{}");
+    let created = request(
+        h.addr,
+        "POST",
+        "/api/action",
+        r#"{"action":"wiki_save","repo":"codeberg.org/o/r","title":"Roadmap","content":"later"}"#,
+    )
+    .await;
+    assert_eq!(created.status, 200, "{}", created.body);
+    assert_eq!(
+        h.fake.requests().pop().expect("request").method,
+        gitkraft_platforms::http::Method::Post
     );
 }

@@ -7,9 +7,9 @@ use crate::github_like::GitHubLike;
 use crate::gitlab::{GitLab, ItemKind};
 use crate::http::HttpClient;
 use crate::model::{
-    ActivityDay, Board, Capabilities, Comment, DayActivity, Discussion, DiscussionDetail, Issue,
-    ListQuery, MergeMethod, MergeOptions, MergeOutcome, Notification, PullRequest, Review,
-    ReviewVerdict, StateFilter, UpdateStyle, User, WikiContent, WikiPage,
+    ActivityDay, Board, BoardCard, BoardColumn, Capabilities, Comment, DayActivity, Discussion,
+    DiscussionDetail, Issue, ListQuery, MergeMethod, MergeOptions, MergeOutcome, Notification,
+    PullRequest, Review, ReviewVerdict, StateFilter, UpdateStyle, User, WikiContent, WikiPage,
 };
 use crate::platform::{PlatformKind, RepoId};
 use gitkraft_settings::dashboard::Involvement;
@@ -370,6 +370,52 @@ impl<C: HttpClient> Backend<C> {
             Self::GitLab(_) => Err(PlatformError::Unsupported(
                 "discussions exist on GitHub only",
             )),
+        }
+    }
+
+    /// Answers one comment of a discussion (GitHub only).
+    pub async fn reply_to_discussion(
+        &self,
+        repo: &RepoId,
+        number: u64,
+        comment_id: u64,
+        body: &str,
+    ) -> Result<()> {
+        match self {
+            Self::GitHubLike(b) => b.reply_to_discussion(repo, number, comment_id, body).await,
+            Self::GitLab(_) => Err(PlatformError::Unsupported(
+                "discussions exist on GitHub only",
+            )),
+        }
+    }
+
+    /// Writes a wiki page: `slug` set edits it, absent creates a page called `title`
+    /// (GitLab, Gitea family; GitHub's wiki is a git repository).
+    pub async fn save_wiki_page(
+        &self,
+        repo: &RepoId,
+        slug: Option<&str>,
+        title: &str,
+        content: &str,
+        message: &str,
+    ) -> Result<()> {
+        match self {
+            Self::GitHubLike(b) => b.save_wiki_page(repo, slug, title, content, message).await,
+            Self::GitLab(b) => b.save_wiki_page(repo, slug, title, content).await,
+        }
+    }
+
+    /// Moves `card` to column `to` of `board` (GitHub Projects v2, GitLab issue boards).
+    pub async fn move_card(
+        &self,
+        repo: &RepoId,
+        board: &Board,
+        card: &BoardCard,
+        to: &BoardColumn,
+    ) -> Result<()> {
+        match self {
+            Self::GitHubLike(b) => b.move_card(board, card, to).await,
+            Self::GitLab(b) => b.move_card(repo, board, card, to).await,
         }
     }
 

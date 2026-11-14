@@ -1135,22 +1135,95 @@ fn community<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
             detail = detail
                 .push(text(p.title.clone()).size(15).color(c.text_primary))
                 .push(text(p.text.clone()).size(13).color(c.text_primary));
-            for (who, body) in &p.comments {
+            for (n, cm) in p.comments.iter().enumerate() {
+                let mut head = row![
+                    text(format!("[{}] {}", n + 1, cm.heading()))
+                        .size(12)
+                        .color(c.accent)
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center);
+                if cs.tab == Tab::Discussions {
+                    head = head.push(
+                        button(text("Reply").size(11))
+                            .on_press(HubMessage::CommunityReplyTo(Some((
+                                cm.id,
+                                cm.author.clone(),
+                            ))))
+                            .style(theme::ghost_button)
+                            .padding([1, 6]),
+                    );
+                }
                 detail = detail
-                    .push(text(who.clone()).size(12).color(c.accent))
-                    .push(text(body.clone()).size(13).color(c.text_primary));
+                    .push(head)
+                    .push(text(cm.body.clone()).size(13).color(c.text_primary));
             }
         }
     }
     let mut right = column![scrollable(detail).height(Length::Fill)].spacing(8);
     if cs.page.is_some() && cs.tab == Tab::Discussions {
-        right = right.push(note_input(hub, "Write a comment"));
+        let (placeholder, label) = match &cs.reply_to {
+            Some((_, who)) => (format!("Reply to {who}"), format!("Reply to {who}")),
+            None => ("Write a comment".to_string(), "Comment".to_string()),
+        };
         right = right.push(
-            button(text("Comment").size(13))
+            text_input(&placeholder, &hub.note)
+                .on_input(HubMessage::NoteInput)
+                .padding(6)
+                .size(13),
+        );
+        let mut buttons = row![
+            button(text(label).size(13))
                 .on_press(HubMessage::CommunityComment)
+                .style(theme::toolbar_button)
+                .padding([4, 10])
+        ]
+        .spacing(8);
+        if cs.reply_to.is_some() {
+            buttons = buttons.push(
+                button(text("Cancel reply").size(13))
+                    .on_press(HubMessage::CommunityReplyTo(None))
+                    .style(theme::ghost_button)
+                    .padding([4, 10]),
+            );
+        }
+        right = right.push(buttons);
+    }
+    if cs.tab == Tab::Board && cs.items.as_ref().is_some_and(|i| !i.is_empty()) {
+        right = right.push(note_input(hub, "Move the selected card to column…"));
+        right = right.push(
+            button(text("Move card").size(13))
+                .on_press(HubMessage::CommunityMove)
                 .style(theme::toolbar_button)
                 .padding([4, 10]),
         );
+    }
+    if cs.tab == Tab::Wiki && cs.error.is_none() {
+        right = right.push(note_input(hub, "Title of a new page…"));
+        let mut buttons = row![
+            button(text("New page").size(13))
+                .on_press(HubMessage::WikiNew)
+                .style(theme::toolbar_button)
+                .padding([4, 10])
+        ]
+        .spacing(8);
+        if cs.page.is_some() {
+            buttons = buttons.push(
+                button(text("Edit in editor").size(13))
+                    .on_press(HubMessage::WikiEdit)
+                    .style(theme::toolbar_button)
+                    .padding([4, 10]),
+            );
+        }
+        if cs.wiki_draft.is_some() {
+            buttons = buttons.push(
+                button(text("Upload edit").size(13))
+                    .on_press(HubMessage::WikiUpload)
+                    .style(theme::toolbar_button)
+                    .padding([4, 10]),
+            );
+        }
+        right = right.push(buttons);
     }
     column![
         header,
@@ -1745,12 +1818,18 @@ mod tests {
             key: "5".into(),
             title: "#5 Q".into(),
             meta: "Q&A".into(),
+            ..Item::default()
         }]);
         hub.community.page = Some(Page {
             key: "5".into(),
             title: "#5 Q".into(),
             text: "body".into(),
-            comments: vec![("bob".into(), "answer".into())],
+            comments: vec![gitkraft_hub::community::PageComment {
+                id: 9,
+                author: "bob".into(),
+                body: "answer".into(),
+                reply: false,
+            }],
         });
         let _ = view(&app);
         let hub = app.hub.as_mut().expect("hub");

@@ -984,11 +984,12 @@ async fn community(cx: &Cx) -> Result<impl View> {
     .collect();
     // what the platform says is shown as a note: GitHub has no wiki API, the others have no discussions
     let mut note: Option<String> = None;
-    let mut list: Vec<(String, String, String)> = Vec::new();
+    let mut list: Vec<(String, String, String, String)> = Vec::new();
     let mut heading = String::new();
     let mut text: Option<String> = None;
-    let mut comments: Vec<(String, String, String)> = Vec::new();
+    let mut comments: Vec<(String, String, String, String, bool)> = Vec::new();
     let mut act = String::new();
+    let mut wiki_save = String::new();
     if let Some(repo) = &repo {
         // wiki pages are named by `page`, discussions and cards by `n`
         let open = match tab {
@@ -1000,17 +1001,32 @@ async fn community(cx: &Cx) -> Result<impl View> {
                 let item = Item {
                     key: k.clone(),
                     title: k.clone(),
-                    meta: String::new(),
+                    ..Item::default()
                 };
                 match community::page(session.hub(), repo, tab, &item).await {
                     Ok(p) => {
                         heading = p.title.clone();
                         text = Some(p.text);
+                        let number = k.parse::<u64>().unwrap_or(0);
                         comments = p
                             .comments
                             .into_iter()
-                            .map(|(who, body)| (who, String::new(), body))
+                            .map(|c| {
+                                let reply = if tab == Tab::Discussions {
+                                    act_json(
+                                        serde_json::json!({"action": "discussion_reply", "repo": key, "number": number, "comment_id": c.id}),
+                                    )
+                                } else {
+                                    String::new()
+                                };
+                                (c.author, String::new(), c.body, reply, c.reply)
+                            })
                             .collect();
+                        if tab == Tab::Wiki {
+                            wiki_save = act_json(
+                                serde_json::json!({"action": "wiki_save", "repo": key, "slug": k, "title": p.title}),
+                            );
+                        }
                         if tab == Tab::Discussions {
                             act = act_json(
                                 serde_json::json!({"action": "discussion_comment", "repo": key, "number": k.parse::<u64>().unwrap_or(0)}),
@@ -1036,7 +1052,14 @@ async fn community(cx: &Cx) -> Result<impl View> {
                                     url_encode(&i.key)
                                 )
                             };
-                            (href, i.title, i.meta)
+                            let mv = if tab == Tab::Board && !i.key.is_empty() {
+                                act_json(
+                                    serde_json::json!({"action": "move_card", "repo": key, "number": i.key.parse::<u64>().unwrap_or(0), "board": i.board}),
+                                )
+                            } else {
+                                String::new()
+                            };
+                            (href, i.title, i.meta, mv)
                         })
                         .collect()
                 }
@@ -1045,8 +1068,11 @@ async fn community(cx: &Cx) -> Result<impl View> {
         }
     }
     let has_text = text.is_some();
+    let editable = !wiki_save.is_empty();
     let text = text.unwrap_or_default();
     let can_comment = !act.is_empty();
+    let new_page = (tab == Tab::Wiki && repo.is_some() && !has_text && note.is_none())
+        .then(|| act_json(serde_json::json!({"action": "wiki_save", "repo": key})));
     Ok(view! {
         shell(title: "Discussions & wiki · GitKraft".to_string(), nav: nav(session, "community"), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
             <h1>"Discussions & wiki"</h1>
@@ -1054,10 +1080,28 @@ async fn community(cx: &Cx) -> Result<impl View> {
             <nav class="tabs">for (href, label, on) in tab_links { <a href=(href) class=(if on { "on" } else { "" })>(label)</a> }</nav>
             if repo.is_none() { <p class="dim">"Add repos to your dashboard sections to browse their discussions and wiki."</p> }
             if let Some(n) = note { <div class="note warn">(n)</div> }
-            for (href, title, meta) in list { <div class="row">if href.is_empty() { (title) } else { <a href=(href)>(title)</a> }" "<span class="meta small">(meta)</span></div> }
+            for (href, title, meta, mv) in list {
+                <div class="row">if href.is_empty() { (title) } else { <a href=(href)>(title)</a> }" "<span class="meta small">(meta)</span>
+                    if !mv.is_empty() { " "<button data-act=(mv) data-ask="Move to which column? (name, or the start of it)" data-field="column" onclick="actBtn(this)">"Move…"</button> }
+                </div>
+            }
+            if let Some(create) = new_page {
+                <h2>"New page"</h2>
+                <input id="wtitle" placeholder="Title">
+                <textarea id="wiki-new" placeholder="Markdown"></textarea>
+                <div class="bar"><button class="primary" data-act=(create) data-from="wiki-new" data-field="content" data-title="wtitle" onclick="actBtn(this)">"Create page"</button></div>
+            }
             if !heading.is_empty() { <h2>(heading)</h2> }
-            if has_text { <div class="panel"><pre>(text)</pre></div> }
-            for (who, when, body) in comments { <div class="comment"><b>(who)</b>" "<span class="meta small">(when)</span><pre>(body)</pre></div> }
+            if has_text && !editable { <div class="panel"><pre>(text.clone())</pre></div> }
+            if editable {
+                <textarea id="wiki" rows="18">(text.clone())</textarea>
+                <div class="bar"><button class="primary" data-act=(wiki_save.clone()) data-from="wiki" data-field="content" onclick="actBtn(this)">"Save page"</button></div>
+            }
+            for (who, when, body, reply, is_reply) in comments {
+                <div class=(if is_reply { "comment reply" } else { "comment" })><b>(who)</b>" "<span class="meta small">(when)</span><pre>(body)</pre>
+                    if !reply.is_empty() { <button data-act=(reply) data-ask="Your reply" onclick="actBtn(this)">"Reply"</button> }
+                </div>
+            }
             if can_comment {
                 <textarea id="note" placeholder="Write a comment"></textarea>
                 <div class="bar"><button class="primary" data-act=(act) data-from="note" onclick="actBtn(this)">"Comment"</button></div>

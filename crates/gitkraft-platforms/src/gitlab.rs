@@ -230,6 +230,7 @@ impl<C: HttpClient> GitLab<C> {
                 author: n.author.map(Into::into).unwrap_or_default(),
                 body: n.body,
                 created_at: n.created_at,
+                parent: None,
             })
             .collect())
     }

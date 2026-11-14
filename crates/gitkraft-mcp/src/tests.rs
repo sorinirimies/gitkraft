@@ -73,6 +73,9 @@ fn read_only_servers_have_no_write_tools_and_write_servers_have_all() {
         "dispatch_workflow",
         "update_branch",
         "comment_discussion",
+        "reply_discussion",
+        "save_wiki_page",
+        "move_card",
     ] {
         assert!(
             !names.iter().any(|n| n == t),
@@ -93,6 +96,9 @@ fn read_only_servers_have_no_write_tools_and_write_servers_have_all() {
         "ci_cancel",
         "dispatch_workflow",
         "comment_discussion",
+        "reply_discussion",
+        "save_wiki_page",
+        "move_card",
     ] {
         assert!(names.iter().any(|n| n == t), "{t} in {names:?}");
     }
@@ -489,4 +495,70 @@ async fn boards_come_back_as_columns_of_cards() {
     );
     assert_eq!(v["boards"][0]["name"], "Roadmap");
     assert_eq!(v["boards"][0]["columns"][0]["cards"][0]["number"], 4);
+}
+
+#[tokio::test]
+async fn a_discussion_reply_a_card_move_and_a_wiki_save_reach_the_platform_or_say_why_not() {
+    let (s, fake) = rig(write());
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"repository":{"discussion":{"id":"D_1","comments":{"nodes":[{"databaseId":9,"id":"C_9","replies":{"nodes":[]}}]}}}}}"#,
+    );
+    fake.push_json(
+        "https://api.github.com/graphql",
+        r#"{"data":{"addDiscussionComment":{"comment":{"id":"C_new"}}}}"#,
+    );
+    let ok = s
+        .reply_discussion(Parameters(DiscussionReplyArgs {
+            repo: None,
+            number: 5,
+            comment_id: 9,
+            body: "thanks".into(),
+        }))
+        .await
+        .expect("reply");
+    assert!(
+        json(&ok)["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("comment 9")
+    );
+    assert!(
+        sent(&fake)
+            .last()
+            .is_some_and(|(_, b)| b.contains("replyToId"))
+    );
+
+    let empty = s
+        .reply_discussion(Parameters(DiscussionReplyArgs {
+            repo: None,
+            number: 5,
+            comment_id: 9,
+            body: " ".into(),
+        }))
+        .await;
+    assert!(empty.is_err(), "an empty reply never reaches the platform");
+
+    // GitHub has no wiki API: the refusal says why.
+    let wiki = s
+        .save_wiki_page(Parameters(WikiSaveArgs {
+            repo: None,
+            slug: None,
+            title: "Home".into(),
+            content: "# Hi".into(),
+            message: None,
+        }))
+        .await
+        .expect_err("github wiki");
+    assert!(format!("{wiki:?}").contains("git"), "{wiki:?}");
+
+    let missing = s
+        .move_card(Parameters(MoveCardArgs {
+            repo: None,
+            number: 1,
+            column: "Done".into(),
+            board: None,
+        }))
+        .await;
+    assert!(missing.is_err());
 }

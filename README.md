@@ -52,7 +52,7 @@ serves the same on localhost.
 | Pull requests | description (Markdown), reviews, checks, diff, comments; approve, request changes, comment, merge, close |
 | Issues | list, comment, close / reopen |
 | CI | runs, jobs, steps, timeline, live log with errors extracted; re-run failed / all, cancel (GitHub / Gitea Actions, GitLab CI) |
-| Discussions, wiki & boards | GitHub discussions (list, read, comment); the wiki of GitLab, Gitea, Forgejo and Codeberg repos (list, read); boards (GitHub Projects v2, GitLab issue boards: cards by column, opened as their issue; Gitea has no board API). GitHub wikis are git repos (`<repo>.wiki.git`) with no API, so the tab says so. TUI key `T`, GUI tab, web `/community`, MCP tools `discussions`, `wiki` and `boards` |
+| Discussions, wiki & boards | GitHub discussions (list, read, comment); the wiki of GitLab, Gitea, Forgejo and Codeberg repos (list, read); boards (GitHub Projects v2, GitLab issue boards: cards by column, opened as their issue, moved to another column; Gitea has no board API). Discussion comments can be answered inside their thread and wiki pages created and edited (the TUI and GUI hand the page to your editor and send it back; the web page has a text box; the CLI reads a file, stdin or `--edit`). GitHub wikis are git repos (`<repo>.wiki.git`) with no API, so the tab says so. TUI key `T`, GUI tab, web `/community`, MCP tools `discussions`, `wiki` and `boards` |
 | Pulse | contribution calendar over all accounts (click a day, or use the arrow keys, for what you did that day: commits per repository, PRs, issues, reviews, comments), PRs / issues / CI per period, activity per day |
 | Notifications | per-project settings, desktop notifications, a bell with its state on every project |
 | Mouse | click, wheel, drag a section tab to reorder, drag the divider to resize (TUI and GUI) |
@@ -194,6 +194,7 @@ gitkraft-tui runs --status failed     # CI runs; then `run ID`, `log JOB --grep 
 gitkraft-tui day 2026-05-01           # what you did that day, over every account
 gitkraft-tui pulse --days 14 ; discussions ; boards ; wiki [PAGE] ; inbox
 gitkraft-tui comment 123 "looks good" ; merge 123 --method squash --when-green ; rerun RUN
+gitkraft-tui reply DISCUSSION COMMENT_ID "thanks" ; board-move 12 Done ; wiki-save PAGE --edit
 gitkraft-tui completions zsh > ~/.zfunc/_gitkraft-tui
 ```
 
@@ -263,6 +264,7 @@ the checkout it starts in is the default repository, so `repo` can be left out.
 | Write (`--write`) | |
 |---|---|
 | `comment`, `comment_discussion`, `review`, `set_open`, `edit_labels` | |
+| `reply_discussion`, `save_wiki_page`, `move_card` | answer a comment of a thread; create or edit a wiki page; move a board card |
 | `merge_pull_request` | now, `when_green` or `queue`; merge, squash or rebase. `force` also needs `--allow-force` |
 | `update_branch`, `cancel_auto_merge` | |
 | `ci_rerun`, `ci_cancel`, `dispatch_workflow` | inputs are checked against the workflow file |

@@ -1111,6 +1111,7 @@ impl From<CommentDto> for Comment {
             author: d.user.map(Into::into).unwrap_or_default(),
             body: d.body,
             created_at: d.created_at,
+            parent: None,
         }
     }
 }

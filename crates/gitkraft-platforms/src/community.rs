@@ -88,7 +88,8 @@ impl<C: HttpClient> GitHubLike<C> {
         self.require_github("discussions exist on GitHub only")?;
         let query = "query($o:String!,$n:String!,$num:Int!){repository(owner:$o,name:$n){\
              discussion(number:$num){FIELDS \
-             comments(first:100){nodes{databaseId body createdAt author{login avatarUrl}}}}}}"
+             comments(first:100){nodes{databaseId id body createdAt author{login avatarUrl} \
+             replies(first:50){nodes{databaseId body createdAt author{login avatarUrl}}}}}}}}"
             .replace("FIELDS", DISCUSSION_FIELDS);
         let v = self
             .graphql(
@@ -103,17 +104,27 @@ impl<C: HttpClient> GitHubLike<C> {
                 repo.full_name()
             )));
         }
-        let comments = d["comments"]["nodes"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .map(|c| Comment {
-                id: c["databaseId"].as_u64().unwrap_or(0),
-                author: author_of(&c["author"]),
-                body: c["body"].as_str().unwrap_or_default().into(),
-                created_at: c["createdAt"].as_str().and_then(|t| t.parse().ok()),
-            })
-            .collect();
+        let comment = |c: &serde_json::Value, parent: Option<u64>| Comment {
+            id: c["databaseId"].as_u64().unwrap_or(0),
+            author: author_of(&c["author"]),
+            body: c["body"].as_str().unwrap_or_default().into(),
+            created_at: c["createdAt"].as_str().and_then(|t| t.parse().ok()),
+            parent,
+        };
+        // Each top-level comment is followed by its replies, so a flat list reads as the thread.
+        let mut comments = Vec::new();
+        for c in d["comments"]["nodes"].as_array().into_iter().flatten() {
+            let top = comment(c, None);
+            let id = top.id;
+            comments.push(top);
+            comments.extend(
+                c["replies"]["nodes"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|r| comment(r, Some(id))),
+            );
+        }
         Ok(DiscussionDetail {
             discussion: discussion_of(d),
             comments,
@@ -140,6 +151,106 @@ impl<C: HttpClient> GitHubLike<C> {
         self.graphql(
             "mutation($id:ID!,$body:String!){addDiscussionComment(input:{discussionId:$id,body:$body}){comment{id}}}",
             &json!({ "id": id, "body": body }),
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// Answers a comment of a discussion (`comment_id` is the number [`Comment::id`] carries; a
+    /// reply to a reply goes to the same thread). GitHub only.
+    pub(crate) async fn reply_to_discussion(
+        &self,
+        repo: &RepoId,
+        number: u64,
+        comment_id: u64,
+        body: &str,
+    ) -> Result<()> {
+        self.require_github("discussions exist on GitHub only")?;
+        let v = self
+            .graphql(
+                "query($o:String!,$n:String!,$num:Int!){repository(owner:$o,name:$n){discussion(number:$num){id \
+                 comments(first:100){nodes{databaseId id replies(first:50){nodes{databaseId}}}}}}}",
+                &json!({ "o": repo.owner, "n": repo.name, "num": number }),
+            )
+            .await?;
+        let d = &v["data"]["repository"]["discussion"];
+        let discussion = d["id"]
+            .as_str()
+            .ok_or_else(|| PlatformError::NotFound(format!("discussion #{number}")))?;
+        // Replies are one level deep on GitHub: answering a reply answers its thread.
+        let thread = d["comments"]["nodes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|c| {
+                c["databaseId"].as_u64() == Some(comment_id)
+                    || c["replies"]["nodes"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .any(|r| r["databaseId"].as_u64() == Some(comment_id))
+            })
+            .and_then(|c| c["id"].as_str())
+            .ok_or_else(|| {
+                PlatformError::NotFound(format!("comment {comment_id} in discussion #{number}"))
+            })?;
+        self.graphql(
+            "mutation($id:ID!,$to:ID!,$body:String!){addDiscussionComment(input:{discussionId:$id,replyToId:$to,body:$body}){comment{id}}}",
+            &json!({ "id": discussion, "to": thread, "body": body }),
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// Writes a wiki page: `slug` set edits that page, absent creates one called `title`.
+    /// Gitea family only; GitHub's wiki is a git repository.
+    pub(crate) async fn save_wiki_page(
+        &self,
+        repo: &RepoId,
+        slug: Option<&str>,
+        title: &str,
+        content: &str,
+        message: &str,
+    ) -> Result<()> {
+        self.require_gitea("GitHub wikis are git repositories: clone <repo>.wiki.git")?;
+        let body = json!({
+            "title": title,
+            "content_base64": base64::engine::general_purpose::STANDARD.encode(content),
+            "message": message,
+        });
+        let (method, path) = match slug {
+            Some(s) => (
+                crate::http::Method::Patch,
+                format!("{}/wiki/page/{}", Self::repo_path(repo), url_encode(s)),
+            ),
+            None => (
+                crate::http::Method::Post,
+                format!("{}/wiki/new", Self::repo_path(repo)),
+            ),
+        };
+        self.api.send(method, &path, Some(&body)).await.map(|_| ())
+    }
+
+    /// Moves a card to another column of its board. GitHub Projects (v2) only.
+    pub(crate) async fn move_card(
+        &self,
+        board: &Board,
+        card: &BoardCard,
+        to: &BoardColumn,
+    ) -> Result<()> {
+        let (Some(project), Some(field), Some(item), Some(option)) = (
+            board.project_id.as_deref(),
+            board.field_id.as_deref(),
+            card.item_id.as_deref(),
+            to.option_id.as_deref(),
+        ) else {
+            return Err(PlatformError::Unsupported(
+                "this card or column cannot be moved: load the board again",
+            ));
+        };
+        self.graphql(
+            "mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){projectV2Item{id}}}",
+            &json!({ "p": project, "i": item, "f": field, "o": option }),
         )
         .await
         .map(|_| ())
@@ -198,9 +309,9 @@ impl<C: HttpClient> GitHubLike<C> {
             ));
         }
         let card = "number title url assignees(first:5){nodes{login}}";
-        let query = "query($o:String!,$n:String!){repository(owner:$o,name:$n){projectsV2(first:5){nodes{title \
-             field(name:\"Status\"){... on ProjectV2SingleSelectField{options{name}}} \
-             items(first:100){nodes{fieldValueByName(name:\"Status\"){... on ProjectV2ItemFieldSingleSelectValue{name}} \
+        let query = "query($o:String!,$n:String!){repository(owner:$o,name:$n){projectsV2(first:5){nodes{id title \
+             field(name:\"Status\"){... on ProjectV2SingleSelectField{id options{id name}}} \
+             items(first:100){nodes{id fieldValueByName(name:\"Status\"){... on ProjectV2ItemFieldSingleSelectValue{name}} \
              content{... on Issue{CARD} ... on PullRequest{CARD} ... on DraftIssue{title}}}}}}}}"
             .replace("CARD", card);
         let v = self
@@ -217,10 +328,11 @@ impl<C: HttpClient> GitHubLike<C> {
                 .as_array()
                 .into_iter()
                 .flatten()
-                .filter_map(|o| o["name"].as_str())
-                .map(|name| BoardColumn {
+                .filter_map(|o| Some((o["name"].as_str()?, o["id"].as_str())))
+                .map(|(name, id)| BoardColumn {
                     name: name.into(),
                     cards: Vec::new(),
+                    option_id: id.map(str::to_string),
                 })
                 .collect();
             for item in p["items"]["nodes"].as_array().into_iter().flatten() {
@@ -238,6 +350,7 @@ impl<C: HttpClient> GitHubLike<C> {
                         .flatten()
                         .filter_map(|a| a["login"].as_str().map(str::to_string))
                         .collect(),
+                    item_id: item["id"].as_str().map(str::to_string),
                 };
                 if card.title.is_empty() {
                     continue; // a card whose content is not readable with this token
@@ -247,12 +360,15 @@ impl<C: HttpClient> GitHubLike<C> {
                     None => columns.push(BoardColumn {
                         name: status.into(),
                         cards: vec![card],
+                        option_id: None,
                     }),
                 }
             }
             boards.push(Board {
                 name: p["title"].as_str().unwrap_or_default().into(),
                 columns,
+                project_id: p["id"].as_str().map(str::to_string),
+                field_id: p["field"]["id"].as_str().map(str::to_string),
             });
         }
         Ok(boards)
@@ -346,6 +462,7 @@ impl<C: HttpClient> GitLab<C> {
             title: i.title.clone(),
             url: i.web_url.clone(),
             assignees: i.assignees.iter().map(|a| a.username.clone()).collect(),
+            item_id: None,
         };
         Ok(boards
             .into_iter()
@@ -362,6 +479,7 @@ impl<C: HttpClient> GitLab<C> {
                         .filter(|i| !i.labels.iter().any(|l| names.contains(l)))
                         .map(card)
                         .collect(),
+                    option_id: None,
                 }];
                 columns.extend(names.iter().map(|n| {
                     BoardColumn {
@@ -371,11 +489,14 @@ impl<C: HttpClient> GitLab<C> {
                             .filter(|i| i.labels.contains(n))
                             .map(card)
                             .collect(),
+                        option_id: None,
                     }
                 }));
                 Board {
                     name: b.name,
                     columns,
+                    project_id: None,
+                    field_id: None,
                 }
             })
             .collect())
@@ -391,6 +512,63 @@ impl<C: HttpClient> GitLab<C> {
                 slug: p.slug,
             })
             .collect())
+    }
+
+    /// Writes a wiki page: `slug` set edits that page, absent creates one called `title`.
+    pub(crate) async fn save_wiki_page(
+        &self,
+        repo: &RepoId,
+        slug: Option<&str>,
+        title: &str,
+        content: &str,
+    ) -> Result<()> {
+        use crate::http::Method;
+        let (method, path, body) = match slug {
+            Some(s) => (
+                Method::Put,
+                format!("{}/wikis/{}", project(repo), url_encode(s)),
+                json!({ "title": title, "content": content }),
+            ),
+            None => (
+                Method::Post,
+                format!("{}/wikis", project(repo)),
+                json!({ "title": title, "content": content, "format": "markdown" }),
+            ),
+        };
+        self.api.send(method, &path, Some(&body)).await.map(|_| ())
+    }
+
+    /// Moves an issue between the columns of a board: a column is a list label, `Open` is none.
+    pub(crate) async fn move_card(
+        &self,
+        repo: &RepoId,
+        board: &Board,
+        card: &BoardCard,
+        to: &BoardColumn,
+    ) -> Result<()> {
+        let number = card
+            .number
+            .ok_or(PlatformError::Unsupported("a draft card cannot be moved"))?;
+        // Every list label of the board but the target comes off: the issue is in one column.
+        let remove: Vec<&str> = board
+            .columns
+            .iter()
+            .filter(|c| c.name != "Open" && c.name != to.name)
+            .map(|c| c.name.as_str())
+            .collect();
+        let add = if to.name == "Open" {
+            ""
+        } else {
+            to.name.as_str()
+        };
+        self.api
+            .send(
+                crate::http::Method::Put,
+                &format!("{}/issues/{number}", project(repo)),
+                Some(&json!({ "add_labels": add, "remove_labels": remove.join(",") })),
+            )
+            .await
+            .map(|_| ())
     }
 
     /// One wiki page with its content.
