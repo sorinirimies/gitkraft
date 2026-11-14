@@ -55,10 +55,10 @@ Features, in order of value:
 
 1. **CI failure explainer.** *Done in `gitkraft-hub/src/ai.rs` and `gitkraft-tui explain RUN [JOB] [--dry-run]`; TUI key `E` done; GUI and web buttons still to do (no MCP tool: an MCP client is already a model and can read `ci_job_log`).* Failing step's log tail (already located by `first_failure`) to
    cause and suggested fix. Smallest slice that proves the whole pipeline.
-2. **PR summary** and "what happened in this thread while I was away".
-3. **Review draft**: inline comment suggestions that land in the comment prompt for editing.
+2. **PR summary** and "what happened in this thread while I was away". *Done in `gitkraft-hub/src/review_ai.rs` with the per-host, per-action opt-in (`ai-policy.toml`, `gitkraft-tui ai-allow`) and CLI `summarize`, `catch-up`; TUI, GUI and web buttons still to do.*
+3. **Review draft**: inline comment suggestions that land in the comment prompt for editing. *Done as CLI `review-draft`; the UI hand-off into the comment prompt is still to do.*
 4. **Commit message** from staged changes, in a per-project style (`.gitkraft/ai.toml`): *done* in `gitkraft-hub/src/commit_ai.rs`, `gitkraft-tui commit-message` and `g` in the TUI staging pane; GUI button and PR description still to do.
-5. **Inbox triage**: act now / FYI / ignore. Easiest to get wrong, so last.
+5. **Inbox triage**: act now / FYI / ignore. Easiest to get wrong, so last. *Done as CLI `triage` (only opted-in hosts are sent; unrated items are said out loud); no UI yet.*
 
 Code lives in one module, `gitkraft-hub/src/ai.rs`, shared by TUI, GUI and web.
 

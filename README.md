@@ -206,6 +206,12 @@ or any OpenAI-compatible server (`GITKRAFT_AI_PROVIDER=openai GITKRAFT_AI_BASE_U
 for Ollama, no key needed locally). The key comes from `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`, or
 `pbpaste | gitkraft-tui ai-key anthropic` stores it in the keyring. Never a config file.
 
+More drafts, each **off until a host opts in, per action** (`gitkraft-tui ai-allow github.com summary review`,
+`--deny` to turn off, no arguments to list; kept in `ai-policy.toml`, no secrets): `summarize N` (what, why, risk,
+open questions), `catch-up N --since 2026-05-01` (what happened in the thread), `review-draft N` (notes as
+`path:line: note` for you to edit and send), `triage` (inbox sorted into now / fyi / ignore; only notifications
+of hosts that allowed it are sent). All take `--dry-run` to show the redacted prompt. A model never acts.
+
 Settings menu: `M` slides a menu open over any screen: theme (←/→), reduced motion (Space), the project's
 commit message style (opens `.gitkraft/ai.toml`, creating a starter), the settings file and the key reference.
 j/k move, Esc closes. Reduced motion makes it open instantly and is saved in `tui-settings.json`.

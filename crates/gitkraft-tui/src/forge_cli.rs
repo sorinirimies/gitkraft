@@ -153,6 +153,70 @@ pub enum Forge {
     Explain(ExplainArgs),
     /// Run a CI run again (failed jobs by default).
     Rerun(RerunArgs),
+    /// AI summary of a pull request (a draft; needs `ai-allow HOST summary`).
+    Summarize(PrAiArgs),
+    /// AI catch-up on a pull request thread since a date (needs `ai-allow HOST catch_up`).
+    CatchUp(CatchUpArgs),
+    /// AI review notes for a pull request diff, to edit and send yourself (needs `ai-allow HOST review`).
+    ReviewDraft(PrAiArgs),
+    /// AI triage of the inbox: now, fyi or ignore (needs `ai-allow HOST triage`).
+    Triage(TriageArgs),
+    /// Which hosts may send data to an AI model, per action (off until you say so).
+    AiAllow(AiAllowArgs),
+}
+
+/// `summarize` and `review-draft`.
+#[derive(Debug, Args)]
+pub struct PrAiArgs {
+    #[command(flatten)]
+    pub common: Common,
+    /// Pull request number.
+    pub number: u64,
+    /// Print the redacted prompt instead of sending it.
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+/// `catch-up`.
+#[derive(Debug, Args)]
+pub struct CatchUpArgs {
+    #[command(flatten)]
+    pub common: Common,
+    /// Pull request number.
+    pub number: u64,
+    /// Only what came after this day (`YYYY-MM-DD`); default: the whole thread.
+    #[arg(long)]
+    pub since: Option<String>,
+    /// Print the redacted prompt instead of sending it.
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+/// `triage`.
+#[derive(Debug, Args)]
+pub struct TriageArgs {
+    #[command(flatten)]
+    pub common: Common,
+    /// How many notifications at most (default 30).
+    #[arg(short = 'n', long, default_value_t = 30)]
+    pub limit: usize,
+    /// Print the prompt instead of sending it.
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+/// `ai-allow`.
+#[derive(Debug, Args)]
+pub struct AiAllowArgs {
+    #[command(flatten)]
+    pub common: Common,
+    /// The host (`github.com`); without it the current policy is listed.
+    pub host: Option<String>,
+    /// summary, catch_up, review, triage; default: all of them.
+    pub actions: Vec<String>,
+    /// Switch them off instead (no actions: everything for the host).
+    #[arg(long)]
+    pub deny: bool,
 }
 
 /// `prs` / `issues`.
@@ -414,6 +478,10 @@ impl Forge {
             Self::Merge(a) => &a.common,
             Self::Rerun(a) => &a.common,
             Self::Explain(a) => &a.common,
+            Self::Summarize(a) | Self::ReviewDraft(a) => &a.common,
+            Self::CatchUp(a) => &a.common,
+            Self::Triage(a) => &a.common,
+            Self::AiAllow(a) => &a.common,
         }
     }
 }
@@ -426,6 +494,8 @@ pub struct Session {
     client: DynClient,
     project: Project,
     dir: Option<PathBuf>,
+    /// Where `ai-policy.toml` lives (default: the config directory).
+    config_dir: Option<PathBuf>,
 }
 
 fn json_of<T: Serialize>(v: &T) -> Result<String> {
@@ -460,7 +530,22 @@ impl Session {
             client,
             project: Project::default(),
             dir: None,
+            config_dir: None,
         }
+    }
+
+    /// Keeps the AI policy under `dir` instead of the user's config directory.
+    #[must_use]
+    pub fn with_config_dir(mut self, dir: PathBuf) -> Self {
+        self.config_dir = Some(dir);
+        self
+    }
+
+    fn policy_dir(&self) -> Result<PathBuf> {
+        self.config_dir
+            .clone()
+            .or_else(gitkraft_hub::commit_ai::global_dir)
+            .ok_or_else(|| anyhow!("no config directory"))
     }
 
     /// Tells the session which checkout it runs in and the remotes of that checkout.
@@ -790,6 +875,23 @@ impl Session {
                 Ok(format!("{}\n", outcome.describe(a.number)))
             }
             Forge::Explain(a) => self.explain(a, repo_flag, json).await,
+            Forge::AiAllow(a) => self.ai_allow(a, json),
+            Forge::Summarize(a) => {
+                let llm = self.llm_unless(a.dry_run)?;
+                self.summarize(llm.as_ref(), a, repo_flag, json).await
+            }
+            Forge::ReviewDraft(a) => {
+                let llm = self.llm_unless(a.dry_run)?;
+                self.review_draft(llm.as_ref(), a, repo_flag, json).await
+            }
+            Forge::CatchUp(a) => {
+                let llm = self.llm_unless(a.dry_run)?;
+                self.catch_up(llm.as_ref(), a, repo_flag, json).await
+            }
+            Forge::Triage(a) => {
+                let llm = self.llm_unless(a.dry_run)?;
+                self.triage(llm.as_ref(), a, json).await
+            }
             Forge::Rerun(a) => {
                 let repo = self.repo(repo_flag)?;
                 let ci = self.ci(&repo)?;
@@ -961,6 +1063,211 @@ impl Session {
             );
         }
         errors(&mut o, &r.errors);
+        Ok(o)
+    }
+
+    /// The model of the environment, unless only the prompt is wanted.
+    fn llm_unless(&self, dry_run: bool) -> Result<Option<gitkraft_hub::ai::Remote>> {
+        if dry_run {
+            return Ok(None);
+        }
+        gitkraft_hub::ai::remote_from_env(self.client.clone())
+            .map(Some)
+            .map_err(|e| anyhow!(e))
+    }
+
+    fn allowed(&self, host: &str, action: gitkraft_hub::review_ai::Action) -> Result<()> {
+        gitkraft_hub::review_ai::Policy::load(&self.policy_dir()?)
+            .map_err(|e| anyhow!(e))?
+            .check(host, action)
+            .map_err(|e| anyhow!(e))
+    }
+
+    fn ai_allow(&self, a: &AiAllowArgs, json: bool) -> Result<String> {
+        use gitkraft_hub::review_ai::{Action, Policy};
+        let dir = self.policy_dir()?;
+        let mut policy = Policy::load(&dir).map_err(|e| anyhow!(e))?;
+        if let Some(host) = &a.host {
+            let actions: Vec<Action> = a
+                .actions
+                .iter()
+                .map(|n| {
+                    Action::parse(n).ok_or_else(|| {
+                        anyhow!("action must be summary, catch_up, review or triage, not '{n}'")
+                    })
+                })
+                .collect::<Result<_>>()?;
+            if a.deny {
+                policy.deny(host, &actions);
+            } else if actions.is_empty() {
+                policy.allow(host, &Action::ALL);
+            } else {
+                policy.allow(host, &actions);
+            }
+            policy.save(&dir).map_err(|e| anyhow!(e))?;
+        }
+        let described = policy.describe();
+        if json {
+            return json_of(&serde_json::json!({"policy": described.lines().collect::<Vec<_>>()}));
+        }
+        Ok(if described.is_empty() {
+            "no host lets a model see its data (turn one on: `gitkraft-tui ai-allow github.com`)\n"
+                .into()
+        } else {
+            described
+        })
+    }
+
+    async fn summarize(
+        &self,
+        llm: Option<&impl gitkraft_hub::ai::Llm>,
+        a: &PrAiArgs,
+        repo_flag: Option<&str>,
+        json: bool,
+    ) -> Result<String> {
+        use gitkraft_hub::review_ai::{self, Action};
+        let repo = self.repo(repo_flag)?;
+        let detail = self.hub.pr_detail(&repo, a.number).await?;
+        let Some(llm) = llm else {
+            return Ok(format!("{}\n", review_ai::pr_prompt(&detail, None, true)));
+        };
+        self.allowed(&repo.host, Action::Summary)?;
+        let text = review_ai::summarize_pr(llm, &detail).await?;
+        if json {
+            return json_of(&serde_json::json!({"summary": text}));
+        }
+        Ok(format!("{text}\n"))
+    }
+
+    async fn catch_up(
+        &self,
+        llm: Option<&impl gitkraft_hub::ai::Llm>,
+        a: &CatchUpArgs,
+        repo_flag: Option<&str>,
+        json: bool,
+    ) -> Result<String> {
+        use gitkraft_hub::review_ai::{self, Action};
+        let since = a
+            .since
+            .as_deref()
+            .map(|d| {
+                d.parse::<chrono::NaiveDate>()
+                    .map_err(|_| anyhow!("--since must be YYYY-MM-DD"))
+                    .map(|d| d.and_time(chrono::NaiveTime::MIN).and_utc())
+            })
+            .transpose()?;
+        let repo = self.repo(repo_flag)?;
+        let detail = self.hub.pr_detail(&repo, a.number).await?;
+        let Some(llm) = llm else {
+            return Ok(format!("{}\n", review_ai::pr_prompt(&detail, since, false)));
+        };
+        self.allowed(&repo.host, Action::CatchUp)?;
+        let text = review_ai::catch_up(llm, &detail, since).await?;
+        if json {
+            return json_of(&serde_json::json!({"catch_up": text}));
+        }
+        Ok(format!("{text}\n"))
+    }
+
+    async fn review_draft(
+        &self,
+        llm: Option<&impl gitkraft_hub::ai::Llm>,
+        a: &PrAiArgs,
+        repo_flag: Option<&str>,
+        json: bool,
+    ) -> Result<String> {
+        use gitkraft_hub::review_ai::{self, Action};
+        let repo = self.repo(repo_flag)?;
+        let detail = self.hub.pr_detail(&repo, a.number).await?;
+        let Some(llm) = llm else {
+            return Ok(format!("{}\n", review_ai::pr_prompt(&detail, None, true)));
+        };
+        self.allowed(&repo.host, Action::Review)?;
+        let notes = review_ai::review_draft(llm, &detail).await?;
+        if json {
+            return json_of(&serde_json::json!({"notes": notes}));
+        }
+        Ok(notes.iter().fold(String::new(), |mut o, n| {
+            let _ = writeln!(o, "{}", n.render());
+            o
+        }))
+    }
+
+    async fn triage(
+        &self,
+        llm: Option<&impl gitkraft_hub::ai::Llm>,
+        a: &TriageArgs,
+        json: bool,
+    ) -> Result<String> {
+        use gitkraft_hub::review_ai::{self, Action, Policy, Urgency};
+        let SectionData::Inbox(r) = self
+            .hub
+            .load_section(&args::section(
+                "cli",
+                SectionKind::Inbox,
+                None,
+                StateFilter::Open,
+            ))
+            .await
+        else {
+            bail!("unexpected section data");
+        };
+        let mut items = r.items;
+        items.truncate(a.limit.max(1));
+        let Some(llm) = llm else {
+            return Ok(format!("{}\n", review_ai::triage_prompt(&items)));
+        };
+        // only the hosts that opted in are sent; the others are said out loud
+        let policy = Policy::load(&self.policy_dir()?).map_err(|e| anyhow!(e))?;
+        let (sendable, held): (Vec<_>, Vec<_>) = items.into_iter().partition(|n| {
+            n.repo
+                .as_ref()
+                .is_some_and(|r| policy.allows(&r.host, Action::Triage))
+        });
+        if sendable.is_empty() {
+            bail!(
+                "no notification belongs to a host that allows triage: `gitkraft-tui ai-allow HOST triage`"
+            );
+        }
+        let rated = review_ai::triage(llm, &sendable).await?;
+        let title_of = |id: &str| {
+            sendable
+                .iter()
+                .find(|n| n.id == id)
+                .map(|n| {
+                    format!(
+                        "{} {} {}",
+                        n.repo.as_ref().map(RepoId::key).unwrap_or_default(),
+                        n.number.map(|x| format!("#{x}")).unwrap_or_default(),
+                        n.title
+                    )
+                })
+                .unwrap_or_default()
+        };
+        if json {
+            return json_of(&serde_json::json!({"triaged": rated, "not_sent": held.len()}));
+        }
+        let mut o = String::new();
+        for (u, word) in [
+            (Urgency::Now, "now"),
+            (Urgency::Fyi, "fyi"),
+            (Urgency::Ignore, "ignore"),
+        ] {
+            for t in rated.iter().filter(|t| t.urgency == u) {
+                let _ = writeln!(o, "{word:<7} {} — {}", title_of(&t.id), t.why);
+            }
+        }
+        let skipped = sendable.len() - rated.len();
+        if skipped > 0 {
+            let _ = writeln!(o, "({skipped} left unrated by the model)");
+        }
+        if !held.is_empty() {
+            let _ = writeln!(
+                o,
+                "({} notification(s) not sent: their host has not allowed triage)",
+                held.len()
+            );
+        }
         Ok(o)
     }
 
@@ -1486,6 +1793,171 @@ mod tests {
         assert!(
             t.contains("gitea.lan"),
             "the remote without an account is reported: {t}"
+        );
+    }
+
+    fn push_pr(fake: &FakeClient) {
+        fake.push_json(
+            &format!("{API}/pulls/7"),
+            r#"{"number":7,"title":"Add pulse","body":"long text","state":"open","user":{"login":"alice"},"head":{"ref":"feat","sha":"abc"},"base":{"ref":"master"},"html_url":"u"}"#,
+        );
+        fake.push_json(
+            &format!("{API}/commits/abc/status"),
+            r#"{"state":"success"}"#,
+        );
+        fake.push_json(
+            &format!("{API}/issues/7/comments"),
+            r#"[{"id":1,"body":"nice work","user":{"login":"bob"},"created_at":"2026-05-02T10:00:00Z"}]"#,
+        );
+        fake.push_json(&format!("{API}/pulls/7/reviews"), "[]");
+        fake.push_status(
+            &format!("{API}/pulls/7.diff"),
+            200,
+            "diff --git a/x b/x\n+new line",
+        );
+    }
+
+    fn with_policy(s: Session) -> (Session, tempfile::TempDir) {
+        let dir = tempfile::tempdir().expect("tmp");
+        (s.with_config_dir(dir.path().to_path_buf()), dir)
+    }
+
+    #[tokio::test]
+    async fn ai_allow_lists_grants_and_revokes_per_host_and_action() {
+        let (s, _) = rig();
+        let (s, _dir) = with_policy(s);
+        let none = s.run(&forge(&["ai-allow"])).await.expect("list");
+        assert!(none.contains("no host lets a model"), "{none}");
+        let t = s
+            .run(&forge(&["ai-allow", "github.com", "summary", "review"]))
+            .await
+            .expect("allow");
+        assert_eq!(t, "github.com: summary, review\n");
+        let all = s
+            .run(&forge(&["ai-allow", "codeberg.org"]))
+            .await
+            .expect("all");
+        assert!(
+            all.contains("codeberg.org: summary, catch_up, review, triage"),
+            "{all}"
+        );
+        let t = s
+            .run(&forge(&["ai-allow", "github.com", "review", "--deny"]))
+            .await
+            .expect("deny");
+        assert!(t.contains("github.com: summary\n"), "{t}");
+        let t = s
+            .run(&forge(&["ai-allow", "codeberg.org", "--deny"]))
+            .await
+            .expect("deny all");
+        assert!(!t.contains("codeberg.org"), "{t}");
+        let e = s
+            .run(&forge(&["ai-allow", "github.com", "chat"]))
+            .await
+            .expect_err("bad action");
+        assert!(e.to_string().contains("catch_up"), "{e}");
+    }
+
+    #[tokio::test]
+    async fn an_ai_summary_needs_the_hosts_opt_in_and_a_dry_run_sends_nothing() {
+        use gitkraft_hub::ai::FakeLlm;
+        let (s, fake) = rig();
+        let (s, _dir) = with_policy(s);
+        push_pr(&fake);
+        let dry = s
+            .run(&forge(&["summarize", "7", "--dry-run"]))
+            .await
+            .expect("dry");
+        assert!(
+            dry.contains("#7: Add pulse") && dry.contains("nice work") && dry.contains("+new line"),
+            "{dry}"
+        );
+        let args = match forge(&["summarize", "7"]) {
+            Forge::Summarize(a) => a,
+            _ => panic!("not summarize"),
+        };
+        let llm = FakeLlm::saying("What: a pulse");
+        push_pr(&fake);
+        let e = s
+            .summarize(Some(&llm), &args, None, false)
+            .await
+            .expect_err("off");
+        assert!(e.to_string().contains("ai-allow github.com summary"), "{e}");
+        assert!(llm.prompts().is_empty(), "nothing reached the model");
+        s.run(&forge(&["ai-allow", "github.com", "summary"]))
+            .await
+            .expect("allow");
+        push_pr(&fake);
+        let out = s
+            .summarize(Some(&llm), &args, None, true)
+            .await
+            .expect("ok");
+        assert!(out.contains("What: a pulse"), "{out}");
+        assert_eq!(llm.prompts().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_catch_up_cuts_the_thread_and_a_review_draft_lists_notes() {
+        use gitkraft_hub::ai::FakeLlm;
+        let (s, fake) = rig();
+        let (s, _dir) = with_policy(s);
+        s.run(&forge(&["ai-allow", "github.com"]))
+            .await
+            .expect("allow");
+        let catch = match forge(&["catch-up", "7", "--since", "2026-05-03"]) {
+            Forge::CatchUp(a) => a,
+            _ => panic!("not catch-up"),
+        };
+        let llm = FakeLlm::saying("- nothing new");
+        push_pr(&fake);
+        s.catch_up(Some(&llm), &catch, None, false)
+            .await
+            .expect("ok");
+        assert!(
+            !llm.prompts()[0].1.contains("nice work"),
+            "older than --since"
+        );
+        let bad = match forge(&["catch-up", "7", "--since", "yesterday"]) {
+            Forge::CatchUp(a) => a,
+            _ => panic!("not catch-up"),
+        };
+        assert!(s.catch_up(Some(&llm), &bad, None, false).await.is_err());
+        let review = match forge(&["review-draft", "7"]) {
+            Forge::ReviewDraft(a) => a,
+            _ => panic!("not review-draft"),
+        };
+        let llm = FakeLlm::saying("x:3: unchecked\ngeneral: add a test");
+        push_pr(&fake);
+        let out = s
+            .review_draft(Some(&llm), &review, None, false)
+            .await
+            .expect("ok");
+        assert_eq!(out, "x:3: unchecked\nadd a test\n");
+    }
+
+    #[tokio::test]
+    async fn triage_only_sends_notifications_of_hosts_that_allowed_it() {
+        use gitkraft_hub::ai::FakeLlm;
+        let (s, fake) = rig();
+        let (s, _dir) = with_policy(s);
+        let notes = r#"[{"id":"1","reason":"review_requested","unread":true,"updated_at":"2026-05-01T10:00:00Z","subject":{"title":"Fix it","type":"PullRequest","url":"https://api.github.com/repos/o/r/pulls/3"},"repository":{"full_name":"o/r"}}]"#;
+        let args = match forge(&["triage"]) {
+            Forge::Triage(a) => a,
+            _ => panic!("not triage"),
+        };
+        let llm = FakeLlm::saying("1 | now | review asked");
+        fake.push_json("https://api.github.com/notifications", notes);
+        let e = s.triage(Some(&llm), &args, false).await.expect_err("off");
+        assert!(e.to_string().contains("allows triage"), "{e}");
+        assert!(llm.prompts().is_empty());
+        s.run(&forge(&["ai-allow", "github.com", "triage"]))
+            .await
+            .expect("allow");
+        fake.push_json("https://api.github.com/notifications", notes);
+        let out = s.triage(Some(&llm), &args, false).await.expect("ok");
+        assert!(
+            out.starts_with("now     github.com/o/r #3 Fix it — review asked"),
+            "{out}"
         );
     }
 
