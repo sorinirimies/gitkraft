@@ -154,8 +154,10 @@ async fn scan_one<C: HttpClient + Clone>(
 /// Scans `repos`, eight at a time. A repository that cannot be read is listed in `errors` and
 /// the rest go on.
 pub async fn scan<C: HttpClient + Clone>(hub: &Hub<C>, repos: &[&RepoInfo]) -> Scan {
-    let results: Vec<_> = stream::iter(repos.iter().copied())
-        .map(|info| async move { scan_one(hub, info).await })
+    // owned items: a closure over `&RepoInfo` makes the future "not general enough" to spawn
+    let owned: Vec<RepoInfo> = repos.iter().map(|r| (*r).clone()).collect();
+    let results: Vec<_> = stream::iter(owned)
+        .map(|info| async move { scan_one(hub, &info).await })
         .buffered(8)
         .collect()
         .await;

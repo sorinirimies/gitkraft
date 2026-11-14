@@ -30,6 +30,16 @@ impl Visibility {
         }
     }
 
+    /// The next one: all, public, private, all.
+    #[must_use]
+    pub fn next(self) -> Self {
+        match self {
+            Self::All => Self::Public,
+            Self::Public => Self::Private,
+            Self::Private => Self::All,
+        }
+    }
+
     /// The word used in the file.
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -84,6 +94,61 @@ impl Selector {
                     .any(|h| h.eq_ignore_ascii_case(&info.repo.host)))
             && (self.include.is_empty() || self.include.iter().any(|g| glob_match(g, &key)))
             && !self.exclude.iter().any(|g| glob_match(g, &key))
+    }
+
+    /// Checks or unchecks one repository by hand. Returns whether it is watched afterwards.
+    ///
+    /// An unchecked repository is removed from `include`, or listed in `exclude` when that would
+    /// empty `include` (an empty `include` means everything) or when it matched by other means.
+    ///
+    /// # Errors
+    /// The repository is filtered out by visibility, host, forks or archived: change that instead.
+    pub fn toggle(&mut self, info: &RepoInfo) -> Result<bool, String> {
+        let key = info.repo.key();
+        if self.matches(info) {
+            if self.include.len() > 1
+                && let Some(i) = self.include.iter().position(|g| *g == key)
+            {
+                self.include.remove(i);
+            }
+            if self.matches(info) {
+                self.exclude.push(key);
+            }
+            return Ok(false);
+        }
+        self.exclude.retain(|g| *g != key);
+        if !self.matches(info) && !self.include.is_empty() {
+            self.include.push(key);
+        }
+        if self.matches(info) {
+            return Ok(true);
+        }
+        Err(if info.fork && !self.forks {
+            "a fork: switch `forks` on to watch it".to_string()
+        } else if info.archived && !self.archived {
+            "archived: switch `archived` on to watch it".to_string()
+        } else if self.visibility == Visibility::Public && info.private
+            || self.visibility == Visibility::Private && !info.private
+        {
+            format!(
+                "the job only watches {} repositories",
+                self.visibility.name()
+            )
+        } else {
+            format!("{} is not one of the job's hosts", info.repo.host)
+        })
+    }
+
+    /// Narrows the selection to exactly `picked` (what is checked right now).
+    pub fn only(&mut self, picked: &[&RepoInfo]) {
+        self.include = picked.iter().map(|i| i.repo.key()).collect();
+        self.exclude.clear();
+    }
+
+    /// Forgets hand-picked includes and excludes: every repository the filters allow.
+    pub fn all_again(&mut self) {
+        self.include.clear();
+        self.exclude.clear();
     }
 
     /// The selected repositories of `all`, in the same order.
@@ -183,6 +248,47 @@ mod tests {
             ..Selector::default()
         };
         assert_eq!(names(&s).len(), 6);
+    }
+
+    #[test]
+    fn checking_a_repository_by_hand_never_widens_the_selection_by_accident() {
+        let all = all();
+        let mut s = Selector::default();
+        assert_eq!(s.toggle(&all[0]), Ok(false), "unchecked: excluded");
+        assert_eq!(names(&s), ["secret", "cb", "svc"]);
+        assert_eq!(
+            s.toggle(&all[0]),
+            Ok(true),
+            "checked again: exclusion lifted"
+        );
+        assert!(s.exclude.is_empty() && s.include.is_empty());
+        // only the checked ones, then pick one more and drop the last one
+        let picked: Vec<&RepoInfo> = vec![&all[0]];
+        s.only(&picked);
+        assert_eq!(names(&s), ["pub"]);
+        assert_eq!(s.toggle(&all[2]), Ok(true));
+        assert_eq!(names(&s), ["pub", "cb"]);
+        assert_eq!(s.toggle(&all[0]), Ok(false));
+        assert_eq!(s.toggle(&all[2]), Ok(false));
+        assert!(
+            names(&s).is_empty(),
+            "the last one off means none, not everything"
+        );
+        s.all_again();
+        assert_eq!(names(&s).len(), 4);
+    }
+
+    #[test]
+    fn a_repository_the_filters_keep_out_says_which_filter() {
+        let all = all();
+        let mut s = Selector::default();
+        assert!(s.toggle(&all[4]).is_err_and(|e| e.contains("fork")));
+        assert!(s.toggle(&all[5]).is_err_and(|e| e.contains("archived")));
+        s.visibility = Visibility::Public;
+        assert!(s.toggle(&all[1]).is_err_and(|e| e.contains("public")));
+        s.hosts = vec!["codeberg.org".into()];
+        assert!(s.toggle(&all[0]).is_err_and(|e| e.contains("hosts")));
+        assert_eq!(Visibility::Private.next(), Visibility::All);
     }
 
     #[test]

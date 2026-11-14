@@ -17,17 +17,17 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Result, anyhow, bail};
-use chrono::{Local, Utc};
+use chrono::Local;
 use clap::{Args, Parser, Subcommand};
+use gitkraft_hub::agent_watch::Deps;
 use gitkraft_hub::agent_watch::harness::{Exec, SystemExec};
-use gitkraft_hub::agent_watch::run::{Deps, announce};
 use gitkraft_hub::agent_watch::{
-    AgentWatch, HarnessKind, Job, Store, Visibility, local, run_job, scan::universe,
+    AgentWatch, HarnessKind, Job, Store, Visibility, local, scan::universe,
 };
 use gitkraft_hub::review_ai::Policy;
 use gitkraft_hub::{Hub, ai::Remote};
 use gitkraft_platforms::DynClient;
-use gitkraft_platforms::notify::{Inbox, Notifier, desktop::DesktopNotifier};
+use gitkraft_platforms::notify::{Notifier, desktop::DesktopNotifier};
 use gitkraft_settings::files;
 
 /// The `agents` command line.
@@ -294,14 +294,17 @@ async fn execute(
         policy: &policy,
         scratch: std::env::temp_dir(),
     };
-    let out = run_job(hub, job, all, &deps, Utc::now()).await;
-    store.save(&out.report).map_err(|e| anyhow!(e))?;
-    let path = files::inbox_path()?;
-    let mut inbox = files::read_optional(&path)?
-        .map(|t| Inbox::from_json(&t))
-        .unwrap_or_default();
-    announce(&out, &mut inbox, notifier, Utc::now());
-    files::write_atomic(&path, &inbox.to_json())?;
+    let out = gitkraft_hub::agent_watch::execute(
+        hub,
+        job,
+        all,
+        &deps,
+        store,
+        &files::inbox_path()?,
+        notifier,
+    )
+    .await
+    .map_err(|e| anyhow!(e))?;
     Ok(format!("{}: {}\n", job.name, out.report.line()))
 }
 

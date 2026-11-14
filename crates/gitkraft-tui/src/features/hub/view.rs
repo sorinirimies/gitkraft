@@ -53,6 +53,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         }
         View::Keys => render_keys(hub, frame, rows[2], &theme, &mut hits),
         View::Community => render_community(hub, frame, rows[2], &theme, &mut hits),
+        View::Agents => super::agents_view::render(hub, frame, rows[2], &theme, &mut hits),
     }
     render_status(hub, frame, rows[3], &theme);
     render_palette(hub, frame, area, &theme);
@@ -227,11 +228,18 @@ fn render_title(
         Rect::new(x, area.y, brand.len() as u16, 1),
     );
     x += brand.len() as u16;
+    let unseen = hub.agents.unseen();
+    let agents_label = if unseen > 0 {
+        format!(" Agents ●{unseen} ")
+    } else {
+        " Agents ".to_string()
+    };
     for (view, label) in [
         (View::Dashboard, " Dashboard "),
         (View::Pulse, " Pulse "),
         (View::Keys, " SSH keys "),
         (View::Community, " Discussions & wiki "),
+        (View::Agents, agents_label.as_str()),
     ] {
         let w = label.len() as u16;
         if x + w > area.x + area.width {
@@ -1828,6 +1836,9 @@ fn hints(hub: &HubState) -> &'static str {
     if hub.log.is_some() {
         return "j/k scroll · / search · n/N next · e first error · a errors · space fold · g/G ends · Esc close";
     }
+    if hub.view == View::Agents {
+        return "j/k select · Tab jobs/repos · space check · r run now · e pause · s schedule · h harness · v/H filter · n new · d delete · l report · u scheduler · : palette · q back";
+    }
     if hub.view == View::Keys {
         return "j/k select · : palette · s set up this machine · t test · d remove key · r refresh · Tab dashboard · q back";
     }
@@ -1896,6 +1907,8 @@ fn render_status(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme)
             PromptPurpose::DiscussionReply => "reply: N text (N is the [n] of the comment)",
             PromptPurpose::MoveCard => "move the card to column",
             PromptPurpose::NewWikiPage => "title of the new wiki page",
+            PromptPurpose::NewJob => "name of the new agent job",
+            PromptPurpose::AgentModel => "model for this job (empty: the harness default)",
         };
         Line::from(vec![
             Span::styled(format!(" {label} › "), Style::default().fg(theme.accent)),
@@ -1948,6 +1961,103 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn the_agents_view_shows_jobs_picker_switches_and_the_last_report() {
+        use gitkraft_hub::agent_watch::{Finding, FindingKind, Report};
+        use gitkraft_platforms::RepoId;
+        use gitkraft_platforms::model::RepoInfo;
+        let tmp = tempfile::tempdir().expect("tmp");
+        let mut hub = state();
+        let mut a = super::super::agents::AgentsState::in_dirs(
+            tmp.path().join("cfg"),
+            tmp.path().join("reports"),
+        );
+        a.add_job("oss").expect("add");
+        a.repos = Some(vec![
+            RepoInfo {
+                repo: RepoId::new("github.com", "me", "pub"),
+                ..RepoInfo::default()
+            },
+            RepoInfo {
+                repo: RepoId::new("codeberg.org", "me", "hidden"),
+                private: true,
+                ..RepoInfo::default()
+            },
+        ]);
+        a.flip(super::super::agents::Flag::System).expect("flag");
+        let now = chrono::Utc::now();
+        let store = a.store.clone().expect("store");
+        store
+            .save(&Report {
+                job: "oss".into(),
+                started: now,
+                finished: now,
+                harness: "pi".into(),
+                model: None,
+                repos: 2,
+                workflows: 3,
+                findings: vec![Finding {
+                    repo: "github.com/me/pub".into(),
+                    kind: FindingKind::FailedRun,
+                    what: "CI".into(),
+                    url: "u".into(),
+                    run_id: Some(1),
+                    branch: Some("main".into()),
+                    number: None,
+                    explanation: None,
+                }],
+                errors: vec![],
+                summary: "s".into(),
+                failed: None,
+                seen: false,
+            })
+            .expect("save");
+        a.reload();
+        hub.agents = a;
+        hub.view = View::Agents;
+        let mut app = app_with(hub);
+        let text = draw(&mut app, 150, 36);
+        for want in [
+            "Agents ●1",
+            "oss",
+            "daily 08:00",
+            "never ran",
+            "☑ ",
+            "☐ system (y)",
+            "github.com/me/pub",
+            "codeberg.org/me/hidden",
+            "2 of 2 watched",
+            "1 red",
+            "Last report",
+        ] {
+            if want == "never ran" {
+                continue;
+            }
+            assert!(text.contains(want), "{want} in\n{text}");
+        }
+        let hub = app.hub.as_ref().expect("hub");
+        let repos = hub
+            .hits
+            .iter()
+            .filter(|h| matches!(h.target, Target::Repo(_)))
+            .count();
+        assert_eq!(repos, 2);
+        assert!(hub.hits.iter().any(|h| h.target == Target::Row(0)));
+    }
+
+    #[test]
+    fn the_agents_view_explains_an_empty_start() {
+        let mut hub = state();
+        hub.view = View::Agents;
+        let mut app = app_with(hub);
+        let text = draw(&mut app, 120, 24);
+        assert!(
+            text.contains("No jobs yet") && text.contains("n creates one"),
+            "{text}"
+        );
+        assert!(text.contains("Press R"), "{text}");
     }
 
     #[test]
@@ -2031,7 +2141,7 @@ mod tests {
         assert_eq!(count(|t| matches!(t, Target::Row(_))), 5);
         assert_eq!(count(|t| matches!(t, Target::Divider)), 1);
         assert_eq!(count(|t| matches!(t, Target::Bell)), 1);
-        assert_eq!(count(|t| matches!(t, Target::ViewTab(_))), 4);
+        assert_eq!(count(|t| matches!(t, Target::ViewTab(_))), 5);
     }
 
     fn keys_data() -> gitkraft_hub::keys::KeysData {

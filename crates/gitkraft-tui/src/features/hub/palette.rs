@@ -122,6 +122,28 @@ pub fn entries_for(hub: &HubState) -> Vec<Entry> {
         e("Section: move right", '}', d),
         e("Go to pulse", 'p', d),
         e("Go to SSH keys", 'K', d),
+        e("Go to agents (scheduled CI watchers)", 'J', d),
+        e("Agents: run the selected job now", 'r', View::Agents),
+        e("Agents: create a job", 'n', View::Agents),
+        e("Agents: pause or resume the job", 'e', View::Agents),
+        e("Agents: next schedule", 's', View::Agents),
+        e(
+            "Agents: next harness (builtin, pi, copilot, vscode, zed)",
+            'h',
+            View::Agents,
+        ),
+        e(
+            "Agents: next visibility (all, public, private)",
+            'v',
+            View::Agents,
+        ),
+        e("Agents: next host filter", 'H', View::Agents),
+        e(
+            "Agents: watch only the checked repositories",
+            'o',
+            View::Agents,
+        ),
+        e("Agents: show the job's last report", 'l', View::Agents),
         e("Go to discussions and wiki", 'T', d),
         e("Discussions and wiki: show the wiki", 'w', View::Community),
         e(

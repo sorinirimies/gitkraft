@@ -17,7 +17,7 @@ pub mod store;
 use chrono::{DateTime, Local, NaiveDateTime};
 
 pub use config::{AgentWatch, HarnessKind, Job, Notify};
-pub use run::{Outcome, run_job};
+pub use run::{Deps, Outcome, announce, execute, run_and_file, run_job};
 pub use scan::{Finding, FindingKind, Scan};
 pub use schedule::Schedule;
 pub use select::{Selector, Visibility};
@@ -40,6 +40,13 @@ pub fn due<'a>(cfg: &'a AgentWatch, store: &Store, now: NaiveDateTime) -> Vec<&'
             j.parsed_schedule().is_ok_and(|s| s.due(now, last))
         })
         .collect()
+}
+
+/// When `job` runs next after `now` (local time), by its newest report.
+#[must_use]
+pub fn next_run(job: &Job, store: &Store, now: NaiveDateTime) -> Option<NaiveDateTime> {
+    let last = store.latest(&job.name).map(|r| local(r.started));
+    job.parsed_schedule().ok()?.next(now, last)
 }
 
 #[cfg(test)]

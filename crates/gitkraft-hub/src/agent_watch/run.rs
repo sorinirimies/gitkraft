@@ -134,6 +134,48 @@ pub fn announce(outcome: &Outcome, inbox: &mut Inbox, notifier: &dyn Notifier, a
     }
 }
 
+/// Runs `job` and keeps its report in `store`; the caller announces the returned outcome (an app
+/// that holds the inbox in memory does that itself, see [`announce`]).
+///
+/// # Errors
+/// The report could not be written.
+pub async fn run_and_file<C: HttpClient + Clone, L: Llm>(
+    hub: &Hub<C>,
+    job: &Job,
+    universe: &[RepoInfo],
+    deps: &Deps<'_, L>,
+    store: &super::store::Store,
+) -> Result<Outcome, String> {
+    let out = run_job(hub, job, universe, deps, Utc::now()).await;
+    store.save(&out.report)?;
+    Ok(out)
+}
+
+/// Runs `job` and files everything: the report in `store`, the alerts in the inbox file at
+/// `inbox_path` and one notification through `notifier`. What every front-end and the service call.
+///
+/// # Errors
+/// The report or the inbox could not be written.
+pub async fn execute<C: HttpClient + Clone, L: Llm>(
+    hub: &Hub<C>,
+    job: &Job,
+    universe: &[RepoInfo],
+    deps: &Deps<'_, L>,
+    store: &super::store::Store,
+    inbox_path: &std::path::Path,
+    notifier: &dyn Notifier,
+) -> Result<Outcome, String> {
+    use gitkraft_settings::files;
+    let out = run_and_file(hub, job, universe, deps, store).await?;
+    let mut inbox = files::read_optional(inbox_path)
+        .map_err(|e| e.to_string())?
+        .map(|t| Inbox::from_json(&t))
+        .unwrap_or_default();
+    announce(&out, &mut inbox, notifier, Utc::now());
+    files::write_atomic(inbox_path, &inbox.to_json()).map_err(|e| e.to_string())?;
+    Ok(out)
+}
+
 /// The prompt for a process harness: the instructions and the red items.
 #[must_use]
 pub fn build_prompt(job: &Job, findings: &[&Finding]) -> String {
@@ -339,6 +381,33 @@ mod tests {
         j.harness = HarnessKind::Pi;
         j.model = Some("m/x".into());
         j
+    }
+
+    #[tokio::test]
+    async fn executing_a_red_job_files_the_report_the_inbox_and_one_notification() {
+        use gitkraft_platforms::notify::RecordingNotifier;
+        let tmp = tempfile::tempdir().expect("tmp");
+        let store = super::super::store::Store::new(tmp.path().join("reports"));
+        let inbox = tmp.path().join("inbox.json");
+        let n = RecordingNotifier::default();
+        let policy = allowed();
+        let exec = Arc::new(ScriptedExec::default());
+        let out = execute(
+            &hub_with("failure"),
+            &pi_job(),
+            &[info("r", false)],
+            &deps(None, exec, &policy),
+            &store,
+            &inbox,
+            &n,
+        )
+        .await
+        .expect("execute");
+        assert_eq!(out.report.findings.len(), 1);
+        assert_eq!(store.latest("j").expect("saved").findings.len(), 1);
+        let saved = std::fs::read_to_string(&inbox).expect("inbox");
+        assert_eq!(Inbox::from_json(&saved).entries().len(), 1);
+        assert_eq!(n.shown().len(), 1);
     }
 
     #[tokio::test]

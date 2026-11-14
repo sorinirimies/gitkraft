@@ -46,6 +46,13 @@ impl HarnessKind {
         }
     }
 
+    /// The next harness in [`Self::ALL`], wrapping.
+    #[must_use]
+    pub fn next(self) -> Self {
+        let i = Self::ALL.iter().position(|h| *h == self).unwrap_or(0);
+        Self::ALL[(i + 1) % Self::ALL.len()]
+    }
+
     /// The harness called `s`.
     #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
@@ -85,6 +92,16 @@ impl Default for Notify {
 fn yes() -> bool {
     true
 }
+
+/// Schedules the front-ends cycle through; anything else is typed in the file.
+pub const SCHEDULES: [&str; 6] = [
+    "daily 08:00",
+    "mon-fri 07:30",
+    "weekly",
+    "sat,sun 10:00",
+    "every 6h",
+    "every 30m",
+];
 
 /// One scheduled check.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,6 +144,12 @@ impl Job {
             prompt: None,
             notify: Notify::default(),
         }
+    }
+
+    /// The next of a few common schedules (a hand-written one starts the cycle over).
+    pub fn next_schedule(&mut self) {
+        let i = SCHEDULES.iter().position(|s| *s == self.schedule);
+        self.schedule = SCHEDULES[i.map_or(0, |i| (i + 1) % SCHEDULES.len())].to_string();
     }
 
     /// The parsed schedule.
@@ -232,6 +255,25 @@ impl AgentWatch {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn schedules_and_harnesses_cycle_and_wrap() {
+        let mut j = Job::new("j", "daily 08:00");
+        j.next_schedule();
+        assert_eq!(j.schedule, "mon-fri 07:30");
+        j.schedule = "sun 03:00".into();
+        j.next_schedule();
+        assert_eq!(
+            j.schedule, "daily 08:00",
+            "a hand-written one restarts the cycle"
+        );
+        assert!(
+            SCHEDULES
+                .iter()
+                .all(|s| Job::new("x", s).parsed_schedule().is_ok())
+        );
+        assert_eq!(HarnessKind::Zed.next(), HarnessKind::Builtin);
+    }
+
     use super::*;
 
     #[test]

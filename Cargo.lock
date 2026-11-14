@@ -2057,6 +2057,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tui-chart",
+ "tui-checkbox",
  "tui-file-explorer",
  "tui-nuances",
  "tui-skeleton",
@@ -6763,6 +6764,16 @@ dependencies = [
  "tui-nuances",
  "tui-piechart",
  "unicode-width",
+]
+
+[[package]]
+name = "tui-checkbox"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c35c79ddf625f309e5b5f3bda433de6336fdf68ee2b18d25407a6e54d3147592"
+dependencies = [
+ "ratatui",
+ "tui-nuances",
 ]
 
 [[package]]

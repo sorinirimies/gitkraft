@@ -4,10 +4,9 @@ Ideas not built yet, roughly in order. Anything here is a proposal, not a promis
 
 ## Agent-watch
 
-Core, CLI and the service are done (`gitkraft-hub::agent_watch`, `gitkraft-tui agents`). Open:
-an Agents view in the TUI, GUI and web (jobs, next run, live output, run now, pause, a project
-picker over every account), an unread badge for reports, the same scheduler running inside an open
-GUI or TUI, and a real run against a live harness.
+Core, CLI, the service and the TUI Agents view (`J` in the hub, with the in-app scheduler and an
+unread badge) are done. Open: the same view in the GUI and web, streaming output while a job runs,
+editing a job's prompt and globs in the app, and a real run against a live harness.
 
 ## Verification (biggest risk)
 

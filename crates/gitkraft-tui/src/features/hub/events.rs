@@ -119,6 +119,10 @@ pub fn key_outcome(hub: &mut HubState, key: KeyEvent) -> Outcome {
             hub.community.detail = None;
             return Outcome::Stay;
         }
+        if hub.view == View::Agents {
+            hub.view = View::Dashboard;
+            return Outcome::Stay;
+        }
         if hub.view == View::Pulse && hub.pulse.day.is_some() {
             hub.pulse.day = None;
             hub.pulse.day_data = None;
@@ -137,6 +141,7 @@ pub fn key_outcome(hub: &mut HubState, key: KeyEvent) -> Outcome {
         View::Pulse => pulse_key(hub, key),
         View::Keys => keys_key(hub, key),
         View::Community => community_key(hub, key),
+        View::Agents => agents_key(hub, key),
         View::Dashboard => dashboard_key(hub, key),
     }
 }
@@ -270,6 +275,146 @@ fn open_keys(hub: &mut HubState) {
     }
 }
 
+fn open_agents(hub: &mut HubState) {
+    hub.view = View::Agents;
+    hub.agents.reload();
+    if hub.agents.repos.is_none() {
+        hub.load_agent_repos();
+    }
+    hub.agents.mark_seen();
+}
+
+fn agents_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
+    use super::agents::{Flag, Pane};
+    let repos = hub.agents.pane == Pane::Repos;
+    let r = match key.code {
+        KeyCode::Char('q') | KeyCode::Esc => {
+            hub.view = View::Dashboard;
+            return Outcome::Stay;
+        }
+        KeyCode::Tab | KeyCode::BackTab => {
+            hub.agents.pane = if repos { Pane::Jobs } else { Pane::Repos };
+            return Outcome::Stay;
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if repos {
+                hub.agents.move_repo(1);
+            } else {
+                hub.agents.move_job(1);
+                hub.agents.mark_seen();
+            }
+            return Outcome::Stay;
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            if repos {
+                hub.agents.move_repo(-1);
+            } else {
+                hub.agents.move_job(-1);
+                hub.agents.mark_seen();
+            }
+            return Outcome::Stay;
+        }
+        KeyCode::PageDown => {
+            hub.agents.move_repo(10);
+            return Outcome::Stay;
+        }
+        KeyCode::PageUp => {
+            hub.agents.move_repo(-10);
+            return Outcome::Stay;
+        }
+        KeyCode::Char('g') | KeyCode::Home => {
+            if repos {
+                hub.agents.move_repo(isize::MIN / 2);
+            } else {
+                hub.agents.move_job(isize::MIN / 2);
+            }
+            return Outcome::Stay;
+        }
+        KeyCode::Char('G') | KeyCode::End => {
+            if repos {
+                hub.agents.move_repo(isize::MAX / 2);
+            } else {
+                hub.agents.move_job(isize::MAX / 2);
+            }
+            return Outcome::Stay;
+        }
+        KeyCode::Char(' ') | KeyCode::Enter => {
+            if repos {
+                hub.agents.toggle_repo()
+            } else {
+                hub.agents.toggle_enabled()
+            }
+        }
+        KeyCode::Char('e') => hub.agents.toggle_enabled(),
+        KeyCode::Char('s') => hub.agents.cycle_schedule(),
+        KeyCode::Char('h') => hub.agents.cycle_harness(),
+        KeyCode::Char('v') => hub.agents.cycle_visibility(),
+        KeyCode::Char('H') => hub.agents.cycle_host(),
+        KeyCode::Char('f') => hub.agents.flip(Flag::Forks),
+        KeyCode::Char('x') => hub.agents.flip(Flag::Archived),
+        KeyCode::Char('i') => hub.agents.flip(Flag::Inbox),
+        KeyCode::Char('y') => hub.agents.flip(Flag::System),
+        KeyCode::Char('o') => hub.agents.only_checked(),
+        KeyCode::Char('a') => hub.agents.all_again(),
+        KeyCode::Char('u') => {
+            hub.agents.auto = !hub.agents.auto;
+            Ok(format!(
+                "scheduler {} while the hub is open",
+                if hub.agents.auto { "on" } else { "off" }
+            ))
+        }
+        KeyCode::Char('m') => {
+            hub.prompt = Some(Prompt {
+                purpose: PromptPurpose::AgentModel,
+                buffer: hub
+                    .agents
+                    .job()
+                    .and_then(|j| j.model.clone())
+                    .unwrap_or_default(),
+            });
+            return Outcome::Stay;
+        }
+        KeyCode::Char('n') => {
+            hub.prompt = Some(Prompt {
+                purpose: PromptPurpose::NewJob,
+                buffer: String::new(),
+            });
+            return Outcome::Stay;
+        }
+        KeyCode::Char('d') | KeyCode::Delete => {
+            hub.ask(Action::DeleteJob);
+            return Outcome::Stay;
+        }
+        KeyCode::Char('R') => {
+            hub.agents.reload();
+            hub.agents.repos = None;
+            hub.load_agent_repos();
+            Ok("reloading jobs and repositories".to_string())
+        }
+        KeyCode::Char('r') => match hub.agents.job().map(|j| j.name.clone()) {
+            Some(name) => {
+                hub.run_agent(&name, false);
+                Ok(format!("running {name}…"))
+            }
+            None => Err("no job selected: press n to create one".to_string()),
+        },
+        KeyCode::Char('l') => match hub.agents.latest() {
+            Some(rep) => {
+                hub.log = Some(super::logview::LogView::new(
+                    format!("report · {}", rep.job),
+                    &rep.markdown(),
+                ));
+                hub.agents.mark_seen();
+                return Outcome::Stay;
+            }
+            None => Err("this job has not run yet: press r".to_string()),
+        },
+        _ => return Outcome::Stay,
+    };
+    hub.note(r);
+    Outcome::Stay
+}
+
 fn open_community(hub: &mut HubState) {
     hub.view = View::Community;
     if hub.community.items.is_none() && !hub.community.loading && hub.community.error.is_none() {
@@ -387,6 +532,7 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
         KeyCode::Right if alt => move_section(hub, 1),
         KeyCode::Left if alt => move_section(hub, -1),
         KeyCode::Char('K') => open_keys(hub),
+        KeyCode::Char('J') => open_agents(hub),
         KeyCode::Char('T') => open_community(hub),
         KeyCode::Char('w') => hub.checkout_pr_worktree(),
         KeyCode::Char('}') => move_section(hub, 1),
@@ -599,12 +745,25 @@ fn on_press(hub: &mut HubState, x: u16, y: u16) {
                 View::Pulse => open_pulse(hub),
                 View::Keys => open_keys(hub),
                 View::Community => open_community(hub),
+                View::Agents => open_agents(hub),
                 View::Dashboard => {}
             }
         }
         Target::Section(i) => hub.drag.press(x, y, Some(DragTarget::Section(i))),
         Target::Divider => hub.drag.press(x, y, Some(DragTarget::Divider)),
         Target::Row(i) if hub.view == View::Keys => hub.keys.row = i,
+        Target::Row(i) if hub.view == View::Agents => {
+            hub.agents.pane = super::agents::Pane::Jobs;
+            hub.agents.row = i;
+            hub.agents.repo_row = 0;
+            hub.agents.mark_seen();
+        }
+        Target::Repo(i) => {
+            hub.agents.pane = super::agents::Pane::Repos;
+            hub.agents.repo_row = i;
+            let r = hub.agents.toggle_repo();
+            hub.note(r);
+        }
         Target::Row(i) if hub.view == View::Community => {
             hub.community.row = i;
             if hub.register_click(target) {
@@ -676,6 +835,13 @@ fn scroll(hub: &mut HubState, x: u16, y: u16, delta: isize) {
         hub.move_key(delta);
         return;
     }
+    if hub.view == View::Agents {
+        match hub.hit_at(x, y) {
+            Some(Target::Repo(_)) => hub.agents.move_repo(delta),
+            _ => hub.agents.move_job(delta),
+        }
+        return;
+    }
     if hub.view == View::Community {
         if hub.community.detail.is_some() {
             scroll_community(hub, delta as i16);
@@ -745,6 +911,104 @@ mod tests {
         for c in text.chars() {
             key_outcome(hub, key(KeyCode::Char(c)));
         }
+    }
+
+    fn agents_state(tmp: &tempfile::TempDir) -> super::super::agents::AgentsState {
+        use gitkraft_platforms::RepoId;
+        use gitkraft_platforms::model::RepoInfo;
+        let mut a = super::super::agents::AgentsState::in_dirs(
+            tmp.path().join("cfg"),
+            tmp.path().join("reports"),
+        );
+        a.repos = Some(
+            ["a", "b", "c"]
+                .iter()
+                .map(|n| RepoInfo {
+                    repo: RepoId::new("github.com", "me", *n),
+                    ..RepoInfo::default()
+                })
+                .collect(),
+        );
+        a
+    }
+
+    #[test]
+    fn the_agents_view_creates_configures_and_deletes_a_job_from_the_keyboard() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let mut s = state();
+        s.agents = agents_state(&tmp);
+        chars(&mut s, "J");
+        assert_eq!(s.view, View::Agents);
+        chars(&mut s, "r");
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|(t, ok)| !ok && t.contains("no job"))
+        );
+        chars(&mut s, "n");
+        assert_eq!(
+            s.prompt.as_ref().map(|p| p.purpose),
+            Some(PromptPurpose::NewJob)
+        );
+        chars(&mut s, "oss");
+        key_outcome(&mut s, key(KeyCode::Enter));
+        assert_eq!(s.agents.job().map(|j| j.name.as_str()), Some("oss"));
+        chars(&mut s, "shv");
+        let j = s.agents.job().expect("job");
+        assert_eq!(
+            (
+                j.schedule.as_str(),
+                j.harness.name(),
+                j.projects.visibility.name()
+            ),
+            ("mon-fri 07:30", "pi", "public")
+        );
+        // the repository pane: Tab, move, space unchecks one
+        key_outcome(&mut s, key(KeyCode::Tab));
+        chars(&mut s, "j ");
+        assert_eq!(
+            s.agents.job().expect("job").projects.exclude,
+            ["github.com/me/b"]
+        );
+        // everything is saved: a fresh state sees it
+        let mut again = agents_state(&tmp);
+        again.reload();
+        assert_eq!(again.cfg.jobs.len(), 1);
+        key_outcome(&mut s, key(KeyCode::Tab));
+        chars(&mut s, "d");
+        assert_eq!(
+            s.confirm.as_ref().map(|c| c.action),
+            Some(Action::DeleteJob)
+        );
+        chars(&mut s, "y");
+        assert!(s.agents.job().is_none());
+        key_outcome(&mut s, key(KeyCode::Esc));
+        assert_eq!(s.view, View::Dashboard);
+    }
+
+    #[test]
+    fn clicking_in_the_agents_view_selects_jobs_and_checks_repositories() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let mut s = state();
+        s.agents = agents_state(&tmp);
+        s.view = View::Agents;
+        s.agents.add_job("one").expect("one");
+        s.agents.add_job("two").expect("two");
+        on_press_at(&mut s, Target::Row(0));
+        assert_eq!(s.agents.row, 0);
+        on_press_at(&mut s, Target::Repo(2));
+        assert_eq!(
+            s.agents.job().expect("job").projects.exclude,
+            ["github.com/me/c"]
+        );
+        assert_eq!(s.agents.pane, super::super::agents::Pane::Repos);
+    }
+
+    fn on_press_at(hub: &mut HubState, target: Target) {
+        hub.hits = vec![Hit {
+            rect: Rect::new(0, 0, 10, 1),
+            target,
+        }];
+        on_press(hub, 1, 0);
     }
 
     #[test]

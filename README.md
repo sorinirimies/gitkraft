@@ -254,6 +254,13 @@ harness with instructions that forbid acting; nothing is pushed, merged or re-ru
 report folder, in GitKraft's inbox (one entry each) and as one system notification. A host must allow
 the `watch` action (`gitkraft-tui ai-allow HOST watch`) before an agent sees its data.
 
+In the TUI hub press `J` (or click the **Agents** tab): jobs with their next run and last result on
+the left, the selected job's schedule, harness, switches and a checkbox picker over every repository
+of every account on the right, a findings-per-run chart and the last report. `space` checks a
+repository, `o` keeps only the checked ones, `r` runs the job now, `s`/`h`/`v`/`H` cycle schedule,
+harness, visibility and host, `n`/`d` create and delete, `l` opens the report. While the hub is open
+it also runs due jobs itself (`u` switches that off); the optional service covers the closed case.
+
 ```sh
 gitkraft-tui agents add oss --schedule "mon-fri 07:30" --harness pi --visibility public --host github.com
 gitkraft-tui agents repos oss        # what it would watch

@@ -47,6 +47,8 @@ pub enum View {
     Keys,
     /// Discussions and the wiki of one repository.
     Community,
+    /// Scheduled agents that watch the CI of the projects you pick.
+    Agents,
 }
 
 /// Which pane keys act on.
@@ -107,6 +109,8 @@ pub enum Target {
     LogRow(usize),
     /// A row of the annotation list.
     Annotation(usize),
+    /// A repository row of the Agents view.
+    Repo(usize),
     /// A day of the contribution calendar.
     Day(chrono::NaiveDate),
     /// An item of the open day's activity (position in listing order): a click copies its address.
@@ -199,6 +203,10 @@ pub enum PromptPurpose {
     MoveCard,
     /// The title of a new wiki page.
     NewWikiPage,
+    /// The name of a new agent job.
+    NewJob,
+    /// The model of the selected agent job (empty: the harness default).
+    AgentModel,
 }
 
 /// Actions that ask for confirmation first.
@@ -220,6 +228,8 @@ pub enum Action {
     CancelRun,
     /// Remove the selected SSH key from its account.
     RevokeKey,
+    /// Delete the selected agent job.
+    DeleteJob,
 }
 
 /// A pending confirmation.
@@ -329,6 +339,17 @@ enum Msg {
         result: Result<image::DynamicImage, String>,
     },
     SetupFailed(String),
+    /// Every repository the accounts can see, for the Agents view.
+    AgentRepos {
+        repos: Vec<gitkraft_platforms::model::RepoInfo>,
+        errors: Vec<String>,
+    },
+    /// An agent job finished (or could not start).
+    AgentRan {
+        job: String,
+        quiet: bool,
+        result: Result<gitkraft_hub::agent_watch::Report, String>,
+    },
     Section {
         idx: usize,
         generation: u64,
@@ -422,6 +443,8 @@ pub struct HubState {
     pub keys: KeysState,
     /// Discussions and wiki.
     pub community: CommunityState,
+    /// Scheduled agents.
+    pub agents: super::agents::AgentsState,
     /// The command palette, while open.
     pub palette: Option<super::palette::Palette>,
     /// Where the pending inline comment goes: `(path, line)`.
@@ -505,6 +528,7 @@ impl HubState {
             pulse: PulseState::default(),
             keys: KeysState::default(),
             community: CommunityState::default(),
+            agents: super::agents::AgentsState::default(),
             palette: None,
             inline_anchor: None,
             merge_method: MergeMethod::Merge,
@@ -2053,6 +2077,17 @@ impl HubState {
 
     /// Asks before doing `action` on the selected item.
     pub fn ask(&mut self, action: Action) {
+        if action == Action::DeleteJob {
+            match self.agents.job() {
+                Some(j) => {
+                    let text =
+                        format!("Delete the job “{}”? Its reports stay on disk. y/n", j.name);
+                    self.confirm = Some(Confirm { action, text });
+                }
+                None => self.set_notice("select a job first".into(), false),
+            }
+            return;
+        }
         if action == Action::RevokeKey {
             match self.selected_key() {
                 Some(r) => {
@@ -2127,6 +2162,11 @@ impl HubState {
 
     /// Runs a confirmed action.
     pub fn perform(&mut self, action: Action) {
+        if action == Action::DeleteJob {
+            let r = self.agents.delete_job();
+            self.note(r);
+            return;
+        }
         let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {
             return;
         };
@@ -2257,6 +2297,7 @@ impl HubState {
                 });
             }
             Action::RevokeKey => self.revoke_selected_key(),
+            Action::DeleteJob => {}
             Action::CancelRun => {
                 let Some(run) = self.selected_run().cloned() else {
                     return;
@@ -2386,6 +2427,16 @@ impl HubState {
         }
         if prompt.purpose == PromptPurpose::NewWikiPage {
             self.start_new_wiki_page(&prompt.buffer);
+            return;
+        }
+        if prompt.purpose == PromptPurpose::NewJob {
+            let r = self.agents.add_job(&prompt.buffer);
+            self.note(r);
+            return;
+        }
+        if prompt.purpose == PromptPurpose::AgentModel {
+            let r = self.agents.set_model(&prompt.buffer);
+            self.note(r);
             return;
         }
         if prompt.purpose == PromptPurpose::Labels {
@@ -2573,6 +2624,74 @@ impl HubState {
         while let Ok(msg) = self.rx.try_recv() {
             self.apply(msg);
         }
+        self.agents_tick();
+    }
+
+    /// Shows the result of an agents change as a notice.
+    pub fn note(&mut self, r: Result<String, String>) {
+        match r {
+            Ok(t) => self.set_notice(t, true),
+            Err(e) => self.set_notice(e, false),
+        }
+    }
+
+    /// Lists every repository the accounts can see (the Agents view's picker).
+    pub fn load_agent_repos(&mut self) {
+        let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {
+            return;
+        };
+        if self.agents.loading_repos {
+            return;
+        }
+        self.agents.loading_repos = true;
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            let (repos, errors) = gitkraft_hub::agent_watch::scan::universe(&*api).await;
+            let _ = tx.send(Msg::AgentRepos { repos, errors });
+        });
+    }
+
+    /// Runs the named job now: scan, agent, report, inbox, system notification. `quiet` is the
+    /// scheduler asking, which does not complain when it cannot start.
+    pub fn run_agent(&mut self, name: &str, quiet: bool) {
+        if let Some(r) = &self.agents.running {
+            if !quiet {
+                self.set_notice(format!("{r} is still running"), false);
+            }
+            return;
+        }
+        let (Some(api), Some(rt)) = (self.api.clone(), self.handle()) else {
+            return;
+        };
+        let (Some(job), Some(store), Some(dir)) = (
+            self.agents.cfg.job(name).cloned(),
+            self.agents.store.clone(),
+            self.agents.dir.clone(),
+        ) else {
+            return;
+        };
+        self.agents.running = Some(name.to_string());
+        let known = self.agents.repos.clone();
+        let engine = self.engine.clone();
+        let tx = self.tx.clone();
+        rt.spawn(async move {
+            let result = agent_job(api, job.clone(), known, store, dir, engine).await;
+            let _ = tx.send(Msg::AgentRan {
+                job: job.name,
+                quiet,
+                result,
+            });
+        });
+    }
+
+    /// The in-app scheduler: twice a minute, start the first job that is owed a run.
+    fn agents_tick(&mut self) {
+        if !self.ready || self.api.is_none() || !self.agents.tick_due(Instant::now()) {
+            return;
+        }
+        if let Some(name) = self.agents.owed(chrono::Local::now().naive_local()) {
+            self.run_agent(&name, true);
+        }
     }
 
     fn apply(&mut self, msg: Msg) {
@@ -2592,8 +2711,26 @@ impl HubState {
                     self.set_notice("no accounts: set GITHUB_TOKEN / GITLAB_TOKEN / CODEBERG_TOKEN or log in with `gh`".into(), false);
                 }
                 self.spawn_poller(api, watched);
+                if self.agents.dir.is_none() {
+                    self.agents = super::agents::AgentsState::system();
+                    self.agents.reload();
+                }
                 for idx in self.visible_sections() {
                     self.load_section(idx);
+                }
+            }
+            Msg::AgentRepos { repos, errors } => {
+                self.agents.loading_repos = false;
+                self.agents.repos = Some(repos);
+                self.agents.repo_errors = errors;
+            }
+            Msg::AgentRan { job, quiet, result } => {
+                self.agents.running = None;
+                self.agents.reload();
+                match result {
+                    Ok(r) => self.set_notice(format!("{job}: {}", r.line()), !r.needs_you()),
+                    Err(e) if !quiet => self.set_notice(format!("{job}: {e}"), false),
+                    Err(_) => {}
                 }
             }
             Msg::SetupFailed(e) => {
@@ -3398,4 +3535,44 @@ mod tests {
             Some("not supported by this platform")
         );
     }
+}
+
+/// One agent job from lock to inbox, off the UI thread.
+async fn agent_job(
+    api: Arc<Api>,
+    job: gitkraft_hub::agent_watch::Job,
+    known: Option<Vec<gitkraft_platforms::model::RepoInfo>>,
+    store: gitkraft_hub::agent_watch::Store,
+    dir: PathBuf,
+    engine: Arc<tokio::sync::Mutex<Engine>>,
+) -> Result<gitkraft_hub::agent_watch::Report, String> {
+    use gitkraft_hub::agent_watch::{Deps, HarnessKind, harness::SystemExec, run_and_file};
+    let _lock = store
+        .try_lock()
+        .ok_or("another run is in progress (the service?)")?;
+    let all = match known {
+        Some(r) => r,
+        None => gitkraft_hub::agent_watch::scan::universe(&*api).await.0,
+    };
+    let policy = gitkraft_hub::review_ai::Policy::load(&dir)?;
+    let llm = if job.harness == HarnessKind::Builtin {
+        tokio::task::spawn_blocking(gitkraft_hub::ai::remote_default)
+            .await
+            .ok()
+            .and_then(Result::ok)
+    } else {
+        None
+    };
+    let deps = Deps {
+        llm: llm.as_ref(),
+        exec: Arc::new(SystemExec),
+        policy: &policy,
+        scratch: std::env::temp_dir(),
+    };
+    let out = run_and_file(&*api, &job, &all, &deps, &store).await?;
+    // the poller owns the inbox in memory: add to that one so nothing is overwritten
+    let mut e = engine.lock().await;
+    gitkraft_hub::agent_watch::announce(&out, &mut e.inbox, &DesktopNotifier, chrono::Utc::now());
+    let _ = e.save();
+    Ok(out.report)
 }
