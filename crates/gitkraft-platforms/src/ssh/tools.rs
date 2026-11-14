@@ -53,6 +53,55 @@ pub fn interpret_probe(output: &str) -> Probe {
     Probe::Other(output.trim().to_string())
 }
 
+/// Where to connect: `user@host:port`, each part but the host optional.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SshTarget {
+    /// The login, `git` unless given.
+    pub user: String,
+    /// The host name.
+    pub host: String,
+    /// A port, or `None` for ssh's own default and `~/.ssh/config`.
+    pub port: Option<u16>,
+}
+
+impl SshTarget {
+    /// Reads `host`, `host:port`, `user@host` or `user@host:port`.
+    #[must_use]
+    pub fn parse(s: &str) -> Self {
+        let (user, rest) = match s.split_once('@') {
+            Some((u, r)) if !u.is_empty() => (u, r),
+            _ => ("git", s.trim_start_matches('@')),
+        };
+        let (host, port) = match rest.rsplit_once(':') {
+            Some((h, p)) if p.parse::<u16>().is_ok() => (h, p.parse().ok()),
+            _ => (rest, None),
+        };
+        Self {
+            user: user.to_string(),
+            host: host.to_string(),
+            port,
+        }
+    }
+
+    /// The arguments for `ssh -T`.
+    #[must_use]
+    pub fn args(&self) -> Vec<String> {
+        let mut a = vec![
+            "-T".to_string(),
+            "-o".into(),
+            "BatchMode=yes".into(),
+            "-o".into(),
+            "ConnectTimeout=10".into(),
+        ];
+        if let Some(p) = self.port {
+            a.push("-p".into());
+            a.push(p.to_string());
+        }
+        a.push(format!("{}@{}", self.user, self.host));
+        a
+    }
+}
+
 /// The ssh programs gitkraft needs.
 pub trait SshTools {
     /// Creates an ed25519 key pair at `path`. With `interactive`, `ssh-keygen` asks for the
@@ -62,7 +111,7 @@ pub trait SshTools {
     fn agent_keys(&self) -> Vec<String>;
     /// Loads the private key at `path` into the agent.
     fn add_to_agent(&self, path: &Path) -> Result<(), String>;
-    /// Tries `ssh -T git@host`.
+    /// Tries `ssh -T`; `host` may be a full target such as `gitea@host:2222` (see [`SshTarget`]).
     fn probe(&self, host: &str) -> Probe;
 }
 
@@ -130,14 +179,7 @@ impl SshTools for SystemSsh {
 
     fn probe(&self, host: &str) -> Probe {
         match Command::new("ssh")
-            .args([
-                "-T",
-                "-o",
-                "BatchMode=yes",
-                "-o",
-                "ConnectTimeout=10",
-                &format!("git@{host}"),
-            ])
+            .args(SshTarget::parse(host).args())
             .output()
         {
             Ok(out) => interpret_probe(&text(&out)),
@@ -148,6 +190,24 @@ impl SshTools for SystemSsh {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn targets_carry_user_and_port_and_default_to_git() {
+        let t = SshTarget::parse("github.com");
+        assert_eq!(
+            (t.user.as_str(), t.host.as_str(), t.port),
+            ("git", "github.com", None)
+        );
+        let t = SshTarget::parse("gitea@192.168.1.44");
+        assert_eq!((t.user.as_str(), t.port), ("gitea", None));
+        let t = SshTarget::parse("git@192.168.1.204:30009");
+        assert_eq!((t.host.as_str(), t.port), ("192.168.1.204", Some(30009)));
+        assert!(
+            t.args()
+                .ends_with(&["-p".into(), "30009".into(), "git@192.168.1.204".into()])
+        );
+        assert_eq!(SshTarget::parse("host:notaport").host, "host:notaport");
+    }
+
     use super::*;
 
     #[test]

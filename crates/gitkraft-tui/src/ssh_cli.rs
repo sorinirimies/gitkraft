@@ -227,7 +227,10 @@ pub async fn run_with<C: HttpClient, T: SshTools>(
                 format!("no gitkraft block for {host} in ~/.ssh/config\n")
             },
         ),
-        Command::Test { host } => Ok(format!("{}\n", describe_probe(&tools.probe(&host), &host))),
+        Command::Test { host } => Ok(format!(
+            "{}\n",
+            describe_probe(&tools.probe(&probe_target(&host)), &host)
+        )),
         Command::Status { host } => Ok(status_text(host, ssh_dir, tools)),
         Command::Switch { to, remote } => switch_remote(Path::new("."), to, &remote),
     }
@@ -269,10 +272,29 @@ fn status_text(only: Option<String>, ssh_dir: &Path, tools: &impl SshTools) -> S
                 "no gitkraft block"
             },
             if in_agent { "loaded ✔" } else { "not loaded" },
-            describe_probe(&tools.probe(&h), &h)
+            describe_probe(&tools.probe(&probe_target(&h)), &h)
         ));
     }
     out
+}
+
+/// What to hand to `ssh -T` for `host`: the login and port this checkout's remote URLs use for it
+/// (`gitea@host`, `git@host:30009`), else the bare host.
+fn probe_target(host: &str) -> String {
+    let urls: Vec<String> = git2::Repository::discover(".")
+        .ok()
+        .and_then(|r| gitkraft_core::features::remotes::list_remotes(&r).ok())
+        .map(|rs| rs.into_iter().filter_map(|r| r.url).collect())
+        .unwrap_or_default();
+    target_from_urls(host, &urls)
+}
+
+/// The ssh target for `host` according to `urls`; the bare host when no ssh URL names it.
+fn target_from_urls(host: &str, urls: &[String]) -> String {
+    urls.iter()
+        .filter(|u| parse_remote_url(u).is_some_and(|id| id.host == host))
+        .find_map(|u| gitkraft_platforms::ssh_target_of_url(u))
+        .unwrap_or_else(|| host.to_string())
 }
 
 /// Hosts of this checkout's remotes plus `accounts.toml`, plus the three well-known platforms.
@@ -450,6 +472,36 @@ mod tests {
         );
         assert!(parse(&args("switch ftp")).is_err());
         assert!(parse(&args("frobnicate")).is_err());
+    }
+
+    #[test]
+    fn the_probe_uses_the_login_and_port_of_the_remote_urls() {
+        let urls: Vec<String> = [
+            "git@github.com:o/r.git",
+            "gitea@192.168.1.44:sorin/r.git",
+            "ssh://git@192.168.1.204:30009/sorin/r.git",
+            "https://codeberg.org/o/r.git",
+        ]
+        .map(String::from)
+        .to_vec();
+        assert_eq!(target_from_urls("github.com", &urls), "git@github.com");
+        assert_eq!(
+            target_from_urls("192.168.1.44", &urls),
+            "gitea@192.168.1.44"
+        );
+        assert_eq!(
+            target_from_urls("192.168.1.204", &urls),
+            "git@192.168.1.204:30009"
+        );
+        assert_eq!(
+            target_from_urls("codeberg.org", &urls),
+            "codeberg.org",
+            "https says nothing"
+        );
+        assert_eq!(
+            target_from_urls("unknown.example", &urls),
+            "unknown.example"
+        );
     }
 
     #[test]

@@ -156,6 +156,31 @@ pub fn parse_remote_url(url: &str) -> Option<RepoId> {
     Some(RepoId::new(host, owner, name))
 }
 
+/// The ssh login a remote URL names, as `user@host[:port]`; `None` for https URLs.
+///
+/// `git@h:o/r.git` gives `git@h`, `gitea@h:o/r.git` gives `gitea@h` and
+/// `ssh://git@h:30009/o/r.git` gives `git@h:30009`.
+pub fn ssh_target_of_url(url: &str) -> Option<String> {
+    let url = url.trim();
+    if let Some((scheme, rest)) = url.split_once("://") {
+        if !scheme.eq_ignore_ascii_case("ssh") {
+            return None;
+        }
+        let authority = rest.split_once('/')?.0;
+        return Some(if authority.contains('@') {
+            authority.to_string()
+        } else {
+            format!("git@{authority}")
+        });
+    }
+    let (authority, _) = url.split_once(':')?;
+    Some(if authority.contains('@') {
+        authority.to_string()
+    } else {
+        format!("git@{authority}")
+    })
+}
+
 /// Percent-encodes everything except unreserved characters (GitLab project paths, query values).
 pub fn url_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -207,6 +232,27 @@ impl HostMap {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ssh_targets_come_from_the_urls_user_and_port() {
+        assert_eq!(
+            ssh_target_of_url("git@github.com:o/r.git").as_deref(),
+            Some("git@github.com")
+        );
+        assert_eq!(
+            ssh_target_of_url("gitea@192.168.1.44:sorin/r.git").as_deref(),
+            Some("gitea@192.168.1.44")
+        );
+        assert_eq!(
+            ssh_target_of_url("ssh://git@192.168.1.204:30009/sorin/r.git").as_deref(),
+            Some("git@192.168.1.204:30009")
+        );
+        assert_eq!(
+            ssh_target_of_url("ssh://host/o/r").as_deref(),
+            Some("git@host")
+        );
+        assert_eq!(ssh_target_of_url("https://github.com/o/r.git"), None);
+    }
+
     #[test]
     fn clone_urls_round_trip_through_the_parser_for_both_transports() {
         let id = RepoId::new("git.example.com", "group/sub", "app");
