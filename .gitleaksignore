@@ -1,0 +1,4 @@
+# Fake secrets in the redaction tests (they prove a secret gets masked).
+df6d012dfaddc6f48ded1b8bbe02dae619bc3ddb:crates/gitkraft-hub/src/commit_ai.rs:generic-api-key:588
+52a6ba9a93381853ccfd1cd1887f2cb80de24573:crates/gitkraft-hub/src/ai.rs:aws-access-token:519
+52a6ba9a93381853ccfd1cd1887f2cb80de24573:crates/gitkraft-hub/src/ai.rs:aws-access-token:523
