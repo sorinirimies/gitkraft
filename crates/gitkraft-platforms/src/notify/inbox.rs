@@ -81,6 +81,19 @@ impl Inbox {
         self.entries.retain(|e| !e.read);
     }
 
+    /// Takes over the entries of `other` that arrived at or after `since` and are not here yet:
+    /// what another process filed while this copy was in memory. Older entries are left alone,
+    /// so what was cleared here stays cleared.
+    pub fn absorb_newer(&mut self, other: &Inbox, since: DateTime<Utc>) {
+        for e in other.entries.iter().filter(|e| e.at >= since) {
+            if !self.entries.contains(e) {
+                self.entries.push(e.clone());
+            }
+        }
+        self.entries.sort_by_key(|e| std::cmp::Reverse(e.at));
+        self.entries.truncate(CAP);
+    }
+
     /// Parses a saved inbox; garbage gives an empty one.
     pub fn from_json(text: &str) -> Self {
         serde_json::from_str(text).unwrap_or_default()

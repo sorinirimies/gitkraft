@@ -27,6 +27,8 @@ pub struct Engine {
     pub status: PollerStatus,
     /// The in-app inbox.
     pub inbox: Inbox,
+    /// When the inbox was read from disk; entries other processes filed after it survive a save.
+    loaded_at: Option<DateTime<Utc>>,
     last_attempt: BTreeMap<String, DateTime<Utc>>,
     last_inbox_attempt: BTreeMap<String, DateTime<Utc>>,
 }
@@ -61,8 +63,20 @@ impl Engine {
             inbox: read(files::inbox_path())
                 .map(|t| Inbox::from_json(&t))
                 .unwrap_or_default(),
+            loaded_at: Some(Utc::now()),
             ..Self::default()
         }
+    }
+
+    /// Writes the inbox to `path`, keeping what another process (the notify daemon, an agent-watch
+    /// run in another app) filed there since this copy was loaded.
+    fn write_inbox(&self, path: &Path) -> anyhow::Result<()> {
+        let mut inbox = self.inbox.clone();
+        if let (Some(since), Some(disk)) = (self.loaded_at, files::read_optional(path)?) {
+            inbox.absorb_newer(&Inbox::from_json(&disk), since);
+        }
+        files::write_atomic(path, &inbox.to_json())?;
+        Ok(())
     }
 
     /// Saves everything to the default state directory.
@@ -70,8 +84,7 @@ impl Engine {
         files::write_atomic(&files::notify_state_path()?, &self.state.to_json())?;
         files::write_atomic(&files::ci_memory_path()?, &serde_json::to_string(&self.ci)?)?;
         files::write_atomic(&files::notify_status_path()?, &self.status.to_json())?;
-        files::write_atomic(&files::inbox_path()?, &self.inbox.to_json())?;
-        Ok(())
+        self.write_inbox(&files::inbox_path()?)
     }
 
     /// Saves under `dir` (tests).
@@ -455,5 +468,39 @@ mod tests {
         e.save_to(dir.path()).expect("save");
         let text = std::fs::read_to_string(dir.path().join("state.json")).expect("read");
         assert_eq!(NotifyState::from_json(&text), e.state);
+    }
+
+    #[test]
+    fn a_save_keeps_what_another_process_filed_meanwhile_but_not_what_was_cleared() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let path = dir.path().join("inbox.json");
+        let alert = |n| gitkraft_platforms::notify::Alert {
+            repo: RepoId::new("h", "o", "r"),
+            event: gitkraft_settings::notify::NotifyEvent::PrOpened,
+            number: Some(n),
+            title: "t".into(),
+            url: "u".into(),
+            branch: None,
+            labels: vec![],
+            author: None,
+            mine: false,
+            involved: false,
+        };
+        let mut old = Inbox::default();
+        old.push(alert(1), Utc::now() - chrono::Duration::hours(1));
+        old.mark_all_read();
+        std::fs::write(&path, old.to_json()).expect("seed");
+        let mine = Engine {
+            loaded_at: Some(Utc::now()),
+            ..Engine::default()
+        };
+        // this copy cleared the read entry; someone else filed #2 after the load
+        let mut theirs = old.clone();
+        theirs.push(alert(2), Utc::now() + chrono::Duration::seconds(1));
+        std::fs::write(&path, theirs.to_json()).expect("theirs");
+        mine.write_inbox(&path).expect("save");
+        let saved = Inbox::from_json(&std::fs::read_to_string(&path).expect("read"));
+        let numbers: Vec<_> = saved.entries().iter().map(|e| e.alert.number).collect();
+        assert_eq!(numbers, [Some(2)]);
     }
 }
