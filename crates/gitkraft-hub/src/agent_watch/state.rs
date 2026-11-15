@@ -345,6 +345,66 @@ impl AgentsState {
         )
     }
 
+    /// Replaces the selected job's instructions (empty: the built-in ones).
+    ///
+    /// # Errors
+    /// No job, or the file could not be saved.
+    pub fn set_prompt(&mut self, text: &str) -> Result<String, String> {
+        let t = crate::review_ai::from_one_line(text.trim());
+        self.change(
+            |j| j.prompt = (!t.is_empty()).then(|| t.clone()),
+            |j| {
+                if j.prompt.is_some() {
+                    "own instructions".to_string()
+                } else {
+                    "built-in instructions".to_string()
+                }
+            },
+        )
+    }
+
+    /// The selected job's globs as the text [`AgentsState::set_globs`] reads.
+    #[must_use]
+    pub fn globs_text(&self) -> String {
+        self.job().map_or_else(String::new, |j| {
+            j.projects
+                .include
+                .iter()
+                .cloned()
+                .chain(j.projects.exclude.iter().map(|e| format!("!{e}")))
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+    }
+
+    /// Sets the selected job's globs on `host/owner/name`: `a/** b/*`, with `!` for exclusions.
+    ///
+    /// # Errors
+    /// No job, or the file could not be saved.
+    pub fn set_globs(&mut self, text: &str) -> Result<String, String> {
+        let (mut inc, mut exc) = (Vec::new(), Vec::new());
+        for w in text.split_whitespace() {
+            match w.strip_prefix('!') {
+                Some(e) if !e.is_empty() => exc.push(e.to_string()),
+                Some(_) => {}
+                None => inc.push(w.to_string()),
+            }
+        }
+        self.change(
+            |j| {
+                j.projects.include = inc.clone();
+                j.projects.exclude = exc.clone();
+            },
+            |j| {
+                format!(
+                    "{} included, {} excluded patterns",
+                    j.projects.include.len(),
+                    j.projects.exclude.len()
+                )
+            },
+        )
+    }
+
     /// Creates a job with the defaults and selects it.
     ///
     /// # Errors
@@ -487,6 +547,10 @@ pub enum AgentAction {
     Flip(Flag),
     /// Set the model (empty: the harness default).
     SetModel(String),
+    /// Replace the instructions (empty: the built-in ones; `⏎` in the text is a line break).
+    SetPrompt(String),
+    /// Set the include and exclude globs: words, with `!` in front of the ones to exclude.
+    SetGlobs(String),
     /// Create a job with this name.
     AddJob(String),
     /// Delete the selected job.
@@ -524,6 +588,8 @@ impl AgentsState {
             AgentAction::NextHost => self.cycle_host(),
             AgentAction::Flip(f) => self.flip(*f),
             AgentAction::SetModel(m) => self.set_model(m),
+            AgentAction::SetPrompt(p) => self.set_prompt(p),
+            AgentAction::SetGlobs(g) => self.set_globs(g),
             AgentAction::AddJob(n) => self.add_job(n),
             AgentAction::DeleteJob => self.delete_job(),
             AgentAction::OnlyChecked => self.only_checked(),
@@ -673,6 +739,21 @@ mod tests {
         a.apply(&AgentAction::SetModel(" m ".into()))
             .expect("model");
         assert_eq!(a.job().expect("job").model.as_deref(), Some("m"));
+        a.apply(&AgentAction::SetPrompt("look ⏎ close".into()))
+            .expect("prompt");
+        assert!(
+            a.job()
+                .expect("job")
+                .prompt
+                .as_deref()
+                .is_some_and(|p| p.contains('\n'))
+        );
+        a.apply(&AgentAction::SetPrompt(String::new()))
+            .expect("clear");
+        assert!(a.job().expect("job").prompt.is_none());
+        a.apply(&AgentAction::SetGlobs("github.com/me/** !*/*/old".into()))
+            .expect("globs");
+        assert_eq!(a.globs_text(), "github.com/me/** !*/*/old");
         assert!(a.apply(&AgentAction::ToggleAuto).is_ok() && !a.auto);
         a.apply(&AgentAction::DeleteJob).expect("del");
         assert!(a.job().is_none());

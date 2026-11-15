@@ -1510,6 +1510,13 @@ async fn agents_page(cx: &Cx) -> Result<impl View> {
                 ],
                 flags,
                 j.model.clone().unwrap_or_default(),
+                (
+                    j.prompt
+                        .as_deref()
+                        .map(gitkraft_hub::review_ai::to_one_line)
+                        .unwrap_or_default(),
+                    a.globs_text(),
+                ),
                 act_json(serde_json::json!({"action": "agent_run", "job": j.name})),
                 if j.harness.headless() {
                     "Findings go to the harness only on hosts that allowed it: gitkraft-tui ai-allow HOST watch"
@@ -1550,6 +1557,8 @@ async fn agents_page(cx: &Cx) -> Result<impl View> {
     let (jobs, repos, count, job, report, history, errors, load_error, running, auto) = page;
     let run_flag = if running { "yes" } else { "" };
     let add = act_json(serde_json::json!({"action": "agent_add"}));
+    let prompt_act = act_json(serde_json::json!({"action": "agent_prompt"}));
+    let globs_act = act_json(serde_json::json!({"action": "agent_globs"}));
     let model_act = act_json(serde_json::json!({"action": "agent_model"}));
     let reload = act_json(serde_json::json!({"action": "agent_reload"}));
     let auto_act = act_json(serde_json::json!({"action": "agent", "op": "toggle_auto"}));
@@ -1588,7 +1597,7 @@ async fn agents_page(cx: &Cx) -> Result<impl View> {
                 <button data-act=(add) data-from="agent-name" data-field="name" onclick="actBtn(this)">"Add job"</button>
             </p>
             if has_job {
-                if let Some((name, picks, flags, model, run, hint)) = job {
+                if let Some((name, picks, flags, model, (prompt, globs), run, hint)) = job {
                     <h2>(name)</h2>
                     <p>
                         for (label, act) in picks {
@@ -1599,6 +1608,14 @@ async fn agents_page(cx: &Cx) -> Result<impl View> {
                     <p>
                         <input id="agent-model" value=(model) placeholder="model (empty: the harness default)">
                         <button data-act=(model_act) data-from="agent-model" data-field="model" onclick="actBtn(this)">"Save model"</button>
+                    </p>
+                    <p>
+                        <input id="agent-prompt" value=(prompt) placeholder="instructions (empty: built-in; ⏎ = line break)" size="60">
+                        <button data-act=(prompt_act) data-from="agent-prompt" data-field="prompt" onclick="actBtn(this)">"Save instructions"</button>
+                    </p>
+                    <p>
+                        <input id="agent-globs" value=(globs) placeholder="globs: github.com/me/** !*/*/old" size="60">
+                        <button data-act=(globs_act) data-from="agent-globs" data-field="globs" onclick="actBtn(this)">"Save globs"</button>
                     </p>
                     <p>
                         for (label, on, act) in flags {

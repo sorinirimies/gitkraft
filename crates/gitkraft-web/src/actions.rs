@@ -268,6 +268,18 @@ pub enum ActionRequest {
         #[serde(default)]
         model: String,
     },
+    /// Set the instructions of the selected agent job.
+    AgentPrompt {
+        /// Text, empty for the built-in instructions.
+        #[serde(default)]
+        prompt: String,
+    },
+    /// Set the globs of the selected agent job.
+    AgentGlobs {
+        /// Words on `host/owner/name`, `!` excludes.
+        #[serde(default)]
+        globs: String,
+    },
     /// Run an agent job now (it goes on in the background).
     AgentRun {
         /// Job name.
@@ -627,6 +639,12 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
         }
         ActionRequest::AgentModel { model } => {
             return session.with_agents(|a| a.set_model(&model));
+        }
+        ActionRequest::AgentPrompt { prompt } => {
+            return session.with_agents(|a| a.set_prompt(&prompt));
+        }
+        ActionRequest::AgentGlobs { globs } => {
+            return session.with_agents(|a| a.set_globs(&globs));
         }
         ActionRequest::AgentReload => {
             session.with_agents(|a| a.reload());

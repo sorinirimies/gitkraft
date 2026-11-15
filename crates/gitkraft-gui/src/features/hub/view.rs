@@ -1737,6 +1737,31 @@ fn agents<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
                     ]
                     .spacing(6),
                 )
+                .push(
+                    row![
+                        text_input(
+                            "instructions (empty: built-in; ⏎ = line break)",
+                            &hub.agent_prompt
+                        )
+                        .on_input(HubMessage::AgentPromptInput)
+                        .on_submit(HubMessage::AgentSetPrompt)
+                        .size(13)
+                        .width(Length::Fill),
+                        small("Save".into(), Some(HubMessage::AgentSetPrompt)),
+                    ]
+                    .spacing(6),
+                )
+                .push(
+                    row![
+                        text_input("globs: github.com/me/** !*/*/old", &hub.agent_globs)
+                            .on_input(HubMessage::AgentGlobsInput)
+                            .on_submit(HubMessage::AgentSetGlobs)
+                            .size(13)
+                            .width(Length::Fill),
+                        small("Save globs".into(), Some(HubMessage::AgentSetGlobs)),
+                    ]
+                    .spacing(6),
+                )
                 .push(flags)
                 .push(text(hint).size(11).color(c.text_secondary));
         }

@@ -611,11 +611,31 @@ async fn the_agents_page_lists_repositories_and_a_job_is_added_configured_and_sa
             .status,
         200
     );
+    assert_eq!(
+        post(r#"{"action":"agent_globs","globs":"github.com/me/** !*/*/old"}"#)
+            .await
+            .status,
+        200
+    );
+    assert_eq!(
+        post(r#"{"action":"agent_prompt","prompt":"be brief"}"#)
+            .await
+            .status,
+        200
+    );
     let page = get(h.addr, "/agents").await;
+    for want in [
+        "be brief",
+        "github.com/me/** !*/*/old",
+        "Save globs",
+        "Save instructions",
+    ] {
+        assert!(page.body.contains(want), "{want}");
+    }
     for want in [
         "oss",
         "mon-fri 07:30",
-        "☐ github.com/me/a",
+        "☑ github.com/me/a",
         "Harness: builtin",
         "m1",
         "☐ system notification",
@@ -625,7 +645,7 @@ async fn the_agents_page_lists_repositories_and_a_job_is_added_configured_and_sa
     }
     let saved = std::fs::read_to_string(h.dir.path().join("cfg/agent-watch.toml")).expect("saved");
     assert!(
-        saved.contains("oss") && saved.contains("github.com/me/a") && saved.contains("m1"),
+        saved.contains("oss") && saved.contains("github.com/me/**") && saved.contains("m1"),
         "{saved}"
     );
     let r = post(r#"{"action":"agent_run","job":"nope"}"#).await;

@@ -248,6 +248,14 @@ pub enum HubMessage {
     AgentName(String),
     /// The model box changed.
     AgentModelInput(String),
+    /// Typing the instructions.
+    AgentPromptInput(String),
+    /// Typing the globs.
+    AgentGlobsInput(String),
+    /// Save the instructions.
+    AgentSetPrompt,
+    /// Save the globs.
+    AgentSetGlobs,
     /// Create the job named in the box.
     AgentAdd,
     /// Save the model box on the selected job.
@@ -445,6 +453,10 @@ pub struct HubState {
     pub agent_name: String,
     /// The model box.
     pub agent_model: String,
+    /// The instructions box.
+    pub agent_prompt: String,
+    /// The globs box.
+    pub agent_globs: String,
     /// Discussions and wiki.
     pub community: CommunityState,
     /// Status line text and success flag.
@@ -499,6 +511,8 @@ impl HubState {
             agents: gitkraft_hub::agent_watch::AgentsState::default(),
             agent_name: String::new(),
             agent_model: String::new(),
+            agent_prompt: String::new(),
+            agent_globs: String::new(),
             community: CommunityState::default(),
             notice: None,
             ready: false,
@@ -643,11 +657,7 @@ impl HubState {
                 if self.agents.dir.is_none() {
                     self.agents = gitkraft_hub::agent_watch::AgentsState::system();
                     self.agents.reload();
-                    self.agent_model = self
-                        .agents
-                        .job()
-                        .and_then(|j| j.model.clone())
-                        .unwrap_or_default();
+                    self.sync_agent_inputs();
                 }
                 if self.accounts == 0 {
                     self.notice = Some(("No accounts: set GITHUB_TOKEN / GITLAB_TOKEN / CODEBERG_TOKEN or log in with `gh`".into(), false));
@@ -1057,17 +1067,31 @@ impl HubState {
                         | gitkraft_hub::agent_watch::AgentAction::AddJob(_)
                         | gitkraft_hub::agent_watch::AgentAction::DeleteJob
                 ) {
-                    self.agent_model = self
-                        .agents
-                        .job()
-                        .and_then(|j| j.model.clone())
-                        .unwrap_or_default();
+                    self.sync_agent_inputs();
                 }
                 self.agent_note(r);
                 Task::none()
             }
             HubMessage::AgentName(t) => {
                 self.agent_name = t;
+                Task::none()
+            }
+            HubMessage::AgentPromptInput(t) => {
+                self.agent_prompt = t;
+                Task::none()
+            }
+            HubMessage::AgentGlobsInput(t) => {
+                self.agent_globs = t;
+                Task::none()
+            }
+            HubMessage::AgentSetPrompt => {
+                let r = self.agents.set_prompt(&self.agent_prompt);
+                self.agent_note(r);
+                Task::none()
+            }
+            HubMessage::AgentSetGlobs => {
+                let r = self.agents.set_globs(&self.agent_globs);
+                self.agent_note(r);
                 Task::none()
             }
             HubMessage::AgentModelInput(t) => {
@@ -2512,6 +2536,17 @@ impl HubState {
             status: status(&input, Utc::now()),
             key,
         });
+    }
+
+    /// Fills the model, instructions and globs boxes from the selected job.
+    fn sync_agent_inputs(&mut self) {
+        let job = self.agents.job();
+        self.agent_model = job.and_then(|j| j.model.clone()).unwrap_or_default();
+        self.agent_prompt = job
+            .and_then(|j| j.prompt.as_deref())
+            .map(gitkraft_hub::review_ai::to_one_line)
+            .unwrap_or_default();
+        self.agent_globs = self.agents.globs_text();
     }
 
     fn agent_note(&mut self, r: Result<String, String>) {

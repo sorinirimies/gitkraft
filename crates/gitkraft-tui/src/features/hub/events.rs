@@ -374,6 +374,25 @@ fn agents_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
             });
             return Outcome::Stay;
         }
+        KeyCode::Char('p') => {
+            hub.prompt = Some(Prompt {
+                purpose: PromptPurpose::AgentPrompt,
+                buffer: hub
+                    .agents
+                    .job()
+                    .and_then(|j| j.prompt.as_deref())
+                    .map(gitkraft_hub::review_ai::to_one_line)
+                    .unwrap_or_default(),
+            });
+            return Outcome::Stay;
+        }
+        KeyCode::Char('/') => {
+            hub.prompt = Some(Prompt {
+                purpose: PromptPurpose::AgentGlobs,
+                buffer: hub.agents.globs_text(),
+            });
+            return Outcome::Stay;
+        }
         KeyCode::Char('n') => {
             hub.prompt = Some(Prompt {
                 purpose: PromptPurpose::NewJob,

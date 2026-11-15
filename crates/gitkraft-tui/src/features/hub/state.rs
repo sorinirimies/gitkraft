@@ -207,6 +207,10 @@ pub enum PromptPurpose {
     NewJob,
     /// The model of the selected agent job (empty: the harness default).
     AgentModel,
+    /// Instructions of the selected agent job.
+    AgentPrompt,
+    /// Include and exclude globs of the selected agent job.
+    AgentGlobs,
 }
 
 /// Actions that ask for confirmation first.
@@ -2436,6 +2440,16 @@ impl HubState {
         }
         if prompt.purpose == PromptPurpose::AgentModel {
             let r = self.agents.set_model(&prompt.buffer);
+            self.note(r);
+            return;
+        }
+        if prompt.purpose == PromptPurpose::AgentPrompt {
+            let r = self.agents.set_prompt(&prompt.buffer);
+            self.note(r);
+            return;
+        }
+        if prompt.purpose == PromptPurpose::AgentGlobs {
+            let r = self.agents.set_globs(&prompt.buffer);
             self.note(r);
             return;
         }

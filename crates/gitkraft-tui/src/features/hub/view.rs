@@ -1837,7 +1837,7 @@ fn hints(hub: &HubState) -> &'static str {
         return "j/k scroll · / search · n/N next · e first error · a errors · space fold · g/G ends · Esc close";
     }
     if hub.view == View::Agents {
-        return "j/k select · Tab jobs/repos · space check · r run now · e pause · s schedule · h harness · v/H filter · n new · d delete · l report · u scheduler · : palette · q back";
+        return "j/k select · Tab jobs/repos · space check · r run now · e pause · s schedule · h harness · v/H filter · m model · p prompt · / globs · n new · d delete · l report · u scheduler · : palette · q back";
     }
     if hub.view == View::Keys {
         return "j/k select · : palette · s set up this machine · t test · d remove key · r refresh · Tab dashboard · q back";
@@ -1909,6 +1909,12 @@ fn render_status(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme)
             PromptPurpose::NewWikiPage => "title of the new wiki page",
             PromptPurpose::NewJob => "name of the new agent job",
             PromptPurpose::AgentModel => "model for this job (empty: the harness default)",
+            PromptPurpose::AgentPrompt => {
+                "instructions for the agent (empty: built-in; ⏎ = line break)"
+            }
+            PromptPurpose::AgentGlobs => {
+                "globs on host/owner/name, ! excludes (e.g. github.com/me/** !*/*/old)"
+            }
         };
         Line::from(vec![
             Span::styled(format!(" {label} › "), Style::default().fg(theme.accent)),
