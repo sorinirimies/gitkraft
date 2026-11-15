@@ -444,6 +444,8 @@ pub struct App {
     pub show_theme_panel: bool,
     /// Whether the options panel is visible.
     pub show_options_panel: bool,
+    /// Whether the key-hint "Actions" pane shows in the staging area (`?` toggles it).
+    pub show_actions_panel: bool,
     /// The animated settings menu (`M`).
     pub menu: crate::features::menu::Menu,
     /// Menus open instantly instead of sliding.
@@ -537,6 +539,7 @@ impl App {
 
             show_theme_panel: false,
             show_options_panel: false,
+            show_actions_panel: false,
             menu: crate::features::menu::Menu::default(),
             reduced_motion: settings.reduced_motion,
             show_about_panel: false,
@@ -1820,6 +1823,7 @@ impl App {
         self.show_theme_panel = false;
         self.show_options_panel = false;
         self.show_about_panel = false;
+        self.show_actions_panel = false;
         self.screen = AppScreen::Welcome;
         // Reload recent repos
         if let Ok(settings) = gitkraft_core::features::persistence::load_tui_settings() {

@@ -7,7 +7,7 @@ use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 use crate::app::App;
 use crate::utils::pad_right;
 
-/// Render the About panel: app name, version, author and project info.
+/// Render the Info panel (app name, version, author): app name, version, author and project info.
 pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     use gitkraft_core::about;
 
@@ -26,7 +26,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         .title(Line::from(vec![
             Span::styled("ⓘ ", Style::default().fg(theme.accent)),
             Span::styled(
-                "About",
+                "Info",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),

@@ -12,23 +12,36 @@ use crate::utils::pad_right;
 /// Render the staging area — split into three columns:
 ///  1. Unstaged changes list
 ///  2. Staged changes list
-///  3. Commit message input OR key hints
+///  3. Commit message input OR the Actions pane (`?`), only while shown
 pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let is_active = app.active_pane == ActivePane::Staging;
 
-    // Split the staging area into three columns
+    // Two columns; the third (commit message, or the Actions pane) only while it is wanted.
+    let typing =
+        app.input_mode == InputMode::Input && app.input_purpose == InputPurpose::CommitMessage;
+    let third = typing || app.show_actions_panel;
     let cols = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Ratio(1, 3), // unstaged
-            Constraint::Ratio(1, 3), // staged
-            Constraint::Ratio(1, 3), // commit input / hints
-        ])
+        .constraints(if third {
+            [
+                Constraint::Ratio(1, 3), // unstaged
+                Constraint::Ratio(1, 3), // staged
+                Constraint::Ratio(1, 3), // commit input / actions
+            ]
+        } else {
+            [
+                Constraint::Ratio(1, 2),
+                Constraint::Ratio(1, 2),
+                Constraint::Length(0),
+            ]
+        })
         .split(area);
 
     render_unstaged(app, frame, cols[0], is_active);
     render_staged(app, frame, cols[1], is_active);
-    render_commit_or_hints(app, frame, cols[2], is_active);
+    if third {
+        render_commit_or_hints(app, frame, cols[2], is_active);
+    }
 }
 
 /// Render the unstaged changes list.

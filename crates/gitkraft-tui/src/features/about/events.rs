@@ -5,7 +5,7 @@ use crate::app::App;
 /// Handle key events when the About panel is visible.
 pub fn handle_key(app: &mut App, key: KeyEvent) {
     match key.code {
-        KeyCode::Esc | KeyCode::Char('A') | KeyCode::Char('q') => {
+        KeyCode::Esc | KeyCode::Char('I') | KeyCode::Char('q') => {
             app.show_about_panel = false;
         }
         KeyCode::Char('g') => open_url(app, gitkraft_core::about::AUTHOR_URL),

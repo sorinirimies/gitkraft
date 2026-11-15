@@ -7,9 +7,10 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 use crate::app::{App, AppScreen};
 
 /// Header shortcut hints in priority order: (key, label).
-const HINTS: [(&str, &str); 11] = [
+const HINTS: [(&str, &str); 12] = [
     ("[q]", "quit"),
     ("[←→]", "pane"),
+    ("[?]", "actions"),
     ("[r]", "refresh"),
     ("[f]", "fetch"),
     ("[t]", "theme"),
@@ -18,7 +19,7 @@ const HINTS: [(&str, &str); 11] = [
     ("[E]", "editor"),
     ("[O]", "options"),
     ("[,]", "settings"),
-    ("[A]", "about"),
+    ("[I]", "info"),
 ];
 
 /// Display width of one hint as rendered: key + " label ".

@@ -102,6 +102,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 KeyCode::Char('q') => app.should_quit = true,
                 KeyCode::Char('H') => features::hub::events::open(app),
                 KeyCode::Char('M') => app.open_menu(),
+                KeyCode::Char('?') => app.show_actions_panel = !app.show_actions_panel,
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     app.should_quit = true;
                 }
@@ -128,7 +129,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                     app.cycle_theme_next();
                     app.save_theme();
                 }
-                KeyCode::Char('A') => {
+                KeyCode::Char('I') => {
                     app.show_about_panel = !app.show_about_panel;
                     app.show_theme_panel = false;
                     app.show_options_panel = false;
@@ -479,6 +480,21 @@ mod tests {
         app.screen = AppScreen::Main;
         handle_key(&mut app, key(KeyCode::Char('q')));
         assert!(app.should_quit);
+    }
+
+    #[test]
+    fn question_mark_shows_and_hides_the_actions_pane_and_shift_i_the_info() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        assert!(!app.show_actions_panel, "hidden by default");
+        handle_key(&mut app, key(KeyCode::Char('?')));
+        assert!(app.show_actions_panel);
+        handle_key(&mut app, key(KeyCode::Char('?')));
+        assert!(!app.show_actions_panel);
+        handle_key(&mut app, key(KeyCode::Char('I')));
+        assert!(app.show_about_panel);
+        handle_key(&mut app, key(KeyCode::Char('I')));
+        assert!(!app.show_about_panel);
     }
 
     #[test]
