@@ -729,6 +729,11 @@ mod tests {
             ..RepoInfo::default()
         }]);
         assert!(a.apply(&AgentAction::DeleteJob).is_err());
+        assert!(a.apply(&AgentAction::AddJob("  ".into())).is_err());
+        assert!(
+            a.cfg.jobs.is_empty(),
+            "a refused name leaves nothing behind"
+        );
         a.apply(&AgentAction::AddJob("j".into())).expect("add");
         a.apply(&AgentAction::NextSchedule).expect("sched");
         assert_eq!(a.job().expect("job").schedule, "mon-fri 07:30");

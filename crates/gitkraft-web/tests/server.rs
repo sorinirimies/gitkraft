@@ -625,6 +625,7 @@ async fn the_agents_page_lists_repositories_and_a_job_is_added_configured_and_sa
     );
     let page = get(h.addr, "/agents").await;
     for want in [
+        "Delete job",
         "be brief",
         "github.com/me/** !*/*/old",
         "Save globs",

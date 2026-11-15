@@ -237,6 +237,10 @@ pub fn rows_in(data: &SectionData, multi: bool) -> Vec<Row> {
 }
 
 fn nav(session: &Session, active: &str) -> Vec<NavItem> {
+    let unseen = session.with_agents(|a| {
+        a.reload();
+        a.unseen()
+    });
     let mut items: Vec<NavItem> = session
         .dashboard()
         .visible()
@@ -256,7 +260,11 @@ fn nav(session: &Session, active: &str) -> Vec<NavItem> {
     ] {
         items.push(NavItem {
             href: href.into(),
-            label: label.into(),
+            label: if key == "agents" && unseen > 0 {
+                format!("{label} ●{unseen}")
+            } else {
+                label.into()
+            },
             on: active == key,
         });
     }
@@ -1560,6 +1568,7 @@ async fn agents_page(cx: &Cx) -> Result<impl View> {
     let prompt_act = act_json(serde_json::json!({"action": "agent_prompt"}));
     let globs_act = act_json(serde_json::json!({"action": "agent_globs"}));
     let model_act = act_json(serde_json::json!({"action": "agent_model"}));
+    let delete = act_json(serde_json::json!({"action": "agent", "op": "delete_job"}));
     let reload = act_json(serde_json::json!({"action": "agent_reload"}));
     let auto_act = act_json(serde_json::json!({"action": "agent", "op": "toggle_auto"}));
     let only = act_json(serde_json::json!({"action": "agent", "op": "only_checked"}));
@@ -1604,6 +1613,7 @@ async fn agents_page(cx: &Cx) -> Result<impl View> {
                             <button data-act=(act) onclick="actBtn(this)">(label)</button>
                         }
                         <button data-act=(run) onclick="actBtn(this)">"Run now"</button>
+                        <button data-act=(delete) onclick="if(confirm('Delete this job? Its reports stay on disk.'))actBtn(this)">"Delete job"</button>
                     </p>
                     <p>
                         <input id="agent-model" value=(model) placeholder="model (empty: the harness default)">

@@ -248,6 +248,8 @@ pub enum HubMessage {
     AgentName(String),
     /// The model box changed.
     AgentModelInput(String),
+    /// Ask (true) or stop asking (false) before deleting the selected job.
+    AgentAskDelete(bool),
     /// Typing the instructions.
     AgentPromptInput(String),
     /// Typing the globs.
@@ -453,6 +455,8 @@ pub struct HubState {
     pub agent_name: String,
     /// The model box.
     pub agent_model: String,
+    /// Waiting for the second click that deletes the selected job.
+    pub agent_confirm_delete: bool,
     /// The instructions box.
     pub agent_prompt: String,
     /// The globs box.
@@ -511,6 +515,7 @@ impl HubState {
             agents: gitkraft_hub::agent_watch::AgentsState::default(),
             agent_name: String::new(),
             agent_model: String::new(),
+            agent_confirm_delete: false,
             agent_prompt: String::new(),
             agent_globs: String::new(),
             community: CommunityState::default(),
@@ -1059,7 +1064,12 @@ impl HubState {
                 self.keys.data = Some(data);
                 Task::none()
             }
+            HubMessage::AgentAskDelete(on) => {
+                self.agent_confirm_delete = on;
+                Task::none()
+            }
             HubMessage::Agent(a) => {
+                self.agent_confirm_delete = false;
                 let r = self.agents.apply(&a);
                 if matches!(
                     a,
@@ -3194,6 +3204,19 @@ mod tests {
                 .iter()
                 .any(|(l, _)| l.contains("agents"))
         );
+        // deleting takes two steps, and any other change cancels the first
+        let _ = s.update(HubMessage::AgentAskDelete(true));
+        assert!(s.agents.job().is_some(), "job");
+        assert!(s.agent_confirm_delete, "flag");
+        let _ = s.update(HubMessage::Agent(
+            gitkraft_hub::agent_watch::AgentAction::NextSchedule,
+        ));
+        assert!(!s.agent_confirm_delete);
+        let _ = s.update(HubMessage::AgentAskDelete(true));
+        let _ = s.update(HubMessage::Agent(
+            gitkraft_hub::agent_watch::AgentAction::DeleteJob,
+        ));
+        assert!(s.agents.job().is_none() && !s.agent_confirm_delete);
     }
 
     #[test]

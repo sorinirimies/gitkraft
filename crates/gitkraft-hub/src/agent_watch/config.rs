@@ -236,6 +236,9 @@ impl AgentWatch {
     /// # Errors
     /// The name is taken or the schedule is invalid.
     pub fn add(&mut self, job: Job) -> Result<(), String> {
+        if job.name.trim().is_empty() {
+            return Err("a job needs a name".to_string());
+        }
         if self.job(&job.name).is_some() {
             return Err(format!("a job called `{}` exists", job.name));
         }

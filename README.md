@@ -258,10 +258,12 @@ In the TUI hub press `J` (or click the **Agents** tab): jobs with their next run
 the left, the selected job's schedule, harness, switches and a checkbox picker over every repository
 of every account on the right, a findings-per-run chart and the last report. `space` checks a
 repository, `o` keeps only the checked ones, `r` runs the job now, `s`/`h`/`v`/`H` cycle schedule,
-harness, visibility and host, `n`/`d` create and delete, `l` opens the report. The GUI has the same
-view (**Agents** tab, checkbox picker, buttons) and so does the web page (`/agents`); all three share
-one state and one set of actions from `gitkraft-hub`, and each runs the due jobs itself while open. While the hub is open
-it also runs due jobs itself (`u` switches that off); the optional service covers the closed case.
+harness, visibility and host, `m` model, `p` instructions, `/` globs, `n`/`d` create and delete (asks
+first), `l` opens the report. The GUI has the same view (**Agents** tab, checkbox picker, buttons,
+input boxes) and so does the web page (`/agents`, with an unread badge in the nav); all three share
+one state and one set of actions from `gitkraft-hub`. While any of them is open it runs due jobs itself
+(`u` or the pause button switches that off); the optional service covers the closed case. Not in the
+apps yet: live output while a job runs, and reading the `projects-ci-doctor` skill's own reports.
 
 ```sh
 gitkraft-tui agents add oss --schedule "mon-fri 07:30" --harness pi --visibility public --host github.com

@@ -1678,6 +1678,21 @@ fn agents<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
             if a.running.is_none() {
                 run = run.on_press(HubMessage::AgentRun(name.clone()));
             }
+            let delete = if hub.agent_confirm_delete {
+                row![
+                    small(
+                        "Really delete?".into(),
+                        Some(HubMessage::Agent(A::DeleteJob))
+                    ),
+                    small("Keep".into(), Some(HubMessage::AgentAskDelete(false))),
+                ]
+                .spacing(4)
+            } else {
+                row![small(
+                    "Delete job".into(),
+                    Some(HubMessage::AgentAskDelete(true))
+                )]
+            };
             let hint = if job.harness.headless() {
                 "Findings go to the harness only on hosts that allowed it: gitkraft-tui ai-allow HOST watch"
             } else {
@@ -1695,6 +1710,7 @@ fn agents<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
                         })
                         .size(12)
                         .color(c.yellow),
+                        delete,
                         run,
                     ]
                     .spacing(8)
