@@ -38,6 +38,8 @@ pub struct GitkraftServer {
     /// The git that pushes run through.
     pub(crate) git: Arc<dyn gitkraft_hub::wiki_git::GitRunner>,
     pub(crate) policy: Policy,
+    /// Where the agent-watch config and reports live: `(config dir, report dir)`.
+    pub(crate) agents: Option<(std::path::PathBuf, std::path::PathBuf)>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -103,7 +105,32 @@ impl GitkraftServer {
             dir: None,
             git: Arc::new(gitkraft_hub::wiki_git::SystemGit),
             policy,
+            agents: None,
             tool_router,
+        }
+    }
+
+    /// Where the agent-watch jobs and their reports are (default: none, the tools then say so).
+    #[must_use]
+    pub fn with_agent_dirs(
+        mut self,
+        config: std::path::PathBuf,
+        reports: std::path::PathBuf,
+    ) -> Self {
+        self.agents = Some((config, reports));
+        self
+    }
+
+    /// The agent-watch state, read fresh from disk.
+    pub(crate) fn agent_state(&self) -> Result<gitkraft_hub::agent_watch::AgentsState, McpError> {
+        let (c, s) = self
+            .agents
+            .clone()
+            .ok_or_else(|| invalid("agent-watch is not set up on this server"))?;
+        let st = gitkraft_hub::agent_watch::AgentsState::in_dirs(c, s);
+        match &st.load_error {
+            Some(e) => Err(failed("agent-watch config", e)),
+            None => Ok(st),
         }
     }
 

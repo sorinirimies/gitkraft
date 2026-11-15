@@ -96,11 +96,13 @@ impl AgentsState {
     /// State for explicit directories (tests).
     #[must_use]
     pub fn in_dirs(config: PathBuf, reports: PathBuf) -> Self {
-        Self {
+        let mut me = Self {
             dir: Some(config),
             store: Some(Store::new(reports)),
             ..Self::default()
-        }
+        };
+        me.reload();
+        me
     }
 
     /// Reads the jobs and the newest reports again.

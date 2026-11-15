@@ -23,8 +23,7 @@ and fix what differs:
 ## Boards and wiki, next steps
 
 Done: moving a card between columns (GitHub Status field, GitLab list labels), creating and
-editing wiki pages (GitLab / Gitea REST), replying inside a discussion thread, marking the answer (`answer` in the CLI, `A` in the TUI, a button in the GUI and web, MCP `mark_answer`), creating and reordering cards (`board-new`, `board-order`, TUI `n` and `< > ^`, buttons in the GUI and web, MCP `new_card` and `reorder_card`; reordering is GitHub only), GitHub wikis through their `.wiki.git` clone, clickable items in the calendar day panel (a click opens them in the GUI and web, copies the address in the TUI). Still open:
-
+editing wiki pages (GitLab / Gitea REST), replying inside a discussion thread, marking the answer (`answer` in the CLI, `A` in the TUI, a button in the GUI and web, MCP `mark_answer`), creating and reordering cards (`board-new`, `board-order`, TUI `n` and `< > ^`, buttons in the GUI and web, MCP `new_card` and `reorder_card`; reordering is GitHub only), GitHub wikis through their `.wiki.git` clone, clickable items in the calendar day panel (a click opens them in the GUI and web, copies the address in the TUI). Still open: nothing known beyond live verification.
 
 ## Several remotes
 
@@ -35,6 +34,8 @@ result per remote, never forced). Open: PR/issue mirroring across forges and a p
 branch (needs a real multi-forge test setup first).
 
 ## MCP
+
+Agent-watch tools (`agent_jobs`, `agent_report`; `agent_run`, `agent_set_enabled` with `--write`) are done.
 
 - Resources: a PR, a CI run and a log as readable resources (prompts are done; resources mostly
   repeat the tools, so only worth it for clients that attach them as context).
@@ -56,11 +57,11 @@ which features are on (today: `GITKRAFT_AI_PROVIDER`, `GITKRAFT_AI_MODEL`, `GITK
 
 Features, in order of value:
 
-1. **CI failure explainer.** *Done in `gitkraft-hub/src/ai.rs` and `gitkraft-tui explain RUN [JOB] [--dry-run]`; TUI key `E` done; GUI and web buttons still to do (no MCP tool: an MCP client is already a model and can read `ci_job_log`).* Failing step's log tail (already located by `first_failure`) to
+1. **CI failure explainer.** *Done in `gitkraft-hub/src/ai.rs` and `gitkraft-tui explain RUN [JOB] [--dry-run]`; TUI key `E`, GUI and web buttons done (no MCP tool: an MCP client is already a model and can read `ci_job_log`).* Failing step's log tail (already located by `first_failure`) to
    cause and suggested fix. Smallest slice that proves the whole pipeline.
-2. **PR summary** and "what happened in this thread while I was away". *Done in `gitkraft-hub/src/review_ai.rs` with the per-host, per-action opt-in (`ai-policy.toml`, `gitkraft-tui ai-allow`) and CLI `summarize`, `catch-up`; buttons in the web (PR page, inbox Triage), the GUI (PR buttons and palette) and the TUI (`B` summary, `I` catch-up, `V` review notes on a PR) done; triage in the TUI (`P` on an inbox) and the GUI (palette) done; only the review-draft hand-off into the comment box is open.*
-3. **Review draft**: inline comment suggestions that land in the comment prompt for editing. *Done as CLI `review-draft`; the UI hand-off into the comment prompt is still to do.*
-4. **Commit message** from staged changes, in a per-project style (`.gitkraft/ai.toml`): *done* in `gitkraft-hub/src/commit_ai.rs`, `gitkraft-tui commit-message` and `g` in the TUI staging pane; GUI button and PR description still to do.
+2. **PR summary** and "what happened in this thread while I was away". *Done in `gitkraft-hub/src/review_ai.rs` with the per-host, per-action opt-in (`ai-policy.toml`, `gitkraft-tui ai-allow`) and CLI `summarize`, `catch-up`; buttons in the web (PR page, inbox Triage), the GUI (PR buttons and palette) and the TUI (`B` summary, `I` catch-up, `V` review notes on a PR) done; triage in the TUI (`P` on an inbox) and the GUI (palette) done, and so is the review-draft hand-off into the comment box.*
+3. **Review draft**: inline comment suggestions that land in the comment prompt for editing. *Done as CLI `review-draft` and handed off into the comment box in every client.*
+4. **Commit message** from staged changes, in a per-project style (`.gitkraft/ai.toml`): *done* in `gitkraft-hub/src/commit_ai.rs`, `gitkraft-tui commit-message` and `g` in the TUI staging pane; GUI and web buttons done.
 5. **Inbox triage**: act now / FYI / ignore. Easiest to get wrong, so last. *Done as CLI `triage` (only opted-in hosts are sent; unrated items are said out loud); web button, TUI `P` and GUI palette done.*
 
 Code lives in one module, `gitkraft-hub/src/ai.rs`, shared by TUI, GUI and web.

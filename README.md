@@ -270,8 +270,12 @@ gitkraft-tui agents add oss --schedule "mon-fri 07:30" --harness pi --visibility
 gitkraft-tui agents repos oss        # what it would watch
 gitkraft-tui agents run oss --dry-run
 gitkraft-tui agents install          # a per-minute launchd / systemd tick: `agents run-due`
-gitkraft-tui agents list | report oss
+gitkraft-tui agents list | reports oss | report oss --nth 1
+gitkraft-tui agents edit oss --forks false --inbox false --clear-globs --include 'github.com/me/*'
 ```
+
+`edit` changes only what it is given; `--forks`, `--archived`, `--inbox` and `--system` take `true` or
+`false` (bare means true), and `--clear-globs` forgets the include and exclude lists first.
 
 ### MCP server: your forges for an AI assistant
 
@@ -298,6 +302,7 @@ the checkout it starts in is the default repository, so `repo` can be left out.
 | `boards` | GitHub Projects (v2) or GitLab issue boards: columns of cards |
 | `wiki` | the wiki of a repo: page list or one page (GitHub wikis are read through their git repository) |
 | `activity_day` | what you did on one calendar day, over every account |
+| `agent_jobs`, `agent_report` | the agent-watch jobs with next run and last result; one report (does not mark it seen) |
 
 | Write (`--write`) | |
 |---|---|
@@ -306,6 +311,7 @@ the checkout it starts in is the default repository, so `repo` can be left out.
 | `merge_pull_request` | now, `when_green` or `queue`; merge, squash or rebase. `force` also needs `--allow-force` |
 | `update_branch`, `cancel_auto_merge` | |
 | `ci_rerun`, `ci_cancel`, `dispatch_workflow` | inputs are checked against the workflow file |
+| `agent_run`, `agent_set_enabled` | run an agent-watch job now (it may start the job's local agent; nothing is pushed or merged), or pause and resume it |
 
 Prompts (slash commands in clients that show them): `fix_failing_ci`, `review_queue`,
 `review_pull_request`, `catch_up`, `triage_issues`, and `release_notes` with `--write`. They only tell the

@@ -69,18 +69,21 @@ pub struct JobArgs {
     /// Never these (repeat).
     #[arg(long = "exclude")]
     pub exclude: Vec<String>,
-    /// Watch forks too.
+    /// Forget the include and exclude globs (before the ones given here are added).
     #[arg(long)]
-    pub forks: bool,
-    /// Watch archived repositories too.
-    #[arg(long)]
-    pub archived: bool,
-    /// No entry in GitKraft's inbox.
-    #[arg(long)]
-    pub no_inbox: bool,
-    /// No system notification.
-    #[arg(long)]
-    pub no_system: bool,
+    pub clear_globs: bool,
+    /// Watch forks too (`--forks`, or `--forks false` to stop).
+    #[arg(long, num_args = 0..=1, default_missing_value = "true")]
+    pub forks: Option<bool>,
+    /// Watch archived repositories too (`--archived`, or `--archived false`).
+    #[arg(long, num_args = 0..=1, default_missing_value = "true")]
+    pub archived: Option<bool>,
+    /// An entry in GitKraft's inbox per finding (`--inbox false` for none).
+    #[arg(long, num_args = 0..=1, default_missing_value = "true")]
+    pub inbox: Option<bool>,
+    /// A system notification per run (`--system false` for none).
+    #[arg(long, num_args = 0..=1, default_missing_value = "true")]
+    pub system: Option<bool>,
 }
 
 /// A job's name.
@@ -139,10 +142,21 @@ pub enum AgentsCmd {
     },
     /// Run every job that is owed a run (the service calls this every minute).
     RunDue,
-    /// The latest report of a job (marks it seen).
+    /// The recent reports of a job, newest first.
+    Reports {
+        /// The job.
+        name: String,
+        /// Print JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// A report of a job (marks it seen): the latest unless `--nth` says which.
     Report {
         /// The job.
         name: String,
+        /// 0 is the latest, 1 the one before.
+        #[arg(long, default_value_t = 0)]
+        nth: usize,
         /// Print JSON.
         #[arg(long)]
         json: bool,
@@ -199,6 +213,10 @@ pub fn apply(a: &JobArgs, job: &mut Job) -> Result<()> {
     if a.prompt.is_some() {
         job.prompt = a.prompt.clone().filter(|m| !m.is_empty());
     }
+    if a.clear_globs {
+        job.projects.include.clear();
+        job.projects.exclude.clear();
+    }
     if !a.hosts.is_empty() {
         job.projects.hosts = a.hosts.clone();
     }
@@ -208,13 +226,17 @@ pub fn apply(a: &JobArgs, job: &mut Job) -> Result<()> {
     if !a.exclude.is_empty() {
         job.projects.exclude = a.exclude.clone();
     }
-    job.projects.forks |= a.forks;
-    job.projects.archived |= a.archived;
-    if a.no_inbox {
-        job.notify.inbox = false;
+    if let Some(v) = a.forks {
+        job.projects.forks = v;
     }
-    if a.no_system {
-        job.notify.system = false;
+    if let Some(v) = a.archived {
+        job.projects.archived = v;
+    }
+    if let Some(v) = a.inbox {
+        job.notify.inbox = v;
+    }
+    if let Some(v) = a.system {
+        job.notify.system = v;
     }
     Ok(())
 }
@@ -227,6 +249,27 @@ fn store() -> Result<Store> {
     Store::default_dir()
         .map(Store::new)
         .ok_or_else(|| anyhow!("no data directory"))
+}
+
+/// The text of `agents reports`: one line per report, numbered for `agents report --nth`.
+#[must_use]
+pub fn render_reports(all: &[gitkraft_hub::agent_watch::Report]) -> String {
+    if all.is_empty() {
+        return "no reports yet\n".into();
+    }
+    all.iter()
+        .enumerate()
+        .map(|(i, r)| {
+            format!(
+                "{i:>2} {} {}{}\n",
+                r.started
+                    .with_timezone(&chrono::Local)
+                    .format("%a %d %b %H:%M"),
+                if r.seen || !r.needs_you() { "" } else { "● " },
+                r.line()
+            )
+        })
+        .collect()
 }
 
 /// The text of `agents list`.
@@ -443,11 +486,20 @@ pub async fn run(cli: AgentsCli) -> Result<String> {
             }
             Ok(out)
         }
-        AgentsCmd::Report { name, json } => {
+        AgentsCmd::Reports { name, json } => {
+            let all = store()?.reports(&name);
+            if json {
+                return Ok(serde_json::to_string_pretty(&all)? + "\n");
+            }
+            Ok(render_reports(&all))
+        }
+        AgentsCmd::Report { name, nth, json } => {
             let s = store()?;
             let r = s
-                .latest(&name)
-                .ok_or_else(|| anyhow!("`{name}` has no report yet"))?;
+                .reports(&name)
+                .into_iter()
+                .nth(nth)
+                .ok_or_else(|| anyhow!("`{name}` has no report number {nth}"))?;
             s.mark_seen(&name).map_err(|e| anyhow!(e))?;
             if json {
                 return Ok(serde_json::to_string_pretty(&r)? + "\n");
@@ -554,7 +606,9 @@ mod tests {
             "github.com/me/*",
             "--exclude",
             "**/old",
-            "--no-system",
+            "--system",
+            "false",
+            "--forks",
         ])
         .cmd
         else {
@@ -566,7 +620,42 @@ mod tests {
         assert_eq!(job.harness, HarnessKind::Pi);
         assert_eq!(job.projects.visibility, Visibility::Public);
         assert_eq!(job.projects.hosts, ["github.com", "codeberg.org"]);
-        assert!(job.notify.inbox && !job.notify.system);
+        assert!(job.notify.inbox && !job.notify.system && job.projects.forks);
+    }
+
+    #[test]
+    fn switches_turn_on_and_off_and_globs_can_be_cleared() {
+        let mut job = Job::new("j", "daily 08:00");
+        job.projects.include = vec!["a/*".into()];
+        job.projects.forks = true;
+        let AgentsCmd::Edit { args, .. } = p(&[
+            "edit",
+            "j",
+            "--forks",
+            "false",
+            "--archived",
+            "--inbox",
+            "false",
+            "--clear-globs",
+            "--include",
+            "b/*",
+        ])
+        .cmd
+        else {
+            panic!("edit")
+        };
+        apply(&args, &mut job).expect("apply");
+        assert!(!job.projects.forks && job.projects.archived && !job.notify.inbox);
+        assert_eq!(job.projects.include, ["b/*"]);
+    }
+
+    #[test]
+    fn reports_are_listed_newest_first_with_a_number() {
+        assert_eq!(render_reports(&[]), "no reports yet\n");
+        let AgentsCmd::Report { nth, .. } = p(&["report", "j", "--nth", "2"]).cmd else {
+            panic!("report")
+        };
+        assert_eq!(nth, 2);
     }
 
     #[test]

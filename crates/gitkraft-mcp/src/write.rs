@@ -25,6 +25,15 @@ pub(crate) struct CommentArgs {
     pub body: String,
 }
 
+/// Run or switch an agent-watch job.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub(crate) struct AgentJobArgs {
+    /// The job's name (from `agent_jobs`).
+    pub job: String,
+    /// For `agent_set_enabled`: true to switch it on, false to pause it.
+    pub on: Option<bool>,
+}
+
 /// A comment on a discussion.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub(crate) struct DiscussionCommentArgs {
@@ -570,5 +579,56 @@ impl GitkraftServer {
             .await
             .map_err(|e| failed("dispatch_workflow", e))?;
         out(&json!({"ok": true, "message": message}))
+    }
+
+    #[tool(
+        description = "Run an agent-watch job now: scan its projects, hand red CI to the job's harness (which may start a local agent such as `pi`), file the report. Nothing is pushed, merged or re-run. Takes minutes; the result is the report's summary line.",
+        annotations(read_only_hint = false, destructive_hint = false)
+    )]
+    pub(crate) async fn agent_run(&self, Parameters(a): Parameters<AgentJobArgs>) -> ToolResult {
+        let st = self.agent_state()?;
+        let job = st
+            .cfg
+            .job(&a.job)
+            .cloned()
+            .ok_or_else(|| invalid(format!("no job `{}`", a.job)))?;
+        let store = st
+            .store
+            .clone()
+            .ok_or_else(|| invalid("no report directory"))?;
+        let dir = st
+            .dir
+            .clone()
+            .ok_or_else(|| invalid("no config directory"))?;
+        let o = gitkraft_hub::agent_watch::app::run_in_app(&self.hub, &job, None, &store, &dir)
+            .await
+            .map_err(|e| failed("agent_run", e))?;
+        out(&json!({"ok": true, "result": o.report.line(), "red": o.report.findings.len()}))
+    }
+
+    #[tool(
+        description = "Switch an agent-watch job on (on=true) or pause it (on=false).",
+        annotations(read_only_hint = false, destructive_hint = false)
+    )]
+    pub(crate) async fn agent_set_enabled(
+        &self,
+        Parameters(a): Parameters<AgentJobArgs>,
+    ) -> ToolResult {
+        let on = a.on.ok_or_else(|| invalid("say on=true or on=false"))?;
+        let mut st = self.agent_state()?;
+        let i = st
+            .cfg
+            .jobs
+            .iter()
+            .position(|j| j.name == a.job)
+            .ok_or_else(|| invalid(format!("no job `{}`", a.job)))?;
+        st.row = i;
+        if st.cfg.jobs[i].enabled != on {
+            st.toggle_enabled()
+                .map_err(|e| failed("agent_set_enabled", e))?;
+        }
+        out(
+            &json!({"ok": true, "message": format!("{} is {}", a.job, if on { "on" } else { "paused" })}),
+        )
     }
 }

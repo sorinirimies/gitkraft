@@ -130,6 +130,15 @@ pub(crate) struct DayArgs {
     pub date: Option<String>,
 }
 
+/// One agent-watch job.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub(crate) struct AgentReportArgs {
+    /// The job's name (from `agent_jobs`).
+    pub job: String,
+    /// 0 is the latest report, 1 the one before (default 0).
+    pub nth: Option<usize>,
+}
+
 /// Words from a tool call, as the shared rules read them; a mistake is the caller's.
 fn bad<T>(r: Result<T, String>) -> Result<T, rmcp::ErrorData> {
     r.map_err(invalid)
@@ -573,5 +582,60 @@ impl GitkraftServer {
             "ci_red": p.ci_red,
             "top_authors": p.top_authors,
         }))
+    }
+
+    #[tool(
+        description = "The agent-watch jobs (scheduled checks of CI health over chosen projects): schedule, harness, what they watch, when they run next, and the result of the last run.",
+        annotations(read_only_hint = true)
+    )]
+    pub(crate) async fn agent_jobs(&self) -> ToolResult {
+        let st = self.agent_state()?;
+        let now = chrono::Local::now().naive_local();
+        let jobs: Vec<_> = st
+            .cfg
+            .jobs
+            .iter()
+            .map(|j| {
+                let last = st.history.get(&j.name).and_then(|h| h.first());
+                json!({
+                    "name": j.name,
+                    "enabled": j.enabled,
+                    "schedule": j.schedule,
+                    "harness": j.harness.name(),
+                    "model": j.model,
+                    "watches": j.projects.describe(),
+                    "next_run": st.store.as_ref()
+                        .and_then(|s| gitkraft_hub::agent_watch::next_run(j, s, now))
+                        .map(|t| t.to_string()),
+                    "last_result": last.map(|r| r.line()),
+                    "unseen": last.is_some_and(|r| !r.seen && r.needs_you()),
+                })
+            })
+            .collect();
+        out(&json!({"jobs": jobs}))
+    }
+
+    #[tool(
+        description = "A report of an agent-watch job: what is red (repository, workflow or PR, link), what could not be read, and the agent's answer. Does not mark it seen.",
+        annotations(read_only_hint = true)
+    )]
+    pub(crate) async fn agent_report(
+        &self,
+        Parameters(a): Parameters<AgentReportArgs>,
+    ) -> ToolResult {
+        let st = self.agent_state()?;
+        let n = a.nth.unwrap_or(0);
+        let all = st
+            .history
+            .get(&a.job)
+            .ok_or_else(|| invalid(format!("no job `{}`", a.job)))?;
+        let r = all.get(n).ok_or_else(|| {
+            invalid(format!(
+                "`{}` has {} report(s), no number {n}",
+                a.job,
+                all.len()
+            ))
+        })?;
+        out(&json!({"report": r, "markdown": r.markdown()}))
     }
 }

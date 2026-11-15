@@ -69,6 +69,10 @@ async fn run(cfg: Config) -> anyhow::Result<()> {
     let hub = Hub::new(accounts, &client).with_wiki_git(gitkraft_hub::wiki_git::WikiGit::system());
     let service = GitkraftServer::new(hub, default_repo, cfg.policy)
         .with_project(dir, project)
+        .with_agent_dirs(
+            gitkraft_hub::commit_ai::global_dir().unwrap_or_default(),
+            gitkraft_hub::agent_watch::Store::default_dir().unwrap_or_default(),
+        )
         .serve(stdio())
         .await
         .map_err(|e| anyhow::anyhow!("MCP handshake failed: {e}"))?;

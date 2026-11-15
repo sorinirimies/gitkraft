@@ -149,6 +149,8 @@ fn read_tools_are_marked_read_only() {
             "push_all_remotes",
             "new_card",
             "reorder_card",
+            "agent_run",
+            "agent_set_enabled",
         ];
         assert_eq!(ro, Some(!writes.contains(&name)), "{name}: {t}");
     }

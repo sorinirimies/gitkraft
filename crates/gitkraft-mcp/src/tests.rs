@@ -58,6 +58,8 @@ fn read_only_servers_have_no_write_tools_and_write_servers_have_all() {
         "ci_runs_all_remotes",
         "ci_job_log",
         "pulse",
+        "agent_jobs",
+        "agent_report",
         "discussions",
         "wiki",
         "boards",
@@ -82,6 +84,8 @@ fn read_only_servers_have_no_write_tools_and_write_servers_have_all() {
         "push_all_remotes",
         "new_card",
         "reorder_card",
+        "agent_run",
+        "agent_set_enabled",
     ] {
         assert!(
             !names.iter().any(|n| n == t),
@@ -766,5 +770,125 @@ async fn runs_of_all_remotes_come_folded_with_the_forges_that_could_not_be_asked
             .unwrap_or_default()
             .contains("gitea.lan"),
         "{v}"
+    );
+}
+
+fn agents_rig(policy: Policy) -> (GitkraftServer, tempfile::TempDir, FakeClient) {
+    let (s, fake) = rig(policy);
+    let dir = tempfile::tempdir().expect("tmp");
+    let s = s.with_agent_dirs(dir.path().join("cfg"), dir.path().join("reports"));
+    (s, dir, fake)
+}
+
+fn seeded(dir: &tempfile::TempDir) {
+    use gitkraft_hub::agent_watch::{AgentAction, AgentsState, Store};
+    let mut st = AgentsState::in_dirs(dir.path().join("cfg"), dir.path().join("reports"));
+    st.apply(&AgentAction::AddJob("oss".into())).expect("add");
+    let report: gitkraft_hub::agent_watch::Report = serde_json::from_value(serde_json::json!({
+        "job": "oss", "started": "2026-03-01T08:00:00Z", "finished": "2026-03-01T08:01:00Z",
+        "harness": "none", "repos": 3, "workflows": 5,
+        "findings": [{"repo": "github.com/o/r", "kind": "failed_run", "what": "ci", "url": "u"}],
+        "summary": "one red"
+    }))
+    .expect("report");
+    Store::new(dir.path().join("reports"))
+        .save(&report)
+        .expect("save");
+}
+
+#[tokio::test]
+async fn agent_tools_list_jobs_and_read_reports_and_say_when_nothing_is_set_up() {
+    let (s, _) = rig(Policy::default());
+    assert!(
+        s.agent_jobs().await.is_err(),
+        "no directories: a clear error"
+    );
+    let (s, dir, _) = agents_rig(Policy::default());
+    assert!(
+        json(&s.agent_jobs().await.expect("jobs"))["jobs"]
+            .as_array()
+            .expect("array")
+            .is_empty()
+    );
+    seeded(&dir);
+    let v = json(&s.agent_jobs().await.expect("jobs"));
+    assert_eq!(v["jobs"][0]["name"], "oss");
+    assert_eq!(v["jobs"][0]["unseen"], true);
+    let r = json(
+        &s.agent_report(Parameters(AgentReportArgs {
+            job: "oss".into(),
+            nth: None,
+        }))
+        .await
+        .expect("report"),
+    );
+    assert!(
+        r["markdown"]
+            .as_str()
+            .is_some_and(|m| m.contains("one red")),
+        "{r}"
+    );
+    assert!(
+        s.agent_report(Parameters(AgentReportArgs {
+            job: "oss".into(),
+            nth: Some(5)
+        }))
+        .await
+        .is_err()
+    );
+    assert!(
+        s.agent_report(Parameters(AgentReportArgs {
+            job: "nope".into(),
+            nth: None
+        }))
+        .await
+        .is_err()
+    );
+    // reading through the tool does not mark it seen
+    assert_eq!(
+        json(&s.agent_jobs().await.expect("jobs"))["jobs"][0]["unseen"],
+        true
+    );
+}
+
+#[tokio::test]
+async fn agent_write_tools_pause_a_job_and_run_one() {
+    let (s, dir, _) = agents_rig(write());
+    seeded(&dir);
+    s.agent_set_enabled(Parameters(AgentJobArgs {
+        job: "oss".into(),
+        on: Some(false),
+    }))
+    .await
+    .expect("pause");
+    assert_eq!(
+        json(&s.agent_jobs().await.expect("jobs"))["jobs"][0]["enabled"],
+        false
+    );
+    assert!(
+        s.agent_set_enabled(Parameters(AgentJobArgs {
+            job: "oss".into(),
+            on: None
+        }))
+        .await
+        .is_err()
+    );
+    // nothing scripted behind the fake: the run still ends and files a report
+    let v = json(
+        &s.agent_run(Parameters(AgentJobArgs {
+            job: "oss".into(),
+            on: None,
+        }))
+        .await
+        .expect("run"),
+    );
+    assert_eq!(v["ok"], true, "{v}");
+    assert!(
+        s.agent_run(Parameters(AgentJobArgs {
+            job: "nope".into(),
+            on: None
+        }))
+        .await
+        .is_err()
     );
 }
