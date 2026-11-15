@@ -1834,11 +1834,27 @@ fn agents<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
     right = right.push(scrollable(repos).height(Length::FillPortion(3)));
 
     // the last report
-    if let Some(r) = a.latest() {
+    if let Some(hist) = a.job().and_then(|j| a.history.get(&j.name)) {
+        let mut picks = row![text("Reports").size(12).color(c.text_secondary)].spacing(4);
+        for (i, r) in hist.iter().enumerate() {
+            let label = format!(
+                "{}{}",
+                if i == a.report_row { "▸ " } else { "" },
+                r.started
+                    .with_timezone(&chrono::Local)
+                    .format("%d %b %H:%M")
+            );
+            picks = picks.push(small(label, Some(HubMessage::Agent(A::PickReport(i)))));
+        }
+        right = right.push(scrollable(picks).direction(
+            iced::widget::scrollable::Direction::Horizontal(Default::default()),
+        ));
+    }
+    if let Some(r) = a.shown_report() {
         right = right
             .push(
                 text(format!(
-                    "Last report · {} · {}",
+                    "Report · {} · {}",
                     r.started
                         .with_timezone(&chrono::Local)
                         .format("%a %d %b %H:%M"),

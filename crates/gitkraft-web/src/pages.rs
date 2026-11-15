@@ -1533,7 +1533,27 @@ async fn agents_page(cx: &Cx) -> Result<impl View> {
                 },
             )
         });
-        let report = a.latest().map(|r| {
+        let picks: Vec<(String, String, bool)> = a
+            .job()
+            .and_then(|j| a.history.get(&j.name))
+            .map(|h| {
+                h.iter()
+                    .enumerate()
+                    .map(|(i, r)| {
+                        (
+                            format!(
+                                "{}{}",
+                                if i == a.report_row { "▸ " } else { "" },
+                                r.started.with_timezone(&chrono::Local).format("%d %b %H:%M")
+                            ),
+                            act(A::PickReport(i)),
+                            r.needs_you(),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let report = a.shown_report().map(|r| {
             (
                 format!(
                     "{} · {}",
@@ -1556,13 +1576,14 @@ async fn agents_page(cx: &Cx) -> Result<impl View> {
             job,
             report,
             history,
+            picks,
             a.repo_errors.clone(),
             a.load_error.clone(),
             a.running.is_some(),
             a.auto,
         )
     });
-    let (jobs, repos, count, job, report, history, errors, load_error, running, auto) = page;
+    let (jobs, repos, count, job, report, history, picks, errors, load_error, running, auto) = page;
     let run_flag = if running { "yes" } else { "" };
     let add = act_json(serde_json::json!({"action": "agent_add"}));
     let prompt_act = act_json(serde_json::json!({"action": "agent_prompt"}));
@@ -1659,7 +1680,12 @@ async fn agents_page(cx: &Cx) -> Result<impl View> {
                 }
             </table>
             if let Some((title, md, bad)) = report {
-                <h2>"Last report"</h2>
+                <h2>"Report"</h2>
+                <p>
+                    for (label, act, bad) in picks {
+                        <button data-act=(act) onclick="actBtn(this)" class=(if bad { "err" } else { "" })>(label)</button>
+                    }
+                </p>
                 <div class=(if bad { "err" } else { "meta" })>(title)</div>
                 <pre>(md)</pre>
             }

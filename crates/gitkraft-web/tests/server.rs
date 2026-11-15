@@ -658,6 +658,95 @@ async fn the_agents_page_lists_repositories_and_a_job_is_added_configured_and_sa
     assert!(get(h.addr, "/agents").await.body.contains("No jobs yet"));
 }
 
+fn filed(job: &str, minute: u32, findings: usize) -> gitkraft_hub::agent_watch::Report {
+    use chrono::TimeZone;
+    use gitkraft_hub::agent_watch::scan::{Finding, FindingKind};
+    let t = chrono::Utc
+        .with_ymd_and_hms(2026, 3, 1, 8, minute, 0)
+        .single()
+        .expect("time");
+    gitkraft_hub::agent_watch::Report {
+        job: job.into(),
+        started: t,
+        finished: t,
+        harness: "none".into(),
+        model: None,
+        repos: 3,
+        workflows: 5,
+        findings: (0..findings)
+            .map(|i| Finding {
+                repo: "github.com/me/a".into(),
+                kind: FindingKind::FailedRun,
+                what: format!("workflow-{i}"),
+                url: "u".into(),
+                run_id: Some(1),
+                branch: None,
+                number: None,
+                explanation: None,
+            })
+            .collect(),
+        errors: vec![],
+        summary: format!("summary-{minute}"),
+        failed: None,
+        seen: false,
+    }
+}
+
+#[tokio::test]
+async fn the_agents_page_shows_the_report_history_and_an_unread_badge_until_it_is_seen() {
+    let h = start().await;
+    let post = |body: &'static str| request(h.addr, "POST", "/api/action", body);
+    assert_eq!(
+        post(r#"{"action":"agent_add","name":"oss"}"#).await.status,
+        200
+    );
+    let store = gitkraft_hub::agent_watch::Store::new(h.dir.path().join("reports"));
+    store.save(&filed("oss", 1, 0)).expect("older");
+    store.save(&filed("oss", 2, 2)).expect("newer");
+    // another page carries the badge, and visiting Agents clears it
+    assert!(get(h.addr, "/keys").await.body.contains("Agents ●1"));
+    let page = get(h.addr, "/agents").await;
+    assert!(
+        page.body.contains("summary-2") || page.body.contains("workflow-0"),
+        "{}",
+        page.body
+    );
+    assert!(!page.body.contains("summary-1"));
+    assert!(!get(h.addr, "/keys").await.body.contains("Agents ●"));
+    // the older report is one click away
+    assert_eq!(
+        post(r#"{"action":"agent","op":{"pick_report":1}}"#)
+            .await
+            .status,
+        200
+    );
+    let page = get(h.addr, "/agents").await;
+    assert!(page.body.contains("summary-1"), "{}", page.body);
+}
+
+#[tokio::test]
+async fn running_an_agent_job_from_the_web_files_a_report() {
+    let h = start().await;
+    let post = |body: &'static str| request(h.addr, "POST", "/api/action", body);
+    assert_eq!(
+        post(r#"{"action":"agent_add","name":"oss"}"#).await.status,
+        200
+    );
+    let r = post(r#"{"action":"agent_run","job":"oss"}"#).await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    let store = gitkraft_hub::agent_watch::Store::new(h.dir.path().join("reports"));
+    let mut found = false;
+    for _ in 0..100 {
+        if store.latest("oss").is_some() {
+            found = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(found, "a run files a report even when nothing is red");
+    assert!(get(h.addr, "/agents").await.body.contains("Report"));
+}
+
 #[tokio::test]
 async fn the_keys_page_lists_keys_and_a_key_can_be_removed() {
     let h = start().await;

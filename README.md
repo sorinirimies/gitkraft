@@ -262,7 +262,7 @@ harness, visibility and host, `m` model, `p` instructions, `/` globs, `n`/`d` cr
 first), `l` opens the report. The GUI has the same view (**Agents** tab, checkbox picker, buttons,
 input boxes) and so does the web page (`/agents`, with an unread badge in the nav); all three share
 one state and one set of actions from `gitkraft-hub`. While any of them is open it runs due jobs itself
-(`u` or the pause button switches that off); the optional service covers the closed case. Not in the
+(`u` or the pause button switches that off); the optional service covers the closed case. The GUI and web list each job's recent reports and open any of them. Not in the
 apps yet: live output while a job runs, and reading the `projects-ci-doctor` skill's own reports.
 
 ```sh

@@ -38,6 +38,8 @@ pub struct AgentsState {
     pub load_error: Option<String>,
     /// Selected job.
     pub row: usize,
+    /// Which of the selected job's reports is shown (0: the latest).
+    pub report_row: usize,
     /// Focused list.
     pub pane: Pane,
     /// Every repository the accounts can see, once loaded.
@@ -66,6 +68,7 @@ impl Default for AgentsState {
             cfg: AgentWatch::default(),
             load_error: None,
             row: 0,
+            report_row: 0,
             pane: Pane::Jobs,
             repos: None,
             repo_errors: Vec::new(),
@@ -147,6 +150,13 @@ impl AgentsState {
     #[must_use]
     pub fn latest(&self) -> Option<&Report> {
         self.history.get(&self.job()?.name)?.first()
+    }
+
+    /// The report picked in the history of the selected job (the latest unless one was picked).
+    #[must_use]
+    pub fn shown_report(&self) -> Option<&Report> {
+        let h = self.history.get(&self.job()?.name)?;
+        h.get(self.report_row).or_else(|| h.first())
     }
 
     /// The repositories the selected job's filters and picks allow, and every other one after
@@ -547,6 +557,8 @@ pub enum AgentAction {
     Flip(Flag),
     /// Set the model (empty: the harness default).
     SetModel(String),
+    /// Show this report of the selected job's history (0: the latest).
+    PickReport(usize),
     /// Replace the instructions (empty: the built-in ones; `⏎` in the text is a line break).
     SetPrompt(String),
     /// Set the include and exclude globs: words, with `!` in front of the ones to exclude.
@@ -574,6 +586,7 @@ impl AgentsState {
             AgentAction::SelectJob(i) => {
                 self.row = (*i).min(self.cfg.jobs.len().saturating_sub(1));
                 self.repo_row = 0;
+                self.report_row = 0;
                 self.mark_seen();
                 Ok(String::new())
             }
@@ -588,6 +601,10 @@ impl AgentsState {
             AgentAction::NextHost => self.cycle_host(),
             AgentAction::Flip(f) => self.flip(*f),
             AgentAction::SetModel(m) => self.set_model(m),
+            AgentAction::PickReport(i) => {
+                self.report_row = *i;
+                Ok(String::new())
+            }
             AgentAction::SetPrompt(p) => self.set_prompt(p),
             AgentAction::SetGlobs(g) => self.set_globs(g),
             AgentAction::AddJob(n) => self.add_job(n),
@@ -759,6 +776,10 @@ mod tests {
         a.apply(&AgentAction::SetGlobs("github.com/me/** !*/*/old".into()))
             .expect("globs");
         assert_eq!(a.globs_text(), "github.com/me/** !*/*/old");
+        assert!(a.shown_report().is_none(), "no reports yet");
+        a.apply(&AgentAction::PickReport(7)).expect("pick");
+        a.apply(&AgentAction::SelectJob(0)).expect("select");
+        assert_eq!(a.report_row, 0, "choosing a job shows its latest report");
         assert!(a.apply(&AgentAction::ToggleAuto).is_ok() && !a.auto);
         a.apply(&AgentAction::DeleteJob).expect("del");
         assert!(a.job().is_none());
