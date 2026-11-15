@@ -24,6 +24,18 @@ pub struct Palette {
     pub query: String,
     /// Selected row of the filtered list.
     pub row: usize,
+    /// Opened with `?`: only the actions of the screen you are on.
+    pub scoped: bool,
+}
+
+/// What the open palette lists: everything, or (opened with `?`) the actions of this screen.
+pub fn shown_entries(hub: &HubState) -> Vec<Entry> {
+    let all = entries_for(hub);
+    if hub.palette.as_ref().is_some_and(|p| p.scoped) {
+        all.into_iter().filter(|e| e.view == hub.view).collect()
+    } else {
+        all
+    }
 }
 
 /// Indexes into `entries` that match `query`, best first.
@@ -144,6 +156,28 @@ pub fn entries_for(hub: &HubState) -> Vec<Entry> {
             View::Agents,
         ),
         e("Agents: show the job's last report", 'l', View::Agents),
+        e("Agents: delete the job (asks first)", 'd', View::Agents),
+        e("Agents: set the model", 'm', View::Agents),
+        e("Agents: edit the instructions", 'p', View::Agents),
+        e("Agents: edit the project globs", '/', View::Agents),
+        e("Agents: watch forks too (on/off)", 'f', View::Agents),
+        e(
+            "Agents: watch archived repositories (on/off)",
+            'x',
+            View::Agents,
+        ),
+        e(
+            "Agents: file findings in the inbox (on/off)",
+            'i',
+            View::Agents,
+        ),
+        e("Agents: system notification (on/off)", 'y', View::Agents),
+        e(
+            "Agents: scheduler inside this app (on/off)",
+            'u',
+            View::Agents,
+        ),
+        e("Agents: reload from disk", 'R', View::Agents),
         e("Go to discussions and wiki", 'T', d),
         e("Discussions and wiki: show the wiki", 'w', View::Community),
         e(
@@ -152,16 +186,40 @@ pub fn entries_for(hub: &HubState) -> Vec<Entry> {
             View::Community,
         ),
         e("Discussions and wiki: show boards", 'b', View::Community),
+        e("Discussions and wiki: reload", 'r', View::Community),
+        e(
+            "Discussions and wiki: next repository",
+            ']',
+            View::Community,
+        ),
+        e(
+            "Discussions and wiki: previous repository",
+            '[',
+            View::Community,
+        ),
+        e("Discussion: comment", 'c', View::Community),
+        e("Discussion: reply to a comment", 'R', View::Community),
+        e("Discussion: mark the answer", 'A', View::Community),
+        e("Wiki: edit the page in your editor", 'e', View::Community),
+        e("Wiki: upload the edit", 'U', View::Community),
+        e("Wiki: new page", 'n', View::Community),
+        e("Board: move the card to a column", 'm', View::Community),
+        e("Board: new card", 'n', View::Community),
+        e("Board: move the card left", '<', View::Community),
+        e("Board: move the card right", '>', View::Community),
         e("Refresh", 'r', d),
         e("Notifications: toggle for this project", 'n', d),
         e("Notifications: toggle for everything", 'N', d),
         e("SSH keys: set up this machine", 's', View::Keys),
         e("SSH keys: test connection", 't', View::Keys),
         e("SSH keys: remove the selected key", 'd', View::Keys),
+        e("SSH keys: refresh", 'r', View::Keys),
         e("Pulse: last 7 days", '1', View::Pulse),
         e("Pulse: last 30 days", '2', View::Pulse),
         e("Pulse: last 90 days", '3', View::Pulse),
         e("Pulse: last year", '4', View::Pulse),
+        e("Pulse: today", 't', View::Pulse),
+        e("Pulse: reload", 'r', View::Pulse),
         e("Pulse: next repository", ']', View::Pulse),
         e("Pulse: previous repository", '[', View::Pulse),
     ]);

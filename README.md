@@ -124,7 +124,7 @@ fill what you leave out, `choice`/`boolean`/`number` values are checked, and a m
 **Inline comments** work on removed lines too (old side), and in the GUI by clicking a diff line.
 
 **Palette and more.** In the TUI `:` or Ctrl+P, in the GUI Ctrl/Cmd+P or the **Commands** button, opens a fuzzy
-command palette with every action that applies to the selection. The GUI has a **Check out** button for pull
+command palette with every action that applies to the selection. In the TUI hub the status line stays quiet; `?` opens an **Actions** menu with just the actions of the screen you are on (same list, filtered, runs the key for you). The GUI has a **Check out** button for pull
 requests (the project must be open in a tab). `w` checks the selected pull request out into a worktree next to your checkout; `D` starts a workflow
 by hand (`ci.yml main level=debug`); `A` downloads a run's artifacts. On a pull request's **Diff** tab (focus the
 detail pane), `j`/`k` move a line cursor and `c` posts an inline review comment on that added or unchanged line.

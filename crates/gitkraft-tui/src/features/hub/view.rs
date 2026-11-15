@@ -7,7 +7,6 @@ use gitkraft_ci::model::Status;
 use gitkraft_ci::timing::{self, format_seconds};
 use gitkraft_hub::SectionData;
 use gitkraft_platforms::model::{ChecksState, ItemState, NotificationReason, ReviewVerdict};
-use gitkraft_settings::dashboard::SectionKind;
 use gitkraft_settings::notify::NotifyStatus;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -65,7 +64,7 @@ fn render_palette(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme
     if area.width < 20 || area.height < 5 {
         return;
     }
-    let entries = super::palette::entries_for(hub);
+    let entries = super::palette::shown_entries(hub);
     let shown = super::palette::filter_entries(&entries, &p.query);
     let w = area.width.saturating_sub(8).clamp(20, 72);
     let h = (shown.len().min(12) as u16 + 3)
@@ -81,7 +80,11 @@ fn render_palette(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent))
-        .title(" Command palette · Enter run · Esc close ");
+        .title(if p.scoped {
+            " Actions · Enter run · Esc close "
+        } else {
+            " Command palette · Enter run · Esc close "
+        });
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
     if inner.height == 0 {
@@ -1836,46 +1839,13 @@ fn hints(hub: &HubState) -> &'static str {
     if hub.log.is_some() {
         return "j/k scroll · / search · n/N next · e first error · a errors · space fold · g/G ends · Esc close";
     }
-    if hub.view == View::Agents {
-        return "j/k select · Tab jobs/repos · space check · r run now · e pause · s schedule · h harness · v/H filter · m model · p prompt · / globs · n new · d delete · l report · u scheduler · : palette · q back";
-    }
-    if hub.view == View::Keys {
-        return "j/k select · : palette · s set up this machine · t test · d remove key · r refresh · Tab dashboard · q back";
-    }
-    if hub.view == View::Community {
-        return match hub.community.tab {
-            super::state::CommunityTab::Discussions => {
-                "j/k select · Enter open · c comment · R reply · [ ] repo · r refresh · d/w/b tabs · Tab dashboard · q back"
-            }
-            super::state::CommunityTab::Wiki => {
-                "j/k select · Enter open · e edit in editor · U upload edit · n new page · [ ] repo · d/w/b tabs · q back"
-            }
-            super::state::CommunityTab::Board => {
-                "j/k select · Enter open card · m move to column · n new card · < > ^ reorder · [ ] repo · d/w/b tabs · q back"
-            }
-        };
-    }
-    if hub.view == View::Pulse {
-        return "click a day or ←→↑↓ · t today · r refresh · [ ] repo · 1-4 days · Tab dashboard · q back";
-    }
-    match hub
-        .active_index()
-        .and_then(|i| hub.dashboard.sections.get(i))
-        .map(|s| s.kind)
-    {
-        Some(SectionKind::Prs) => {
-            "a approve · x changes · c comment · m/M merge · W when green · Q queue · ! force · u update · S method · C close · w worktree · B summary · I catch-up · V review draft · q back"
-        }
-        Some(SectionKind::Issues) => "c comment · C close/reopen · r refresh · n bell · q back",
-        Some(SectionKind::Ci) => {
-            "Enter log · f rerun failed · F rerun all · D run workflow · A artifacts · E AI explain · X cancel · r refresh · q back"
-        }
-        Some(SectionKind::Inbox) => {
-            "Enter open · y copy url · z snooze · P AI triage · r refresh · n bell · q back"
-        }
-        _ => {
-            "Tab section · : palette · {/} move section · p pulse · K ssh keys · r refresh · n bell · q back"
-        }
+    // The long list of actions lives behind `?` so the bar stays quiet.
+    match hub.view {
+        View::Agents => "j/k select · Tab jobs/repos · space check · r run · ? actions · q back",
+        View::Keys => "j/k select · ? actions · Tab dashboard · q back",
+        View::Community => "j/k select · Enter open · d/w/b tabs · ? actions · q back",
+        View::Pulse => "click a day or ←→↑↓ · [ ] repo · ? actions · q back",
+        _ => "Tab section · Enter open · ? actions · : palette · q back",
     }
 }
 
@@ -2226,6 +2196,7 @@ mod tests {
         hub.palette = Some(crate::features::hub::palette::Palette {
             query: "merge".into(),
             row: 0,
+            scoped: false,
         });
         let mut app = app_with(hub);
         let text = draw(&mut app, 100, 24);
@@ -2238,6 +2209,7 @@ mod tests {
         app.hub.as_mut().expect("hub").palette = Some(crate::features::hub::palette::Palette {
             query: "qqq".into(),
             row: 0,
+            scoped: false,
         });
         assert!(draw(&mut app, 100, 24).contains("nothing matches"));
         app.hub.as_mut().expect("hub").palette = Some(Default::default());

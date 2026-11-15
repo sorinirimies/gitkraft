@@ -90,6 +90,13 @@ pub fn key_outcome(hub: &mut HubState, key: KeyEvent) -> Outcome {
         hub.palette = Some(Palette::default());
         return Outcome::Stay;
     }
+    if key.code == KeyCode::Char('?') && !hub.images.open && hub.log.is_none() {
+        hub.palette = Some(Palette {
+            scoped: true,
+            ..Palette::default()
+        });
+        return Outcome::Stay;
+    }
     if hub.images.open {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q' | 'i') => hub.images.close(),
@@ -235,7 +242,7 @@ fn pulse_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
 }
 
 fn palette_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
-    let entries = palette::entries_for(hub);
+    let entries = palette::shown_entries(hub);
     let Some(p) = hub.palette.as_mut() else {
         return Outcome::Stay;
     };
@@ -1509,6 +1516,26 @@ mod tests {
         assert!(s.prompt.as_ref().is_some_and(|p| p.buffer.ends_with("x=1")));
         key_outcome(&mut s, key(KeyCode::Esc));
         assert!(s.prompt.is_none());
+    }
+
+    #[test]
+    fn question_mark_opens_only_the_actions_of_this_screen() {
+        let mut s = state();
+        chars(&mut s, "?");
+        let all = palette::entries_for(&s).len();
+        let shown = palette::shown_entries(&s);
+        assert!(s.palette.as_ref().is_some_and(|p| p.scoped));
+        assert!(!shown.is_empty() && shown.iter().all(|e| e.view == View::Dashboard));
+        s.palette = None;
+        s.view = View::Agents;
+        chars(&mut s, "?");
+        let agents = palette::shown_entries(&s);
+        assert!(agents.len() < all && agents.iter().all(|e| e.view == View::Agents));
+        assert!(
+            agents.iter().any(|e| e.key == 'p'),
+            "instructions are listed"
+        );
+        key(KeyCode::Esc);
     }
 
     #[test]
