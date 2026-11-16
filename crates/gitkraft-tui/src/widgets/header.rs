@@ -5,6 +5,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
 use crate::app::{App, AppScreen};
+use crate::features::mouse::HeaderHit;
+use crossterm::event::KeyCode;
 
 /// Header shortcut hints in priority order: (key, label).
 const HINTS: [(&str, &str); 12] = [
@@ -21,6 +23,14 @@ const HINTS: [(&str, &str); 12] = [
     ("[,]", "settings"),
     ("[I]", "info"),
 ];
+
+/// The key a hint stands for; the arrows hint has none.
+fn hint_key(key: &str) -> Option<KeyCode> {
+    let inner = key.strip_prefix('[')?.strip_suffix(']')?;
+    let mut chars = inner.chars();
+    let ch = chars.next()?;
+    chars.next().is_none().then_some(KeyCode::Char(ch))
+}
 
 /// Display width of one hint as rendered: key + " label ".
 fn hint_width(h: &(&str, &str)) -> usize {
@@ -75,6 +85,8 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         .unwrap_or_else(|| "?".to_string());
 
     let mut spans: Vec<Span> = Vec::new();
+    // (index of the first span, number of spans, what a click there does)
+    let mut hits: Vec<(usize, usize, HeaderHit)> = Vec::new();
 
     // Show tab indicators if there are multiple tabs
     if app.tabs.len() > 1 {
@@ -87,6 +99,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
             } else {
                 Style::default().fg(theme.text_muted)
             };
+            hits.push((spans.len(), 1, HeaderHit::Tab(i)));
             spans.push(Span::styled(format!(" {} ", name), style));
             if i < app.tabs.len() - 1 {
                 spans.push(Span::styled("|", Style::default().fg(theme.text_muted)));
@@ -138,6 +151,9 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let used: usize = spans.iter().map(|sp| sp.content.chars().count()).sum();
     let avail = (area.width as usize).saturating_sub(2 + used);
     for (key, label) in &HINTS[..visible_hints(avail)] {
+        if let Some(code) = hint_key(key) {
+            hits.push((spans.len(), 2, HeaderHit::Key(code)));
+        }
         spans.push(Span::styled(
             *key,
             Style::default()
@@ -149,6 +165,20 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
             Style::default().fg(theme.text_primary),
         ));
     }
+
+    // Where each clickable span landed: after the left border, in order.
+    let widths: Vec<u16> = spans
+        .iter()
+        .map(|s| s.content.chars().count() as u16)
+        .collect();
+    app.header_hits = hits
+        .into_iter()
+        .map(|(first, n, hit)| {
+            let x = area.x + 1 + widths[..first].iter().sum::<u16>();
+            let w: u16 = widths[first..first + n].iter().sum();
+            (Rect::new(x, area.y + 1, w, 1), hit)
+        })
+        .collect();
 
     let line = Line::from(spans);
     let paragraph = Paragraph::new(line).block(block);

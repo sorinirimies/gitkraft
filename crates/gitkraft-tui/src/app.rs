@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use ratatui::layout::Rect;
 use ratatui::widgets::ListState;
 use std::sync::mpsc;
 
@@ -448,6 +449,10 @@ pub struct App {
     pub rects: crate::features::mouse::PaneRects,
     /// The open right-click menu of the main screen.
     pub main_menu: Option<crate::features::mouse::MainMenu>,
+    /// Clickable parts of the header, from the last frame.
+    pub header_hits: Vec<(Rect, crate::features::mouse::HeaderHit)>,
+    /// The panel drawn over the right of the main screen (theme, options, info).
+    pub panel_rect: Rect,
     /// The last left click: when and where, for double-clicks.
     pub last_click: Option<(std::time::Instant, u16, u16)>,
     /// Whether the key-hint "Actions" pane shows in the staging area (`?` toggles it).
@@ -551,6 +556,8 @@ impl App {
             rects: Default::default(),
             main_menu: None,
             last_click: None,
+            header_hits: Vec::new(),
+            panel_rect: Rect::default(),
             menu: crate::features::menu::Menu::default(),
             reduced_motion: settings.reduced_motion,
             show_about_panel: false,

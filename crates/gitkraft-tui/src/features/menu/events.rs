@@ -21,6 +21,14 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
     }
 }
 
+/// A click on row `i` of the menu: selects it and does what Enter does.
+pub fn click_row(app: &mut App, i: usize) {
+    if i < Row::ALL.len() {
+        app.menu.row = i;
+        change(app, 1, Instant::now());
+    }
+}
+
 /// Changes the selected row (`dir` is the direction for cycling rows) or runs its action.
 fn change(app: &mut App, dir: isize, now: Instant) {
     match app.menu.selected() {

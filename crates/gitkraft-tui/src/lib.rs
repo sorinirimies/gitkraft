@@ -155,7 +155,7 @@ where
         let want_mouse = matches!(
             app.screen,
             crate::app::AppScreen::Hub | crate::app::AppScreen::Main
-        );
+        ) || app.menu.is_open();
         if want_mouse != mouse_captured {
             let _ = if want_mouse {
                 execute!(io::stdout(), EnableMouseCapture)
@@ -202,6 +202,9 @@ where
                     if key.kind == crossterm::event::KeyEventKind::Press {
                         events::handle_key(&mut app, key);
                     }
+                }
+                Event::Mouse(mouse) if app.menu.is_open() => {
+                    features::mouse::handle(&mut app, mouse);
                 }
                 Event::Mouse(mouse) if app.screen == crate::app::AppScreen::Hub => {
                     if app.show_editor_panel {

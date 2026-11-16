@@ -9,6 +9,7 @@ use crate::widgets;
 
 /// Main render entry point — called once per frame from the event loop.
 pub fn render(app: &mut App, frame: &mut Frame) {
+    app.rects.screen = frame.area();
     // Paint the entire terminal area with the theme's background colour.
     // Without this, light themes appear broken because ratatui defaults
     // unstyled cells to `Color::Reset` (the terminal's own background).
@@ -104,6 +105,12 @@ fn render_main(app: &mut App, frame: &mut Frame) {
         y: main_cols[2].y,
         width: main_cols[2].width,
         height: main_cols[2].height + outer[2].height,
+    };
+
+    app.panel_rect = if app.show_about_panel || app.show_theme_panel || app.show_options_panel {
+        overlay_rect
+    } else {
+        Rect::default()
     };
 
     // Diff view OR theme panel OR options panel (full-height overlay)
@@ -300,5 +307,78 @@ mod tests {
         // two columns until the Actions pane is shown
         assert_eq!(r.unstaged.width, r.staged.width);
         assert!(r.unstaged.x + r.unstaged.width <= r.staged.x);
+    }
+
+    fn drawn(app: &mut App) {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+        let mut term = Terminal::new(TestBackend::new(120, 40)).expect("terminal");
+        term.draw(|f| render(app, f)).expect("draw");
+    }
+
+    fn click(app: &mut App, x: u16, y: u16) {
+        use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+        features::mouse::handle(
+            app,
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: x,
+                row: y,
+                modifiers: KeyModifiers::NONE,
+            },
+        );
+    }
+
+    #[test]
+    fn header_hints_tabs_the_theme_panel_and_the_settings_menu_react_to_clicks() {
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        app.new_tab();
+        app.screen = AppScreen::Main;
+        app.active_tab_index = 0;
+        drawn(&mut app);
+        // a tab
+        let (r, _) = *app
+            .header_hits
+            .iter()
+            .find(|(_, h)| matches!(h, features::mouse::HeaderHit::Tab(1)))
+            .expect("second tab");
+        click(&mut app, r.x, r.y);
+        assert_eq!(app.active_tab_index, 1);
+        app.screen = AppScreen::Main;
+        // a hint: "[A] actions" shows the Actions pane
+        drawn(&mut app);
+        let (r, _) = *app
+            .header_hits
+            .iter()
+            .find(|(_, h)| {
+                *h == features::mouse::HeaderHit::Key(crossterm::event::KeyCode::Char('A'))
+            })
+            .expect("actions hint");
+        click(&mut app, r.x + 1, r.y);
+        assert!(app.show_actions_panel);
+        app.show_theme_panel = true;
+        // a row of the panel picks that theme; a click outside closes it
+        drawn(&mut app);
+        let p = app.panel_rect;
+        let want = app.theme_list_state.offset() + 3; // the list may be scrolled
+        click(&mut app, p.x + 3, p.y + 1 + 3);
+        assert_eq!(app.picker_index(), want);
+        click(&mut app, 1, 39);
+        assert!(!app.show_theme_panel);
+        // the settings menu: a row toggles reduced motion
+        app.reduced_motion = true; // opens instantly
+        app.open_menu();
+        drawn(&mut app);
+        let rect = features::menu::view::popup_rect(app.rects.screen, 1.0);
+        let row = features::menu::Row::ALL
+            .iter()
+            .position(|r| *r == features::menu::Row::ReducedMotion)
+            .expect("row") as u16;
+        let before = app.reduced_motion;
+        click(&mut app, rect.x + 3, rect.y + 2 + row);
+        assert_ne!(app.reduced_motion, before);
+        click(&mut app, 0, 0);
+        assert!(!app.menu.is_open(), "outside closes");
     }
 }

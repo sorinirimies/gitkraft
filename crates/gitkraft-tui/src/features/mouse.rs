@@ -39,6 +39,15 @@ pub struct PaneRects {
     pub editor: Rect,
 }
 
+/// A clickable part of the header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeaderHit {
+    /// A repository tab.
+    Tab(usize),
+    /// A shortcut hint: presses its key.
+    Key(KeyCode),
+}
+
 /// What a right-click menu entry does: the key it presses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Item {
@@ -300,10 +309,10 @@ fn menu_for(app: &App, x: u16, y: u16) -> Vec<Item> {
 /// Handles a mouse event on the main screen.
 pub fn handle(app: &mut App, ev: MouseEvent) {
     let (x, y) = (ev.column, ev.row);
-    if app.input_mode == InputMode::Input
-        || app.menu.is_open()
-        || crate::features::commits::events::popup_is_open(app)
-    {
+    if app.menu.is_open() {
+        return settings_mouse(app, ev);
+    }
+    if app.input_mode == InputMode::Input || crate::features::commits::events::popup_is_open(app) {
         return;
     }
     if app.main_menu.is_some() {
@@ -312,13 +321,31 @@ pub fn handle(app: &mut App, ev: MouseEvent) {
     if app.show_editor_panel {
         return editor_mouse(app, ev);
     }
-    if app.show_about_panel
-        || app.show_theme_panel
-        || app.show_options_panel
-        || app.tab().file_history_path.is_some()
-        || app.tab().blame_path.is_some()
+    if app.show_about_panel || app.show_theme_panel || app.show_options_panel {
+        return panel_mouse(app, ev);
+    }
+    if app.tab().file_history_path.is_some() || app.tab().blame_path.is_some() {
+        return; // these overlays have their own keys
+    }
+    if let MouseEventKind::Down(MouseButton::Left) = ev.kind
+        && let Some(hit) = app
+            .header_hits
+            .iter()
+            .find(|(r, _)| inside(*r, x, y))
+            .map(|(_, h)| *h)
     {
-        // Panels have their own keys; a click does not change what is under them.
+        match hit {
+            HeaderHit::Tab(i) if i < app.tabs.len() => {
+                app.active_tab_index = i;
+                app.screen = if app.tab().repo_path.is_some() {
+                    crate::app::AppScreen::Main
+                } else {
+                    crate::app::AppScreen::Welcome
+                };
+            }
+            HeaderHit::Tab(_) => {}
+            HeaderHit::Key(k) => press(app, k),
+        }
         return;
     }
     match ev.kind {
@@ -365,6 +392,68 @@ pub fn handle(app: &mut App, ev: MouseEvent) {
             for _ in 0..3 {
                 press(app, key);
             }
+        }
+        _ => {}
+    }
+}
+
+/// Mouse on the settings menu (`M`): click a row to change it, outside to close.
+fn settings_mouse(app: &mut App, ev: MouseEvent) {
+    let rect = crate::features::menu::view::popup_rect(app.rects.screen, 1.0);
+    let rows = crate::features::menu::Row::ALL.len();
+    match ev.kind {
+        MouseEventKind::Down(MouseButton::Left) => {
+            if !inside(rect, ev.column, ev.row) {
+                app.close_menu(Instant::now());
+                return;
+            }
+            // border, then a blank line, then the rows
+            let first = rect.y + 2;
+            if ev.row >= first && usize::from(ev.row - first) < rows {
+                crate::features::menu::events::click_row(app, usize::from(ev.row - first));
+            }
+        }
+        MouseEventKind::Down(MouseButton::Right) => app.close_menu(Instant::now()),
+        MouseEventKind::ScrollDown => app.menu.step(1),
+        MouseEventKind::ScrollUp => app.menu.step(-1),
+        _ => {}
+    }
+}
+
+/// Mouse on the theme, options and info panels: pick a theme, click outside or right-click to
+/// close.
+fn panel_mouse(app: &mut App, ev: MouseEvent) {
+    let rect = app.panel_rect;
+    match ev.kind {
+        MouseEventKind::Down(MouseButton::Left) => {
+            if !inside(rect, ev.column, ev.row) {
+                app.show_about_panel = false;
+                app.show_theme_panel = false;
+                app.show_options_panel = false;
+            } else if app.show_theme_panel
+                && let Some(i) = row_at(
+                    rect,
+                    app.theme_list_state.offset(),
+                    ev.row,
+                    crate::features::theme::palette::picker_len(),
+                )
+            {
+                app.select_picker(i);
+                app.save_theme();
+            }
+        }
+        MouseEventKind::Down(MouseButton::Right) => {
+            app.show_about_panel = false;
+            app.show_theme_panel = false;
+            app.show_options_panel = false;
+        }
+        MouseEventKind::ScrollDown | MouseEventKind::ScrollUp if app.show_theme_panel => {
+            app.cycle_theme(if ev.kind == MouseEventKind::ScrollDown {
+                1
+            } else {
+                -1
+            });
+            app.save_theme();
         }
         _ => {}
     }
