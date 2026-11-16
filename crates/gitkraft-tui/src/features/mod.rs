@@ -5,6 +5,7 @@ pub mod diff;
 pub mod editor;
 pub mod hub;
 pub mod menu;
+pub mod mouse;
 pub mod options;
 pub mod remotes;
 pub mod repo;

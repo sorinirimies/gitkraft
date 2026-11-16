@@ -444,6 +444,12 @@ pub struct App {
     pub show_theme_panel: bool,
     /// Whether the options panel is visible.
     pub show_options_panel: bool,
+    /// Where the panes were drawn in the last frame (for the mouse).
+    pub rects: crate::features::mouse::PaneRects,
+    /// The open right-click menu of the main screen.
+    pub main_menu: Option<crate::features::mouse::MainMenu>,
+    /// The last left click: when and where, for double-clicks.
+    pub last_click: Option<(std::time::Instant, u16, u16)>,
     /// Whether the key-hint "Actions" pane shows in the staging area (`?` toggles it).
     pub show_actions_panel: bool,
     /// The animated settings menu (`M`).
@@ -542,6 +548,9 @@ impl App {
             show_theme_panel: false,
             show_options_panel: false,
             show_actions_panel: false,
+            rects: Default::default(),
+            main_menu: None,
+            last_click: None,
             menu: crate::features::menu::Menu::default(),
             reduced_motion: settings.reduced_motion,
             show_about_panel: false,

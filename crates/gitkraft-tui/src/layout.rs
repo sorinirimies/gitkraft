@@ -44,8 +44,10 @@ pub fn render(app: &mut App, frame: &mut Frame) {
             h,
         );
         frame.render_widget(ratatui::widgets::Clear, area);
+        app.rects.editor = area;
         features::editor::view::render(app, frame, area);
     }
+    features::mouse::render_menu(app, frame);
     app.menu.tick(std::time::Instant::now());
     features::menu::view::render(app, frame, std::time::Instant::now());
 }
@@ -70,6 +72,10 @@ fn render_main(app: &mut App, frame: &mut Frame) {
 
     let main_cols = areas.cols;
 
+    let mut rects = features::mouse::PaneRects {
+        screen: frame.area(),
+        ..Default::default()
+    };
     if areas.show_sidebar {
         // Branches get the lion's share; stashes and remotes sit below.
         let sidebar = Layout::default()
@@ -80,12 +86,15 @@ fn render_main(app: &mut App, frame: &mut Frame) {
                 Constraint::Length(5), // remotes
             ])
             .split(main_cols[0]);
+        rects.branches = sidebar[0];
+        rects.stash = sidebar[1];
         features::branches::view::render(app, frame, sidebar[0]);
         features::stash::view::render(app, frame, sidebar[1]);
         features::remotes::view::render(app, frame, sidebar[2]);
     }
 
     // Commit log
+    rects.commits = main_cols[1];
     features::commits::view::render(app, frame, main_cols[1]);
 
     // Compute a full-height overlay rect spanning main_cols[2] down through
@@ -105,17 +114,22 @@ fn render_main(app: &mut App, frame: &mut Frame) {
     } else if app.show_options_panel {
         features::options::view::render(app, frame, overlay_rect);
     } else if app.show_editor_panel {
+        rects.editor = main_cols[2];
         features::editor::view::render(app, frame, main_cols[2]);
     } else if app.tab().file_history_path.is_some() {
         features::diff::view::render_file_history(app, frame, main_cols[2]);
     } else if app.tab().blame_path.is_some() {
         features::diff::view::render_blame(app, frame, main_cols[2]);
     } else {
+        rects.diff = main_cols[2];
         features::diff::view::render(app, frame, main_cols[2]);
     }
 
     // Staging area (only when no overlay is active)
     if !app.show_theme_panel && !app.show_options_panel && !app.show_about_panel {
+        let cols = features::staging::view::columns(app, outer[2]);
+        rects.unstaged = cols[0];
+        rects.staged = cols[1];
         features::staging::view::render(app, frame, outer[2]);
     } else {
         // Render staging only for the left 2/3 (unstaged + staged columns)
@@ -127,6 +141,7 @@ fn render_main(app: &mut App, frame: &mut Frame) {
         };
         features::staging::view::render(app, frame, staging_partial);
     }
+    app.rects = rects;
 
     // Status bar
     widgets::status_bar::render(app, frame, outer[3]);
@@ -260,5 +275,30 @@ mod tests {
     fn tiny_terminal_does_not_panic() {
         let a = MainAreas::compute(area(1, 1), 30);
         assert_eq!(a.outer.len(), 4);
+    }
+
+    #[test]
+    fn drawing_the_main_screen_records_where_the_panes_are_for_the_mouse() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+        let mut app = App::new();
+        app.screen = AppScreen::Main;
+        let mut term = Terminal::new(TestBackend::new(120, 40)).expect("terminal");
+        term.draw(|f| render(&mut app, f)).expect("draw");
+        let r = app.rects;
+        assert_eq!(r.screen, Rect::new(0, 0, 120, 40));
+        for (name, rect) in [
+            ("branches", r.branches),
+            ("stash", r.stash),
+            ("commits", r.commits),
+            ("diff", r.diff),
+            ("unstaged", r.unstaged),
+            ("staged", r.staged),
+        ] {
+            assert!(rect.width > 0 && rect.height > 0, "{name} {rect:?}");
+        }
+        // two columns until the Actions pane is shown
+        assert_eq!(r.unstaged.width, r.staged.width);
+        assert!(r.unstaged.x + r.unstaged.width <= r.staged.x);
     }
 }

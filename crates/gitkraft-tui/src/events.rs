@@ -60,6 +60,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    if app.main_menu.is_some() {
+        features::mouse::menu_key(app, key);
+        return;
+    }
     // The picker floats over the hub (the main screen shows it as a pane).
     if app.show_editor_panel && app.screen == AppScreen::Hub {
         features::editor::events::handle_key(app, key);

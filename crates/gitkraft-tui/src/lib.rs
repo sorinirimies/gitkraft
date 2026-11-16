@@ -152,7 +152,10 @@ where
 
         // The mouse is captured only on the hub screen: elsewhere the terminal
         // keeps its own text selection.
-        let want_mouse = app.screen == crate::app::AppScreen::Hub;
+        let want_mouse = matches!(
+            app.screen,
+            crate::app::AppScreen::Hub | crate::app::AppScreen::Main
+        );
         if want_mouse != mouse_captured {
             let _ = if want_mouse {
                 execute!(io::stdout(), EnableMouseCapture)
@@ -201,7 +204,14 @@ where
                     }
                 }
                 Event::Mouse(mouse) if app.screen == crate::app::AppScreen::Hub => {
-                    features::hub::events::handle_mouse(&mut app, mouse);
+                    if app.show_editor_panel {
+                        features::mouse::editor_mouse(&mut app, mouse);
+                    } else {
+                        features::hub::events::handle_mouse(&mut app, mouse);
+                    }
+                }
+                Event::Mouse(mouse) if app.screen == crate::app::AppScreen::Main => {
+                    features::mouse::handle(&mut app, mouse);
                 }
                 _ => {}
             }

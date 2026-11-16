@@ -20,7 +20,22 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let typing =
         app.input_mode == InputMode::Input && app.input_purpose == InputPurpose::CommitMessage;
     let third = typing || app.show_actions_panel;
-    let cols = Layout::default()
+    let cols = columns(app, area);
+
+    render_unstaged(app, frame, cols[0], is_active);
+    render_staged(app, frame, cols[1], is_active);
+    if third {
+        render_commit_or_hints(app, frame, cols[2], is_active);
+    }
+}
+
+/// The three columns of the staging area (the third is empty unless the commit message or the
+/// Actions pane is shown).
+pub fn columns(app: &App, area: Rect) -> std::rc::Rc<[Rect]> {
+    let typing =
+        app.input_mode == InputMode::Input && app.input_purpose == InputPurpose::CommitMessage;
+    let third = typing || app.show_actions_panel;
+    Layout::default()
         .direction(Direction::Horizontal)
         .constraints(if third {
             [
@@ -35,13 +50,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                 Constraint::Length(0),
             ]
         })
-        .split(area);
-
-    render_unstaged(app, frame, cols[0], is_active);
-    render_staged(app, frame, cols[1], is_active);
-    if third {
-        render_commit_or_hints(app, frame, cols[2], is_active);
-    }
+        .split(area)
 }
 
 /// Render the unstaged changes list.

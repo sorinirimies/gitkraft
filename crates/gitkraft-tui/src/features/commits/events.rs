@@ -209,7 +209,7 @@ pub fn handle_popup_key(app: &mut App, key: KeyEvent) {
 }
 
 /// Return the length of the currently visible commit list (search results or all commits).
-fn active_commits_len(app: &App) -> usize {
+pub fn active_commits_len(app: &App) -> usize {
     if app.tab().search_active && !app.tab().search_results.is_empty() {
         app.tab().search_results.len()
     } else {
@@ -236,6 +236,14 @@ fn navigate_to(app: &mut App, next_index: impl Fn(usize, usize) -> usize) {
     app.tab_mut().blame_lines.clear();
     app.tab_mut().blame_scroll = 0;
     load_diff_at(app, i);
+}
+
+/// Selects the commit at `idx` (a mouse click) and loads its diff, like moving onto it with `j`.
+pub fn select_at(app: &mut App, idx: usize) {
+    if idx >= active_commits_len(app) {
+        return;
+    }
+    navigate_to(app, |_, _| idx);
 }
 
 /// Move commit selection down by one and auto-load the diff for the new selection.
