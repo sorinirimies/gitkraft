@@ -26,6 +26,8 @@ pub struct Palette {
     pub row: usize,
     /// Opened with `?`: only the actions of the screen you are on.
     pub scoped: bool,
+    /// Opened by a right click: the menu hangs at this cell.
+    pub anchor: Option<(u16, u16)>,
 }
 
 /// What the open palette lists: everything, or (opened with `?`) the actions of this screen.
@@ -36,6 +38,14 @@ pub fn shown_entries(hub: &HubState) -> Vec<Entry> {
     } else {
         all
     }
+}
+
+/// The entries a scoped menu would list, whatever is open now.
+pub fn shown_entries_scoped(hub: &HubState) -> Vec<Entry> {
+    entries_for(hub)
+        .into_iter()
+        .filter(|e| e.view == hub.view)
+        .collect()
 }
 
 /// Indexes into `entries` that match `query`, best first.

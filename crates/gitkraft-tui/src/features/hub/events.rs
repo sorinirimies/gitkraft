@@ -260,19 +260,103 @@ fn palette_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
             p.row = 0;
         }
         KeyCode::Enter => {
-            let pick = shown.get(p.row).and_then(|i| entries.get(*i)).cloned();
-            hub.palette = None;
-            if let Some(entry) = pick {
-                hub.view = entry.view;
-                return key_outcome(
-                    hub,
-                    KeyEvent::new(KeyCode::Char(entry.key), KeyModifiers::NONE),
-                );
-            }
+            let row = p.row;
+            return run_menu_row(hub, row);
         }
         _ => {}
     }
     Outcome::Stay
+}
+
+/// Closes the open palette or menu and runs entry `row` of its filtered list.
+fn run_menu_row(hub: &mut HubState, row: usize) -> Outcome {
+    let entries = palette::shown_entries(hub);
+    let query = hub
+        .palette
+        .as_ref()
+        .map(|p| p.query.clone())
+        .unwrap_or_default();
+    let shown = palette::filter_entries(&entries, &query);
+    let pick = shown.get(row).and_then(|i| entries.get(*i)).cloned();
+    hub.palette = None;
+    match pick {
+        Some(entry) => {
+            hub.view = entry.view;
+            key_outcome(
+                hub,
+                KeyEvent::new(KeyCode::Char(entry.key), KeyModifiers::NONE),
+            )
+        }
+        None => Outcome::Stay,
+    }
+}
+
+/// Selects what is under a right click and hangs the actions menu from it.
+fn right_click(hub: &mut HubState, x: u16, y: u16) {
+    let Some(target) = hub.hit_at(x, y) else {
+        return;
+    };
+    match target {
+        Target::Row(i) if hub.view == View::Keys => hub.keys.row = i,
+        Target::Row(i) if hub.view == View::Agents => {
+            hub.agents.pane = super::agents::Pane::Jobs;
+            hub.agents.row = i;
+            hub.agents.repo_row = 0;
+        }
+        Target::Repo(i) => {
+            hub.agents.pane = super::agents::Pane::Repos;
+            hub.agents.repo_row = i;
+        }
+        Target::Row(i) if hub.view == View::Community => hub.community.row = i,
+        Target::Row(i) => {
+            hub.focus = Focus::List;
+            hub.set_row(i);
+        }
+        Target::Job(i) => {
+            hub.focus = Focus::Detail;
+            hub.detail.job = i;
+        }
+        Target::DetailArea | Target::ListArea => {}
+        _ => return,
+    }
+    if palette::shown_entries_scoped(hub).is_empty() {
+        hub.set_notice("no actions here".into(), false);
+        return;
+    }
+    hub.palette = Some(Palette {
+        scoped: true,
+        anchor: Some((x, y)),
+        ..Palette::default()
+    });
+}
+
+/// Mouse while the palette or an actions menu is open: click an entry to run it, click outside
+/// (or right-click) to close, the wheel moves the selection.
+fn palette_mouse(hub: &mut HubState, ev: MouseEvent) {
+    let (x, y) = (ev.column, ev.row);
+    match ev.kind {
+        MouseEventKind::Down(MouseButton::Left) => match hub.hit_at(x, y) {
+            Some(Target::MenuRow(n)) => {
+                let _ = run_menu_row(hub, n);
+            }
+            _ => hub.palette = None,
+        },
+        MouseEventKind::Down(MouseButton::Right) => {
+            hub.palette = None;
+            right_click(hub, x, y);
+        }
+        MouseEventKind::ScrollDown | MouseEventKind::ScrollUp => {
+            let n = palette::shown_entries(hub).len().saturating_sub(1);
+            if let Some(p) = hub.palette.as_mut() {
+                p.row = if ev.kind == MouseEventKind::ScrollDown {
+                    (p.row + 1).min(n)
+                } else {
+                    p.row.saturating_sub(1)
+                };
+            }
+        }
+        _ => {}
+    }
 }
 
 fn open_keys(hub: &mut HubState) {
@@ -720,6 +804,10 @@ fn body_area(hub: &HubState) -> Rect {
 /// Mouse handling on the state alone.
 pub fn mouse(hub: &mut HubState, ev: MouseEvent) {
     let (x, y) = (ev.column, ev.row);
+    if hub.palette.is_some() {
+        palette_mouse(hub, ev);
+        return;
+    }
     if hub.images.open {
         match ev.kind {
             MouseEventKind::Down(MouseButton::Left) => hub.images.close(),
@@ -754,6 +842,7 @@ pub fn mouse(hub: &mut HubState, ev: MouseEvent) {
             let area = body_area(hub);
             hub.apply_drag(outcome, area);
         }
+        MouseEventKind::Down(MouseButton::Right) => right_click(hub, x, y),
         MouseEventKind::ScrollDown => scroll(hub, x, y, 3),
         MouseEventKind::ScrollUp => scroll(hub, x, y, -3),
         _ => {}
@@ -848,7 +937,7 @@ fn on_press(hub: &mut HubState, x: u16, y: u16) {
             }
             _ => hub.set_notice("this entry has no address".into(), false),
         },
-        Target::ListArea | Target::DetailArea => {}
+        Target::ListArea | Target::DetailArea | Target::MenuRow(_) | Target::MenuOutside => {}
     }
 }
 
@@ -1738,7 +1827,11 @@ mod tests {
     fn right_clicks_and_presses_on_nothing_do_nothing() {
         let mut s = state();
         layout(&mut s);
-        mouse(&mut s, ev(MouseEventKind::Down(MouseButton::Right), 5, 5));
+        mouse(
+            &mut s,
+            ev(MouseEventKind::Down(MouseButton::Right), 500, 500),
+        );
+        assert!(s.palette.is_none());
         mouse(
             &mut s,
             ev(MouseEventKind::Down(MouseButton::Left), 500, 500),

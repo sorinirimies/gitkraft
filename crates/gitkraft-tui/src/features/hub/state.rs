@@ -115,6 +115,10 @@ pub enum Target {
     Day(chrono::NaiveDate),
     /// An item of the open day's activity (position in listing order): a click copies its address.
     DayItem(usize),
+    /// An entry of the open actions menu or palette (position in the filtered list).
+    MenuRow(usize),
+    /// Anywhere outside the open menu: a click closes it.
+    MenuOutside,
 }
 
 /// A clickable region of the last frame.

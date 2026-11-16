@@ -55,66 +55,117 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         View::Agents => super::agents_view::render(hub, frame, rows[2], &theme, &mut hits),
     }
     render_status(hub, frame, rows[3], &theme);
-    render_palette(hub, frame, area, &theme);
+    render_palette(hub, frame, area, &theme, &mut hits);
     hub.set_hits(hits);
 }
 
-fn render_palette(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme) {
+fn render_palette(
+    hub: &HubState,
+    frame: &mut Frame,
+    area: Rect,
+    theme: &UiTheme,
+    hits: &mut Vec<Hit>,
+) {
     let Some(p) = &hub.palette else { return };
     if area.width < 20 || area.height < 5 {
         return;
     }
     let entries = super::palette::shown_entries(hub);
     let shown = super::palette::filter_entries(&entries, &p.query);
-    let w = area.width.saturating_sub(8).clamp(20, 72);
-    let h = (shown.len().min(12) as u16 + 3)
-        .min(area.height.saturating_sub(2))
-        .max(4);
-    let rect = Rect::new(
-        area.x + (area.width - w) / 2,
-        area.y + 2.min(area.height.saturating_sub(h)),
-        w,
-        h,
-    );
+    let menu = p.anchor.is_some();
+    let (w, h) = if menu {
+        let longest = shown
+            .iter()
+            .map(|i| entries[*i].label.chars().count())
+            .max()
+            .unwrap_or(16);
+        (
+            (longest as u16 + 8).clamp(20, area.width),
+            (shown.len().max(1) as u16 + 2).min(area.height),
+        )
+    } else {
+        (
+            area.width.saturating_sub(8).clamp(20, 72),
+            (shown.len().min(12) as u16 + 3)
+                .min(area.height.saturating_sub(2))
+                .max(4),
+        )
+    };
+    let rect = match p.anchor {
+        // Hangs from the click, kept on screen.
+        Some((x, y)) => Rect::new(
+            x.min(area.x + area.width - w),
+            y.min(area.y + area.height - h),
+            w,
+            h,
+        ),
+        None => Rect::new(
+            area.x + (area.width - w) / 2,
+            area.y + 2.min(area.height.saturating_sub(h)),
+            w,
+            h,
+        ),
+    };
+    hits.push(Hit {
+        rect: area,
+        target: Target::MenuOutside,
+    });
     frame.render_widget(ratatui::widgets::Clear, rect);
+    let title = match (menu, p.scoped) {
+        (true, _) if !p.query.is_empty() => format!(" Actions · {} ", p.query),
+        (true, _) => " Actions ".to_string(),
+        (false, true) => " Actions · Enter run · Esc close ".to_string(),
+        (false, false) => " Command palette · Enter run · Esc close ".to_string(),
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent))
-        .title(if p.scoped {
-            " Actions · Enter run · Esc close "
-        } else {
-            " Command palette · Enter run · Esc close "
-        });
+        .title(title);
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
     if inner.height == 0 {
         return;
     }
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("› ", Style::default().fg(theme.accent)),
-            Span::styled(
-                format!("{}█", p.query),
-                Style::default().fg(theme.text_primary),
-            ),
-        ])),
-        Rect::new(inner.x, inner.y, inner.width, 1),
-    );
-    let visible = inner.height.saturating_sub(1) as usize;
+    let (list_y, list_h) = if menu {
+        (inner.y, inner.height)
+    } else {
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("› ", Style::default().fg(theme.accent)),
+                Span::styled(
+                    format!("{}█", p.query),
+                    Style::default().fg(theme.text_primary),
+                ),
+            ])),
+            Rect::new(inner.x, inner.y, inner.width, 1),
+        );
+        (inner.y + 1, inner.height - 1)
+    };
+    let visible = list_h as usize;
     let first = p.row.saturating_sub(visible.saturating_sub(1));
-    let lines: Vec<Line> = shown
+    if shown.is_empty() {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(" nothing matches", muted(theme)))),
+            Rect::new(inner.x, list_y, inner.width, list_h.min(1)),
+        );
+        return;
+    }
+    for (line, (n, i)) in shown
         .iter()
         .enumerate()
         .skip(first)
         .take(visible)
-        .map(|(n, i)| {
-            let e = &entries[*i];
-            let style = if n == p.row {
-                Style::default().fg(theme.bg).bg(theme.accent)
-            } else {
-                Style::default().fg(theme.text_primary)
-            };
-            Line::from(vec![
+        .enumerate()
+    {
+        let e = &entries[*i];
+        let style = if n == p.row {
+            Style::default().fg(theme.bg).bg(theme.accent)
+        } else {
+            Style::default().fg(theme.text_primary)
+        };
+        let row = Rect::new(inner.x, list_y + line as u16, inner.width, 1);
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
                 Span::styled(
                     format!(
                         " {:<width$}",
@@ -127,18 +178,14 @@ fn render_palette(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme
                     format!(" {} ", e.key),
                     if n == p.row { style } else { muted(theme) },
                 ),
-            ])
-        })
-        .collect();
-    let body = if lines.is_empty() {
-        vec![Line::from(Span::styled(" nothing matches", muted(theme)))]
-    } else {
-        lines
-    };
-    frame.render_widget(
-        Paragraph::new(body),
-        Rect::new(inner.x, inner.y + 1, inner.width, inner.height - 1),
-    );
+            ])),
+            row,
+        );
+        hits.push(Hit {
+            rect: row,
+            target: Target::MenuRow(n),
+        });
+    }
 }
 
 fn muted(theme: &UiTheme) -> Style {
@@ -2197,6 +2244,7 @@ mod tests {
             query: "merge".into(),
             row: 0,
             scoped: false,
+            anchor: None,
         });
         let mut app = app_with(hub);
         let text = draw(&mut app, 100, 24);
@@ -2210,6 +2258,7 @@ mod tests {
             query: "qqq".into(),
             row: 0,
             scoped: false,
+            anchor: None,
         });
         assert!(draw(&mut app, 100, 24).contains("nothing matches"));
         app.hub.as_mut().expect("hub").palette = Some(Default::default());
@@ -2638,5 +2687,82 @@ mod tests {
             assert!(text.contains(needle), "missing {needle:?} in\n{text}");
         }
         assert!(!text.contains("# Plan") && !text.contains("[x]"));
+    }
+
+    #[test]
+    fn a_right_click_selects_the_row_and_hangs_an_actions_menu_that_a_click_runs() {
+        use crate::features::hub::events::mouse;
+        use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+        let at = |kind, x, y| MouseEvent {
+            kind,
+            column: x,
+            row: y,
+            modifiers: KeyModifiers::NONE,
+        };
+        let mut app = app_with(state());
+        let _ = draw(&mut app, 120, 40);
+        let (rect, row) = app
+            .hub
+            .as_ref()
+            .expect("hub")
+            .hits
+            .iter()
+            .find_map(|h| match h.target {
+                Target::Row(1) => Some((h.rect, 1)),
+                _ => None,
+            })
+            .expect("a second row");
+        let hub = app.hub.as_mut().expect("hub");
+        mouse(
+            hub,
+            at(MouseEventKind::Down(MouseButton::Right), rect.x + 2, rect.y),
+        );
+        assert_eq!(hub.row, row, "the clicked row is selected");
+        let p = hub.palette.as_ref().expect("menu open");
+        assert!(p.scoped && p.anchor == Some((rect.x + 2, rect.y)));
+        let text = draw(&mut app, 120, 40);
+        assert!(
+            text.contains(" Actions ") && text.contains("Pull request: comment"),
+            "{text}"
+        );
+        // the menu has a row per action, each a click target
+        let hub = app.hub.as_mut().expect("hub");
+        let rows = hub
+            .hits
+            .iter()
+            .filter(|h| matches!(h.target, Target::MenuRow(_)))
+            .count();
+        assert!(rows >= 5, "{rows}");
+        // a click outside closes it without running anything
+        mouse(hub, at(MouseEventKind::Down(MouseButton::Left), 0, 39));
+        assert!(hub.palette.is_none());
+        let _ = draw(&mut app, 120, 40);
+        let hub = app.hub.as_mut().expect("hub");
+        // right-click again, then click the "comment" entry: the comment prompt opens
+        mouse(
+            hub,
+            at(MouseEventKind::Down(MouseButton::Right), rect.x + 2, rect.y),
+        );
+        let _ = draw(&mut app, 120, 40);
+        let hub = app.hub.as_mut().expect("hub");
+        let entries = crate::features::hub::palette::shown_entries(hub);
+        let n = entries
+            .iter()
+            .position(|e| e.label == "Pull request: comment")
+            .expect("comment entry");
+        let hit = hub
+            .hits
+            .iter()
+            .find(|h| h.target == Target::MenuRow(n))
+            .expect("its row")
+            .rect;
+        mouse(
+            hub,
+            at(MouseEventKind::Down(MouseButton::Left), hit.x + 1, hit.y),
+        );
+        assert!(
+            hub.palette.is_none() && hub.prompt.is_some(),
+            "the action ran"
+        );
     }
 }
