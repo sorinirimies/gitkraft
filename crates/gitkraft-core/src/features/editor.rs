@@ -25,9 +25,38 @@ pub enum Editor {
     CLion,
     Fleet,
     AndroidStudio,
+    Xcode,
+    RubyMine,
+    PHPStorm,
+    Rider,
+    Eclipse,
     /// A user-supplied binary name or path.
     Custom(String),
 }
+
+/// Programs that need the terminal when typed as a custom editor command.
+const TERMINAL_PROGRAMS: &[&str] = &[
+    "hx",
+    "helix",
+    "nvim",
+    "vim",
+    "vi",
+    "nano",
+    "micro",
+    "kak",
+    "kakoune",
+    "joe",
+    "ne",
+    "lvim",
+    "emacs-nox",
+    "pico",
+    "mg",
+    "ed",
+    "amp",
+    "kilo",
+    "msedit",
+    "edit",
+];
 
 /// All named editor variants (excluding None and Custom) for UI pickers.
 pub const EDITOR_NAMES: &[&str] = &[
@@ -48,6 +77,11 @@ pub const EDITOR_NAMES: &[&str] = &[
     "CLion",
     "Fleet",
     "Android Studio",
+    "Xcode",
+    "RubyMine",
+    "PhpStorm",
+    "Rider",
+    "Eclipse",
 ];
 
 impl Editor {
@@ -91,6 +125,11 @@ impl Editor {
             Editor::CLion => vec!["clion".into()],
             Editor::Fleet => vec!["fleet".into()],
             Editor::AndroidStudio => vec!["studio".into()],
+            Editor::Xcode => vec!["xed".into()],
+            Editor::RubyMine => vec!["rubymine".into()],
+            Editor::PHPStorm => vec!["phpstorm".into()],
+            Editor::Rider => vec!["rider".into()],
+            Editor::Eclipse => vec!["eclipse".into()],
             Editor::Custom(s) => vec![s.clone()],
         }
     }
@@ -101,15 +140,25 @@ impl Editor {
     /// application — the TUI must suspend itself first, run the editor
     /// synchronously, then resume.
     pub fn is_terminal_editor(&self) -> bool {
-        matches!(
-            self,
+        match self {
             Editor::Helix
-                | Editor::Neovim
-                | Editor::Vim
-                | Editor::Nano
-                | Editor::Micro
-                | Editor::Emacs
-        )
+            | Editor::Neovim
+            | Editor::Vim
+            | Editor::Nano
+            | Editor::Micro
+            | Editor::Emacs => true,
+            // A command the user typed: terminal when its program is a known terminal editor.
+            Editor::Custom(c) => {
+                let first = c.split_whitespace().next().unwrap_or("");
+                let program = std::path::Path::new(first)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(first);
+                TERMINAL_PROGRAMS.contains(&program)
+                    || (program == "emacs" && c.split_whitespace().any(|a| a == "-nw"))
+            }
+            _ => false,
+        }
     }
 
     /// macOS application bundle name for GUI editors.
@@ -128,9 +177,53 @@ impl Editor {
             Editor::CLion => Some("CLion"),
             Editor::Fleet => Some("Fleet"),
             Editor::AndroidStudio => Some("Android Studio"),
+            Editor::Xcode => Some("Xcode"),
+            Editor::RubyMine => Some("RubyMine"),
+            Editor::PHPStorm => Some("PhpStorm"),
+            Editor::Rider => Some("Rider"),
+            Editor::Eclipse => Some("Eclipse"),
             // Terminal editors and Helix/Neovim/Vim/Nano/Micro/Emacs don't
             // have a stable macOS bundle name we can rely on for `open -a`.
             _ => None,
+        }
+    }
+
+    /// Whether this editor can be found: one of its binaries on `PATH`, or (macOS) its app bundle
+    /// in `/Applications` or `~/Applications`. A custom editor counts when its first word
+    /// resolves. `Editor::None` is never installed.
+    #[must_use]
+    pub fn is_installed(&self) -> bool {
+        let on_path = |bin: &str| {
+            let Some(cmd) = bin.split_whitespace().next() else {
+                return false;
+            };
+            let p = std::path::Path::new(cmd);
+            if p.components().count() > 1 {
+                return p.is_file();
+            }
+            std::env::var_os("PATH")
+                .is_some_and(|paths| std::env::split_paths(&paths).any(|d| d.join(cmd).is_file()))
+        };
+        #[cfg(target_os = "macos")]
+        if let Some(app) = self.macos_app_name() {
+            let bundle = format!("{app}.app");
+            let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+            if std::path::Path::new("/Applications").join(&bundle).exists()
+                || home.is_some_and(|h| h.join("Applications").join(&bundle).exists())
+            {
+                return true;
+            }
+        }
+        self.binary_candidates().iter().any(|b| on_path(b))
+    }
+
+    /// `"terminal"` for editors that take over the terminal, `"window"` for the others.
+    #[must_use]
+    pub fn kind_label(&self) -> &'static str {
+        if self.is_terminal_editor() {
+            "terminal"
+        } else {
+            "window"
         }
     }
 
@@ -155,6 +248,11 @@ impl Editor {
             Editor::CLion => "CLion",
             Editor::Fleet => "Fleet",
             Editor::AndroidStudio => "Android Studio",
+            Editor::Xcode => "Xcode",
+            Editor::RubyMine => "RubyMine",
+            Editor::PHPStorm => "PhpStorm",
+            Editor::Rider => "Rider",
+            Editor::Eclipse => "Eclipse",
             Editor::Custom(_) => "Custom",
         }
     }
@@ -179,6 +277,11 @@ impl Editor {
             14 => Editor::CLion,
             15 => Editor::Fleet,
             16 => Editor::AndroidStudio,
+            17 => Editor::Xcode,
+            18 => Editor::RubyMine,
+            19 => Editor::PHPStorm,
+            20 => Editor::Rider,
+            21 => Editor::Eclipse,
             _ => Editor::None,
         }
     }
@@ -370,7 +473,7 @@ mod tests {
 
     #[test]
     fn editor_names_count_matches() {
-        assert_eq!(EDITOR_NAMES.len(), 17);
+        assert_eq!(EDITOR_NAMES.len(), 22);
     }
 
     #[test]
@@ -397,5 +500,37 @@ mod tests {
         let editor = Editor::Custom("/usr/bin/my-editor --flag".into());
         assert_eq!(editor.binary(), Some("/usr/bin/my-editor --flag".into()));
         assert_eq!(editor.display_name(), "Custom");
+    }
+
+    #[test]
+    fn every_named_editor_round_trips_through_its_index_and_has_a_binary() {
+        for (i, name) in EDITOR_NAMES.iter().enumerate() {
+            let e = Editor::from_index(i);
+            assert_ne!(e, Editor::None, "{name} has an index");
+            assert_eq!(e.display_name(), *name);
+            assert!(e.binary().is_some(), "{name} has a binary");
+        }
+        assert_eq!(Editor::from_index(EDITOR_NAMES.len()), Editor::None);
+    }
+
+    #[test]
+    fn installed_checks_the_path_and_never_the_empty_editor() {
+        assert!(!Editor::None.is_installed());
+        assert!(!Editor::Custom("definitely-not-an-editor-xyz".into()).is_installed());
+        assert!(Editor::Custom("/bin/sh -x".into()).is_installed());
+        assert_eq!(Editor::Vim.kind_label(), "terminal");
+        assert_eq!(Editor::Zed.kind_label(), "window");
+    }
+
+    #[test]
+    fn a_custom_command_is_a_terminal_editor_when_its_program_is() {
+        let t = |c: &str| Editor::Custom(c.into()).is_terminal_editor();
+        assert!(t("hx"));
+        assert!(t("/opt/homebrew/bin/nvim -u NONE"));
+        assert!(t("emacs -nw"));
+        assert!(t("kak"));
+        assert!(!t("emacs"));
+        assert!(!t("code --wait"));
+        assert!(!t(""));
     }
 }

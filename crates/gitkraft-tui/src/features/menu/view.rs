@@ -41,6 +41,7 @@ fn value(app: &App, row: Row) -> String {
         Row::ReducedMotion => if app.reduced_motion { "on" } else { "off" }.to_string(),
         Row::CommitStyle => "edit ›".to_string(),
         Row::SettingsFile => "open ›".to_string(),
+        Row::Editor => format!("{} ›", app.editor.display_name()),
         Row::Keys => "show ›".to_string(),
     }
 }

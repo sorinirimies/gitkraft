@@ -18,17 +18,20 @@ pub enum Row {
     CommitStyle,
     /// Open the settings file in the editor.
     SettingsFile,
+    /// Pick the editor or IDE that edits files.
+    Editor,
     /// The keybinding reference.
     Keys,
 }
 
 impl Row {
     /// Every row in display order.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Theme,
         Self::ReducedMotion,
         Self::CommitStyle,
         Self::SettingsFile,
+        Self::Editor,
         Self::Keys,
     ];
 
@@ -40,6 +43,7 @@ impl Row {
             Self::ReducedMotion => "Reduced motion",
             Self::CommitStyle => "Commit message style",
             Self::SettingsFile => "Settings file",
+            Self::Editor => "Editor",
             Self::Keys => "Keys",
         }
     }
@@ -54,6 +58,9 @@ impl Row {
                 "Enter edits .gitkraft/ai.toml: format, scopes, template (g drafts)"
             }
             Self::SettingsFile => "Enter opens tui-settings.json in your editor",
+            Self::Editor => {
+                "Enter picks what edits files: helix, vim, nano, VS Code, Zed, JetBrains, or your own command"
+            }
             Self::Keys => "Enter shows every key binding",
         }
     }

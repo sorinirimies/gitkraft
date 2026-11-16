@@ -60,6 +60,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // The picker floats over the hub (the main screen shows it as a pane).
+    if app.show_editor_panel && app.screen == AppScreen::Hub {
+        features::editor::events::handle_key(app, key);
+        return;
+    }
+
     match app.screen {
         AppScreen::Welcome => features::repo::events::handle_key(app, key),
         AppScreen::DirBrowser => handle_browser_key(app, key),
@@ -146,9 +152,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                     app.show_editor_panel = false;
                 }
                 KeyCode::Char('E') => {
-                    app.show_editor_panel = !app.show_editor_panel;
-                    app.show_theme_panel = false;
-                    app.show_options_panel = false;
+                    if app.show_editor_panel {
+                        app.show_editor_panel = false;
+                    } else {
+                        app.open_editor_picker();
+                    }
                 }
                 KeyCode::Char('o') => {
                     let start = app

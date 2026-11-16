@@ -52,6 +52,10 @@ fn change(app: &mut App, dir: isize, now: Instant) {
             app.close_menu(now);
             app.open_settings_in_editor();
         }
+        Row::Editor => {
+            app.close_menu(now);
+            app.open_editor_picker();
+        }
         Row::Keys => {
             app.close_menu(now);
             app.show_options_panel = true;

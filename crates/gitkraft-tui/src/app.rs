@@ -458,6 +458,8 @@ pub struct App {
     pub show_editor_panel: bool,
     /// ListState for the editor picker list.
     pub editor_list_state: ListState,
+    /// The command typed on the picker's "Custom command" row (`nano -w`, `code --wait`, a path).
+    pub editor_custom: String,
     /// Index of the active preset (0..THEME_COUNT). While following the
     /// system this is the preset the OS appearance currently resolves to.
     pub current_theme_index: usize,
@@ -561,6 +563,7 @@ impl App {
                 })
                 .unwrap_or(gitkraft_core::Editor::None),
             show_editor_panel: false,
+            editor_custom: String::new(),
             editor_list_state: {
                 let mut s = ListState::default();
                 s.select(Some(0));
@@ -1817,6 +1820,26 @@ impl App {
         );
     }
 
+    /// Opens the editor picker with the current editor selected, on any screen.
+    pub fn open_editor_picker(&mut self) {
+        let row = match &self.editor {
+            gitkraft_core::Editor::None => 0,
+            gitkraft_core::Editor::Custom(c) => {
+                self.editor_custom = c.clone();
+                gitkraft_core::EDITOR_NAMES.len() + 1
+            }
+            e => gitkraft_core::EDITOR_NAMES
+                .iter()
+                .position(|n| *n == e.display_name())
+                .map_or(0, |i| i + 1),
+        };
+        self.editor_list_state.select(Some(row));
+        self.show_editor_panel = true;
+        self.show_theme_panel = false;
+        self.show_options_panel = false;
+        self.show_about_panel = false;
+    }
+
     pub fn close_repo(&mut self) {
         self.tabs[self.active_tab_index] = RepoTab::new();
         self.input_buffer.clear();
@@ -1911,8 +1934,9 @@ impl App {
             // manually, and remind them how to configure an editor.
             self.tab_mut().status_message = Some(format!(
                 "{what}: {path_str}  \
-                 (no editor configured — press E to choose one, or set editor in GUI)"
+                 (no editor yet: pick one)"
             ));
+            self.open_editor_picker();
         }
     }
 

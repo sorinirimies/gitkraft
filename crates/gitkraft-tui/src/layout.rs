@@ -32,6 +32,20 @@ pub fn render(app: &mut App, frame: &mut Frame) {
             features::hub::view::render(app, frame, frame.area());
         }
     }
+    if app.show_editor_panel && app.screen == AppScreen::Hub {
+        let full = frame.area();
+        let rows = gitkraft_core::EDITOR_NAMES.len() as u16 + 4;
+        let w = 56.min(full.width);
+        let h = rows.min(full.height);
+        let area = Rect::new(
+            full.x + full.width.saturating_sub(w) / 2,
+            full.y + full.height.saturating_sub(h) / 2,
+            w,
+            h,
+        );
+        frame.render_widget(ratatui::widgets::Clear, area);
+        features::editor::view::render(app, frame, area);
+    }
     app.menu.tick(std::time::Instant::now());
     features::menu::view::render(app, frame, std::time::Instant::now());
 }

@@ -10,20 +10,38 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let theme = app.theme();
 
     let block = Block::default()
-        .title(" Editor — Shift+E close ")
+        .title(" Editor · Enter choose · Esc close ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.border_active))
         .style(Style::default().bg(theme.bg));
 
-    let items: Vec<ListItem> = std::iter::once(("none", gitkraft_core::Editor::None))
+    let on_custom = crate::features::editor::events::on_custom(app);
+    let custom_label = if app.editor_custom.is_empty() {
+        "Custom command…  (type here, Enter applies)".to_string()
+    } else {
+        format!(
+            "Custom: {}{}",
+            app.editor_custom,
+            if on_custom { "▏" } else { "" }
+        )
+    };
+    let rows = std::iter::once(("none".to_string(), gitkraft_core::Editor::None))
         .chain(
             gitkraft_core::EDITOR_NAMES
                 .iter()
                 .enumerate()
-                .map(|(i, name)| (*name, gitkraft_core::Editor::from_index(i))),
+                .map(|(i, name)| (name.to_string(), gitkraft_core::Editor::from_index(i))),
         )
+        .chain(std::iter::once((
+            custom_label,
+            gitkraft_core::Editor::Custom(app.editor_custom.trim().to_string()),
+        )));
+    let items: Vec<ListItem> = rows
         .map(|(name, editor)| {
-            let is_selected = editor == app.editor;
+            let is_selected = match (&editor, &app.editor) {
+                (gitkraft_core::Editor::Custom(_), gitkraft_core::Editor::Custom(_)) => true,
+                (a, b) => a == b,
+            };
             let marker = if is_selected { "✔ " } else { "  " };
             let style = if is_selected {
                 Style::default()
@@ -32,10 +50,26 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
             } else {
                 Style::default().fg(theme.text_primary)
             };
-            ListItem::new(Line::from(vec![
+            let mut spans = vec![
                 Span::styled(marker, style),
-                Span::styled(name.to_string(), style),
-            ]))
+                Span::styled(name.clone(), style),
+            ];
+            if !matches!(
+                editor,
+                gitkraft_core::Editor::None | gitkraft_core::Editor::Custom(_)
+            ) {
+                spans.push(Span::styled(
+                    format!("  {}", editor.kind_label()),
+                    Style::default().fg(theme.text_muted),
+                ));
+                if !editor.is_installed() {
+                    spans.push(Span::styled(
+                        "  not installed",
+                        Style::default().fg(theme.warning),
+                    ));
+                }
+            }
+            ListItem::new(Line::from(spans))
         })
         .collect();
 
