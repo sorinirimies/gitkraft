@@ -517,7 +517,9 @@ mod tests {
     fn installed_checks_the_path_and_never_the_empty_editor() {
         assert!(!Editor::None.is_installed());
         assert!(!Editor::Custom("definitely-not-an-editor-xyz".into()).is_installed());
-        assert!(Editor::Custom("/bin/sh -x".into()).is_installed());
+        // a path that certainly exists on every OS: this test binary
+        let me = std::env::current_exe().expect("exe");
+        assert!(Editor::Custom(format!("{} -x", me.display())).is_installed());
         assert_eq!(Editor::Vim.kind_label(), "terminal");
         assert_eq!(Editor::Zed.kind_label(), "window");
     }
