@@ -102,7 +102,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                 KeyCode::Char('q') => app.should_quit = true,
                 KeyCode::Char('H') => features::hub::events::open(app),
                 KeyCode::Char('M') => app.open_menu(),
-                KeyCode::Char('?') => app.show_actions_panel = !app.show_actions_panel,
+                KeyCode::Char('A' | '?') => app.show_actions_panel = !app.show_actions_panel,
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     app.should_quit = true;
                 }
@@ -489,8 +489,8 @@ mod tests {
         assert!(!app.show_actions_panel, "hidden by default");
         handle_key(&mut app, key(KeyCode::Char('?')));
         assert!(app.show_actions_panel);
-        handle_key(&mut app, key(KeyCode::Char('?')));
-        assert!(!app.show_actions_panel);
+        handle_key(&mut app, key(KeyCode::Char('A')));
+        assert!(!app.show_actions_panel, "Shift+A toggles it too");
         handle_key(&mut app, key(KeyCode::Char('I')));
         assert!(app.show_about_panel);
         handle_key(&mut app, key(KeyCode::Char('I')));

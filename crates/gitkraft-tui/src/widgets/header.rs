@@ -10,7 +10,7 @@ use crate::app::{App, AppScreen};
 const HINTS: [(&str, &str); 12] = [
     ("[q]", "quit"),
     ("[←→]", "pane"),
-    ("[?]", "actions"),
+    ("[A]", "actions"),
     ("[r]", "refresh"),
     ("[f]", "fetch"),
     ("[t]", "theme"),
