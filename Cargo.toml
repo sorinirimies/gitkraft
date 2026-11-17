@@ -13,7 +13,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version      = "1.4.1"
+version      = "1.5.0"
 edition      = "2024"
 rust-version = "1.91"
 authors      = ["Sorin Irimies <sorinirimies@gmail.com>"]
@@ -71,11 +71,11 @@ ratatui-image        = { version = "11.1", default-features = false, features = 
 image                = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 
 # Internal crates
-gitkraft-hub = { path = "crates/gitkraft-hub", version = "1.4.1" }
-gitkraft-ci = { path = "crates/gitkraft-ci", version = "1.4.1" }
-gitkraft-platforms = { path = "crates/gitkraft-platforms", version = "1.4.1" }
-gitkraft-settings = { path = "crates/gitkraft-settings", version = "1.4.1" }
-gitkraft-core = { path = "crates/gitkraft-core", version = "1.4.1" }
+gitkraft-hub = { path = "crates/gitkraft-hub", version = "1.5.0" }
+gitkraft-ci = { path = "crates/gitkraft-ci", version = "1.5.0" }
+gitkraft-platforms = { path = "crates/gitkraft-platforms", version = "1.5.0" }
+gitkraft-settings = { path = "crates/gitkraft-settings", version = "1.5.0" }
+gitkraft-core = { path = "crates/gitkraft-core", version = "1.5.0" }
 
 [workspace.lints.rust]
 # libgit2 settings and AppKit need unsafe: each use allows it with a reason.

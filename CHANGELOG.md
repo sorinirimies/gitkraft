@@ -4,6 +4,117 @@ All notable changes to this project are documented here. It is generated from
 [Conventional Commits](https://www.conventionalcommits.org) by
 [git-cliff](https://git-cliff.org) — do not edit it by hand.
 
+## [1.5.0](https://github.com/sorinirimies/gitkraft/compare/v1.4.1...v1.5.0) — 2026-11-17
+
+### ✨ Features
+
+- **tui:** Header tabs and hints, theme list and settings menu react to clicks ([`ce18007`](https://github.com/sorinirimies/gitkraft/commit/ce180077749f5012b585f58d4ef9432493062965))
+- **tui:** Mouse on the main screen (click, double-click, wheel) and right-click action menus; editor picker is clickable ([`24def66`](https://github.com/sorinirimies/gitkraft/commit/24def66ccfe99e19149118cc02a6c15ec5ae5c43))
+- **tui:** Right-click a row in the hub for an actions menu; palette and menus are clickable ([`4d23ed2`](https://github.com/sorinirimies/gitkraft/commit/4d23ed29774014b5908a1c25009a764938b31abb))
+- **tui:** Editor picker with 22 editors, custom command, installed/terminal tags, reachable from settings and the hub ([`8176fde`](https://github.com/sorinirimies/gitkraft/commit/8176fde57f6ac6d685f9a0c45a0ec34b1d594eb8))
+- **tui:** Shift+A toggles the Actions pane (? still works) ([`f5d9a47`](https://github.com/sorinirimies/gitkraft/commit/f5d9a47cefdc1a95f95c75455c845f744f4b7a98))
+- **tui:** Actions pane hidden until ?; About becomes Info on Shift+I ([`3c4e014`](https://github.com/sorinirimies/gitkraft/commit/3c4e0149d063397c79edfafad3795fd26926d997))
+- **tui:** Quiet hub status line; ? opens an actions menu for the current screen ([`ea469ae`](https://github.com/sorinirimies/gitkraft/commit/ea469aea1b7376372cf98251707d05d33455c5ec))
+- Agents CLI (reports, --nth, switches both ways, --clear-globs) and MCP agent tools; AgentsState::in_dirs loads; docs ([`f68bed9`](https://github.com/sorinirimies/gitkraft/commit/f68bed9566eeb17b63dbb2a461ef02d6e143b64b))
+- Report history in the GUI and web; tests for the unread badge and a web run ([`aa145dc`](https://github.com/sorinirimies/gitkraft/commit/aa145dc40a63ebdd55e7adba1d5846a45b589356))
+- Edit an agent job's instructions and globs in the TUI, GUI and web ([`192a112`](https://github.com/sorinirimies/gitkraft/commit/192a112695caeb4c7aff4ba07f59236a9b94c2fa))
+- Agents view in the GUI and web with shared state and actions; in-app scheduler in all three ([`98cc9ac`](https://github.com/sorinirimies/gitkraft/commit/98cc9ace8427cccc468580c5f196d6e4e47e20ca))
+- Agents view in the TUI hub: jobs, repository picker, switches, findings chart, last report, in-app scheduler (tui-checkbox, tui-chart, tui-skeleton, tui-spinner) ([`6d7d4e8`](https://github.com/sorinirimies/gitkraft/commit/6d7d4e8e97b37604b63b5d13edbf67de4ddb0f5c))
+- Agent-watch core and CLI: scheduled CI checks over any forge, project selector, pluggable agent harness, reports, inbox and system notifications ([`6225920`](https://github.com/sorinirimies/gitkraft/commit/62259202747a92b51523d3a910db3873dd2f74c6))
+- Push the current branch to every forge remote with one result each (CLI push-all, MCP push_all_remotes) ([`8e4f8fa`](https://github.com/sorinirimies/gitkraft/commit/8e4f8faa92207e0de129dfa9d9c531cfab98c80e))
+- GitHub wikis through their .wiki.git repository: list, read and save in every client ([`fd41f10`](https://github.com/sorinirimies/gitkraft/commit/fd41f101a90a894ae462c11425e4fb9abb970781))
+- Create and reorder board cards, clickable calendar-day items in every client ([`6a3dcf2`](https://github.com/sorinirimies/gitkraft/commit/6a3dcf23eeb0e6083143efb9ab64e90371f8a522))
+- Answer buttons in GUI and web, review drafts land in the comment box, catch-up takes a start date everywhere ([`a3405c2`](https://github.com/sorinirimies/gitkraft/commit/a3405c247d34145314fcc3eb2bec3127385c0dc2))
+- Mark a discussion comment as the answer (platform, hub, CLI, MCP, TUI, web action) ([`e7013ff`](https://github.com/sorinirimies/gitkraft/commit/e7013ff5a868e9ad75202297a0eb16994c4733b8))
+- Ssh status follows the user's own ssh config; settings menu and AI entries in the hub palette ([`19d90a2`](https://github.com/sorinirimies/gitkraft/commit/19d90a23c696a43ed02a3be8aad6e3ba71739ede))
+- **tui,gui:** AI inbox triage behind the host opt-in ([`b926d99`](https://github.com/sorinirimies/gitkraft/commit/b926d99cc7579a55ca3f0087a69623db7a1cecc5))
+- **tui,gui:** AI PR summary, catch-up and review notes behind the host opt-in ([`74c3d1e`](https://github.com/sorinirimies/gitkraft/commit/74c3d1e97d00bbcae310d2f8500b0c34b247f93c))
+- **web:** AI summary, catch-up, review draft and inbox triage buttons behind the host opt-in; shared triage report in the hub ([`0d6121d`](https://github.com/sorinirimies/gitkraft/commit/0d6121d8fea855a9ae097df9a385d5217414aa38))
+- **cli:** AI summarize, catch-up, review-draft and triage behind a per-host, per-action opt-in (ai-allow) ([`640bddb`](https://github.com/sorinirimies/gitkraft/commit/640bddb408332f29493215ebf04aca6f29ba7deb))
+- Several forge remotes per project: remote switcher, branch state per remote, mirrored CI runs, remotes CLI and MCP tools in every client ([`f6256a4`](https://github.com/sorinirimies/gitkraft/commit/f6256a4f1bf52a27b418a8d28e6c541c6fdb21a3))
+- **hub:** AI drafts for pull requests and the inbox with a per-host opt-in policy ([`1d84a7a`](https://github.com/sorinirimies/gitkraft/commit/1d84a7a81b247d9442f53af922d11f59c071d5a7))
+- Discussion thread replies, wiki create/edit and board card moves across platforms, TUI, GUI, web, CLI and MCP; shared argument parsing in the hub ([`7ade990`](https://github.com/sorinirimies/gitkraft/commit/7ade99028e0125db6e33b2dc61b02bb3768beb73))
+- Client parity for AI explain and commit draft (GUI, web), web artifacts download and workflow dispatch, shared hub helpers ([`d004a20`](https://github.com/sorinirimies/gitkraft/commit/d004a20f0921bbee5a2860cb79c3a67d0376ec35))
+- **tui:** Animated settings menu with eased slide, theme, reduced motion and commit style rows ([`2708322`](https://github.com/sorinirimies/gitkraft/commit/2708322bb5fdaf55a8e305a4c41915c54282dade))
+- **ai:** Commit messages in a per-project style (.gitkraft/ai.toml), TUI draft key and CI explain key ([`df6d012`](https://github.com/sorinirimies/gitkraft/commit/df6d012dfaddc6f48ded1b8bbe02dae619bc3ddb))
+- **ai:** CI failure explainer with redaction, Anthropic and OpenAI-compatible backends, explain and ai-key commands ([`52a6ba9`](https://github.com/sorinirimies/gitkraft/commit/52a6ba9a93381853ccfd1cd1887f2cb80de24573))
+- **tui:** Clap command line with scriptable read/write commands, --json and shell completions ([`c1d19c2`](https://github.com/sorinirimies/gitkraft/commit/c1d19c2bef1ea32f7215f121c9e4cdced1e7a6da))
+- **mcp:** Prompts for failing CI, review queue, PR review, catch-up and triage ([`51e3438`](https://github.com/sorinirimies/gitkraft/commit/51e34384d98a94069f5ea533b032f3d67a375829))
+- Show when a PR branch is behind its target; add docs/ROADMAP.md ([`757dccf`](https://github.com/sorinirimies/gitkraft/commit/757dccffbd7c4fcbc38696367aaa003703d383e9))
+- Boards (GitHub Projects v2, GitLab issue boards) in every front-end and the MCP server ([`dd275a5`](https://github.com/sorinirimies/gitkraft/commit/dd275a596958351cfcf3dfdb1913056baeefa688))
+- **gui:** Discussions and wiki tab ([`f0de12e`](https://github.com/sorinirimies/gitkraft/commit/f0de12e3223f4e7f755acf237cf31dbe0dabd32c))
+- **tui:** Discussions and wiki view; shared community lists in the hub ([`b6478b8`](https://github.com/sorinirimies/gitkraft/commit/b6478b8ec15fa91404f2a40a9314dd0df79489da))
+- **web:** Discussions and wiki page ([`db3d19c`](https://github.com/sorinirimies/gitkraft/commit/db3d19c729bd9997b4bf112486b7187145b5747f))
+- **platforms:** Wikis (GitLab, Gitea family) and GitHub discussions, with MCP tools ([`7314f35`](https://github.com/sorinirimies/gitkraft/commit/7314f359c3945f3a8bf384a47166ef0ef0bd8dde))
+- **hub:** Click a day of the contribution calendar to see what you did, like GitHub ([`b01194f`](https://github.com/sorinirimies/gitkraft/commit/b01194f8e3746592c08ad79f948dc1a2510f6391))
+- **web:** Command palette and PR worktree checkout ([`ad6f48c`](https://github.com/sorinirimies/gitkraft/commit/ad6f48c296c31db8c1807504dcd645e41e68a4cb))
+- **mcp:** Gitkraft-mcp, an MCP server for PRs, issues and CI of every forge; read-only unless --write ([`40c2aa6`](https://github.com/sorinirimies/gitkraft/commit/40c2aa6b6e4322fed9b901d904144a2d9ca7222d))
+- **hub:** Update branch, auto-merge, merge queue, force merge and cancel across GitHub, GitLab and Gitea in TUI, GUI and web ([`a9ddbbc`](https://github.com/sorinirimies/gitkraft/commit/a9ddbbca58872916bf371fecb524625ed9556416))
+- **hub:** Edit labels of a PR or issue (GitHub, Gitea, GitLab) from the TUI and GUI ([`7bee16a`](https://github.com/sorinirimies/gitkraft/commit/7bee16afb669f0d978624d8f18ea23303a9f71fe))
+- Gitkraft-tui clone over the chosen transport (clone_via is now used) ([`a3e5616`](https://github.com/sorinirimies/gitkraft/commit/a3e561634c328579da1e63f19e12acc3d9cd76f0))
+- **ci:** Woodpecker CI adapter (runs, steps, logs, restart, cancel, dispatch) for Codeberg and others ([`a2818dc`](https://github.com/sorinirimies/gitkraft/commit/a2818dca8466a4a67a907e491ee53d14b2d548d8))
+- **hub:** Workflow inputs read from the file; inline comments on removed lines, in the GUI and the TUI palette ([`db39dd4`](https://github.com/sorinirimies/gitkraft/commit/db39dd464f31075cd095da8863d2d3ca5e229803))
+- **web:** SSH keys page; per-run token on every action (CSRF); share ssh_dir and machine_name in hub ([`5b1b0ac`](https://github.com/sorinirimies/gitkraft/commit/5b1b0ac3f89bb031fb5aff6acb4fc366ce082612))
+- **gui:** Command palette and PR worktree checkout; share fuzzy match and checkout in the hub crate ([`1dafe49`](https://github.com/sorinirimies/gitkraft/commit/1dafe49a4fbcac9ef0373c44751a5bb62bd2235e))
+- **hub:** Inline review comments from a diff cursor (GitHub, Gitea, GitLab) ([`d3e2d6f`](https://github.com/sorinirimies/gitkraft/commit/d3e2d6f6004e1bf8e9c1506c9d22022ff032d21f))
+- **ci:** List and download artifacts (GitHub, Gitea, GitLab); keys in TUI and GUI ([`771f2a2`](https://github.com/sorinirimies/gitkraft/commit/771f2a22ff832f2c3a31405d2b12bf3ba1bcbede))
+- Login with OAuth device flow or token into the system keyring; PR worktree checkout; run workflow by hand; command palette; docs ([`d806aad`](https://github.com/sorinirimies/gitkraft/commit/d806aad04c0b67fcc57412bff86fb1a50238ad58))
+- **ssh:** Setup, key list/revoke, ~/.ssh/config block, probe, ssh/https switch; keys screens in TUI and GUI; git credential token lookup ([`48d90f0`](https://github.com/sorinirimies/gitkraft/commit/48d90f0a7cdaba55616f933d08809a6c42fe94cf))
+- **gui:** Hub screen with sections, drag to reorder, PR/issue/CI detail, log viewer, pulse and contribution calendar, notification bell ([`fa2f96d`](https://github.com/sorinirimies/gitkraft/commit/fa2f96d0795ae00febb4803c7066df3aff0323f2))
+- **web:** Gitkraft-web on localhost with dashboard, PR/issue/CI pages, log viewer, pulse calendar, notifications and JSON actions ([`5d3d019`](https://github.com/sorinirimies/gitkraft/commit/5d3d019d645751c0c5d21dc72def09f0efe84846))
+- **tui:** Image preview, markdown rendering in PR and issue bodies ([`09cf808`](https://github.com/sorinirimies/gitkraft/commit/09cf8086fea0173d781ee69ad21b49e05a1f79ce))
+- **tui:** Hub screen with dashboard sections, PR/issue/CI detail, log viewer, pulse, bell, mouse and drag; notify CLI ([`44a25eb`](https://github.com/sorinirimies/gitkraft/commit/44a25eb2be45f383f13bf35a09130f5101b28e00))
+- **hub:** Notification poller cycle with seed, intervals, CI alerts, snooze and per-project failure ([`ac50a56`](https://github.com/sorinirimies/gitkraft/commit/ac50a5692e396c7fac1433afcb938e9ad6e8e74e))
+- **hub:** Accounts, sections to data, PR detail, pulse, merged contributions ([`b55051b`](https://github.com/sorinirimies/gitkraft/commit/b55051bcbb7b94a00a0f34b502c3c82af75122a5))
+- **platforms,settings:** Cross-repo search by involvement; dashboard sections; config file paths ([`b3b19f7`](https://github.com/sorinirimies/gitkraft/commit/b3b19f7141719047c24466d2334dfaa53d331ddd))
+- **ci:** Runs, jobs, steps and logs for GitHub/Gitea/GitLab; log parser, annotations, timing, stats, events ([`3dfcf65`](https://github.com/sorinirimies/gitkraft/commit/3dfcf65d2ccf41e964e6383077599da50dc0c696))
+- **platforms:** Notification poller, alerts, inbox, delivery rules, desktop notifier ([`d37d03b`](https://github.com/sorinirimies/gitkraft/commit/d37d03b0c6ef0b7a7f6cc709d2e69a2d2167eedd))
+- **platforms:** GitHub, GitLab and Gitea adapters behind one model; per-project notify config ([`3d3f40a`](https://github.com/sorinirimies/gitkraft/commit/3d3f40adf17fc70a083acdb4cdcce55f994b348c))
+
+### 🐛 Bug fixes
+
+- **hub:** An engine save keeps inbox entries other processes filed since it loaded ([`4a02012`](https://github.com/sorinirimies/gitkraft/commit/4a020129e84736b8ebb4ef71cfeb0a2e35b73f34))
+- Refuse an empty agent job name; delete job and unread badge in GUI and web; README ([`be1d720`](https://github.com/sorinirimies/gitkraft/commit/be1d72092053bc2cb6251b4665ebb4142c1afa1d))
+- **ssh:** Probe with the login and port of the remote URLs instead of always git@host ([`2e57b38`](https://github.com/sorinirimies/gitkraft/commit/2e57b38a356fb78e51070005f3d73015886b4fd7))
+- **github:** Job logs (415), discussion detail query, and checks of Actions-only commits, found against the real API ([`a1304c4`](https://github.com/sorinirimies/gitkraft/commit/a1304c4de0b8244792c22895af3c9cab0148748d))
+- **core:** Fetch and push through the system git so ssh keys and credential helpers work; explain ssh failures ([`766e06b`](https://github.com/sorinirimies/gitkraft/commit/766e06bd87470a870698f993b0754d5c4c934229))
+- **hub:** Clippy ([`c8c6f8a`](https://github.com/sorinirimies/gitkraft/commit/c8c6f8aaa33a1d777126a4f617f7fe983dfcb5f3))
+- **platforms:** Drop unused import ([`fc1e0a9`](https://github.com/sorinirimies/gitkraft/commit/fc1e0a903211da6072c35f100a80cbf6e42b5ef7))
+
+### ♻️ Refactor
+
+- Extract settings and theme into gitkraft-settings ([`ddf5e1e`](https://github.com/sorinirimies/gitkraft/commit/ddf5e1ed8060a18cebe3a82466999c3887645077))
+
+### 📚 Documentation
+
+- Agent-watch ran against a live pi ([`040dd3c`](https://github.com/sorinirimies/gitkraft/commit/040dd3c644ba8abad8cafe95c69c13a8aada2540))
+- **core:** Describe settings crate and the system-git transport exception ([`f19e208`](https://github.com/sorinirimies/gitkraft/commit/f19e20890de505f6c58602cfe1fb4fd877205521))
+- The hub, accounts, dashboard and notification config ([`7eecf1e`](https://github.com/sorinirimies/gitkraft/commit/7eecf1e110e78e911755d68418647947c710e4de))
+
+### 🧪 Tests
+
+- **core:** Editor install check must not rely on /bin/sh (fails on Windows) ([`cb88aa5`](https://github.com/sorinirimies/gitkraft/commit/cb88aa5e3a5828ac7ab29c79e44fd726b45e924e))
+
+### 📦 Dependencies
+
+- Nightly cargo update 2026-11-16 ([`d36dfce`](https://github.com/sorinirimies/gitkraft/commit/d36dfce73cdb09750420148094631b4cba687e08))
+- Nightly cargo update 2026-11-15 ([`98a7de2`](https://github.com/sorinirimies/gitkraft/commit/98a7de286a0bcfec81ae757636266a507ac8b82b))
+- Nightly cargo update 2026-11-14 ([`a7b2a21`](https://github.com/sorinirimies/gitkraft/commit/a7b2a21ce2e20fcb2e99bcd8670eae4b1a3eebfa))
+- Drop ratatui-image's image-defaults (pulled rav1e and an NCSA licence) ([`f60e582`](https://github.com/sorinirimies/gitkraft/commit/f60e582fa7322551448c1ba093350acd798535fb))
+- Nightly cargo update 2026-11-13 ([`fef7609`](https://github.com/sorinirimies/gitkraft/commit/fef76098f3acdf3a9542484225db8f943e407f46))
+- Nightly cargo update 2026-11-12 ([`5914e29`](https://github.com/sorinirimies/gitkraft/commit/5914e29c1f014ec92537beb2ca4d87b8fa5529a6))
+- Nightly cargo update 2026-11-11 ([`91959ff`](https://github.com/sorinirimies/gitkraft/commit/91959ff8d8faa3c13034ee7c4679e9ea4fcb08da))
+
+### 🔄 CI and release
+
+- Gitleaks ignores the fake secrets in the redaction tests ([`aac7d13`](https://github.com/sorinirimies/gitkraft/commit/aac7d134de570a499324fa41a388080ff0faab6c))
+- Bump gitea MSRV to 1.91 ([`00cf091`](https://github.com/sorinirimies/gitkraft/commit/00cf091c47bcc7fbbef513386b0fc4ee8fbdee6a))
+- Raise MSRV to 1.91 (notify-types 2.3.0 requires it) ([`536bf08`](https://github.com/sorinirimies/gitkraft/commit/536bf0859b5f42d8520ed442554b761889133cca))
+
+### 🔧 Chores
+
+- **deny:** Allow CDLA-Permissive-2.0 (webpki-root-certs, via reqwest's rustls verifier) ([`107e9ca`](https://github.com/sorinirimies/gitkraft/commit/107e9ca764198189eb1114ff4dbe6c3656046113))
+
 ## [1.4.1](https://github.com/sorinirimies/gitkraft/compare/v1.4.0...v1.4.1) — 2026-11-10
 
 ### 🐛 Bug fixes
