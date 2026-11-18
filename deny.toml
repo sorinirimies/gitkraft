@@ -7,6 +7,7 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant: via iced_winit → mundy → zbus" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names: via iced_winit → mundy → zbus" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: via iced_winit → mundy → zbus" },
+    { id = "RUSTSEC-2026-0543", reason = "chrono: unmaintained notice only, no vulnerability; used for dates across the workspace, a move to jiff/time is a separate migration" },
     { id = "RUSTSEC-2026-0441", reason = "pin-utils: via iced → iced_futures → wasmtimer (web timers); its latest release still depends on it" },
 ]
 
