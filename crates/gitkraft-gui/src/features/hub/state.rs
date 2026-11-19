@@ -2217,7 +2217,6 @@ impl HubState {
             SectionData::Issues(r) => r.items.get(row)?.url.clone(),
             SectionData::Runs(r) => r.items.get(row)?.url.clone(),
             SectionData::Inbox(r) => r.items.get(row)?.url.clone(),
-            _ => return None,
         };
         (!url.is_empty()).then_some(url)
     }
