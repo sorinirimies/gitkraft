@@ -602,6 +602,7 @@ async fn pull_request(cx: &Cx) -> Result<impl View> {
             if !labels.is_empty() { <div class="meta small">"labels: "(labels.join(", "))</div> }
             for e in detail.errors.clone() { <div class="note warn">(e)</div> }
             <div class="bar">
+                if gitkraft_hub::browser::is_web_url(&pr.url) { <a class="btn" href=(pr.url.clone()) target="_blank" rel="noopener noreferrer" title="Open this pull request on the forge">"Open in browser ↗"</a> }
                 <button class="primary" data-act=(approve) data-from="note" onclick="actBtn(this)">"Approve"</button>
                 <button data-act=(changes) data-from="note" onclick="actBtn(this)">"Request changes"</button>
                 if open {
@@ -697,6 +698,7 @@ async fn issue(cx: &Cx) -> Result<impl View> {
             for c in comments { <div class="comment"><b>(c.author.login.clone())</b>" "<span class="meta small">(ago(c.created_at))</span><pre>(c.body.clone())</pre></div> }
             <textarea id="note" placeholder="Write a comment"></textarea>
             <div class="bar">
+                if gitkraft_hub::browser::is_web_url(&issue.url) { <a class="btn" href=(issue.url.clone()) target="_blank" rel="noopener noreferrer" title="Open this issue on the forge">"Open in browser ↗"</a> }
                 <button class="primary" data-act=(comment) data-from="note" onclick="actBtn(this)">"Comment"</button>
                 <button class="danger" data-act=(toggle) data-confirm="Change the state of this issue?" onclick="actBtn(this)">(if open { "Close" } else { "Reopen" })</button>
             </div>
@@ -780,6 +782,7 @@ async fn ci_run(cx: &Cx) -> Result<impl View> {
             <div class="meta">(format!("{} · {} · {} · {}", repo.full_name(), run.branch, run.event, run.actor))</div>
             <div class="meta small">(run.title.clone())</div>
             <div class="bar">
+                if gitkraft_hub::browser::is_web_url(&run.url) { <a class="btn" href=(run.url.clone()) target="_blank" rel="noopener noreferrer" title="Open this run on the forge">"Open in browser ↗"</a> }
                 <button data-act=(rerun_failed) data-confirm="Re-run the failed jobs?" onclick="actBtn(this)">"Re-run failed"</button>
                 <button data-act=(rerun_all) data-confirm="Re-run every job?" onclick="actBtn(this)">"Re-run all"</button>
                 if active { <button class="danger" data-act=(cancel) data-confirm="Cancel this run?" onclick="actBtn(this)">"Cancel"</button> }

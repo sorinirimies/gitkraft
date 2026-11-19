@@ -688,6 +688,7 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
         KeyCode::Char('N') => hub.toggle_notifications(true),
         KeyCode::Char('z') => hub.toggle_snooze(),
         KeyCode::Char('y') => copy_url(hub),
+        KeyCode::Char('b') => open_in_browser(hub),
         KeyCode::Char('i') => hub.open_images(),
         KeyCode::Char('a') => open_prompt(hub, PromptPurpose::Approve),
         KeyCode::Char('x') => open_prompt(hub, PromptPurpose::RequestChanges),
@@ -776,6 +777,26 @@ fn vertical(hub: &mut HubState, delta: isize) {
                 hub.detail.scroll = hub.detail.scroll.saturating_add_signed(delta as i16);
             }
         }
+    }
+}
+
+/// Opens the selected item (pull request, issue, CI run, notification) on its forge's web page.
+fn open_in_browser(hub: &mut HubState) {
+    let Some(url) = hub.selected_url() else {
+        hub.set_notice("nothing to open".into(), false);
+        return;
+    };
+    // Tests must never start a real browser.
+    let opened = if cfg!(test) {
+        gitkraft_hub::browser::is_web_url(&url)
+            .then_some(())
+            .ok_or_else(|| std::io::Error::other(format!("not a web link: {url}")))
+    } else {
+        gitkraft_hub::browser::open(&url)
+    };
+    match opened {
+        Ok(()) => hub.set_notice(format!("opened {url}"), true),
+        Err(e) => hub.set_notice(format!("browser: {e}"), false),
     }
 }
 
@@ -1605,6 +1626,27 @@ mod tests {
         assert!(s.prompt.as_ref().is_some_and(|p| p.buffer.ends_with("x=1")));
         key_outcome(&mut s, key(KeyCode::Esc));
         assert!(s.prompt.is_none());
+    }
+
+    #[test]
+    fn b_opens_the_selected_pull_request_in_the_browser_and_says_when_nothing_is_selected() {
+        let mut s = state();
+        chars(&mut s, "b");
+        assert!(
+            s.fresh_notice()
+                .is_some_and(|n| n.0.contains("opened https://github.com/o/r/pull/")),
+            "{:?}",
+            s.fresh_notice()
+        );
+        assert!(
+            palette::entries_for(&s)
+                .iter()
+                .any(|e| e.key == 'b' && e.label.contains("open in the browser")),
+            "listed in the palette and the right-click menu"
+        );
+        s.slots[0].data = None;
+        chars(&mut s, "b");
+        assert_eq!(s.fresh_notice().map(|n| n.0), Some("nothing to open"));
     }
 
     #[test]

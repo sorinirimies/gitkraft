@@ -208,7 +208,7 @@ async fn a_failing_platform_shows_a_note_instead_of_a_500() {
 
 fn pr_fixtures(h: &Harness) {
     let base = "https://api.github.com/repos/o/r";
-    h.fake.push_json(&format!("{base}/pulls/7"), r#"{"number":7,"title":"Add pulse","body":"See ![shot](https://img.example/a.png)","state":"open","user":{"login":"alice"},"head":{"ref":"feat","sha":"abc"},"base":{"ref":"master"},"additions":3,"deletions":1,"html_url":"u"}"#);
+    h.fake.push_json(&format!("{base}/pulls/7"), r#"{"number":7,"title":"Add pulse","body":"See ![shot](https://img.example/a.png)","state":"open","user":{"login":"alice"},"head":{"ref":"feat","sha":"abc"},"base":{"ref":"master"},"additions":3,"deletions":1,"html_url":"https://github.com/o/r/pull/7"}"#);
     h.fake.push_json(
         &format!("{base}/commits/abc/status"),
         r#"{"state":"success"}"#,
@@ -239,6 +239,8 @@ async fn the_pr_page_has_tabs_actions_images_and_escaped_text() {
         "carol approved",
         "✔ checks passed",
         "+3 −1",
+        "href=\"https://github.com/o/r/pull/7\" target=\"_blank\" rel=\"noopener noreferrer\"",
+        "Open in browser",
         "data-act=",
         "Approve",
         "Squash",

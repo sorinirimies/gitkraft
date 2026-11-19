@@ -75,7 +75,7 @@ pub async fn serve(session: Session, opts: ServerOptions) -> std::io::Result<()>
     }
     if opts.open_browser {
         let url = browser_url(addr);
-        if let Err(e) = open_in_browser(&url) {
+        if let Err(e) = gitkraft_hub::browser::open(&url) {
             eprintln!("gitkraft-web: could not open a browser ({e}); visit {url}");
         }
     }
@@ -96,24 +96,4 @@ fn spawn_agent_scheduler(session: Session) {
             }
         }
     });
-}
-
-fn open_in_browser(url: &str) -> std::io::Result<()> {
-    use std::process::{Command, Stdio};
-    #[cfg(target_os = "macos")]
-    let mut cmd = Command::new("open");
-    #[cfg(target_os = "windows")]
-    let mut cmd = {
-        let mut c = Command::new("cmd");
-        c.args(["/C", "start", ""]);
-        c
-    };
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    let mut cmd = Command::new("xdg-open");
-    cmd.arg(url)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map(|_| ())
 }

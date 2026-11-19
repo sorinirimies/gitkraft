@@ -168,6 +168,8 @@ pub enum HubMessage {
     Artifacts,
     /// Check the selected pull request out into a worktree.
     Worktree,
+    /// Open the selected item on its forge's web page.
+    OpenInBrowser,
     /// Add and remove labels as typed in the note box (`+bug -wontfix`).
     EditLabels,
     /// Select a diff line.
@@ -864,6 +866,10 @@ impl HubState {
             HubMessage::Dispatch => self.dispatch(),
             HubMessage::Artifacts => self.artifacts(),
             HubMessage::Worktree => self.worktree(),
+            HubMessage::OpenInBrowser => {
+                self.open_in_browser();
+                Task::none()
+            }
             HubMessage::DiffLine(i) => {
                 self.detail.diff_line = Some(i);
                 Task::none()
@@ -2203,6 +2209,38 @@ impl HubState {
         r.items.get(self.row?).cloned()
     }
 
+    /// Web page of the selected pull request, issue, CI run or notification.
+    pub fn selected_url(&self) -> Option<String> {
+        let row = self.row?;
+        let url = match self.active_data()? {
+            SectionData::Prs(r) => r.items.get(row)?.url.clone(),
+            SectionData::Issues(r) => r.items.get(row)?.url.clone(),
+            SectionData::Runs(r) => r.items.get(row)?.url.clone(),
+            SectionData::Inbox(r) => r.items.get(row)?.url.clone(),
+            _ => return None,
+        };
+        (!url.is_empty()).then_some(url)
+    }
+
+    fn open_in_browser(&mut self) {
+        let Some(url) = self.selected_url() else {
+            self.notice = Some(("nothing to open".into(), false));
+            return;
+        };
+        // Tests must never start a real browser.
+        let opened = if cfg!(test) {
+            gitkraft_hub::browser::is_web_url(&url)
+                .then_some(())
+                .ok_or_else(|| std::io::Error::other(format!("not a web link: {url}")))
+        } else {
+            gitkraft_hub::browser::open(&url)
+        };
+        self.notice = Some(match opened {
+            Ok(()) => (format!("opened {url}"), true),
+            Err(e) => (format!("browser: {e}"), false),
+        });
+    }
+
     fn selected_run(&self) -> Option<gitkraft_ci::Run> {
         let SectionData::Runs(r) = self.active_data()? else {
             return None;
@@ -2233,6 +2271,9 @@ impl HubState {
                 "Inbox: AI triage (now / fyi / ignore)",
                 HubMessage::AiTriage,
             );
+        }
+        if self.selected_url().is_some() {
+            add("Open in the browser", HubMessage::OpenInBrowser);
         }
         if self.selected_pr().is_some() {
             add(
@@ -3436,6 +3477,44 @@ mod tests {
         assert!(
             s.notice.is_none(),
             "valid input starts the call without a complaint"
+        );
+    }
+
+    #[test]
+    fn open_in_browser_needs_a_selected_web_link() {
+        let mut s = state();
+        let _ = s.update(HubMessage::OpenInBrowser);
+        assert_eq!(
+            s.notice.as_ref().map(|(t, ok)| (t.as_str(), *ok)),
+            Some(("nothing to open", false))
+        );
+        assert!(
+            !s.palette_entries()
+                .iter()
+                .any(|(l, _)| l == "Open in the browser")
+        );
+        let repo = RepoId::new("github.com", "o", "r");
+        let pr = gitkraft_platforms::model::PullRequest {
+            number: 4,
+            repo,
+            url: "https://github.com/o/r/pull/4".into(),
+            ..Default::default()
+        };
+        s.slots[0].data = Some(Arc::new(SectionData::Prs(SectionResult {
+            items: vec![pr],
+            errors: vec![],
+        })));
+        s.row = Some(0);
+        assert!(
+            s.palette_entries()
+                .iter()
+                .any(|(l, _)| l == "Open in the browser")
+        );
+        let _ = s.update(HubMessage::OpenInBrowser);
+        assert!(
+            s.notice
+                .as_ref()
+                .is_some_and(|(t, ok)| t == "opened https://github.com/o/r/pull/4" && *ok)
         );
     }
 

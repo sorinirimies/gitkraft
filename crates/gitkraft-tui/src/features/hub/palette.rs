@@ -85,6 +85,7 @@ pub fn entries_for(hub: &HubState) -> Vec<Entry> {
             e("Pull request: check out in a worktree", 'w', d),
             e("Pull request: show images", 'i', d),
             e("Pull request: change labels", 'L', d),
+            e("Pull request: open in the browser", 'b', d),
             e("Pull request: copy link", 'y', d),
             e("Pull request: next tab", 'v', d),
         ]);
@@ -100,6 +101,7 @@ pub fn entries_for(hub: &HubState) -> Vec<Entry> {
             e("Issue: close or reopen", 'C', d),
             e("Issue: change labels", 'L', d),
             e("Issue: show images", 'i', d),
+            e("Issue: open in the browser", 'b', d),
             e("Issue: copy link", 'y', d),
         ]);
     }
@@ -111,6 +113,7 @@ pub fn entries_for(hub: &HubState) -> Vec<Entry> {
             e("CI run: download artifacts", 'A', d),
             e("CI run: ask the AI why it failed", 'E', d),
             e("CI run: cancel", 'X', d),
+            e("CI run: open in the browser", 'b', d),
             e("CI run: copy link", 'y', d),
         ]);
     }

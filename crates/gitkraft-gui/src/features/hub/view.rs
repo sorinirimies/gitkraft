@@ -618,6 +618,7 @@ fn pr_detail<'a>(
     .spacing(4);
     let open = pr.state == ItemState::Open;
     let mut buttons = vec![
+        ("Open in browser", HubMessage::OpenInBrowser),
         ("Approve", HubMessage::Approve),
         ("Request changes", HubMessage::RequestChanges),
         ("Comment", HubMessage::PostComment),
@@ -824,6 +825,7 @@ fn issue_detail<'a>(
         action_row(
             c,
             vec![
+                ("Open in browser", HubMessage::OpenInBrowser),
                 ("Comment", HubMessage::PostComment),
                 (
                     if open { "Close" } else { "Reopen" },
@@ -967,6 +969,7 @@ fn run_detail<'a>(hub: &'a HubState, run: &'a gitkraft_ci::Run, c: &ThemeColors)
     };
     let active = run.status.is_active();
     let mut buttons = vec![
+        ("Open in browser", HubMessage::OpenInBrowser),
         ("Open log", HubMessage::OpenLog),
         (
             "Re-run failed",

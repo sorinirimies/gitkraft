@@ -9,6 +9,7 @@ pub mod agent_watch;
 pub mod ai;
 pub mod args;
 pub mod artifacts;
+pub mod browser;
 pub mod checkout;
 pub mod clone;
 pub mod commit_ai;
