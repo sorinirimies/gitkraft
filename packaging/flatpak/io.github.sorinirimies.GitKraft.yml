@@ -42,5 +42,5 @@ modules:
       - type: git
         url: https://github.com/sorinirimies/gitkraft.git
         tag: v1.6.0
-        commit: b41bcd25091979f517996c825be1ca0cf8e5364d
+        commit: ff6611afed890ad987ded91159c816934d68c086
       - cargo-sources.json
