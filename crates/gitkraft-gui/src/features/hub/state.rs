@@ -144,6 +144,8 @@ pub enum HubMessage {
     LogQuery(String),
     /// Next (`true`) or previous log search match.
     LogStep(bool),
+    /// The log was scrolled to this offset, in a view of this height.
+    LogScrolled(f32, f32),
     /// The note / comment text changed.
     NoteInput(String),
     /// Post the note as a comment.
@@ -360,6 +362,20 @@ pub struct LogState {
     pub query: String,
     /// Lines matching `query`.
     pub matches: Vec<usize>,
+    /// Scroll offset in pixels, and the height of the visible area, for drawing only the lines in view.
+    pub scroll_y: f32,
+    /// Height of the log area as last reported by the scroll area.
+    pub view_h: f32,
+}
+
+impl LogState {
+    /// The lines to draw: those in view plus some either side.
+    pub fn window(&self) -> std::ops::Range<usize> {
+        let first = (self.scroll_y / LOG_LINE_H) as usize;
+        let first = first.saturating_sub(LOG_OVERSCAN);
+        let count = (self.view_h / LOG_LINE_H) as usize + 2 * LOG_OVERSCAN;
+        first.min(self.lines.len())..(first + count).min(self.lines.len())
+    }
 }
 
 impl LogState {
@@ -390,6 +406,11 @@ impl LogState {
         self.focus
     }
 }
+
+/// Height of one log line in pixels (lines never wrap, so all are the same).
+pub const LOG_LINE_H: f32 = 16.0;
+/// Lines drawn above and below the visible ones.
+const LOG_OVERSCAN: usize = 20;
 
 /// Id of the log's scroll area.
 pub const LOG_SCROLL: &str = "hub-log";
@@ -872,6 +893,8 @@ impl HubState {
                     focus,
                     query: String::new(),
                     matches: Vec::new(),
+                    scroll_y: 0.0,
+                    view_h: 1200.0,
                 });
                 self.notice = None;
                 Task::none()
@@ -889,7 +912,7 @@ impl HubState {
                     return Task::none();
                 };
                 l.focus = Some(i);
-                scroll_log(i, l.lines.len())
+                scroll_log(l, i)
             }
             HubMessage::LogQuery(q) => {
                 let Some(l) = &mut self.log else {
@@ -899,16 +922,23 @@ impl HubState {
                 l.query = q;
                 l.focus = None;
                 match l.step(true) {
-                    Some(i) => scroll_log(i, l.lines.len()),
+                    Some(i) => scroll_log(l, i),
                     None => Task::none(),
                 }
+            }
+            HubMessage::LogScrolled(y, h) => {
+                if let Some(l) = &mut self.log {
+                    l.scroll_y = y;
+                    l.view_h = h;
+                }
+                Task::none()
             }
             HubMessage::LogStep(forward) => {
                 let Some(l) = &mut self.log else {
                     return Task::none();
                 };
                 match l.step(forward) {
-                    Some(i) => scroll_log(i, l.lines.len()),
+                    Some(i) => scroll_log(l, i),
                     None => Task::none(),
                 }
             }
@@ -2799,16 +2829,14 @@ impl HubState {
     }
 }
 
-/// Scrolls the log so line `i` of `len` is in view (lines are about the same height).
-fn scroll_log<M: Send + 'static>(i: usize, len: usize) -> Task<M> {
-    let y = if len > 1 {
-        i as f32 / (len - 1) as f32
-    } else {
-        0.0
-    };
-    iced::widget::operation::snap_to(
+/// Scrolls the log so line `i` is in view, and tells the drawing where it went (the scroll area
+/// reports back only on the next event).
+fn scroll_log<M: Send + 'static>(l: &mut LogState, i: usize) -> Task<M> {
+    let y = (i as f32 * LOG_LINE_H - l.view_h / 2.0).max(0.0);
+    l.scroll_y = y;
+    iced::widget::operation::scroll_to(
         iced::widget::Id::new(LOG_SCROLL),
-        iced::widget::scrollable::RelativeOffset {
+        iced::widget::scrollable::AbsoluteOffset {
             x: None,
             y: Some(y),
         },
@@ -3200,6 +3228,21 @@ mod tests {
     }
 
     #[test]
+    fn a_long_log_draws_only_the_lines_in_view_and_a_jump_scrolls_to_them() {
+        let text: String = (0..50_000).map(|i| format!("line {i}\n")).collect();
+        let mut s = state();
+        let _ = s.update(HubMessage::LogLoaded(Ok(("job".into(), text))));
+        let l = s.log.as_ref().expect("log");
+        assert_eq!(l.lines.len(), 50_000);
+        assert!(l.window().len() < 200, "{:?}", l.window());
+        let _ = s.update(HubMessage::LogScrolled(16.0 * 30_000.0, 800.0));
+        let w = s.log.as_ref().expect("log").window();
+        assert!(w.contains(&30_000) && w.len() < 200, "{w:?}");
+        let _ = s.update(HubMessage::JumpLog(10));
+        assert!(s.log.as_ref().expect("log").window().contains(&10));
+    }
+
+    #[test]
     fn log_search_steps_through_matches_and_wraps() {
         let mut l = LogState {
             title: String::new(),
@@ -3208,6 +3251,8 @@ mod tests {
             focus: None,
             query: String::new(),
             matches: vec![2, 5, 9],
+            scroll_y: 0.0,
+            view_h: 100.0,
         };
         assert_eq!(l.step(true), Some(2));
         assert_eq!(l.step(true), Some(5));

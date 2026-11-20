@@ -34,7 +34,7 @@ pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospa
 .diff div{padding:0 10px;white-space:pre;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace}
 .diff .add{color:var(--add)}.diff .del{color:var(--del)}.diff .hunk{color:var(--hunk)}.diff .ctx{color:var(--muted)}
 .log{background:var(--surface);border:var(--bw,1px) solid var(--border);border-radius:min(var(--r,6px),10px);padding:8px 0;overflow:auto}
-.log .ln{display:block;padding:0 10px}.log .ln a{color:var(--muted);display:inline-block;min-width:4ch;margin-right:1.2ch;text-align:right}
+.log .ln{display:block;padding:0 10px;content-visibility:auto;contain-intrinsic-size:auto 1.4em}.log .ln a{color:var(--muted);display:inline-block;min-width:4ch;margin-right:1.2ch;text-align:right}
 .log .ln.err{color:var(--err)}.log .ln.warn{color:var(--warn)}.log .ln.cmd{color:var(--accent)}.log .ln:target,.log .ln.hit{background:var(--sel)}.log .ln.cur{outline:var(--bw,1px) solid var(--accent)}
 .log details{margin-left:1.5ch}.log summary{cursor:pointer;color:var(--text);font-weight:600}
 .tabs a{margin-right:14px;color:var(--text2)}.tabs a.on{color:var(--text);font-weight:600}

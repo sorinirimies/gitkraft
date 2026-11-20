@@ -1064,8 +1064,10 @@ fn log_view<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
     let Some(log) = &hub.log else {
         return Space::new().into();
     };
-    let mut col = column![];
-    for (i, l) in log.lines.iter().enumerate() {
+    let win = log.window();
+    let (first, last) = (win.start, win.end);
+    let mut col = column![Space::new().height(first as f32 * super::state::LOG_LINE_H)];
+    for (i, l) in log.lines.iter().enumerate().skip(first).take(last - first) {
         let base = match l.kind {
             LineKind::Error => c.red,
             LineKind::Warning => c.yellow,
@@ -1082,18 +1084,26 @@ fn log_view<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
         }
         let line = iced::widget::rich_text(spans)
             .font(iced::Font::MONOSPACE)
-            .size(12);
+            .size(12)
+            .line_height(iced::widget::text::LineHeight::Absolute(iced::Pixels(
+                super::state::LOG_LINE_H,
+            )))
+            .wrapping(iced::widget::text::Wrapping::None);
         let focus = log.focus == Some(i) || log.matches.binary_search(&i).is_ok();
         let sel = c.selection;
         col = col.push(
             container(line)
                 .width(Length::Fill)
+                .height(super::state::LOG_LINE_H)
                 .style(move |_| container::Style {
                     background: focus.then(|| sel.into()),
                     ..container::Style::default()
                 }),
         );
     }
+    col = col.push(
+        Space::new().height(log.lines.len().saturating_sub(last) as f32 * super::state::LOG_LINE_H),
+    );
     let mut problems = column![].spacing(2);
     for a in &log.annotations {
         let at = match (&a.file, a.line) {
@@ -1165,6 +1175,7 @@ fn log_view<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
         .push(
             scrollable(col)
                 .id(iced::widget::Id::new(super::state::LOG_SCROLL))
+                .on_scroll(|v| HubMessage::LogScrolled(v.absolute_offset().y, v.bounds().height))
                 .height(Length::Fill)
                 .width(Length::Fill),
         )

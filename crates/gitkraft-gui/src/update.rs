@@ -1459,12 +1459,21 @@ impl GitKraft {
                 if let Some(repo_path) = self.active_tab().repo_path.clone() {
                     let full_path = repo_path.join(path);
                     let file_path = full_path.display().to_string();
-                    git_task!(
-                        Message::FilePreviewLoaded,
-                        std::fs::read_to_string(&full_path)
-                            .map(|content| (file_path, content))
-                            .str_err()
-                    )
+                    git_task!(Message::FilePreviewLoaded, {
+                        // A huge file would freeze the editor widget: refuse it up front.
+                        const MAX_PREVIEW: u64 = 5 * 1024 * 1024;
+                        let size = std::fs::metadata(&full_path).map(|m| m.len()).unwrap_or(0);
+                        if size > MAX_PREVIEW {
+                            Err(format!(
+                                "{} MB is too large to preview",
+                                size / (1024 * 1024)
+                            ))
+                        } else {
+                            std::fs::read_to_string(&full_path)
+                                .map(|content| (file_path, content))
+                                .str_err()
+                        }
+                    })
                 } else {
                     Task::none()
                 }
