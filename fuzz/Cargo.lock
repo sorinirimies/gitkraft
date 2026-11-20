@@ -101,6 +101,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "dodai-core"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f401416dd75e9ba922fd41725be28b26a33fb2fe44be0d6f2cb5a2924f36a2f4"
+dependencies = [
+ "dodai-fx",
+]
+
+[[package]]
+name = "dodai-fx"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e667a7a23876a6f590d308648993752cc6918c4618d79b1e0ea96fe47f009862"
+
+[[package]]
 name = "equivalent"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -178,7 +193,7 @@ dependencies = [
 
 [[package]]
 name = "gitkraft-core"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -202,11 +217,12 @@ dependencies = [
 
 [[package]]
 name = "gitkraft-settings"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "anyhow",
  "chrono",
  "dirs",
+ "dodai-core",
  "serde",
  "serde_json",
  "tempfile",

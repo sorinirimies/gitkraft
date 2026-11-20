@@ -4,7 +4,42 @@ All notable changes to this project are documented here. It is generated from
 [Conventional Commits](https://www.conventionalcommits.org) by
 [git-cliff](https://git-cliff.org) — do not edit it by hand.
 
-## [1.5.0](https://github.com/sorinirimies/gitkraft/compare/v1.4.1...v1.5.0) — 2026-11-17
+## [1.6.0](https://github.com/sorinirimies/gitkraft/compare/v1.5.0...v1.6.0) — 2026-11-20
+
+### ✨ Features
+
+- **web:** Repository page (history graph, changes, branches, stashes, remotes); feat: Dodai gradient mesh in web and GUI; feat(tui): Dodai themes; fresh installs start on Dodai Dark; Dodai families lose the 'Dodai ·' prefix ([`0069762`](https://github.com/sorinirimies/gitkraft/commit/0069762f48f07765abf71220813ff4c284d10011))
+- Log search in the GUI and web, label editing in the web; fix(gui): one notification poll at a time ([`1a77b75`](https://github.com/sorinirimies/gitkraft/commit/1a77b75122e9784c819e3c15ea5126b304533c25))
+- Chamfered Dodai panels in the GUI (dodai-iced), and gitkraft-web --demo with made-up data and screenshots ([`5254d39`](https://github.com/sorinirimies/gitkraft/commit/5254d392442d3f5baa12cec1b4eb58b9270e3b86))
+- **gui:** Remaining radii follow the Dodai shape; docs: 105 themes ([`39b63f8`](https://github.com/sorinirimies/gitkraft/commit/39b63f89d5fe54d1f84537cb85c9d3ac1d4ea266))
+- Dodai shape in the GUI, glow at 0.15, and self-hosted forges on http or another port (accounts.toml url) ([`0dd9d2d`](https://github.com/sorinirimies/gitkraft/commit/0dd9d2dfebd88057f42e71da05cfbb9542900b2c))
+- **web:** Dodai design system themes with a live theme picker; themed calendar; shape, glow and fonts from dodai-topcoat ([`6accf3c`](https://github.com/sorinirimies/gitkraft/commit/6accf3cfe128ce6484c0ddf634c1952e3c530c5e))
+- AppImage and Flatpak login entry, per-distro tray hints incl. GNOME on Arch and COSMIC ([`17a0f28`](https://github.com/sorinirimies/gitkraft/commit/17a0f28d51a8dc81fb522af8bc13e6c32fbb0ce8))
+- Tray icon and menu, start at login, and one-instance agent schedule lease ([`f404847`](https://github.com/sorinirimies/gitkraft/commit/f40484731f1de9378f44137afda11b466a526c09))
+- Open pull requests, issues, CI runs and notifications in the browser (TUI b, GUI button, web link) ([`39f6100`](https://github.com/sorinirimies/gitkraft/commit/39f6100f08abc7987cf36b6582a9d5b9f0edcf90))
+
+### 🐛 Bug fixes
+
+- **demo:** A calendar day in the demo opens with what was done that day (the fake GraphQL answered every query with the calendar) ([`04918ae`](https://github.com/sorinirimies/gitkraft/commit/04918aedf0dedc02e6a70d03e3686f93059440b7))
+- **tray:** Use as_chunks for RGBA→ARGB (clippy chunks_exact_to_as_chunks) ([`652577f`](https://github.com/sorinirimies/gitkraft/commit/652577fac21df302923abd089a87240861f0aedc))
+- **gui:** Drop an unreachable match arm ([`8b03fb5`](https://github.com/sorinirimies/gitkraft/commit/8b03fb594340328cd4d372b9cf4f9ef30aa72b3d))
+
+### ⚡ Performance
+
+- **gui:** Draw only the visible lines of a CI log, cap file preview at 5 MB; perf(web): lazy-render log lines ([`eef8979`](https://github.com/sorinirimies/gitkraft/commit/eef8979d176d14255606025f8c65744fc68cb527))
+- Drain terminal events before drawing, system theme read off the UI thread, async git watcher and ticks in the GUI, allocation-free theme lookup ([`cda35e8`](https://github.com/sorinirimies/gitkraft/commit/cda35e8bc2cf1c2b9f65f6bc3985153cdb0645bc))
+
+### 🧪 Tests
+
+- **gui:** Pin the theme instead of reading the saved settings ([`8d386f7`](https://github.com/sorinirimies/gitkraft/commit/8d386f74efef6e9b01e29493b46759e1784b04ff))
+
+### 🔧 Chores
+
+- **flatpak:** 25.08 runtime, richer AppStream metadata and 1.6.0 release entry, submission notes ([`2bfe2c8`](https://github.com/sorinirimies/gitkraft/commit/2bfe2c800ad7101512f1bbf114f32580d0251299))
+- **packaging:** Tray permissions for Flatpak and Snap, sandbox-safe tray name, AppStream keywords ([`0fafadf`](https://github.com/sorinirimies/gitkraft/commit/0fafadf91f60ddec297f52a680888e7629530d17))
+- **deny:** Ignore the chrono unmaintained notice (RUSTSEC-2026-0543) ([`5283235`](https://github.com/sorinirimies/gitkraft/commit/52832355fed8c2640d169b2d53acf7621e18d9b9))
+
+## [1.5.0](https://github.com/sorinirimies/gitkraft/compare/v1.4.1...v1.5.0) — 2026-11-18
 
 ### ✨ Features
 
@@ -97,6 +132,8 @@ All notable changes to this project are documented here. It is generated from
 
 ### 📦 Dependencies
 
+- Nightly cargo update 2026-11-18 ([`3e6cadf`](https://github.com/sorinirimies/gitkraft/commit/3e6cadf211de558cd47d1e090a7362a19402c84d))
+- Nightly cargo update 2026-11-17 ([`82e2abb`](https://github.com/sorinirimies/gitkraft/commit/82e2abbc90ad4df2469a1d1d62ad1ead9b325838))
 - Nightly cargo update 2026-11-16 ([`d36dfce`](https://github.com/sorinirimies/gitkraft/commit/d36dfce73cdb09750420148094631b4cba687e08))
 - Nightly cargo update 2026-11-15 ([`98a7de2`](https://github.com/sorinirimies/gitkraft/commit/98a7de286a0bcfec81ae757636266a507ac8b82b))
 - Nightly cargo update 2026-11-14 ([`a7b2a21`](https://github.com/sorinirimies/gitkraft/commit/a7b2a21ce2e20fcb2e99bcd8670eae4b1a3eebfa))
