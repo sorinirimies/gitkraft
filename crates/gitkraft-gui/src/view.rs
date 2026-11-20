@@ -41,7 +41,7 @@ use crate::widgets;
 impl GitKraft {
     /// Top-level view — called by the Iced runtime on every frame.
     pub fn view(&self) -> Element<'_, Message> {
-        if self.hub.is_some() {
+        if self.hub.is_some() && !self.hub_hidden {
             return features::hub::view::view(self);
         }
         let c = self.colors();

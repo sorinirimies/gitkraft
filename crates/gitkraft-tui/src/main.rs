@@ -29,6 +29,10 @@ fn run_command(cmd: Cmd) -> anyhow::Result<()> {
             let c = gitkraft_tui::notify_cli::parse(&args).unwrap_or_else(|e| usage(e));
             print(gitkraft_tui::notify_cli::run(c))
         }
+        Cmd::Autostart { args } => {
+            let c = gitkraft_tui::autostart_cli::parse(&args).unwrap_or_else(|e| usage(e));
+            print(gitkraft_tui::autostart_cli::run(c))
+        }
         Cmd::Agents { args } => {
             let cli = gitkraft_tui::agents_cli::parse(&args).unwrap_or_else(|e| usage(e));
             let rt = tokio::runtime::Builder::new_multi_thread()

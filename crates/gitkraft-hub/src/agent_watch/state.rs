@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use super::{AgentWatch, Job, Report, Store, due, local, next_run};
+use super::{AgentWatch, Job, Lease, Report, Store, due, local, next_run};
 use chrono::NaiveDateTime;
 use gitkraft_platforms::model::RepoInfo;
 
@@ -56,6 +56,8 @@ pub struct AgentsState {
     pub auto: bool,
     /// Last time the scheduler looked at the clock.
     pub last_tick: Option<Instant>,
+    /// The right to run the schedule (see [`Lease`]); only this instance starts due jobs.
+    pub lease: Option<Lease>,
     /// Newest reports per job, newest first.
     pub history: BTreeMap<String, Vec<Report>>,
 }
@@ -77,6 +79,7 @@ impl Default for AgentsState {
             running: None,
             auto: true,
             last_tick: None,
+            lease: None,
             history: BTreeMap::new(),
         }
     }
@@ -180,7 +183,7 @@ impl AgentsState {
     /// The first enabled job that is owed a run at `now`, when the scheduler may start one.
     #[must_use]
     pub fn owed(&self, now: NaiveDateTime) -> Option<String> {
-        if !self.auto || self.running.is_some() {
+        if !self.auto || self.running.is_some() || self.lease.is_none() {
             return None;
         }
         let store = self.store.as_ref()?;
@@ -193,7 +196,26 @@ impl AgentsState {
             return false;
         }
         self.last_tick = Some(at);
+        self.refresh_lease();
         true
+    }
+
+    /// Renews the schedule lease, or tries to take it when another instance let it go.
+    pub fn refresh_lease(&mut self) {
+        let Some(store) = &self.store else {
+            self.lease = None;
+            return;
+        };
+        if self.lease.as_ref().is_some_and(Lease::renew) {
+            return;
+        }
+        self.lease = Lease::acquire(store.dir());
+    }
+
+    /// Does this instance run the schedule (rather than another open GitKraft)?
+    #[must_use]
+    pub fn runs_schedule(&self) -> bool {
+        self.lease.is_some()
     }
 
     /// Moves the job selection.
@@ -724,7 +746,20 @@ mod tests {
         let mut s = state(&tmp);
         s.add_job("j").expect("add");
         let now = NaiveDateTime::parse_from_str("2026-03-03 09:00", "%Y-%m-%d %H:%M").expect("t");
+        assert!(
+            s.owed(now).is_none(),
+            "no lease yet: not this instance's to run"
+        );
+        s.refresh_lease();
+        assert!(s.runs_schedule());
         assert_eq!(s.owed(now).as_deref(), Some("j"), "never ran: owed");
+        let mut other = state(&tmp);
+        other.add_job("j").ok();
+        other.refresh_lease();
+        assert!(
+            !other.runs_schedule() && other.owed(now).is_none(),
+            "a second instance on the same data does not run the schedule"
+        );
         s.running = Some("j".into());
         assert!(s.owed(now).is_none(), "one run at a time");
         s.running = None;

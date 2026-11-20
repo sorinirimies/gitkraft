@@ -12,34 +12,155 @@ use crate::macros::StringErr;
 use crate::message::Message;
 use crate::state::GitKraft;
 
+/// Brings the window back and to the front.
+fn show_window() -> Task<Message> {
+    iced::window::oldest().and_then(|id| {
+        iced::window::set_mode(id, iced::window::Mode::Windowed)
+            .chain(iced::window::minimize(id, false))
+            .chain(iced::window::gain_focus(id))
+    })
+}
+
+/// Hides the window; the app keeps running in the tray.
+fn hide_window() -> Task<Message> {
+    iced::window::oldest().and_then(|id| iced::window::set_mode(id, iced::window::Mode::Hidden))
+}
+
 impl GitKraft {
+    /// Brings the hub up (and shows it unless `hidden`).
+    fn open_hub(&mut self, hidden: bool) -> Task<Message> {
+        if self.hub.is_some() {
+            self.hub_hidden = hidden;
+            return Task::none();
+        }
+        let tabs: Vec<(Option<std::path::PathBuf>, Vec<String>)> = self
+            .tabs
+            .iter()
+            .map(|t| {
+                (
+                    t.repo_path.clone(),
+                    t.remotes.iter().filter_map(|r| r.url.clone()).collect(),
+                )
+            })
+            .collect();
+        let (state, task) = crate::features::hub::HubState::open(tabs);
+        self.hub = Some(Box::new(state));
+        self.hub_hidden = hidden;
+        task.map(Message::Hub)
+    }
+
+    /// What the tray menu shows now.
+    #[must_use]
+    pub fn tray_info(&self) -> crate::tray::TrayInfo {
+        let agents = self.hub.as_ref().map(|h| &h.agents);
+        crate::tray::TrayInfo {
+            runs_schedule: agents.is_some_and(|a| a.runs_schedule()),
+            hub_up: self.hub.is_some(),
+            jobs: agents.map_or(0, |a| a.cfg.jobs.iter().filter(|j| j.enabled).count()),
+            unseen: agents.map_or(0, |a| a.unseen()),
+            autostart: self.autostart,
+            close_to_tray: self.close_to_tray,
+        }
+    }
+
+    fn refresh_tray(&mut self) -> Task<Message> {
+        if !self.tray_icon {
+            return Task::none();
+        }
+        let info = self.tray_info();
+        if self.tray_on {
+            crate::tray::update(&info);
+            return Task::none();
+        }
+        self.tray_on = crate::tray::start(&info);
+        if !self.tray_on && self.background {
+            // Hidden with no tray to bring it back would strand the user.
+            self.background = false;
+            return show_window();
+        }
+        Task::none()
+    }
+
+    fn tray_command(&mut self, command: crate::tray::TrayCommand) -> Task<Message> {
+        use crate::tray::TrayCommand as C;
+        match command {
+            C::Show => show_window(),
+            C::ShowHub => Task::batch([self.open_hub(false), show_window()]),
+            C::RunAgents => {
+                let job = self
+                    .hub
+                    .as_ref()
+                    .and_then(|h| h.agents.cfg.jobs.iter().find(|j| j.enabled))
+                    .map(|j| j.name.clone());
+                match job {
+                    Some(name) => self.update(Message::Hub(
+                        crate::features::hub::HubMessage::AgentRun(name),
+                    )),
+                    None => Task::none(),
+                }
+            }
+            C::ToggleAutostart => {
+                self.set_autostart(!self.autostart);
+                self.refresh_tray()
+            }
+            C::ToggleCloseToTray => {
+                self.close_to_tray = !self.close_to_tray;
+                if !cfg!(test) {
+                    let v = self.close_to_tray;
+                    let _ = gitkraft_core::features::persistence::ops::update_settings(|s| {
+                        s.close_to_tray = v;
+                    });
+                }
+                self.refresh_tray()
+            }
+            C::Quit => iced::exit(),
+        }
+    }
+
+    /// Turns the login entry on or off and remembers the choice.
+    fn set_autostart(&mut self, on: bool) {
+        if cfg!(test) {
+            self.autostart = on;
+            return;
+        }
+        let exe = gitkraft_core::features::autostart::gui_executable();
+        match gitkraft_core::features::autostart::set_enabled(on, &exe) {
+            Ok(()) => {
+                self.autostart = on;
+                let _ = gitkraft_core::features::persistence::ops::update_settings(|s| {
+                    s.autostart = on;
+                });
+            }
+            Err(e) => tracing::warn!("autostart: {e}"),
+        }
+    }
+
     /// The single entry-point for all application updates. Iced calls this
     /// whenever a [`Message`] is produced (by user interaction or an async
     /// task completing).
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match &message {
             // ── Hub ───────────────────────────────────────────────────────
-            Message::Hub(crate::features::hub::HubMessage::Open) => {
-                if self.hub.is_none() {
-                    let tabs: Vec<(Option<std::path::PathBuf>, Vec<String>)> = self
-                        .tabs
-                        .iter()
-                        .map(|t| {
-                            (
-                                t.repo_path.clone(),
-                                t.remotes.iter().filter_map(|r| r.url.clone()).collect(),
-                            )
-                        })
-                        .collect();
-                    let (state, task) = crate::features::hub::HubState::open(tabs);
-                    self.hub = Some(Box::new(state));
-                    return task.map(Message::Hub);
+            Message::Hub(crate::features::hub::HubMessage::Open) => self.open_hub(false),
+            Message::Hub(crate::features::hub::HubMessage::Close) => {
+                // With a tray the hub keeps running behind the main screen: its scheduler is
+                // the one that runs the daily agent jobs.
+                if self.tray_on {
+                    self.hub_hidden = true;
+                } else {
+                    self.hub = None;
                 }
                 Task::none()
             }
-            Message::Hub(crate::features::hub::HubMessage::Close) => {
-                self.hub = None;
-                Task::none()
+            Message::BackgroundStart => self.open_hub(true),
+            Message::TrayRefresh => self.refresh_tray(),
+            Message::Tray(command) => self.tray_command(*command),
+            Message::CloseRequested => {
+                if self.tray_on && self.close_to_tray {
+                    hide_window()
+                } else {
+                    iced::exit()
+                }
             }
             Message::Hub(m) => match self.hub.as_mut() {
                 Some(hub) => {
@@ -1595,5 +1716,45 @@ impl GitKraft {
                 )
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tray_tests {
+    use super::*;
+    use crate::features::hub::{HubMessage, HubState};
+    use gitkraft_settings::dashboard::Dashboard;
+
+    fn app_with_hub() -> GitKraft {
+        let mut app = GitKraft::new();
+        app.hub = Some(Box::new(HubState::detached(Dashboard { sections: vec![] })));
+        app
+    }
+
+    #[test]
+    fn closing_the_hub_keeps_it_running_only_when_there_is_a_tray() {
+        let mut app = app_with_hub();
+        app.tray_on = true;
+        let _ = app.update(Message::Hub(HubMessage::Close));
+        assert!(app.hub.is_some() && app.hub_hidden, "scheduler stays alive");
+        let _ = app.update(Message::Hub(HubMessage::Open));
+        assert!(!app.hub_hidden, "opening shows it again");
+        app.tray_on = false;
+        let _ = app.update(Message::Hub(HubMessage::Close));
+        assert!(app.hub.is_none(), "without a tray the hub is dropped");
+    }
+
+    #[test]
+    fn the_tray_menu_describes_the_hub_and_flips_the_settings() {
+        let mut app = GitKraft::new();
+        app.editor = gitkraft_core::Editor::None;
+        let info = app.tray_info();
+        assert!(!info.hub_up && !info.runs_schedule && info.jobs == 0);
+        let (autostart, close) = (app.autostart, app.close_to_tray);
+        let _ = app.update(Message::Tray(crate::tray::TrayCommand::ToggleAutostart));
+        let _ = app.update(Message::Tray(crate::tray::TrayCommand::ToggleCloseToTray));
+        assert_eq!(app.autostart, !autostart);
+        assert_eq!(app.close_to_tray, !close);
+        assert_eq!(app.tray_info().autostart, !autostart);
     }
 }

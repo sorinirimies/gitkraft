@@ -12,6 +12,7 @@ pub mod layout;
 pub mod message;
 pub mod state;
 pub mod theme;
+pub mod tray;
 pub mod update;
 pub mod view;
 pub mod view_utils;

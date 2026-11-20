@@ -1,6 +1,15 @@
 use gitkraft_gui::GitKraft;
 use iced::Settings;
 
+/// Set once in `main`: the window starts hidden, in the tray.
+static BACKGROUND: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The clicks on the tray menu.
+fn tray_stream() -> impl futures::Stream<Item = gitkraft_gui::Message> {
+    use futures::StreamExt;
+    gitkraft_gui::tray::commands().map(gitkraft_gui::Message::Tray)
+}
+
 fn main() -> iced::Result {
     tracing_subscriber::fmt::init();
 
@@ -24,6 +33,19 @@ fn main() -> iced::Result {
         }
         _ => iced::window::Position::Default,
     };
+
+    // Started at login: begin in the tray, with no window, when there is a tray to come back from.
+    let background =
+        std::env::args().any(|a| a == gitkraft_core::features::autostart::BACKGROUND_ARG);
+    let tray_icon = gitkraft_core::features::persistence::ops::load_settings()
+        .map(|s| s.tray_icon)
+        .unwrap_or(true);
+    let start_hidden = background && tray_icon;
+    BACKGROUND.store(start_hidden, std::sync::atomic::Ordering::Relaxed);
+    let mut window_settings = gitkraft_gui::window::settings(window_size, window_position);
+    window_settings.visible = !start_hidden;
+    // Closing is handled by the app: it hides to the tray or quits.
+    window_settings.exit_on_close_request = false;
 
     iced::application(boot, GitKraft::update, GitKraft::view)
         .title("GitKraft — Git IDE")
@@ -102,7 +124,18 @@ fn main() -> iced::Result {
             } else {
                 iced::Subscription::none()
             };
+            let tray = if state.tray_icon {
+                iced::Subscription::batch([
+                    iced::Subscription::run(tray_stream),
+                    iced::time::every(std::time::Duration::from_secs(5))
+                        .map(|_| gitkraft_gui::Message::TrayRefresh),
+                ])
+            } else {
+                iced::Subscription::none()
+            };
             iced::Subscription::batch([
+                iced::window::close_requests().map(|_| gitkraft_gui::Message::CloseRequested),
+                tray,
                 keyboard,
                 git_watcher,
                 animation_ticker,
@@ -116,13 +149,25 @@ fn main() -> iced::Result {
             default_text_size: iced::Pixels(13.0),
             ..Default::default()
         })
-        .window(gitkraft_gui::window::settings(window_size, window_position))
+        .window(window_settings)
         .run()
 }
 
 /// Boot function — initializes application state and returns startup tasks.
 fn boot() -> (GitKraft, iced::Task<gitkraft_gui::Message>) {
     let (mut state, open_tabs) = GitKraft::new_with_session_paths();
+    let background = BACKGROUND.load(std::sync::atomic::Ordering::Relaxed);
+    state.background = background;
+    // The first look at the tray, and (when started at login) the hub behind the hidden window,
+    // so the daily agent schedule runs without anybody opening anything.
+    let tray_task = iced::Task::batch([
+        iced::Task::done(gitkraft_gui::Message::TrayRefresh),
+        if background {
+            iced::Task::done(gitkraft_gui::Message::BackgroundStart)
+        } else {
+            iced::Task::none()
+        },
+    ]);
 
     let maximize_task: iced::Task<gitkraft_gui::Message> =
         iced::window::oldest().and_then(|id| iced::window::maximize(id, true));
@@ -151,7 +196,12 @@ fn boot() -> (GitKraft, iced::Task<gitkraft_gui::Message>) {
 
     (
         state,
-        iced::Task::batch([maximize_task, gitkraft_gui::window::setup(), restore_task]),
+        iced::Task::batch([
+            maximize_task,
+            gitkraft_gui::window::setup(),
+            restore_task,
+            tray_task,
+        ]),
     )
 }
 

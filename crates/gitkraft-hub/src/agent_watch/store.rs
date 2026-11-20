@@ -107,6 +107,63 @@ impl Drop for Lock {
     }
 }
 
+/// How long a lease survives without being renewed (a crashed instance's is then taken over).
+pub const LEASE_STALE: std::time::Duration = std::time::Duration::from_secs(90);
+
+/// The right to run the schedule: one running GitKraft instance holds it, so two open windows
+/// (or the TUI beside the GUI) never both start the same daily job. It is renewed on every tick
+/// and released when the instance goes away.
+#[derive(Debug)]
+pub struct Lease {
+    path: PathBuf,
+    token: String,
+}
+
+impl Lease {
+    fn token() -> String {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        format!("{}-{nanos}", std::process::id())
+    }
+
+    /// Takes the lease in `dir`; `None` while another live instance holds it.
+    #[must_use]
+    pub fn acquire(dir: &Path) -> Option<Self> {
+        std::fs::create_dir_all(dir).ok()?;
+        let path = dir.join("scheduler.lease");
+        let fresh = std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age < LEASE_STALE);
+        if fresh {
+            return None;
+        }
+        let token = Self::token();
+        std::fs::write(&path, &token).ok()?;
+        // Two instances may have written at once: the last writer is the one the file names.
+        (std::fs::read_to_string(&path).ok()? == token).then_some(Self { path, token })
+    }
+
+    /// Keeps the lease alive; `false` when somebody else has taken it.
+    pub fn renew(&self) -> bool {
+        if std::fs::read_to_string(&self.path).is_ok_and(|t| t == self.token) {
+            std::fs::write(&self.path, &self.token).is_ok()
+        } else {
+            false
+        }
+    }
+}
+
+impl Drop for Lease {
+    fn drop(&mut self) {
+        if std::fs::read_to_string(&self.path).is_ok_and(|t| t == self.token) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
 /// The report folder.
 #[derive(Debug, Clone)]
 pub struct Store {
@@ -276,6 +333,26 @@ mod tests {
         assert_eq!(r[0].findings.len(), 2, "newest first");
         assert!(tmp.path().join("ci____x").is_dir());
         assert!(r[0].markdown().contains("h/o/r w0 u") && r[0].markdown().contains("because"));
+    }
+
+    #[test]
+    fn one_instance_holds_the_schedule_and_another_takes_over_when_it_goes() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let first = Lease::acquire(tmp.path()).expect("free");
+        assert!(first.renew());
+        assert!(Lease::acquire(tmp.path()).is_none(), "held and fresh");
+        drop(first);
+        let second = Lease::acquire(tmp.path()).expect("released on drop");
+        // a crashed instance leaves an old file behind
+        let old = std::time::SystemTime::now() - LEASE_STALE - std::time::Duration::from_secs(5);
+        std::fs::File::options()
+            .write(true)
+            .open(tmp.path().join("scheduler.lease"))
+            .and_then(|f| f.set_modified(old))
+            .expect("age it");
+        let third = Lease::acquire(tmp.path()).expect("stale: taken over");
+        assert!(!second.renew(), "the old holder learns it lost it");
+        assert!(third.renew());
     }
 
     #[test]

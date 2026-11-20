@@ -339,6 +339,7 @@ impl Session {
     pub fn agent_owed(&self) -> Option<String> {
         self.with_agents(|a| {
             a.reload();
+            a.refresh_lease();
             if !a.auto || a.running.is_some() {
                 return None;
             }

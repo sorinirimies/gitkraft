@@ -58,6 +58,12 @@ pub enum Cmd {
         #[arg(num_args = 0.., trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Start the GitKraft window app, in the tray, when you log in (`autostart on|off|status`).
+    Autostart {
+        /// `status`, `on` or `off`.
+        #[arg(num_args = 0.., trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Scheduled agents that watch the CI of the projects you pick (`agents --help`).
     Agents {
         /// Arguments of the agents command.

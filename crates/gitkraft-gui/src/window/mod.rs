@@ -54,6 +54,12 @@ const WINDOW_ICON_RGBA: &[u8] = include_bytes!("../../assets/gitkraft-128.rgba")
 #[cfg(target_os = "macos")]
 const DOCK_ICON_PNG: &[u8] = include_bytes!("../../assets/gitkraft-macos-512.png");
 
+/// The app icon as raw RGBA and its edge length, for the tray.
+#[must_use]
+pub fn icon_rgba() -> (&'static [u8], u32) {
+    (WINDOW_ICON_RGBA, WINDOW_ICON_SIZE)
+}
+
 /// The app icon for the window; `None` only if the embedded pixels were malformed.
 #[must_use]
 pub fn icon() -> Option<iced::window::Icon> {

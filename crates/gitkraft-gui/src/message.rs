@@ -38,6 +38,16 @@ pub enum Message {
     /// A message of the hub screen.
     Hub(crate::features::hub::HubMessage),
 
+    // ── Tray and background ───────────────────────────────────────────────
+    /// A click on the tray menu.
+    Tray(crate::tray::TrayCommand),
+    /// Put the icon in the tray if it is not there, and show the menu the current state.
+    TrayRefresh,
+    /// The window was asked to close.
+    CloseRequested,
+    /// Started at login: bring the hub up behind the hidden window so the schedule runs.
+    BackgroundStart,
+
     // ── Tabs ──────────────────────────────────────────────────────────────
     /// User clicked a tab in the tab bar.
     SwitchTab(usize),

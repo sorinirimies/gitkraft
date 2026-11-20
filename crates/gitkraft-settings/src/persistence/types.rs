@@ -72,6 +72,19 @@ pub struct AppSettings {
     /// Skip UI animations (menus open instantly).
     #[serde(default)]
     pub reduced_motion: bool,
+    /// Start GitKraft (in the tray) when the user logs in.
+    #[serde(default)]
+    pub autostart: bool,
+    /// Show the tray / menu bar icon while the window app runs.
+    #[serde(default = "yes")]
+    pub tray_icon: bool,
+    /// Closing the window hides it to the tray (the schedule and notifications keep running).
+    #[serde(default)]
+    pub close_to_tray: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 fn default_max_recent() -> usize {
@@ -90,6 +103,9 @@ impl Default for AppSettings {
             open_tabs: Vec::new(),
             active_tab_index: 0,
             reduced_motion: false,
+            autostart: false,
+            tray_icon: true,
+            close_to_tray: false,
         }
     }
 }

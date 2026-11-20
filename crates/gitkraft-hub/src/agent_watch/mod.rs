@@ -24,7 +24,7 @@ pub use scan::{Finding, FindingKind, Scan};
 pub use schedule::Schedule;
 pub use select::{Selector, Visibility};
 pub use state::{AgentAction, AgentsState, Flag, Pane};
-pub use store::{Report, Store};
+pub use store::{Lease, Report, Store};
 
 /// The local wall-clock time of `t`, what schedules are written in.
 #[must_use]

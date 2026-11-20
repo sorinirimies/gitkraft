@@ -13,6 +13,7 @@ pub mod ai_cli;
 pub mod anim;
 pub mod app;
 pub mod auth_cli;
+pub mod autostart_cli;
 pub mod cli;
 pub mod clone_cli;
 pub mod events;

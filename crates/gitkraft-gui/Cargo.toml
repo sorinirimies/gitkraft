@@ -33,6 +33,7 @@ iced       = { workspace = true }
 iced_fonts = { workspace = true }
 rfd        = { workspace = true }
 futures       = { workspace = true }
+tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # macOS: winit builds a menu bar with only the application menu, so the system's window
@@ -43,6 +44,15 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 objc2            = "0.6"
 objc2-app-kit    = { version = "0.3", features = ["NSApplication", "NSImage", "NSMenu", "NSMenuItem", "NSResponder"] }
 objc2-foundation = { version = "0.3", features = ["NSData", "NSString", "NSObject"] }
+
+# The tray / menu bar icon. macOS and Windows use `tray-icon` (its menu comes from `muda`);
+# Linux speaks the StatusNotifierItem D-Bus protocol itself with `ksni`, so no GTK or
+# libappindicator is needed to build or run.
+[target.'cfg(any(target_os = "macos", windows))'.dependencies]
+tray-icon = { version = "0.21", default-features = false }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ksni = { version = "0.3", default-features = false, features = ["tokio"] }
 
 # Windows: `build.rs` embeds assets/gitkraft.ico into gitkraft.exe (Explorer, shortcuts).
 [target.'cfg(windows)'.build-dependencies]

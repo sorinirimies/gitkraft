@@ -579,6 +579,20 @@ pub struct GitKraft {
     pub show_about: bool,
     /// The hub screen (pull requests, issues, CI, pulse), when open.
     pub hub: Option<Box<crate::features::hub::HubState>>,
+    /// The hub keeps running (its scheduler too) but the main screen is shown.
+    pub hub_hidden: bool,
+
+    // ── Tray and background ───────────────────────────────────────────────
+    /// Start GitKraft at login (mirrors the login entry).
+    pub autostart: bool,
+    /// Show the tray icon.
+    pub tray_icon: bool,
+    /// Closing the window hides it to the tray.
+    pub close_to_tray: bool,
+    /// The tray icon exists.
+    pub tray_on: bool,
+    /// Started with `--background`: the window begins hidden.
+    pub background: bool,
 
     // ── Search ────────────────────────────────────────────────────────────
     /// Whether the search overlay is visible.
@@ -640,6 +654,11 @@ impl GitKraft {
     fn from_settings(settings: gitkraft_core::AppSettings) -> Self {
         let follow_system = settings.follow_system_theme();
         let current_theme_index = settings.theme_index();
+        let (autostart, tray_icon, close_to_tray) = (
+            settings.autostart,
+            settings.tray_icon,
+            settings.close_to_tray,
+        );
 
         let recent_repos = settings.recent_repos;
 
@@ -701,6 +720,12 @@ impl GitKraft {
 
             show_about: false,
             hub: None,
+            hub_hidden: false,
+            autostart,
+            tray_icon,
+            close_to_tray,
+            tray_on: false,
+            background: false,
             search_visible: false,
             search_query: String::new(),
             search_results: Vec::new(),
