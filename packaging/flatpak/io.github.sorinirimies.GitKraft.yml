@@ -4,7 +4,7 @@
 # scripts/ci/update_flathub.nu.
 app-id: io.github.sorinirimies.GitKraft
 runtime: org.freedesktop.Platform
-runtime-version: '24.08'
+runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
@@ -41,6 +41,6 @@ modules:
     sources:
       - type: git
         url: https://github.com/sorinirimies/gitkraft.git
-        tag: v1.2.1
+        tag: v1.6.0
         commit: 0000000000000000000000000000000000000000
       - cargo-sources.json

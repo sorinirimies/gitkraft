@@ -4,17 +4,36 @@
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
   <name>GitKraft</name>
-  <summary>Git IDE written entirely in Rust</summary>
+  <summary>Git client and forge dashboard</summary>
   <description>
-    <p>GitKraft is a fast, native Git client: browse history, stage and commit changes, manage branches, stashes and remotes, and inspect diffs.</p>
+    <p>GitKraft is a native Git client written in Rust. Browse history, stage and commit changes, manage branches, stashes and remotes, and inspect diffs.</p>
+    <p>It also talks to GitHub, GitLab, Gitea, Forgejo and Codeberg, so most of what you would open a web dashboard for is in one window:</p>
+    <ul>
+      <li>Pull requests and issues across your repositories, with review, merge and labels</li>
+      <li>Notifications in one inbox, with desktop alerts</li>
+      <li>CI runs, jobs and logs with search, plus re-run and cancel</li>
+      <li>Activity and contribution graphs</li>
+      <li>More than 100 colour themes, light and dark</li>
+    </ul>
+    <p>Optional AI helpers only write drafts for you to review, and only when you switch them on. Access tokens stay in your system keyring or environment, never in a config file.</p>
   </description>
   <launchable type="desktop-id">io.github.sorinirimies.GitKraft.desktop</launchable>
   <url type="homepage">https://github.com/sorinirimies/gitkraft</url>
   <url type="bugtracker">https://github.com/sorinirimies/gitkraft/issues</url>
+  <url type="vcs-browser">https://github.com/sorinirimies/gitkraft</url>
   <developer id="io.github.sorinirimies"><name>Sorin Irimies</name></developer>
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/sorinirimies/gitkraft/main/docs/screenshots/gui-main.png</image>
+      <image>https://raw.githubusercontent.com/sorinirimies/gitkraft/v1.6.0/docs/screenshots/gui-main.png</image>
+      <caption>Commit history and working tree</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/sorinirimies/gitkraft/v1.6.0/docs/screenshots/gui-diff.png</image>
+      <caption>Diff view</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/sorinirimies/gitkraft/v1.6.0/docs/screenshots/gui-theme.png</image>
+      <caption>Theme picker</caption>
     </screenshot>
   </screenshots>
   <content_rating type="oars-1.1"/>
@@ -26,11 +45,17 @@
     <keyword>git</keyword>
     <keyword>github</keyword>
     <keyword>gitlab</keyword>
+    <keyword>gitea</keyword>
     <keyword>pull requests</keyword>
     <keyword>ci</keyword>
   </keywords>
   <provides><binary>gitkraft</binary></provides>
+  <supports><control>keyboard</control><control>pointing</control></supports>
   <releases>
-    <release version="1.2.1" date="2025-01-01"/>
+    <release version="1.6.0" date="2026-11-20">
+      <description>
+        <p>Tray icon and start at login, Dodai design themes, self-hosted forges on any port, CI log search, and a faster log viewer.</p>
+      </description>
+    </release>
   </releases>
 </component>
