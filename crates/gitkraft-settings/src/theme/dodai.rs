@@ -284,18 +284,16 @@ mod tests {
     fn every_dodai_theme_has_readable_text_and_a_matching_mode() {
         let lum =
             |c: Rgb| 0.2126 * f32::from(c.r) + 0.7152 * f32::from(c.g) + 0.0722 * f32::from(c.b);
-        for i in DODAI_FIRST..THEME_COUNT {
+        for (i, name) in THEME_NAMES.iter().enumerate().skip(DODAI_FIRST) {
             let t = theme_by_index(i);
-            assert_eq!(lum(t.background) < 128.0, t.is_dark, "{}", THEME_NAMES[i]);
+            assert_eq!(lum(t.background) < 128.0, t.is_dark, "{name}");
             assert!(
                 (lum(t.text_primary) - lum(t.background)).abs() > 100.0,
-                "{}",
-                THEME_NAMES[i]
+                "{name}"
             );
             assert!(
-                contrast(t.accent, t.background) >= 2.2,
-                "{} {:.2}",
-                THEME_NAMES[i],
+                contrast(t.accent, t.background) >= 3.0,
+                "{name} {:.2}",
                 contrast(t.accent, t.background)
             );
         }

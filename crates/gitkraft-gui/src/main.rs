@@ -107,12 +107,14 @@ fn main() -> iced::Result {
             // at rest.
             let any_loading = state.tabs.iter().any(|t| t.is_loading);
             let animation_ticker = if any_loading {
-                iced::Subscription::run(animation_tick_stream)
+                iced::time::every(std::time::Duration::from_millis(100))
+                    .map(|_| gitkraft_gui::Message::AnimationTick)
             } else {
                 iced::Subscription::none()
             };
             let system_theme = if state.follow_system {
-                iced::Subscription::run(system_theme_stream)
+                iced::time::every(std::time::Duration::from_secs(3))
+                    .map(|_| gitkraft_gui::Message::SystemThemeTick)
             } else {
                 iced::Subscription::none()
             };
@@ -239,49 +241,25 @@ fn git_watch_builder(
 
 /// Stream that emits `FileSystemChanged` whenever the `.git` directory changes.
 ///
-/// Uses `spawn_git_watcher` from core (debounced, fallback poll) and a
-/// blocking `mpsc::Receiver` — no spin-wait, zero CPU overhead when idle.
+/// Uses `spawn_git_watcher` from core (debounced, fallback poll). The watcher thread feeds an
+/// async channel, so waiting for it never holds a runtime worker (a blocking `recv()` did, for
+/// as long as a repository was open).
 fn git_watch_stream(
     repo_path: std::path::PathBuf,
 ) -> impl futures::Stream<Item = gitkraft_gui::Message> {
-    use std::sync::mpsc;
+    use futures::StreamExt;
 
-    let (tx, rx) = mpsc::channel::<()>();
+    let (tx, rx) = futures::channel::mpsc::unbounded::<()>();
     let git_dir = repo_path.join(".git");
 
-    // Spawn the core watcher; the thread exits when tx.send() fails (rx dropped).
-    gitkraft_core::spawn_git_watcher(git_dir, move || tx.send(()).is_ok());
+    // The thread exits when the send fails (the stream was dropped).
+    gitkraft_core::spawn_git_watcher(git_dir, move || tx.unbounded_send(()).is_ok());
 
-    // The stream blocks on recv() — safe because iced runs each subscription
-    // on its own worker thread (same reasoning as the existing blocking sleep).
-    futures::stream::unfold(rx, |rx| async move {
-        // Block until the watcher signals a change or the sender is dropped.
-        match rx.recv() {
-            Ok(()) => Some((gitkraft_gui::Message::FileSystemChanged, rx)),
-            Err(_) => None, // watcher thread exited — end the stream
-        }
-    })
-}
-
-/// Blocking-sleep stream that emits `AnimationTick` at ~10 fps.
-///
-/// Runs on its own worker thread (same approach as [`git_watch_stream`]).
-/// Only subscribed while loading is in progress.
-fn animation_tick_stream() -> impl futures::Stream<Item = gitkraft_gui::Message> {
-    futures::stream::unfold((), |()| async {
-        // 100 ms ≈ 10 fps.  Blocking sleep is safe here — Iced runs each
-        // Subscription on its own thread-pool worker.
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        Some((gitkraft_gui::Message::AnimationTick, ()))
-    })
-}
-
-/// Emits [`gitkraft_gui::Message::SystemThemeTick`] every 3 s (only subscribed
-/// while the theme follows the system).
-fn system_theme_stream() -> impl futures::Stream<Item = gitkraft_gui::Message> {
-    futures::stream::unfold((), |()| async {
-        std::thread::sleep(std::time::Duration::from_secs(3));
-        Some((gitkraft_gui::Message::SystemThemeTick, ()))
+    futures::stream::unfold(rx, |mut rx| async move {
+        // Wait for a change; ends when the watcher thread is gone.
+        rx.next()
+            .await
+            .map(|()| (gitkraft_gui::Message::FileSystemChanged, rx))
     })
 }
 

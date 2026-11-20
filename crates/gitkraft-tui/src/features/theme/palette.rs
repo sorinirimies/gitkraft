@@ -79,7 +79,7 @@ pub fn index_by_name(name: &str) -> usize {
 
 /// Index of the theme matching the OS appearance (dark if undetectable).
 pub fn system_index() -> usize {
-    let dark = gitkraft_core::detect_system_dark().unwrap_or(true);
+    let dark = gitkraft_core::system_dark_cached().unwrap_or(true);
     index_by_name(if dark { "default" } else { "default-light" })
 }
 

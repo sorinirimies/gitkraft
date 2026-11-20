@@ -381,4 +381,34 @@ mod tests {
         click(&mut app, 0, 0);
         assert!(!app.menu.is_open(), "outside closes");
     }
+
+    /// Not a test: `cargo test -p gitkraft-tui --release -- --ignored --nocapture bench_main`
+    /// opens this very repository and prints what a frame of the main screen costs.
+    #[test]
+    #[ignore = "a measurement, not a check"]
+    fn bench_main_screen_frame() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut app = App::new();
+        app.open_repo(root);
+        let started = std::time::Instant::now();
+        while app.tab().is_loading && started.elapsed().as_secs() < 60 {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            app.poll_background();
+        }
+        println!(
+            "loaded {} commits in {:?}",
+            app.tab().commits.len(),
+            started.elapsed()
+        );
+        let mut term = Terminal::new(TestBackend::new(200, 55)).expect("terminal");
+        term.draw(|f| render(&mut app, f)).expect("warm up");
+        let n = 200;
+        let t = std::time::Instant::now();
+        for _ in 0..n {
+            term.draw(|f| render(&mut app, f)).expect("draw");
+        }
+        println!("main screen: {:?} per frame", t.elapsed() / n);
+    }
 }

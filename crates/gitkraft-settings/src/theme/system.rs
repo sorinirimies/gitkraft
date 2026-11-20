@@ -90,9 +90,48 @@ pub fn detect_system_dark() -> Option<bool> {
     }
 }
 
+/// 0 = not looked at yet, 1 = dark, 2 = light, 3 = cannot be told.
+static SYSTEM: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+static WATCHER: std::sync::Once = std::sync::Once::new();
+
+fn code(dark: Option<bool>) -> u8 {
+    match dark {
+        Some(true) => 1,
+        Some(false) => 2,
+        None => 3,
+    }
+}
+
+/// [`detect_system_dark`] without the wait: detecting runs a process (`defaults`, `reg`,
+/// `gsettings`) that takes 10 to 30 ms, which on the UI thread every few seconds is a visible
+/// hitch. The first call looks once, then a thread of its own looks again every 3 seconds and
+/// this only reads what it found.
+pub fn system_dark_cached() -> Option<bool> {
+    use std::sync::atomic::Ordering::Relaxed;
+    if cfg!(test) {
+        return detect_system_dark();
+    }
+    WATCHER.call_once(|| {
+        SYSTEM.store(code(detect_system_dark()), Relaxed);
+        let _ = std::thread::Builder::new()
+            .name("gitkraft-system-theme".into())
+            .spawn(|| {
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    SYSTEM.store(code(detect_system_dark()), Relaxed);
+                }
+            });
+    });
+    match SYSTEM.load(Relaxed) {
+        1 => Some(true),
+        2 => Some(false),
+        _ => None,
+    }
+}
+
 /// Preset index matching the current system appearance (dark if undetectable).
 pub fn current_system_theme_index() -> usize {
-    system_theme_index(detect_system_dark().unwrap_or(true))
+    system_theme_index(system_dark_cached().unwrap_or(true))
 }
 
 #[cfg(test)]

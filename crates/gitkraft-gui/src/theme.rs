@@ -214,18 +214,30 @@ impl ThemeColors {
     /// This keeps backward-compatibility for any code that still holds an
     /// `iced::Theme` value.
     pub fn from_theme(theme: &iced::Theme) -> Self {
-        THEME_CACHE.with(|cache| {
-            let mut cache = cache.borrow_mut();
-            let name = theme.to_string();
-            if let Some((ref cached_name, cached_colors)) = *cache
-                && *cached_name == name
-            {
-                return cached_colors;
-            }
-            let index = gitkraft_core::theme_index_by_name(&name);
-            let colors = Self::from_core(&gitkraft_core::theme_by_index(index)).with_design(index);
-            *cache = Some((name, colors));
-            colors
+        use std::fmt::Write;
+        // Every styled widget asks for these colours on every frame, so the lookup must not
+        // allocate: the name is written into a buffer that is reused, and compared with the
+        // last one resolved.
+        thread_local! {
+            static NAME: RefCell<String> = const { RefCell::new(String::new()) };
+        }
+        NAME.with(|name| {
+            let mut name = name.borrow_mut();
+            name.clear();
+            let _ = write!(name, "{theme}");
+            THEME_CACHE.with(|cache| {
+                let mut cache = cache.borrow_mut();
+                if let Some((cached_name, cached_colors)) = &*cache
+                    && *cached_name == *name
+                {
+                    return *cached_colors;
+                }
+                let index = gitkraft_core::theme_index_by_name(&name);
+                let colors =
+                    Self::from_core(&gitkraft_core::theme_by_index(index)).with_design(index);
+                *cache = Some((name.clone(), colors));
+                colors
+            })
         })
     }
 }
@@ -1047,7 +1059,6 @@ mod tests {
     }
 
     fn index_of(id: &str) -> usize {
-        gitkraft_core::design(0); // the module is reachable
         gitkraft_settings::theme::DODAI_FIRST
             + gitkraft_settings::theme::DODAI_IDS
                 .iter()

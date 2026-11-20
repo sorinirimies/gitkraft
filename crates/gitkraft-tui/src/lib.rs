@@ -197,27 +197,16 @@ where
         // results are picked up promptly and the loading indicator updates
         // without a noticeable lag.
         if event::poll(Duration::from_millis(33))? {
-            match event::read()? {
-                Event::Key(key) => {
-                    // Ignore key-release events on platforms that send them
-                    if key.kind == crossterm::event::KeyEventKind::Press {
-                        events::handle_key(&mut app, key);
-                    }
+            // Handle everything that is waiting, then draw once. With the mouse captured, motion
+            // events arrive by the dozen; drawing after each one made the screen trail behind
+            // the pointer and every key press wait for the redraws of the events before it.
+            let mut budget = 512;
+            loop {
+                handle_event(&mut app, event::read()?);
+                budget -= 1;
+                if budget == 0 || !event::poll(Duration::ZERO)? {
+                    break;
                 }
-                Event::Mouse(mouse) if app.menu.is_open() => {
-                    features::mouse::handle(&mut app, mouse);
-                }
-                Event::Mouse(mouse) if app.screen == crate::app::AppScreen::Hub => {
-                    if app.show_editor_panel {
-                        features::mouse::editor_mouse(&mut app, mouse);
-                    } else {
-                        features::hub::events::handle_mouse(&mut app, mouse);
-                    }
-                }
-                Event::Mouse(mouse) if app.screen == crate::app::AppScreen::Main => {
-                    features::mouse::handle(&mut app, mouse);
-                }
-                _ => {}
             }
         }
 
@@ -323,4 +312,30 @@ fn restore_terminal() -> Result<()> {
     disable_raw_mode()?;
     execute!(io::stdout(), LeaveAlternateScreen)?;
     Ok(())
+}
+
+/// One terminal event, routed to the screen it belongs to.
+fn handle_event(app: &mut crate::app::App, event: Event) {
+    match event {
+        Event::Key(key) => {
+            // Ignore key-release events on platforms that send them
+            if key.kind == crossterm::event::KeyEventKind::Press {
+                events::handle_key(app, key);
+            }
+        }
+        Event::Mouse(mouse) if app.menu.is_open() => {
+            features::mouse::handle(app, mouse);
+        }
+        Event::Mouse(mouse) if app.screen == crate::app::AppScreen::Hub => {
+            if app.show_editor_panel {
+                features::mouse::editor_mouse(app, mouse);
+            } else {
+                features::hub::events::handle_mouse(app, mouse);
+            }
+        }
+        Event::Mouse(mouse) if app.screen == crate::app::AppScreen::Main => {
+            features::mouse::handle(app, mouse);
+        }
+        _ => {}
+    }
 }
