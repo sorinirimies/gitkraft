@@ -1628,6 +1628,10 @@ fn git_in(dir: &std::path::Path, args: &[&str]) {
 async fn a_local_repository_is_browsed_changed_and_committed_from_the_page() {
     let repo = tempfile::tempdir().expect("tmp");
     git_in(repo.path(), &["init", "-q", "-b", "main"]);
+    // The page commits through libgit2, which reads the repo's own config; CI has no identity.
+    git_in(repo.path(), &["config", "user.name", "t"]);
+    git_in(repo.path(), &["config", "user.email", "t@t"]);
+    git_in(repo.path(), &["config", "commit.gpgsign", "false"]);
     std::fs::write(repo.path().join("a.txt"), "one\n").expect("write");
     git_in(repo.path(), &["add", "."]);
     git_in(repo.path(), &["commit", "-qm", "first commit"]);
