@@ -119,7 +119,66 @@ pub fn set_enabled(enabled: bool, exe: &Path) -> io::Result<()> {
         return windows_set(enabled, exe);
     }
     let home = dirs_home()?;
-    set_enabled_in(Os::current(), &home, enabled, exe)
+    set_enabled_in(Os::current(), &home, enabled, exe)?;
+    // A Flatpak cannot write the host's autostart folder: the file above is only its own marker,
+    // the login entry itself is asked of the desktop through the Background portal.
+    if Os::current() == Os::Linux
+        && let Some(id) = std::env::var("FLATPAK_ID").ok().filter(|i| !i.is_empty())
+        && !cfg!(test)
+    {
+        portal_request(enabled, &id)?;
+    }
+    Ok(())
+}
+
+/// The `gdbus` arguments that ask the Background portal to (un)register `GitKraft` for login.
+#[must_use]
+pub fn portal_args(enabled: bool) -> Vec<String> {
+    let options = format!(
+        "{{'autostart': <{enabled}>, 'commandline': <['gitkraft', '{BACKGROUND_ARG}']>, \
+'reason': <'Keep the agent schedule and notifications running'>}}"
+    );
+    [
+        "call",
+        "--session",
+        "--dest",
+        "org.freedesktop.portal.Desktop",
+        "--object-path",
+        "/org/freedesktop/portal/desktop",
+        "--method",
+        "org.freedesktop.portal.Background.RequestBackground",
+        "",
+    ]
+    .into_iter()
+    .map(String::from)
+    .chain([options])
+    .collect()
+}
+
+fn portal_request(enabled: bool, _app_id: &str) -> io::Result<()> {
+    let out = std::process::Command::new("gdbus")
+        .args(portal_args(enabled))
+        .stdin(std::process::Stdio::null())
+        .output()?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "the Background portal refused: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        )))
+    }
+}
+
+/// What to put in the login entry: the AppImage itself (its mount point changes on every start),
+/// else the GUI binary next to the running one.
+#[must_use]
+pub fn launcher(appimage: Option<&str>, current: PathBuf, name: &str) -> PathBuf {
+    if let Some(a) = appimage.filter(|a| !a.is_empty()) {
+        return PathBuf::from(a);
+    }
+    let sibling = current.with_file_name(name);
+    if sibling.is_file() { sibling } else { current }
 }
 
 /// Is the login entry there?
@@ -210,13 +269,10 @@ pub fn gui_executable() -> PathBuf {
     } else {
         "gitkraft"
     };
-    std::env::current_exe()
-        .ok()
-        .and_then(|me| {
-            let sibling = me.with_file_name(name);
-            sibling.is_file().then_some(sibling).or(Some(me))
-        })
-        .unwrap_or_else(|| PathBuf::from(name))
+    match std::env::current_exe() {
+        Ok(me) => launcher(std::env::var("APPIMAGE").ok().as_deref(), me, name),
+        Err(_) => PathBuf::from(name),
+    }
 }
 
 #[cfg(test)]
@@ -275,5 +331,24 @@ mod tests {
             assert!(!is_enabled_in(os, home));
         }
         assert!(set_enabled_in(Os::Windows, home, true, exe).is_err());
+    }
+
+    #[test]
+    fn an_appimage_is_launched_by_its_own_path_and_the_portal_gets_the_background_flag() {
+        assert_eq!(
+            launcher(
+                Some("/home/u/GitKraft.AppImage"),
+                PathBuf::from("/tmp/.mount_x/gitkraft"),
+                "gitkraft"
+            ),
+            PathBuf::from("/home/u/GitKraft.AppImage")
+        );
+        assert_eq!(
+            launcher(Some(""), PathBuf::from("/nope/gitkraft-tui"), "gitkraft"),
+            PathBuf::from("/nope/gitkraft-tui")
+        );
+        let on = portal_args(true).join(" ");
+        assert!(on.contains("'autostart': <true>") && on.contains(BACKGROUND_ARG));
+        assert!(portal_args(false).join(" ").contains("<false>"));
     }
 }

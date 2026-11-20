@@ -182,7 +182,60 @@ pub fn commands() -> BoxStream<'static, TrayCommand> {
 /// Puts the icon in the tray (once). Call it from the UI thread; `false` when there is no tray.
 pub fn start(info: &TrayInfo) -> bool {
     // Tests never put an icon in the developer's tray.
-    !cfg!(test) && imp::start(info)
+    if cfg!(test) {
+        return false;
+    }
+    let ok = imp::start(info);
+    if !ok && cfg!(target_os = "linux") {
+        let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+        let distro = std::fs::read_to_string("/etc/os-release").unwrap_or_default();
+        tracing::warn!("{}", missing_host_hint(&desktop, &distro));
+    }
+    ok
+}
+
+/// Why there may be no tray on Linux, and what to do, for the desktop in `XDG_CURRENT_DESKTOP`
+/// and the text of `/etc/os-release`.
+///
+/// GNOME has no tray of its own (Ubuntu ships the AppIndicator extension, Fedora, Debian, Arch,
+/// `EndeavourOS` and Manjaro may not); COSMIC, KDE, XFCE, Cinnamon, MATE and `LXQt` have one.
+#[must_use]
+pub fn missing_host_hint(desktop: &str, os_release: &str) -> String {
+    let desktop = desktop.to_ascii_lowercase();
+    let id = os_release
+        .lines()
+        .find_map(|l| l.strip_prefix("ID="))
+        .unwrap_or("")
+        .trim_matches('"')
+        .to_ascii_lowercase();
+    let install = match id.as_str() {
+        "arch" | "endeavouros" | "manjaro" | "garuda" | "cachyos" => {
+            "sudo pacman -S gnome-shell-extension-appindicator"
+        }
+        "fedora" | "rhel" | "centos" => "sudo dnf install gnome-shell-extension-appindicator",
+        "debian" | "ubuntu" | "linuxmint" | "pop" => {
+            "sudo apt install gnome-shell-extension-appindicator"
+        }
+        "opensuse-tumbleweed" | "opensuse-leap" => {
+            "sudo zypper install gnome-shell-extension-appindicator"
+        }
+        _ => "install your distribution's gnome-shell-extension-appindicator package",
+    };
+    if desktop.contains("gnome") {
+        format!(
+            "no tray: GNOME does not show tray icons by itself. Run `{install}`, then \
+`gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com` and log in again. \
+GitKraft opens its window meanwhile"
+        )
+    } else if desktop.contains("cosmic") {
+        "no tray: add the \"Status Area\" applet in COSMIC Settings → Desktop → Panel (or Dock) → \
+Configure applets. GitKraft opens its window meanwhile"
+            .to_string()
+    } else {
+        "no tray: this desktop shows no StatusNotifierItem tray (needs a panel with a system tray \
+or status-notifier plugin, e.g. waybar's `tray` module). GitKraft opens its window meanwhile"
+            .to_string()
+    }
 }
 
 /// Shows the current state in the menu and the tooltip.
@@ -478,5 +531,15 @@ mod tests {
             "Agents: 2 scheduled jobs run while GitKraft is open · 1 to look at"
         );
         assert!(i.tooltip().contains("1 agent finding"));
+    }
+
+    #[test]
+    fn the_hint_names_the_package_of_the_distribution_and_covers_cosmic() {
+        let arch = missing_host_hint("GNOME", "NAME=\"EndeavourOS\"\nID=endeavouros\n");
+        assert!(arch.contains("pacman -S gnome-shell-extension-appindicator"));
+        assert!(missing_host_hint("ubuntu:GNOME", "ID=ubuntu").contains("apt install"));
+        assert!(missing_host_hint("GNOME", "ID=fedora").contains("dnf install"));
+        assert!(missing_host_hint("COSMIC", "ID=pop").contains("Status Area"));
+        assert!(missing_host_hint("sway", "ID=arch").contains("waybar"));
     }
 }
