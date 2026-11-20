@@ -258,6 +258,15 @@ fn nav(session: &Session, active: &str) -> Vec<NavItem> {
         ("agents", "/agents", "Agents"),
         ("notify", "/notify", "🔔 Notifications"),
     ] {
+        // The dashboard's own Inbox section already shows the same list.
+        if key == "inbox"
+            && session
+                .dashboard()
+                .visible()
+                .any(|(_, s)| s.kind == gitkraft_settings::dashboard::SectionKind::Inbox)
+        {
+            continue;
+        }
         items.push(NavItem {
             href: href.into(),
             label: if key == "agents" && unseen > 0 {
@@ -290,7 +299,7 @@ pub(crate) async fn shell(
                 <title>(title)</title>
                 <style>(vars)</style>
                 <link rel="stylesheet" href="/style.css">
-                (Unescaped::new_unchecked(format!("<script>{SCRIPT}</script>")))
+                (Unescaped::new_unchecked(format!("<script>const GK_THEMES={};{SCRIPT}</script>", render::theme_names_json())))
             </head>
             <body>
                 <header class="top">
@@ -435,7 +444,7 @@ async fn dashboard(cx: &Cx) -> Result<impl View> {
     let empty = rows.is_empty() && errors.is_empty();
     let active = index.map(|i| format!("s{i}")).unwrap_or_default();
     Ok(view! {
-        shell(title: format!("{name} · GitKraft"), nav: nav(session, &active), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
+        shell(title: format!("{name} · GitKraft"), nav: nav(session, &active), vars: session.css_vars(), token: session.token().to_string(),
             <h1>(name.clone())</h1>
             <div class="scope">
                 for c in chips { <a class=(c.class) href=(c.href)>(c.label)</a> }
@@ -589,7 +598,7 @@ async fn pull_request(cx: &Cx) -> Result<impl View> {
     let ai_review = with(serde_json::json!({"action": "pr_ai", "what": "review"}));
     let labels: Vec<String> = pr.labels.iter().map(|l| l.name.clone()).collect();
     Ok(view! {
-        shell(title: format!("{} · #{number}", pr.title), nav: nav(session, ""), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
+        shell(title: format!("{} · #{number}", pr.title), nav: nav(session, ""), vars: session.css_vars(), token: session.token().to_string(),
             <h1>(pr.title.clone())</h1>
             <div class="meta">
                 <span class=(format!("badge {state_word}"))>(state_word)</span>
@@ -686,7 +695,7 @@ async fn issue(cx: &Cx) -> Result<impl View> {
     ));
     let labels: Vec<String> = issue.labels.iter().map(|l| l.name.clone()).collect();
     Ok(view! {
-        shell(title: format!("{} · #{number}", issue.title), nav: nav(session, ""), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
+        shell(title: format!("{} · #{number}", issue.title), nav: nav(session, ""), vars: session.css_vars(), token: session.token().to_string(),
             <h1>(issue.title.clone())</h1>
             <div class="meta">
                 <span class=(if open { "badge open" } else { "badge closed" })>(if open { "open" } else { "closed" })</span>
@@ -777,7 +786,7 @@ async fn ci_run(cx: &Cx) -> Result<impl View> {
         })
         .collect();
     Ok(view! {
-        shell(title: format!("{} #{}", run.name, run.number), nav: nav(session, ""), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
+        shell(title: format!("{} #{}", run.name, run.number), nav: nav(session, ""), vars: session.css_vars(), token: session.token().to_string(),
             <h1><span class=(class)>(mark)</span>" "(format!("{} #{}", run.name, run.number))</h1>
             <div class="meta">(format!("{} · {} · {} · {}", repo.full_name(), run.branch, run.event, run.actor))</div>
             <div class="meta small">(run.title.clone())</div>
@@ -846,7 +855,7 @@ async fn ci_dispatch(cx: &Cx) -> Result<impl View> {
     let key = repo.key();
     let back = format!("/ci/dispatch?repo={}", url_encode(&key));
     Ok(view! {
-        shell(title: format!("Run a workflow · {}", repo.full_name()), nav: nav(session, ""), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
+        shell(title: format!("Run a workflow · {}", repo.full_name()), nav: nav(session, ""), vars: session.css_vars(), token: session.token().to_string(),
             <h1>"Run a workflow"</h1>
             <div class="meta">(repo.full_name())" · "<a href=(back)>"reload"</a></div>
             <div class="panel">
@@ -969,7 +978,7 @@ async fn ci_log(cx: &Cx) -> Result<impl View> {
         .unwrap_or_else(|| "/".into());
     let body = Unescaped::new_unchecked(render::log_html(&lines));
     Ok(view! {
-        shell(title: format!("Log · job {job}"), nav: nav(session, ""), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
+        shell(title: format!("Log · job {job}"), nav: nav(session, ""), vars: session.css_vars(), token: session.token().to_string(),
             <h1>(format!("Log of job {job}"))</h1>
             <div class="meta"><a href=(back)>"← back to the run"</a>" · "(format!("{} lines", lines.len()))</div>
             <div class="bar"><button data-act=(explain) data-show="ai" title="Ask the AI about this job (a draft)" onclick="actBtn(this)">"Explain failure"</button></div>
@@ -1068,7 +1077,7 @@ async fn pulse(cx: &Cx) -> Result<impl View> {
         })
         .collect();
     Ok(view! {
-        shell(title: "Pulse · GitKraft".to_string(), nav: nav(session, "pulse"), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
+        shell(title: "Pulse · GitKraft".to_string(), nav: nav(session, "pulse"), vars: session.css_vars(), token: session.token().to_string(),
             <h1>"Contributions"</h1>
             <div class="meta">(format!("{total} contributions in the last year, all accounts"))</div>
             for e in errors { <div class="note warn">(e)</div> }
@@ -1244,7 +1253,7 @@ async fn community(cx: &Cx) -> Result<impl View> {
     let new_page = (tab == Tab::Wiki && repo.is_some() && !has_text && note.is_none())
         .then(|| act_json(serde_json::json!({"action": "wiki_save", "repo": key})));
     Ok(view! {
-        shell(title: "Discussions & wiki · GitKraft".to_string(), nav: nav(session, "community"), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
+        shell(title: "Discussions & wiki · GitKraft".to_string(), nav: nav(session, "community"), vars: session.css_vars(), token: session.token().to_string(),
             <h1>"Discussions & wiki"</h1>
             <nav class="tabs">for (href, label, on) in repo_links { <a href=(href) class=(if on { "on" } else { "" })>(label)</a> }</nav>
             <nav class="tabs">for (href, label, on) in tab_links { <a href=(href) class=(if on { "on" } else { "" })>(label)</a> }</nav>
@@ -1324,7 +1333,7 @@ async fn inbox(cx: &Cx) -> Result<impl View> {
     let errors = live.errors().to_vec();
     let triage = act_json(serde_json::json!({"action": "triage"}));
     Ok(view! {
-        shell(title: "Inbox · GitKraft".to_string(), nav: nav(session, "inbox"), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
+        shell(title: "Inbox · GitKraft".to_string(), nav: nav(session, "inbox"), vars: session.css_vars(), token: session.token().to_string(),
             <h1>"Inbox"</h1>
             <div class="bar"><button data-act=(triage) data-show="ai" title="AI sorts the inbox into now / fyi / ignore (a draft; hosts must allow it with `gitkraft-tui ai-allow HOST triage`)" onclick="actBtn(this)">"Triage"</button></div>
             <pre id="ai" class="panel" hidden="hidden"></pre>
@@ -1390,7 +1399,7 @@ async fn keys_page(cx: &Cx) -> Result<impl View> {
         .collect();
     let errors = data.errors.clone();
     Ok(view! {
-        shell(title: "SSH keys · GitKraft".to_string(), nav: nav(session, "keys"), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
+        shell(title: "SSH keys · GitKraft".to_string(), nav: nav(session, "keys"), vars: session.css_vars(), token: session.token().to_string(),
             <h1>"SSH keys"</h1>
             <div class="meta">"● = a key of this machine. Set-up creates or reuses this machine's key, registers it, and adds a marked block to ~/.ssh/config."</div>
             for e in errors { <div class="err">(e)</div> }
@@ -1601,7 +1610,7 @@ async fn agents_page(cx: &Cx) -> Result<impl View> {
     let bars: Vec<(usize, usize)> = history.iter().map(|n| (*n, 4 + n * 40 / max)).collect();
     let has_job = job.is_some();
     Ok(view! {
-        shell(title: "Agents · GitKraft".to_string(), nav: nav(session, "agents"), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
+        shell(title: "Agents · GitKraft".to_string(), nav: nav(session, "agents"), vars: session.css_vars(), token: session.token().to_string(),
             <h1>"Agents"</h1>
             <div class="meta" data-running=(run_flag)>
                 "Scheduled CI checks over the projects you pick, on any forge. "
@@ -1746,7 +1755,7 @@ async fn notify(cx: &Cx) -> Result<impl View> {
         "not running".to_string()
     };
     Ok(view! {
-        shell(title: "Notifications · GitKraft".to_string(), nav: nav(session, "notify"), vars: render::css_vars(&session.theme()), token: session.token().to_string(),
+        shell(title: "Notifications · GitKraft".to_string(), nav: nav(session, "notify"), vars: session.css_vars(), token: session.token().to_string(),
             <h1>"Notifications"</h1>
             <div class="meta">(format!("poller: {mode} · start it with `gitkraft-tui notify --daemon`"))</div>
             <div class="bar"><button data-act=(global) onclick="actBtn(this)">(if global_on { "Turn all off" } else { "Turn all on" })</button></div>

@@ -3,15 +3,16 @@
 /// `/style.css`.
 pub const CSS: &str = r#"
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;font-family:var(--dodai-font-body,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif)}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 header.top{background:var(--surface);border-bottom:1px solid var(--border);padding:0 16px;display:flex;gap:4px;align-items:center;position:sticky;top:0;z-index:5}
 header.top .brand{font-weight:700;margin-right:12px;color:var(--accent)}
-nav a{display:inline-block;padding:10px 12px;color:var(--text2);border-bottom:2px solid transparent}
+nav{flex:1 1 auto;min-width:0;display:flex;flex-wrap:wrap}
+nav a{display:inline-block;padding:10px 10px;white-space:nowrap;color:var(--text2);border-bottom:2px solid transparent;text-transform:var(--upper,none);letter-spacing:var(--dodai-tracking,normal)}
 nav a.on{color:var(--text);border-bottom-color:var(--accent)}
 nav a.bell{margin-left:auto}
 main{max-width:1180px;margin:0 auto;padding:18px 16px 60px}
-h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:18px 0 8px;color:var(--text2)}
+h1{font-size:20px;margin:0 0 4px;font-family:var(--dodai-font-display,inherit);text-transform:var(--upper,none);letter-spacing:var(--dodai-tracking,normal)}h2{font-size:15px;margin:18px 0 8px;color:var(--text2);text-transform:var(--upper,none);letter-spacing:var(--dodai-tracking,normal)}
 .dim,.meta{color:var(--muted)}.small{font-size:12px}
 table{width:100%;border-collapse:collapse}
 td,th{padding:7px 8px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
@@ -20,16 +21,19 @@ tr:hover td{background:var(--sel)}
 .scope{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}.scope a{padding:2px 10px;border:1px solid var(--border);border-radius:999px;font-size:12px;color:var(--text2);text-decoration:none}.scope a.on{background:var(--sel);color:var(--accent);border-color:var(--accent)}.scope:empty{display:none}
 .badge{display:inline-block;padding:1px 8px;border-radius:999px;border:1px solid var(--border);font-size:12px;color:var(--text2)}
 .badge.open{color:var(--ok);border-color:var(--ok)}.badge.merged{color:var(--accent);border-color:var(--accent)}.badge.closed{color:var(--err);border-color:var(--err)}
-.panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin:12px 0}
+.panel{background:var(--surface);border:var(--bw,1px) solid var(--border);border-radius:var(--r,8px);box-shadow:var(--hard,none);clip-path:var(--dodai-clip-sm,none);padding:12px 14px;margin:12px 0}
 .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
-button,.btn{font:inherit;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 12px;cursor:pointer}
-button:hover{border-color:var(--accent)}button.primary{background:var(--accent);color:var(--bg);border-color:var(--accent)}button.danger{color:var(--err)}
-textarea{width:100%;min-height:80px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;font:inherit}
-pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace}
-.diff{background:var(--surface);border:1px solid var(--border);border-radius:6px;overflow:auto}
+button,.btn{font:inherit;background:var(--surface);color:var(--text);border:var(--bw,1px) solid var(--border);border-radius:var(--r,6px);box-shadow:var(--hard,none);clip-path:var(--dodai-clip-sm,none);padding:5px 12px;cursor:pointer;text-transform:var(--upper,none);letter-spacing:var(--dodai-tracking,normal)}
+button:hover,.btn:hover{border-color:var(--accent);filter:var(--dodai-glow-filter,none)}
+button:active,.btn:active{transform:translate(1px,1px)}
+button+button,.btn+.btn,button+.btn,.btn+button{margin-left:8px}
+.bar button+button,.bar .btn+.btn{margin-left:0}button.primary{background:var(--accent);color:var(--bg);border-color:var(--accent)}button.danger{color:var(--err)}
+textarea{width:100%;min-height:80px;background:var(--bg);color:var(--text);border:var(--bw,1px) solid var(--border);border-radius:var(--r,6px);padding:8px;font:inherit}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;font-family:var(--dodai-font-mono,ui-monospace,Menlo,Consolas,monospace)}
+.diff{background:var(--surface);border:var(--bw,1px) solid var(--border);border-radius:min(var(--r,6px),10px);overflow:auto}
 .diff div{padding:0 10px;white-space:pre;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace}
 .diff .add{color:var(--add)}.diff .del{color:var(--del)}.diff .hunk{color:var(--hunk)}.diff .ctx{color:var(--muted)}
-.log{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 0;overflow:auto}
+.log{background:var(--surface);border:var(--bw,1px) solid var(--border);border-radius:min(var(--r,6px),10px);padding:8px 0;overflow:auto}
 .log .ln{display:block;padding:0 10px}.log .ln a{color:var(--muted);display:inline-block;min-width:4ch;margin-right:1.2ch;text-align:right}
 .log .ln.err{color:var(--err)}.log .ln.warn{color:var(--warn)}.log .ln.cmd{color:var(--accent)}.log .ln:target{background:var(--sel)}
 .log details{margin-left:1.5ch}.log summary{cursor:pointer;color:var(--text);font-weight:600}
@@ -38,7 +42,8 @@ pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospa
 .comment{border-left:3px solid var(--border);padding:4px 12px;margin:10px 0}.comment b{color:var(--accent)}
 img.shot{max-width:100%;border:1px solid var(--border);border-radius:6px;margin:6px 0}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
-.stat{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px}.stat b{display:block;font-size:22px}
+.stat{background:var(--surface);border:var(--bw,1px) solid var(--border);border-radius:var(--r,8px);box-shadow:var(--hard,none);clip-path:var(--dodai-clip-sm,none);padding:10px 12px}.stat b{display:block;font-size:22px}
+svg .l0{fill:color-mix(in srgb,var(--text) 12%,var(--bg))}svg .l1{fill:color-mix(in srgb,var(--accent) 30%,var(--bg))}svg .l2{fill:color-mix(in srgb,var(--accent) 55%,var(--bg))}svg .l3{fill:color-mix(in srgb,var(--accent) 80%,var(--bg))}svg .l4{fill:var(--accent)}
 svg rect.day{cursor:pointer;outline:none}svg rect.day:hover,svg rect.day:focus{stroke:var(--text);stroke-width:1.5}svg rect.day.sel{stroke:var(--accent);stroke-width:2}
 #day h3{margin:10px 0 4px;font-size:14px}#day ul{margin:0;padding-left:18px}#day li{margin:2px 0}#day .repo{color:var(--muted)}
 svg .lbl{font:10px sans-serif;fill:var(--muted)}svg.heat{max-width:100%;height:auto}
@@ -51,6 +56,10 @@ svg .lbl{font:10px sans-serif;fill:var(--muted)}svg.heat{max-width:100%;height:a
 #gk-pal li.on{background:var(--sel)}#gk-pal li small{color:var(--muted)}#gk-pal li.danger{color:var(--err)}
 #gk-pal .none{padding:10px 14px;color:var(--muted)}
 button.pal-hint{margin-left:8px;font-size:12px;color:var(--muted)}
+input:not([type=checkbox]):not([type=radio]):not([type=hidden]),select{background:var(--bg);color:var(--text);border:var(--bw,1px) solid var(--border);border-radius:var(--r,6px);padding:5px 8px;font:inherit}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+select.gk-theme{margin-left:8px;font:inherit;font-size:12px;background:var(--surface);color:var(--text);border:var(--bw,1px) solid var(--border);border-radius:var(--r,6px);padding:3px 6px;max-width:170px}
+nav a.bell{margin-left:0}
 .note{padding:6px 10px;border-radius:6px;background:var(--sel);margin:8px 0}
 "#;
 
@@ -128,7 +137,14 @@ document.addEventListener('keydown',e=>{
 });
 document.addEventListener('DOMContentLoaded',()=>{
   const top=document.querySelector('header.top');
-  if(top){const b=document.createElement('button');b.className='pal-hint';b.title='Command palette (Ctrl/Cmd+K or :)';b.textContent='⌘K';b.onclick=gkPalette;top.appendChild(b);}
+  if(top){
+    const s=document.createElement('select');s.className='gk-theme';s.title='Theme';s.setAttribute('aria-label','Theme');
+    const cur=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--gk-theme'),10);
+    const g1=document.createElement('optgroup');g1.label='GitKraft';const g2=document.createElement('optgroup');g2.label='Dodai design system';
+    GK_THEMES.forEach((n,i)=>{const o=document.createElement('option');o.value=i;o.textContent=n;o.selected=i===cur;(i<43?g1:g2).appendChild(o);});
+    s.append(g1,g2);s.onchange=()=>act({action:'set_theme',index:parseInt(s.value,10)});
+    top.appendChild(s);
+    const b=document.createElement('button');b.className='pal-hint';b.title='Command palette (Ctrl/Cmd+K or :)';b.textContent='⌘K';b.onclick=gkPalette;top.appendChild(b);}
 });
 /* Calendar: a day opens what you did that day, like GitHub's panel; arrows move the cursor. */
 function gkDay(rect){

@@ -287,6 +287,11 @@ pub enum ActionRequest {
     },
     /// Read the jobs and the repository list again.
     AgentReload,
+    /// Switch the colour theme (index into the theme list).
+    SetTheme {
+        /// Index into `THEME_NAMES`.
+        index: usize,
+    },
     /// Turn notifications on or off for a project (`repo` empty: everything).
     NotifyToggle {
         /// `host/owner/name`, or empty for the global switch.
@@ -646,6 +651,9 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
         ActionRequest::AgentGlobs { globs } => {
             return session.with_agents(|a| a.set_globs(&globs));
         }
+        ActionRequest::SetTheme { index } => {
+            return session.set_theme(index).map(|n| format!("theme: {n}"));
+        }
         ActionRequest::AgentReload => {
             session.with_agents(|a| a.reload());
             session.agent_repos(true).await;
@@ -809,6 +817,23 @@ mod tests {
             agents_store: None,
         };
         Session::new(hub, Dashboard { sections: vec![] }, paths, 0)
+    }
+
+    #[tokio::test]
+    async fn the_theme_can_be_switched_and_only_to_a_theme_that_exists() {
+        let s = session(&FakeClient::new());
+        assert_eq!(s.theme_index(), 0);
+        let msg = perform(&s, ActionRequest::SetTheme { index: 50 })
+            .await
+            .expect("a Dodai theme");
+        assert!(msg.starts_with("theme: Dodai"), "{msg}");
+        assert_eq!(s.theme_index(), 50);
+        assert!(s.css_vars().contains("--gk-theme:50"));
+        let e = perform(&s, ActionRequest::SetTheme { index: 9999 })
+            .await
+            .expect_err("no such theme");
+        assert!(e.contains("no theme"));
+        assert_eq!(s.theme_index(), 50, "a bad index changes nothing");
     }
 
     const BASE: &str = "https://api.github.com/repos/o/r/actions";

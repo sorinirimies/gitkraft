@@ -1464,6 +1464,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "dodai-core"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f401416dd75e9ba922fd41725be28b26a33fb2fe44be0d6f2cb5a2924f36a2f4"
+dependencies = [
+ "dodai-fx",
+]
+
+[[package]]
+name = "dodai-fx"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e667a7a23876a6f590d308648993752cc6918c4618d79b1e0ea96fe47f009862"
+
+[[package]]
+name = "dodai-icons"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a356ed346aec162de09607f862e4a1b400595bb9b6a5ffabe4a73ec7d24ed6e"
+dependencies = [
+ "dodai-core",
+]
+
+[[package]]
+name = "dodai-topcoat"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfd2ec6fabc4aad885901b1d95631e3f42e6e67f50b3381f17a4038b44258ece"
+dependencies = [
+ "dodai-core",
+ "dodai-icons",
+]
+
+[[package]]
 name = "downcast-rs"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2214,6 +2248,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "dirs 7.0.0",
+ "dodai-core",
  "serde",
  "serde_json",
  "tempfile",
@@ -2261,6 +2296,8 @@ version = "1.5.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "dodai-core",
+ "dodai-topcoat",
  "gitkraft-ci",
  "gitkraft-hub",
  "gitkraft-platforms",

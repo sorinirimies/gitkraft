@@ -50,7 +50,61 @@ pub fn css_vars(t: &AppTheme) -> String {
     )
 }
 
-const GREENS: [&str; 5] = ["#2d333b", "#0e4429", "#006d32", "#26a641", "#39d353"];
+/// The Dodai tokens a page uses: shape clips, glow, fonts and label style.
+const DODAI_VARS: [&str; 9] = [
+    "--dodai-clip",
+    "--dodai-clip-sm",
+    "--dodai-glow-shadow",
+    "--dodai-glow-filter",
+    "--dodai-font-display",
+    "--dodai-font-body",
+    "--dodai-font-mono",
+    "--dodai-label-case",
+    "--dodai-tracking",
+];
+
+/// Everything a page's `<style>` needs for theme `index`: the colours ([`css_vars`]), the shape of
+/// the design (`--r`, `--bw`, `--hard`, ...), the Dodai tokens when it is a Dodai theme, and
+/// `--gk-theme`, which the theme picker reads.
+pub fn theme_css(index: usize) -> String {
+    use gitkraft_settings::theme::{design, dodai_id, theme_by_index};
+    let d = design(index);
+    let mut css = css_vars(&theme_by_index(index));
+    css.pop(); // the closing brace of :root
+    let shadow = if d.hard_shadow > 0.0 {
+        format!("{}px {}px 0 var(--text)", d.hard_shadow, d.hard_shadow)
+    } else {
+        "none".to_string()
+    };
+    css.push_str(&format!(
+        ";--r:{}px;--bw:{}px;--hard:{shadow};--upper:{};--gk-theme:{index}",
+        d.radius,
+        d.border_width,
+        if d.uppercase { "uppercase" } else { "none" },
+    ));
+    if let Some(theme) = dodai_id(index).and_then(dodai_core::themes::by_id) {
+        for decl in dodai_topcoat::theme_vars(&theme).split(';') {
+            if let Some((name, _)) = decl.split_once(':')
+                && DODAI_VARS.contains(&name)
+            {
+                css.push(';');
+                css.push_str(decl);
+            }
+        }
+        css.push_str(";--shape:dodai");
+    }
+    css.push('}');
+    css
+}
+
+/// The theme names as a JSON array, for the picker.
+pub fn theme_names_json() -> String {
+    serde_json::to_string(gitkraft_settings::theme::THEME_NAMES).unwrap_or_else(|_| "[]".into())
+}
+
+/// The five contribution levels. Each is a CSS class (`l0`…`l4`, see the stylesheet) drawn from
+/// the theme's accent, so the calendar wears the colours of the design; the hex is a fallback.
+const GREENS: [&str; 5] = ["l0", "l1", "l2", "l3", "l4"];
 
 /// Contribution level 0–4 of `count` given the busiest day.
 pub fn level(count: u32, max: u32) -> usize {
@@ -116,7 +170,7 @@ pub fn heatmap_svg(days: &[ActivityDay], today: NaiveDate) -> String {
                 "contributions"
             };
             svg.push_str(&format!(
-                "<rect class=\"day\" data-date=\"{date}\" tabindex=\"0\" role=\"button\" x=\"{}\" y=\"{}\" width=\"{CELL}\" height=\"{CELL}\" rx=\"2\" fill=\"{}\"><title>{count} {noun} on {date}</title></rect>",
+                "<rect data-date=\"{date}\" tabindex=\"0\" role=\"button\" x=\"{}\" y=\"{}\" width=\"{CELL}\" height=\"{CELL}\" rx=\"2\" class=\"day {}\"><title>{count} {noun} on {date}</title></rect>",
                 LEFT + week * (CELL + GAP),
                 TOP + dow * (CELL + GAP),
                 GREENS[level(count, max)]
@@ -131,7 +185,7 @@ pub fn heatmap_svg(days: &[ActivityDay], today: NaiveDate) -> String {
         ly + 9
     ));
     for (i, color) in GREENS.iter().enumerate() {
-        svg.push_str(&format!("<rect x=\"{}\" y=\"{ly}\" width=\"{CELL}\" height=\"{CELL}\" rx=\"2\" fill=\"{color}\"/>", width - 120 + i as i64 * (CELL + 3)));
+        svg.push_str(&format!("<rect x=\"{}\" y=\"{ly}\" width=\"{CELL}\" height=\"{CELL}\" rx=\"2\" class=\"{color}\"/>", width - 120 + i as i64 * (CELL + 3)));
     }
     svg.push_str(&format!(
         "<text x=\"{}\" y=\"{}\" class=\"lbl\">More</text></svg>",
@@ -512,5 +566,41 @@ mod tests {
         assert!(css.starts_with(":root{--bg:#") && css.ends_with('}'));
         assert!(css.contains("color-scheme:dark") || css.contains("color-scheme:light"));
         assert_eq!(hex(Rgb::new(1, 171, 255)), "#01abff");
+    }
+
+    fn dodai_index(id: &str) -> usize {
+        gitkraft_settings::theme::DODAI_FIRST
+            + gitkraft_settings::theme::DODAI_IDS
+                .iter()
+                .position(|i| *i == id)
+                .expect("a Dodai theme")
+    }
+
+    #[test]
+    fn a_built_in_theme_keeps_its_old_look_and_names_itself_for_the_picker() {
+        let css = theme_css(3);
+        assert!(css.starts_with(":root{--bg:#") && css.ends_with('}'));
+        assert!(css.contains("--r:6px;--bw:1px;--hard:none;--upper:none;--gk-theme:3"));
+        assert!(!css.contains("--dodai-") && !css.contains("--shape"));
+    }
+
+    #[test]
+    fn cyberpunk_cuts_its_corners_and_neobrutalism_throws_a_hard_shadow() {
+        let cyber = theme_css(dodai_index("cyberpunk"));
+        assert!(cyber.contains("--r:0px") && cyber.contains("--upper:uppercase"));
+        assert!(cyber.contains("--dodai-clip:polygon("), "{cyber}");
+        assert!(cyber.contains("--shape:dodai"));
+        let brut = theme_css(dodai_index("neobrutalism"));
+        assert!(brut.contains("--bw:2px") && brut.contains("--hard:4px 4px 0 var(--text)"));
+        // Only the tokens a page uses are carried, not the whole component kit.
+        assert!(cyber.len() < 3000, "{} bytes", cyber.len());
+    }
+
+    #[test]
+    fn the_picker_lists_every_theme() {
+        let json = theme_names_json();
+        let names: Vec<String> = serde_json::from_str(&json).expect("json");
+        assert_eq!(names.len(), gitkraft_settings::theme::THEME_COUNT);
+        assert!(names.iter().any(|n| n == "Dodai · Cyberpunk · Yellow"));
     }
 }

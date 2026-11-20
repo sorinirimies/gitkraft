@@ -25,6 +25,8 @@ gitkraft-platforms = { workspace = true, features = ["desktop"] }
 gitkraft-ci        = { workspace = true }
 gitkraft-settings  = { workspace = true }
 topcoat    = { workspace = true }
+dodai-topcoat = { version = "0.1.6" }   # the Dodai design system on the web: shape, glow and font tokens
+dodai-core = { workspace = true }
 tokio      = { workspace = true }
 serde      = { workspace = true }
 serde_json = { workspace = true }

@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -65,7 +66,8 @@ struct Inner {
     hub: Hub<DynClient>,
     dashboard: RwLock<Dashboard>,
     paths: Paths,
-    theme: usize,
+    /// Index of the active theme; changes when the user picks another one.
+    theme: AtomicUsize,
     token: String,
     cache: Mutex<HashMap<usize, (Instant, SectionData)>>,
     /// The remotes of the first checkout (GitHub, Codeberg, Gitea, …).
@@ -111,7 +113,7 @@ impl Session {
                 hub,
                 dashboard: RwLock::new(dashboard),
                 paths,
-                theme,
+                theme: AtomicUsize::new(theme),
                 token: new_token(),
                 cache: Mutex::new(HashMap::new()),
                 project,
@@ -205,7 +207,36 @@ impl Session {
 
     /// The saved colour theme.
     pub fn theme(&self) -> AppTheme {
-        theme_by_index(self.inner.theme)
+        theme_by_index(self.theme_index())
+    }
+
+    /// Index of the active theme.
+    pub fn theme_index(&self) -> usize {
+        self.inner.theme.load(Ordering::Relaxed)
+    }
+
+    /// The `<style>` text of every page: the colours, the shape of the design and the picker's
+    /// current choice.
+    pub fn css_vars(&self) -> String {
+        crate::render::theme_css(self.theme_index())
+    }
+
+    /// Switches the theme for every page and remembers it (tests leave the settings alone).
+    ///
+    /// # Errors
+    /// If `index` is not a theme.
+    pub fn set_theme(&self, index: usize) -> Result<&'static str, String> {
+        let name = gitkraft_settings::theme::THEME_NAMES
+            .get(index)
+            .ok_or_else(|| format!("there is no theme {index}"))?;
+        self.inner.theme.store(index, Ordering::Relaxed);
+        if !cfg!(test) {
+            let name = (*name).to_string();
+            let _ = gitkraft_settings::persistence::update_settings(|s| {
+                s.theme_name = Some(name);
+            });
+        }
+        Ok(name)
     }
 
     /// A section's data, from the cache while it is fresh.

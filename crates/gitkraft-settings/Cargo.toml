@@ -12,6 +12,7 @@ keywords = ["git", "settings", "theme"]
 
 [dependencies]
 serde      = { workspace = true }
+dodai-core = { workspace = true }   # the Dodai design system: 62 themes and their shape tokens
 serde_json = { workspace = true }
 chrono     = { workspace = true }
 dirs       = { workspace = true }

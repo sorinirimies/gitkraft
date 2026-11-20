@@ -54,10 +54,75 @@ pub const THEME_NAMES: &[&str] = &[
     "Carbonfox",
     "Andromeda",
     "Synthwave",
+    "Dodai · Light",
+    "Dodai · Dark",
+    "Dodai Ocean · Light",
+    "Dodai Ocean · Dark",
+    "Dodai Forest · Light",
+    "Dodai Forest · Dark",
+    "Dodai Rose · Light",
+    "Dodai Rose · Dark",
+    "Dodai Sunset · Light",
+    "Dodai Sunset · Dark",
+    "Dodai · Cyberpunk · Yellow",
+    "Dodai · Cyberpunk · Cyan",
+    "Dodai · Cyberpunk · Red",
+    "Dodai · Cyberpunk · Yellow Light",
+    "Dodai · Cyberpunk · Cyan Light",
+    "Dodai · Cyberpunk · Red Light",
+    "Dodai · Cyberpunk · Magenta",
+    "Dodai · Cyberpunk · Acid",
+    "Dodai · Cyberpunk · Sunset",
+    "Dodai · Cyberpunk · Ultraviolet",
+    "Dodai · Cyberpunk · Ice",
+    "Dodai · Cyberpunk · Toxic",
+    "Dodai · Cyberpunk · Phantom",
+    "Dodai · Cyberpunk · Magenta Light",
+    "Dodai · Cyberpunk · Acid Light",
+    "Dodai · Cyberpunk · Sunset Light",
+    "Dodai · Cyberpunk · Ultraviolet Light",
+    "Dodai · Cyberpunk · Ice Light",
+    "Dodai · Cyberpunk · Toxic Light",
+    "Dodai · Cyberpunk · Phantom Light",
+    "Dodai · Material 3 · Light",
+    "Dodai · Material 3 · Dark",
+    "Dodai · Material 3 · Pastel Lavender Light",
+    "Dodai · Material 3 · Pastel Lavender Dark",
+    "Dodai · Material 3 · Pastel Mint Light",
+    "Dodai · Material 3 · Pastel Mint Dark",
+    "Dodai · Material 3 · Pastel Peach Light",
+    "Dodai · Material 3 · Pastel Peach Dark",
+    "Dodai · Material 3 · Pastel Sky Light",
+    "Dodai · Material 3 · Pastel Sky Dark",
+    "Dodai · Material 3 · Ocean Light",
+    "Dodai · Material 3 · Ocean Dark",
+    "Dodai · Material 3 · Forest Light",
+    "Dodai · Material 3 · Forest Dark",
+    "Dodai · Material 3 · Rose Light",
+    "Dodai · Material 3 · Rose Dark",
+    "Dodai · Material 3 · Amber Light",
+    "Dodai · Material 3 · Amber Dark",
+    "Dodai · Neo-Brutalism · Blue",
+    "Dodai · Neo-Brutalism · Blue · Dark",
+    "Dodai · Neo-Brutalism · Yellow",
+    "Dodai · Neo-Brutalism · Yellow · Dark",
+    "Dodai · Neo-Brutalism · Pink",
+    "Dodai · Neo-Brutalism · Pink · Dark",
+    "Dodai · Neo-Brutalism · Green",
+    "Dodai · Neo-Brutalism · Green · Dark",
+    "Dodai · Neo-Brutalism · Red",
+    "Dodai · Neo-Brutalism · Red · Dark",
+    "Dodai · Neo-Brutalism · Violet",
+    "Dodai · Neo-Brutalism · Violet · Dark",
+    "Dodai · Neo-Brutalism · Paper",
+    "Dodai · Neo-Brutalism · Paper · Dark",
 ];
 
 /// Total number of themes.
-pub const THEME_COUNT: usize = 43;
+pub const THEME_COUNT: usize = 105;
+
+/// Index of the first Dodai theme: the 43 built-ins come before them.
+pub const DODAI_FIRST: usize = 43;
 
 /// Get a theme by index (0-based). Returns `default()` for out-of-range.
 pub fn theme_by_index(index: usize) -> AppTheme {
@@ -105,6 +170,7 @@ pub fn theme_by_index(index: usize) -> AppTheme {
         40 => carbonfox(),
         41 => andromeda(),
         42 => synthwave(),
+        i if i < THEME_COUNT => super::dodai::app_theme(i - DODAI_FIRST).unwrap_or_else(default),
         _ => default(),
     }
 }
@@ -1466,8 +1532,12 @@ mod tests {
     fn all_themes_resolve() {
         for i in 0..THEME_COUNT {
             let t = theme_by_index(i);
-            let has_colour = t.text_primary.r > 0 || t.text_primary.g > 0 || t.text_primary.b > 0;
-            assert!(has_colour, "theme index {i} has zero text_primary");
+            // Black text is fine on a light theme; what must never happen is text that
+            // vanishes into the background.
+            assert!(
+                t.text_primary != t.background,
+                "theme index {i} has invisible text"
+            );
         }
     }
 

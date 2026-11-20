@@ -990,7 +990,8 @@ async fn the_calendar_cells_are_focusable_days_and_the_page_has_the_day_panel() 
     );
     let page = get(h.addr, "/pulse").await;
     for needle in [
-        "class=\"day\" data-date=\"",
+        "data-date=\"",
+        "class=\"day l",
         "tabindex=\"0\"",
         "id=\"day\"",
         "function gkDay",
