@@ -75,6 +75,10 @@ pub const DODAI_IDS: &[&str] = &[
     "neobrutalism-paper-dark",
 ];
 
+/// How strong a Dodai glow is drawn (1 = as the design defines it). Kept subtle for now; the
+/// GUI and the web both read it, so they agree.
+pub const GLOW: f32 = 0.15;
+
 /// The look of a theme beyond its colours.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Design {
@@ -229,12 +233,13 @@ pub fn design(index: usize) -> Design {
         radius: t.shape.radius,
         chamfer: t.shape.chamfer,
         border_width: t.shape.border_width,
-        hard_shadow: t.effects.hard_shadow,
-        glow: if t.effects.glow_blur > 0.0 {
-            t.effects.glow_intensity
-        } else {
+        // A chamfered design cuts its corners instead; a shadow would be clipped to the cut.
+        hard_shadow: if t.shape.chamfer > 0.0 {
             0.0
+        } else {
+            t.effects.hard_shadow
         },
+        glow: if t.effects.glow_blur > 0.0 { GLOW } else { 0.0 },
         uppercase: t.typography.uppercase_labels,
         dodai: true,
     }
@@ -300,6 +305,8 @@ mod tests {
     fn the_shape_follows_the_design() {
         let cyber = design(DODAI_FIRST + DODAI_IDS.iter().position(|i| *i == "cyberpunk").unwrap());
         assert!(cyber.dodai && cyber.chamfer > 0.0 && cyber.radius == 0.0 && cyber.uppercase);
+        assert_eq!(cyber.hard_shadow, 0.0, "cut corners, no hard shadow");
+        assert!(cyber.glow > 0.0);
         let brut =
             design(DODAI_FIRST + DODAI_IDS.iter().position(|i| *i == "neobrutalism").unwrap());
         assert!(brut.hard_shadow > 0.0 && brut.border_width >= 2.0);

@@ -37,6 +37,10 @@ pub struct Account {
     pub me: Option<String>,
     /// A Woodpecker CI server that builds this host's repositories (Codeberg uses one).
     pub woodpecker: Option<Woodpecker>,
+    /// Where the forge's web server is when it is not `https://<host>`: a self-hosted one on
+    /// plain http or another port, e.g. `http://192.168.1.44:3000`. The remotes of a checkout
+    /// name only the SSH host, so this is the one place the port and scheme can come from.
+    pub base_url: Option<String>,
 }
 
 /// A Woodpecker CI server and your token on it (a different token from the forge's).
@@ -57,6 +61,7 @@ impl Account {
             token: None,
             me: None,
             woodpecker: None,
+            base_url: None,
         }
     }
 
@@ -75,9 +80,20 @@ impl Account {
         self
     }
 
+    /// Sets where the forge's web server is (see [`Account::base_url`]).
+    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
+        let url: String = url.into();
+        let url = url.trim().trim_end_matches('/');
+        self.base_url = (!url.is_empty()).then(|| url.to_string());
+        self
+    }
+
     /// REST base URL.
     pub fn api_base(&self) -> String {
-        self.kind.api_base(&self.host)
+        match &self.base_url {
+            Some(url) => format!("{url}{}", self.kind.api_path(&self.host)),
+            None => self.kind.api_base(&self.host),
+        }
     }
 }
 
@@ -92,6 +108,21 @@ mod tests {
         let shown = format!("{account:?}");
         assert!(!shown.contains("ghp_abc"));
         assert_eq!(account.host, "github.com");
+        let own = Account::new(PlatformKind::Gitea, "192.168.1.44")
+            .with_base_url("http://192.168.1.44:3000/");
+        assert_eq!(own.api_base(), "http://192.168.1.44:3000/api/v1");
+        let gl = Account::new(PlatformKind::GitLab, "git.x").with_base_url("https://git.x/gitlab");
+        assert_eq!(
+            gl.api_base(),
+            "https://git.x/gitlab/api/v4",
+            "a sub-path install"
+        );
+        assert_eq!(
+            Account::new(PlatformKind::Gitea, "h")
+                .with_base_url(" ")
+                .base_url,
+            None
+        );
         assert_eq!(account.token.as_ref().map(Secret::expose), Some("ghp_abc"));
     }
 }

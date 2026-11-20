@@ -38,6 +38,9 @@ pub struct ThemeColors {
     pub diff_hunk_bg: Color,
     pub error_bg: Color,
     pub graph_colors: [Color; 8],
+    /// The shape of the design (corner radius, border width, hard shadow, glow); the built-in
+    /// themes keep the classic look, the Dodai themes bring their own.
+    pub design: gitkraft_core::Design,
 }
 
 /// Clamp a single channel to `[0.0, 1.0]`.
@@ -148,6 +151,60 @@ impl ThemeColors {
             diff_hunk_bg,
             error_bg,
             graph_colors,
+            design: gitkraft_core::Design::default(),
+        }
+    }
+
+    /// The same colours with the shape of theme `index`.
+    #[must_use]
+    pub fn with_design(mut self, index: usize) -> Self {
+        self.design = gitkraft_core::design(index);
+        self
+    }
+
+    /// A corner radius: the classic `builtin` one, or on a Dodai theme its own radius, at most
+    /// `cap` (a toolbar button with a 16 px corner would be a pill).
+    #[must_use]
+    pub fn radius(&self, builtin: f32, cap: f32) -> f32 {
+        if self.design.dodai {
+            self.design.radius.min(cap)
+        } else {
+            builtin
+        }
+    }
+
+    /// The border width of boxes and buttons.
+    #[must_use]
+    pub fn border_width(&self) -> f32 {
+        if self.design.dodai {
+            self.design.border_width
+        } else {
+            1.0
+        }
+    }
+
+    /// What lifts a floating box off the page: the design's hard offset shadow, its glow, or the
+    /// soft shadow the built-in themes use (`soft`).
+    #[must_use]
+    pub fn lift(&self, soft: iced::Shadow) -> iced::Shadow {
+        let d = &self.design;
+        if d.hard_shadow > 0.0 {
+            iced::Shadow {
+                color: self.text_primary,
+                offset: iced::Vector::new(d.hard_shadow, d.hard_shadow),
+                blur_radius: 0.0,
+            }
+        } else if d.glow > 0.0 {
+            iced::Shadow {
+                color: Color {
+                    a: 0.45 * d.glow.min(1.0),
+                    ..self.accent
+                },
+                offset: iced::Vector::new(0.0, 0.0),
+                blur_radius: 14.0 * d.glow,
+            }
+        } else {
+            soft
         }
     }
 
@@ -166,7 +223,7 @@ impl ThemeColors {
                 return cached_colors;
             }
             let index = gitkraft_core::theme_index_by_name(&name);
-            let colors = Self::from_core(&gitkraft_core::theme_by_index(index));
+            let colors = Self::from_core(&gitkraft_core::theme_by_index(index)).with_design(index);
             *cache = Some((name, colors));
             colors
         })
@@ -227,10 +284,10 @@ pub fn context_menu_style(theme: &iced::Theme) -> container::Style {
         background: Some(Background::Color(c.surface_highlight)),
         border: iced::Border {
             color: c.border,
-            width: 1.0,
-            radius: 6.0.into(),
+            width: c.border_width(),
+            radius: c.radius(6.0, 12.0).into(),
         },
-        shadow: iced::Shadow {
+        shadow: c.lift(iced::Shadow {
             color: iced::Color {
                 r: 0.0,
                 g: 0.0,
@@ -239,7 +296,7 @@ pub fn context_menu_style(theme: &iced::Theme) -> container::Style {
             },
             offset: iced::Vector::new(0.0, 4.0),
             blur_radius: 12.0,
-        },
+        }),
         ..Default::default()
     }
 }
@@ -361,14 +418,20 @@ pub fn ghost_button(theme: &iced::Theme, status: button::Status) -> button::Styl
         button::Status::Hovered => button::Style {
             background: Some(Background::Color(c.surface_highlight)),
             text_color: c.text_primary,
-            border: iced::Border::default(),
+            border: iced::Border {
+                radius: c.radius(0.0, 8.0).into(),
+                ..Default::default()
+            },
             shadow: iced::Shadow::default(),
             snap: false,
         },
         button::Status::Pressed => button::Style {
             background: Some(Background::Color(c.border)),
             text_color: c.text_primary,
-            border: iced::Border::default(),
+            border: iced::Border {
+                radius: c.radius(0.0, 8.0).into(),
+                ..Default::default()
+            },
             shadow: iced::Shadow::default(),
             snap: false,
         },
@@ -462,7 +525,7 @@ pub fn context_menu_item(theme: &iced::Theme, status: button::Status) -> button:
             border: iced::Border {
                 color: iced::Color::TRANSPARENT,
                 width: 0.0,
-                radius: 4.0.into(),
+                radius: c.radius(4.0, 8.0).into(),
             },
             shadow: iced::Shadow::default(),
             snap: false,
@@ -526,7 +589,7 @@ pub fn overlay_scrollbar(theme: &iced::Theme, status: scrollable::Status) -> scr
                 a: alpha,
             }),
             border: iced::Border {
-                radius: 3.0.into(),
+                radius: c.radius(3.0, 6.0).into(),
                 ..Default::default()
             },
         },
@@ -557,22 +620,33 @@ pub fn toolbar_button(theme: &iced::Theme, status: button::Status) -> button::St
     let c = ThemeColors::from_theme(theme);
     let border = iced::Border {
         color: c.border,
-        width: 1.0,
-        radius: 4.0.into(),
+        width: c.border_width(),
+        radius: c.radius(4.0, 8.0).into(),
+    };
+    // A Dodai design lifts its buttons: a hard shadow, or a glow on hover.
+    let lift = |hot: bool| {
+        if c.design.hard_shadow > 0.0 || (hot && c.design.glow > 0.0) {
+            c.lift(iced::Shadow::default())
+        } else {
+            iced::Shadow::default()
+        }
     };
     match status {
         button::Status::Active => button::Style {
             background: Some(Background::Color(c.surface)),
             text_color: c.text_primary,
             border,
-            shadow: iced::Shadow::default(),
+            shadow: lift(false),
             snap: false,
         },
         button::Status::Hovered => button::Style {
             background: Some(Background::Color(c.surface_highlight)),
             text_color: c.text_primary,
-            border,
-            shadow: iced::Shadow::default(),
+            border: iced::Border {
+                color: if c.design.dodai { c.accent } else { c.border },
+                ..border
+            },
+            shadow: lift(true),
             snap: false,
         },
         button::Status::Pressed => button::Style {
@@ -607,7 +681,7 @@ pub fn icon_button(theme: &iced::Theme, status: button::Status) -> button::Style
             background: Some(Background::Color(c.surface_highlight)),
             text_color: c.text_primary,
             border: iced::Border {
-                radius: 3.0.into(),
+                radius: c.radius(3.0, 6.0).into(),
                 ..Default::default()
             },
             shadow: iced::Shadow::default(),
@@ -617,7 +691,7 @@ pub fn icon_button(theme: &iced::Theme, status: button::Status) -> button::Style
             background: Some(Background::Color(c.border)),
             text_color: c.text_primary,
             border: iced::Border {
-                radius: 3.0.into(),
+                radius: c.radius(3.0, 6.0).into(),
                 ..Default::default()
             },
             shadow: iced::Shadow::default(),
@@ -970,5 +1044,57 @@ mod tests {
         let regular = ghost_button(&theme, button::Status::Hovered);
         assert!(flat.background.is_none());
         assert!(regular.background.is_some());
+    }
+
+    fn index_of(id: &str) -> usize {
+        gitkraft_core::design(0); // the module is reachable
+        gitkraft_settings::theme::DODAI_FIRST
+            + gitkraft_settings::theme::DODAI_IDS
+                .iter()
+                .position(|i| *i == id)
+                .expect("a Dodai theme")
+    }
+
+    #[test]
+    fn a_built_in_theme_keeps_its_classic_shape() {
+        let c = ThemeColors::from_core(&gitkraft_core::theme_by_index(3)).with_design(3);
+        assert!(!c.design.dodai);
+        assert_eq!(c.radius(4.0, 8.0), 4.0);
+        assert_eq!(c.border_width(), 1.0);
+        let soft = iced::Shadow {
+            blur_radius: 12.0,
+            ..Default::default()
+        };
+        assert_eq!(c.lift(soft), soft);
+    }
+
+    #[test]
+    fn a_dodai_theme_brings_its_own_radius_border_and_lift() {
+        let at = |id: &str| {
+            let i = index_of(id);
+            ThemeColors::from_core(&gitkraft_core::theme_by_index(i)).with_design(i)
+        };
+        let material = at("material");
+        assert_eq!(
+            material.radius(4.0, 8.0),
+            8.0,
+            "12 px capped for a small control"
+        );
+        assert_eq!(material.radius(6.0, 16.0), 12.0);
+        let brut = at("neobrutalism");
+        assert_eq!(brut.border_width(), 2.0);
+        let hard = brut.lift(iced::Shadow::default());
+        assert_eq!(hard.blur_radius, 0.0);
+        assert_eq!(hard.offset, iced::Vector::new(4.0, 4.0));
+        let cyber = at("cyberpunk");
+        assert_eq!(
+            cyber.radius(6.0, 12.0),
+            0.0,
+            "chamfered designs are square here"
+        );
+        assert!(
+            cyber.lift(iced::Shadow::default()).blur_radius > 0.0,
+            "a glow"
+        );
     }
 }

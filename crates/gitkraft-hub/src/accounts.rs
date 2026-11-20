@@ -20,6 +20,10 @@ pub struct AccountConfig {
     /// The token comes from `GITKRAFT_WOODPECKER_TOKEN_<HOST>` or `GITKRAFT_WOODPECKER_TOKEN`, never from this file.
     #[serde(default)]
     pub woodpecker: Option<String>,
+    /// Where the web server is when it is not `https://<host>`, e.g. `http://192.168.1.44:3000`
+    /// for a Gitea on plain http and another port (the SSH remote names only `192.168.1.44`).
+    #[serde(default)]
+    pub url: Option<String>,
 }
 
 /// The whole `accounts.toml`.
@@ -210,6 +214,14 @@ pub fn discover(
             let mut account = Account::new(kind, host.clone());
             account.token = resolve(kind, &host);
             account.woodpecker = woodpecker_for(&host, file, |n| std::env::var(n).ok());
+            if let Some(url) = file
+                .accounts
+                .iter()
+                .find(|a| a.host.eq_ignore_ascii_case(&host))
+                .and_then(|a| a.url.as_deref())
+            {
+                account = account.with_base_url(url);
+            }
             account
         })
         .collect()
@@ -237,6 +249,35 @@ mod tests {
         let none = tempfile::tempdir().expect("tmp");
         assert!(super::remote_urls(none.path()).is_empty());
         assert!(super::repo_of_dir(none.path()).is_none());
+    }
+
+    #[test]
+    fn a_self_hosted_forge_on_http_and_another_port_is_reached_there() {
+        let file = AccountsFile::parse("[[account]]\nkind = \"gitea\"\nhost = \"192.168.1.44\"\nurl = \"http://192.168.1.44:3000/\"\n").expect("file");
+        let accounts = discover(
+            &["gitea@192.168.1.44:sorin/gitkraft.git".to_string()],
+            &file,
+            |_, _| None,
+        );
+        let a = accounts
+            .iter()
+            .find(|a| a.host == "192.168.1.44")
+            .expect("the remote's host");
+        assert_eq!(a.api_base(), "http://192.168.1.44:3000/api/v1");
+        let plain = discover(
+            &["https://codeberg.org/u/p.git".to_string()],
+            &file,
+            |_, _| None,
+        );
+        let c = plain
+            .iter()
+            .find(|a| a.host == "codeberg.org")
+            .expect("codeberg");
+        assert_eq!(
+            c.api_base(),
+            "https://codeberg.org/api/v1",
+            "others keep https"
+        );
     }
 
     #[test]

@@ -83,7 +83,10 @@ pub fn theme_css(index: usize) -> String {
         if d.uppercase { "uppercase" } else { "none" },
     ));
     if let Some(theme) = dodai_id(index).and_then(dodai_core::themes::by_id) {
-        for decl in dodai_topcoat::theme_vars(&theme).split(';') {
+        for decl in
+            dodai_topcoat::theme_vars(&theme.with_glow_intensity(gitkraft_settings::theme::GLOW))
+                .split(';')
+        {
             if let Some((name, _)) = decl.split_once(':')
                 && DODAI_VARS.contains(&name)
             {

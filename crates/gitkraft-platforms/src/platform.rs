@@ -27,6 +27,16 @@ impl PlatformKind {
         }
     }
 
+    /// The path of the REST API on the web server of `host`.
+    pub fn api_path(self, host: &str) -> &'static str {
+        match self {
+            Self::GitHub if host == "github.com" => "",
+            Self::GitHub => "/api/v3",
+            Self::GitLab => "/api/v4",
+            Self::Gitea => "/api/v1",
+        }
+    }
+
     /// REST base URL for `host`.
     pub fn api_base(self, host: &str) -> String {
         match self {

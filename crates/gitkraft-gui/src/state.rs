@@ -913,6 +913,7 @@ impl GitKraft {
     /// ```
     pub fn colors(&self) -> ThemeColors {
         ThemeColors::from_core(&gitkraft_core::theme_by_index(self.current_theme_index))
+            .with_design(self.current_theme_index)
     }
 
     /// Return a **custom** `iced::Theme` whose `Palette` is derived from the
