@@ -1148,9 +1148,11 @@ mod tests {
 
     #[test]
     fn colors_returns_theme_colors() {
-        let state = GitKraft::new();
+        let mut state = GitKraft::new();
+        // Pin the theme: `new()` reads the saved settings, which may be a light one.
+        state.current_theme_index = gitkraft_core::DEFAULT_THEME;
         let c = state.colors();
-        // The default theme (index 0) is dark, so background should be dark
+        // The default theme (Dodai Dark) is dark, so the background should be dark.
         assert!(c.bg.r < 0.5);
     }
 
