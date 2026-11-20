@@ -172,6 +172,17 @@ pub enum ActionRequest {
         /// The state it should have.
         open: bool,
     },
+    /// Add and remove labels, typed as `+bug -wontfix "good first issue"`.
+    Labels {
+        /// `host/owner/name`.
+        repo: String,
+        /// Number.
+        number: u64,
+        /// PR or issue.
+        kind: Kind,
+        /// The edit.
+        text: String,
+    },
     /// Re-run CI.
     Rerun {
         /// `host/owner/name`.
@@ -505,6 +516,25 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
                 .await
                 .map(|()| format!("#{number} {}", if open { "reopened" } else { "closed" }))
         }
+        ActionRequest::Labels {
+            repo,
+            number,
+            kind,
+            text,
+        } => {
+            let repo = repo_of(&repo)?;
+            let edit = gitkraft_hub::labels::parse(&text)?;
+            let backend = hub.backend(&repo.host).ok_or("no account for this host")?;
+            let kind = if kind == Kind::Pr {
+                ItemKind::PullRequest
+            } else {
+                ItemKind::Issue
+            };
+            backend
+                .edit_labels(&repo, kind, number, &edit.add, &edit.remove)
+                .await
+                .map(|()| format!("labels of #{number} changed"))
+        }
         ActionRequest::Rerun {
             repo,
             run_id,
@@ -834,6 +864,24 @@ mod tests {
             .expect_err("no such theme");
         assert!(e.contains("no theme"));
         assert_eq!(s.theme_index(), 50, "a bad index changes nothing");
+    }
+
+    #[tokio::test]
+    async fn labels_are_edited_from_typed_text_and_bad_text_never_reaches_the_platform() {
+        let fake = FakeClient::new();
+        let s = session(&fake);
+        let edit = |text: &str| ActionRequest::Labels {
+            repo: "github.com/o/r".into(),
+            number: 3,
+            kind: Kind::Issue,
+            text: text.into(),
+        };
+        let e = perform(&s, edit("")).await.expect_err("empty");
+        assert!(e.contains("type labels"), "{e}");
+        assert!(fake.requests().is_empty(), "nothing was sent");
+        fake.push_json("https://api.github.com/repos/o/r/issues/3/labels", "[]");
+        let ok = perform(&s, edit("+bug")).await.expect("added");
+        assert!(ok.contains("#3"), "{ok}");
     }
 
     const BASE: &str = "https://api.github.com/repos/o/r/actions";

@@ -1083,7 +1083,7 @@ fn log_view<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
         let line = iced::widget::rich_text(spans)
             .font(iced::Font::MONOSPACE)
             .size(12);
-        let focus = log.focus == Some(i);
+        let focus = log.focus == Some(i) || log.matches.binary_search(&i).is_ok();
         let sel = c.selection;
         col = col.push(
             container(line)
@@ -1107,6 +1107,38 @@ fn log_view<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
                 .padding([2, 6]),
         );
     }
+    let search = {
+        let n = log.matches.len();
+        let at = log
+            .focus
+            .and_then(|f| log.matches.iter().position(|&m| m == f))
+            .map_or(0, |i| i + 1);
+        row![
+            text_input("Search the log", &log.query)
+                .on_input(HubMessage::LogQuery)
+                .on_submit(HubMessage::LogStep(true))
+                .size(12)
+                .padding([3, 6])
+                .width(Length::Fixed(200.0)),
+            button(text("↑").size(12))
+                .on_press(HubMessage::LogStep(false))
+                .style(theme::ghost_button)
+                .padding([2, 6]),
+            button(text("↓").size(12))
+                .on_press(HubMessage::LogStep(true))
+                .style(theme::ghost_button)
+                .padding([2, 6]),
+            text(if log.query.is_empty() {
+                String::new()
+            } else {
+                format!("{at}/{n}")
+            })
+            .size(12)
+            .color(c.text_secondary),
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center)
+    };
     let head = row![
         button(text("← Run").size(12))
             .on_press(HubMessage::CloseLog)
@@ -1120,6 +1152,7 @@ fn log_view<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
         ))
         .size(12)
         .color(c.text_secondary),
+        search,
     ]
     .spacing(10)
     .align_y(Alignment::Center);
@@ -1129,7 +1162,12 @@ fn log_view<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
             .push(container(scrollable(problems).height(Length::Fixed(110.0))).padding([0, 12]));
     }
     screen
-        .push(scrollable(col).height(Length::Fill).width(Length::Fill))
+        .push(
+            scrollable(col)
+                .id(iced::widget::Id::new(super::state::LOG_SCROLL))
+                .height(Length::Fill)
+                .width(Length::Fill),
+        )
         .height(Length::Fill)
         .into()
 }

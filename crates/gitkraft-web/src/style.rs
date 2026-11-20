@@ -35,7 +35,7 @@ pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospa
 .diff .add{color:var(--add)}.diff .del{color:var(--del)}.diff .hunk{color:var(--hunk)}.diff .ctx{color:var(--muted)}
 .log{background:var(--surface);border:var(--bw,1px) solid var(--border);border-radius:min(var(--r,6px),10px);padding:8px 0;overflow:auto}
 .log .ln{display:block;padding:0 10px}.log .ln a{color:var(--muted);display:inline-block;min-width:4ch;margin-right:1.2ch;text-align:right}
-.log .ln.err{color:var(--err)}.log .ln.warn{color:var(--warn)}.log .ln.cmd{color:var(--accent)}.log .ln:target{background:var(--sel)}
+.log .ln.err{color:var(--err)}.log .ln.warn{color:var(--warn)}.log .ln.cmd{color:var(--accent)}.log .ln:target,.log .ln.hit{background:var(--sel)}.log .ln.cur{outline:var(--bw,1px) solid var(--accent)}
 .log details{margin-left:1.5ch}.log summary{cursor:pointer;color:var(--text);font-weight:600}
 .tabs a{margin-right:14px;color:var(--text2)}.tabs a.on{color:var(--text);font-weight:600}
 .reply{margin-left:28px}
@@ -198,6 +198,18 @@ async function actShow(p,id,into){
 function gkDispatch(){
   const w=document.getElementById('d-workflow');
   act({action:'dispatch',repo:document.getElementById('d-repo').value,workflow:w?w.value:'',git_ref:document.getElementById('d-ref').value.trim(),inputs:document.getElementById('d-inputs').value});
+}
+let gkHits=[],gkAt=-1;
+function gkLogFind(step){
+  const box=document.getElementById('logq'),out=document.getElementById('logn');if(!box)return;
+  const q=box.value.toLowerCase(),lines=[...document.querySelectorAll('.log .ln')];
+  if(step===0){lines.forEach(l=>l.classList.remove('hit','cur'));gkHits=q?lines.filter(l=>l.textContent.toLowerCase().includes(q)):[];gkHits.forEach(l=>l.classList.add('hit'));gkAt=-1;step=1;}
+  if(!gkHits.length){out.textContent=q?'0/0':'';return}
+  if(gkAt>=0)gkHits[gkAt].classList.remove('cur');
+  gkAt=(gkAt+step+gkHits.length)%gkHits.length;
+  const l=gkHits[gkAt];l.classList.add('cur');
+  for(let d=l.parentElement;d&&d.tagName==='DETAILS';d=d.parentElement)d.open=true;
+  l.scrollIntoView({block:'center'});out.textContent=(gkAt+1)+'/'+gkHits.length;
 }
 if(document.querySelector('[data-running]'))setTimeout(()=>location.reload(),4000);
 function actBtn(b){

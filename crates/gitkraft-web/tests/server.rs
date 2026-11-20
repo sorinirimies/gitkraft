@@ -419,6 +419,7 @@ async fn ci_run_and_log_pages() {
         "src/a.rs:1",
         "href=\"#L3\"",
         "← back to the run",
+        "id=\"logq\"",
     ] {
         assert!(
             log.body.contains(needle),

@@ -593,6 +593,7 @@ async fn pull_request(cx: &Cx) -> Result<impl View> {
     let worktree = with(serde_json::json!({"action": "worktree"}));
     let toggle = with(serde_json::json!({"action": "set_open", "kind": "pr", "open": !open}));
     let toggle_label = if open { "Close" } else { "Reopen" };
+    let edit_labels = with(serde_json::json!({"action": "labels", "kind": "pr"}));
     let ai_summary = with(serde_json::json!({"action": "pr_ai", "what": "summary"}));
     let ai_catch_up = with(serde_json::json!({"action": "pr_ai", "what": "catch_up"}));
     let ai_review = with(serde_json::json!({"action": "pr_ai", "what": "review"}));
@@ -632,6 +633,7 @@ async fn pull_request(cx: &Cx) -> Result<impl View> {
                 <button data-act=(ai_summary) data-show="ai" title="AI summary of this pull request (a draft; the host must allow it with `gitkraft-tui ai-allow`)" onclick="actBtn(this)">"Summarize"</button>
                 <button data-act=(ai_catch_up) data-show="ai" data-since="1" title="AI catch-up on the thread (a draft)" onclick="actBtn(this)">"Catch up"</button>
                 <button data-act=(ai_review) data-show="ai" data-into="note" title="AI review notes to edit and send yourself (a draft)" onclick="actBtn(this)">"Review draft"</button>
+                <button data-act=(edit_labels) data-ask="Labels to change, like +bug -wontfix" data-field="text" onclick="actBtn(this)">"Labels"</button>
                 <button class="danger" data-act=(toggle) data-confirm=(format!("{toggle_label} this pull request?")) onclick="actBtn(this)">(toggle_label)</button>
             </div>
             <pre id="ai" class="panel" hidden="hidden"></pre>
@@ -684,6 +686,9 @@ async fn issue(cx: &Cx) -> Result<impl View> {
     let toggle = act_json(
         serde_json::json!({"action": "set_open", "repo": key, "number": number, "kind": "issue", "open": !open}),
     );
+    let edit_labels = act_json(
+        serde_json::json!({"action": "labels", "repo": key, "number": number, "kind": "issue"}),
+    );
     let images = gitkraft_hub::markdown::image_urls(&format!(
         "{}\n{}",
         issue.body,
@@ -709,6 +714,7 @@ async fn issue(cx: &Cx) -> Result<impl View> {
             <div class="bar">
                 if gitkraft_hub::browser::is_web_url(&issue.url) { <a class="btn" href=(issue.url.clone()) target="_blank" rel="noopener noreferrer" title="Open this issue on the forge">"Open in browser ↗"</a> }
                 <button class="primary" data-act=(comment) data-from="note" onclick="actBtn(this)">"Comment"</button>
+                <button data-act=(edit_labels) data-ask="Labels to change, like +bug -wontfix" data-field="text" onclick="actBtn(this)">"Labels"</button>
                 <button class="danger" data-act=(toggle) data-confirm="Change the state of this issue?" onclick="actBtn(this)">(if open { "Close" } else { "Reopen" })</button>
             </div>
         )
@@ -981,7 +987,9 @@ async fn ci_log(cx: &Cx) -> Result<impl View> {
         shell(title: format!("Log · job {job}"), nav: nav(session, ""), vars: session.css_vars(), token: session.token().to_string(),
             <h1>(format!("Log of job {job}"))</h1>
             <div class="meta"><a href=(back)>"← back to the run"</a>" · "(format!("{} lines", lines.len()))</div>
-            <div class="bar"><button data-act=(explain) data-show="ai" title="Ask the AI about this job (a draft)" onclick="actBtn(this)">"Explain failure"</button></div>
+            <div class="bar"><button data-act=(explain) data-show="ai" title="Ask the AI about this job (a draft)" onclick="actBtn(this)">"Explain failure"</button>
+                <input id="logq" type="search" placeholder="Search the log" aria-label="Search the log" oninput="gkLogFind(0)" onkeydown="if(event.key==='Enter'){event.preventDefault();gkLogFind(event.shiftKey?-1:1)}">
+                <button title="Previous match" onclick="gkLogFind(-1)">"↑"</button><button title="Next match" onclick="gkLogFind(1)">"↓"</button><span id="logn" class="meta"></span></div>
             <pre id="ai" class="panel" hidden="hidden"></pre>
             if !found.is_empty() {
                 <h2>(format!("{} problems found", found.len()))</h2>

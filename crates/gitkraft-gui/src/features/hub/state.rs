@@ -140,6 +140,10 @@ pub enum HubMessage {
     CloseLog,
     /// Jump to a log line.
     JumpLog(usize),
+    /// The log search text changed.
+    LogQuery(String),
+    /// Next (`true`) or previous log search match.
+    LogStep(bool),
     /// The note / comment text changed.
     NoteInput(String),
     /// Post the note as a comment.
@@ -352,7 +356,43 @@ pub struct LogState {
     pub annotations: Vec<Annotation>,
     /// Line to highlight (from a jump).
     pub focus: Option<usize>,
+    /// What the search box holds.
+    pub query: String,
+    /// Lines matching `query`.
+    pub matches: Vec<usize>,
 }
+
+impl LogState {
+    /// Moves the focus to the next (or previous) match, wrapping round; the line to scroll to.
+    pub fn step(&mut self, forward: bool) -> Option<usize> {
+        let n = self.matches.len();
+        if n == 0 {
+            return None;
+        }
+        let at = self
+            .focus
+            .and_then(|f| self.matches.iter().position(|&m| m == f));
+        let next = match (at, forward) {
+            (None, true) => self
+                .matches
+                .iter()
+                .position(|&m| Some(m) > self.focus)
+                .unwrap_or(0),
+            (None, false) => self
+                .matches
+                .iter()
+                .rposition(|&m| Some(m) < self.focus)
+                .unwrap_or(n - 1),
+            (Some(i), true) => (i + 1) % n,
+            (Some(i), false) => (i + n - 1) % n,
+        };
+        self.focus = Some(self.matches[next]);
+        self.focus
+    }
+}
+
+/// Id of the log's scroll area.
+pub const LOG_SCROLL: &str = "hub-log";
 
 /// Pulse view state.
 #[derive(Debug, Default)]
@@ -487,6 +527,8 @@ pub struct HubState {
     pub checkouts: Vec<(RepoId, std::path::PathBuf)>,
     /// Parsed `notifications.toml`.
     pub notify_config: NotifyConfig,
+    /// A notification poll is running; the next tick waits for it instead of queueing behind its lock.
+    polling: bool,
     /// The bell of the current repo.
     pub bell: Option<Bell>,
     api: Option<ApiHandle>,
@@ -532,6 +574,7 @@ impl HubState {
             palette: None,
             checkouts: Vec::new(),
             notify_config: NotifyConfig::default(),
+            polling: false,
             bell: None,
             api: None,
             engine: Arc::new(tokio::sync::Mutex::new(Engine::default())),
@@ -827,6 +870,8 @@ impl HubState {
                     lines,
                     annotations,
                     focus,
+                    query: String::new(),
+                    matches: Vec::new(),
                 });
                 self.notice = None;
                 Task::none()
@@ -840,10 +885,32 @@ impl HubState {
                 Task::none()
             }
             HubMessage::JumpLog(i) => {
-                if let Some(l) = &mut self.log {
-                    l.focus = Some(i);
+                let Some(l) = &mut self.log else {
+                    return Task::none();
+                };
+                l.focus = Some(i);
+                scroll_log(i, l.lines.len())
+            }
+            HubMessage::LogQuery(q) => {
+                let Some(l) = &mut self.log else {
+                    return Task::none();
+                };
+                l.matches = gitkraft_ci::log::search(&l.lines, &q);
+                l.query = q;
+                l.focus = None;
+                match l.step(true) {
+                    Some(i) => scroll_log(i, l.lines.len()),
+                    None => Task::none(),
                 }
-                Task::none()
+            }
+            HubMessage::LogStep(forward) => {
+                let Some(l) = &mut self.log else {
+                    return Task::none();
+                };
+                match l.step(forward) {
+                    Some(i) => scroll_log(i, l.lines.len()),
+                    None => Task::none(),
+                }
             }
             HubMessage::NoteInput(t) => {
                 self.note = t;
@@ -1283,6 +1350,7 @@ impl HubState {
             HubMessage::ToggleBell => self.toggle_bell(),
             HubMessage::Tick => self.tick(),
             HubMessage::Polled => {
+                self.polling = false;
                 self.refresh_bell();
                 Task::none()
             }
@@ -2695,9 +2763,10 @@ impl HubState {
         let Some(api) = self.handle() else {
             return Task::none();
         };
-        if self.notify_file.is_none() {
+        if self.notify_file.is_none() || self.polling {
             return Task::none();
         }
+        self.polling = true;
         let engine = self.engine.clone();
         let watched = self.watched.clone();
         Task::perform(
@@ -2728,6 +2797,22 @@ impl HubState {
             |()| HubMessage::Polled,
         )
     }
+}
+
+/// Scrolls the log so line `i` of `len` is in view (lines are about the same height).
+fn scroll_log<M: Send + 'static>(i: usize, len: usize) -> Task<M> {
+    let y = if len > 1 {
+        i as f32 / (len - 1) as f32
+    } else {
+        0.0
+    };
+    iced::widget::operation::snap_to(
+        iced::widget::Id::new(LOG_SCROLL),
+        iced::widget::scrollable::RelativeOffset {
+            x: None,
+            y: Some(y),
+        },
+    )
 }
 
 fn ssh_dir() -> PathBuf {
@@ -3112,6 +3197,33 @@ mod tests {
             result: Err("real".into()),
         });
         assert_eq!(s.detail.error.as_deref(), Some("real"));
+    }
+
+    #[test]
+    fn log_search_steps_through_matches_and_wraps() {
+        let mut l = LogState {
+            title: String::new(),
+            lines: Vec::new(),
+            annotations: Vec::new(),
+            focus: None,
+            query: String::new(),
+            matches: vec![2, 5, 9],
+        };
+        assert_eq!(l.step(true), Some(2));
+        assert_eq!(l.step(true), Some(5));
+        assert_eq!(l.step(false), Some(2));
+        assert_eq!(l.step(false), Some(9));
+        assert_eq!(l.step(true), Some(2));
+        l.matches.clear();
+        assert_eq!(l.step(true), None);
+    }
+
+    #[test]
+    fn a_finished_poll_lets_the_next_tick_start_one() {
+        let mut s = state();
+        s.polling = true;
+        let _ = s.update(HubMessage::Polled);
+        assert!(!s.polling);
     }
 
     #[test]
