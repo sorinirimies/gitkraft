@@ -18,6 +18,9 @@ finish-args:
   - --device=dri
   - --socket=ssh-auth
   - --filesystem=home
+  # Tray icon (StatusNotifierItem); start at login goes through the Background portal.
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=org.freedesktop.Notifications
 
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin

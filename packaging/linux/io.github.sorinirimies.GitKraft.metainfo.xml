@@ -18,6 +18,17 @@
     </screenshot>
   </screenshots>
   <content_rating type="oars-1.1"/>
+  <categories>
+    <category>Development</category>
+    <category>RevisionControl</category>
+  </categories>
+  <keywords>
+    <keyword>git</keyword>
+    <keyword>github</keyword>
+    <keyword>gitlab</keyword>
+    <keyword>pull requests</keyword>
+    <keyword>ci</keyword>
+  </keywords>
   <provides><binary>gitkraft</binary></provides>
   <releases>
     <release version="1.2.1" date="2025-01-01"/>

@@ -15,7 +15,8 @@ apps:
   gitkraft:
     command: bin/gitkraft
     extensions: [gnome]
-    plugs: [home, removable-media, network, ssh-keys]
+    # unity7 lets the tray register as a StatusNotifierItem; desktop-launch stays with the extension.
+    plugs: [home, removable-media, network, ssh-keys, unity7]
 
 parts:
   gitkraft:

@@ -428,7 +428,14 @@ mod imp {
                     return;
                 };
                 rt.block_on(async move {
-                    let handle = match (Tray { info: first }).spawn().await {
+                    // A sandbox (Flatpak, Snap) may not own the well-known StatusNotifierItem name.
+                    let sandboxed = std::env::var_os("FLATPAK_ID").is_some()
+                        || std::env::var_os("SNAP").is_some();
+                    let handle = match (Tray { info: first })
+                        .disable_dbus_name(sandboxed)
+                        .spawn()
+                        .await
+                    {
                         Ok(handle) => handle,
                         Err(e) => {
                             tracing::warn!("no tray icon: {e}");
