@@ -66,7 +66,7 @@ pub fn view(state: &GitKraft) -> Element<'_, Message> {
     .spacing(4)
     .width(Length::Fill);
 
-    let panel = container(content)
+    let panel = container(theme::shaped(content, &c))
         .width(Length::Fill)
         .max_width(460)
         .padding(20)

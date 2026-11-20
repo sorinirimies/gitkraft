@@ -182,6 +182,13 @@ gitkraft-tui notify status | on | off | mute 2h | unmute | test | install
 ```
 
 **Web:** `gitkraft-web` (needs Rust 1.98, so the MSRV job skips it) serves `http://127.0.0.1:3333`.
+`gitkraft-web --demo` serves made-up data (an invented account, repos and pull requests) and touches none of your files, to try it
+without a token; `--theme N` picks the starting theme.
+
+![Web dashboard](docs/screenshots/web-dashboard.png)
+![Web, Dodai Ocean Light](docs/screenshots/web-ocean-light.png)
+![Web pull request, Dodai Cyberpunk](docs/screenshots/web-pr-cyberpunk.png)
+
 There is no login: do not bind it beyond localhost. Every action carries a per-run token the pages embed, so
 another website cannot make the server act. The **SSH keys** page lists, sets up, tests and removes keys.
 `Ctrl/Cmd+K` (or `:` / `/` outside a text field) opens a **command palette**: every page link and every action button on

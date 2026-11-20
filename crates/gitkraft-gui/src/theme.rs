@@ -41,6 +41,8 @@ pub struct ThemeColors {
     /// The shape of the design (corner radius, border width, hard shadow, glow); the built-in
     /// themes keep the classic look, the Dodai themes bring their own.
     pub design: gitkraft_core::Design,
+    /// Index of the theme in the shared list (what [`shaped`] looks the design up by).
+    pub index: usize,
 }
 
 /// Clamp a single channel to `[0.0, 1.0]`.
@@ -152,6 +154,7 @@ impl ThemeColors {
             error_bg,
             graph_colors,
             design: gitkraft_core::Design::default(),
+            index: 0,
         }
     }
 
@@ -159,6 +162,7 @@ impl ThemeColors {
     #[must_use]
     pub fn with_design(mut self, index: usize) -> Self {
         self.design = gitkraft_core::design(index);
+        self.index = index;
         self
     }
 
@@ -171,6 +175,12 @@ impl ThemeColors {
         } else {
             builtin
         }
+    }
+
+    /// Does this design cut its corners? Iced boxes cannot, so [`shaped`] draws them.
+    #[must_use]
+    pub fn chamfered(&self) -> bool {
+        self.design.dodai && self.design.chamfer > 0.0
     }
 
     /// The border width of boxes and buttons.
@@ -289,9 +299,45 @@ pub fn header_style(theme: &iced::Theme) -> container::Style {
     }
 }
 
+/// A floating panel's content, with the cut corners of a chamfered Dodai design drawn behind it
+/// (`dodai-iced`'s shaped box). On every other design it is the content unchanged, and
+/// [`context_menu_style`] draws the box.
+pub fn shaped<'a, M: 'a>(
+    content: impl Into<iced::Element<'a, M>>,
+    c: &ThemeColors,
+) -> iced::Element<'a, M> {
+    let content = content.into();
+    let Some(id) = gitkraft_core::dodai_id(c.index).filter(|_| c.chamfered()) else {
+        return content;
+    };
+    let Some(t) = dodai_core::themes::by_id(id) else {
+        return content;
+    };
+    let lc = |x: Color| dodai_core::Color {
+        r: (x.r * 255.0).round() as u8,
+        g: (x.g * 255.0).round() as u8,
+        b: (x.b * 255.0).round() as u8,
+        a: (x.a * 255.0).round() as u8,
+    };
+    dodai_iced::IcedTheme::new(t).shaped_box(
+        content,
+        dodai_iced::BoxStyle {
+            fill: Some(lc(c.surface_highlight)),
+            stroke: Some(lc(c.border)),
+            glow: true,
+            hard_shadow: true,
+            ..dodai_iced::BoxStyle::default()
+        },
+    )
+}
+
 /// Style for the floating context-menu panel.
 pub fn context_menu_style(theme: &iced::Theme) -> container::Style {
     let c = ThemeColors::from_theme(theme);
+    if c.chamfered() {
+        // `shaped` draws the box.
+        return container::Style::default();
+    }
     container::Style {
         background: Some(Background::Color(c.surface_highlight)),
         border: iced::Border {
@@ -1106,6 +1152,27 @@ mod tests {
         assert!(
             cyber.lift(iced::Shadow::default()).blur_radius > 0.0,
             "a glow"
+        );
+    }
+
+    #[test]
+    fn a_chamfered_design_leaves_its_box_to_the_shaped_frame() {
+        let chamfered = (0..gitkraft_core::THEME_COUNT)
+            .find(|&i| gitkraft_core::design(i).chamfer > 0.0 && gitkraft_core::design(i).dodai)
+            .expect("a chamfered Dodai theme");
+        let c = ThemeColors::from_core(&gitkraft_core::theme_by_index(chamfered))
+            .with_design(chamfered);
+        assert!(c.chamfered());
+        let theme = iced::Theme::Custom(std::sync::Arc::new(iced::theme::Custom::new(
+            gitkraft_core::THEME_NAMES[chamfered].to_string(),
+            iced::theme::Palette::DARK,
+        )));
+        assert!(context_menu_style(&theme).background.is_none());
+        // a classic design is a plain box, drawn by the style
+        assert!(
+            !ThemeColors::from_core(&gitkraft_core::theme_by_index(0))
+                .with_design(0)
+                .chamfered()
         );
     }
 }

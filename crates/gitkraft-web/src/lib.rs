@@ -34,6 +34,10 @@ pub struct ServerOptions {
     pub open_browser: bool,
     /// Extra local checkouts, besides the working directory, for putting pull requests in worktrees.
     pub checkouts: Vec<std::path::PathBuf>,
+    /// Serve made-up data and touch none of the user's files (`--demo`).
+    pub demo: bool,
+    /// Theme to start with (`--theme`), instead of the saved one.
+    pub theme: Option<usize>,
 }
 
 impl Default for ServerOptions {
@@ -43,6 +47,8 @@ impl Default for ServerOptions {
             port: 3333,
             open_browser: false,
             checkouts: Vec::new(),
+            demo: false,
+            theme: None,
         }
     }
 }

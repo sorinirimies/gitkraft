@@ -25,6 +25,7 @@ repository   = "https://github.com/sorinirimies/gitkraft"
 # `{ workspace = true }` so there is a single source of truth.
 
 [workspace.dependencies]
+dodai-iced = { version = "0.1.6", default-features = false, features = ["icons"] }
 dodai-core = { version = "0.1.6", features = ["cyberpunk", "material", "neobrutalism", "dodai"] }
 # Core / shared
 git2         = { version = "0.21", features = ["vendored-openssl"] }

@@ -48,6 +48,19 @@ pub struct Paths {
 }
 
 impl Paths {
+    /// No files at all: the demo reads and writes nothing of the user's.
+    pub fn none() -> Self {
+        Self {
+            dashboard: None,
+            notify: None,
+            use_state_dir: false,
+            ssh_dir: None,
+            checkouts: Vec::new(),
+            config_dir: None,
+            agents_store: None,
+        }
+    }
+
     /// The real files of the current user.
     pub fn user() -> Self {
         Self {
@@ -63,6 +76,8 @@ impl Paths {
 }
 
 struct Inner {
+    /// Demo mode: nothing the visitor does is written to the user's files.
+    demo: std::sync::atomic::AtomicBool,
     hub: Hub<DynClient>,
     dashboard: RwLock<Dashboard>,
     paths: Paths,
@@ -110,6 +125,7 @@ impl Session {
         };
         Self {
             inner: Arc::new(Inner {
+                demo: std::sync::atomic::AtomicBool::new(false),
                 hub,
                 dashboard: RwLock::new(dashboard),
                 paths,
@@ -230,13 +246,23 @@ impl Session {
             .get(index)
             .ok_or_else(|| format!("there is no theme {index}"))?;
         self.inner.theme.store(index, Ordering::Relaxed);
-        if !cfg!(test) {
+        if !cfg!(test) && !self.is_demo() {
             let name = (*name).to_string();
             let _ = gitkraft_settings::persistence::update_settings(|s| {
                 s.theme_name = Some(name);
             });
         }
         Ok(name)
+    }
+
+    /// Marks this session as a demo: the theme choice is no longer saved to the user's settings.
+    pub fn demo(&self) {
+        self.inner.demo.store(true, Ordering::Relaxed);
+    }
+
+    /// Is this a demo (made-up data, nothing saved)?
+    pub fn is_demo(&self) -> bool {
+        self.inner.demo.load(Ordering::Relaxed)
     }
 
     /// A section's data, from the cache while it is fresh.

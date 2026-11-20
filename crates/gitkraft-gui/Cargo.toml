@@ -33,6 +33,8 @@ iced       = { workspace = true }
 iced_fonts = { workspace = true }
 rfd        = { workspace = true }
 futures       = { workspace = true }
+dodai-iced = { workspace = true }
+dodai-core = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

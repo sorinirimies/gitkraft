@@ -8,8 +8,7 @@ use gitkraft_settings::dashboard::Dashboard;
 use gitkraft_settings::files;
 use gitkraft_web::{Paths, ServerOptions, Session, serve};
 
-const USAGE: &str =
-    "usage: gitkraft-web [--host HOST] [--port PORT] [--no-open] [--checkout DIR]...";
+const USAGE: &str = "usage: gitkraft-web [--host HOST] [--port PORT] [--no-open] [--checkout DIR]... [--demo] [--theme N]";
 
 fn parse_args(args: &[String]) -> Result<ServerOptions, String> {
     let mut opts = ServerOptions {
@@ -28,6 +27,15 @@ fn parse_args(args: &[String]) -> Result<ServerOptions, String> {
                     .map_err(|_| "--port must be a number")?
             }
             "--no-open" => opts.open_browser = false,
+            "--demo" => opts.demo = true,
+            "--theme" => {
+                opts.theme = Some(
+                    it.next()
+                        .ok_or("--theme needs a value")?
+                        .parse()
+                        .map_err(|_| "--theme must be a number")?,
+                )
+            }
             "--checkout" => opts
                 .checkouts
                 .push(it.next().ok_or("--checkout needs a directory")?.into()),
@@ -45,6 +53,17 @@ async fn main() -> anyhow::Result<()> {
         eprintln!("{e}");
         std::process::exit(2);
     });
+    if opts.demo {
+        // Made-up data and no files of the user's: for a first look and for screenshots.
+        let session = Session::new(
+            gitkraft_hub::demo::hub(),
+            Dashboard::starter(),
+            Paths::none(),
+            opts.theme.unwrap_or(0),
+        );
+        session.demo();
+        return serve(session, opts).await.map_err(Into::into);
+    }
     let read = |p: anyhow::Result<std::path::PathBuf>| {
         p.ok().and_then(|p| files::read_optional(&p).ok().flatten())
     };
@@ -79,6 +98,7 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or(0);
     let mut paths = Paths::user();
     paths.checkouts.extend(opts.checkouts.iter().cloned());
+    let theme = opts.theme.unwrap_or(theme);
     serve(Session::new(hub, dashboard, paths, theme), opts).await?;
     Ok(())
 }
@@ -103,6 +123,14 @@ mod tests {
             (o.host.as_str(), o.port, o.open_browser),
             ("0.0.0.0", 8080, false)
         );
+    }
+
+    #[test]
+    fn demo_and_theme_flags() {
+        let o = p(&["--demo", "--theme", "44"]).expect("ok");
+        assert!(o.demo);
+        assert_eq!(o.theme, Some(44));
+        assert!(p(&["--theme", "x"]).expect_err("bad").contains("number"));
     }
 
     #[test]

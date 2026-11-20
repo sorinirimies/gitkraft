@@ -245,7 +245,7 @@ impl GitKraft {
             .on_right_press(Message::CloseContextMenu);
 
             let (cx, cy) = self.active_tab().context_menu_pos;
-            let menu_content = context_menu_panel(self, &c);
+            let menu_content = theme::shaped(context_menu_panel(self, &c), &c);
 
             let positioned = crate::widgets::bounded_popup::bounded_popup(
                 menu_content,
@@ -662,7 +662,7 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
         .width(Length::Fill)
         .height(Length::Fill);
 
-        container(content)
+        container(theme::shaped(content, c))
             .width(sw(1100.0))
             .height(sh(600.0))
             .style(theme::context_menu_style)
@@ -780,7 +780,7 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
         .width(Length::Fill)
         .height(Length::Fill);
 
-        container(content)
+        container(theme::shaped(content, c))
             .width(1100)
             .height(600)
             .style(theme::context_menu_style)
@@ -788,7 +788,7 @@ fn search_overlay<'a>(state: &'a GitKraft, c: &ThemeColors) -> Element<'a, Messa
             .into()
     } else {
         // No commit selected yet — just show the search panel
-        container(left_panel)
+        container(theme::shaped(left_panel, c))
             .width(sw(700.0))
             .height(sh(500.0))
             .style(theme::context_menu_style)
