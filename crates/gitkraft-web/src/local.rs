@@ -334,6 +334,11 @@ mod tests {
     fn repo_with_commit() -> tempfile::TempDir {
         let d = tempfile::tempdir().expect("tmp");
         git(d.path(), &["init", "-q", "-b", "main"]);
+        // The code under test commits and stashes through libgit2, which reads the repo's own
+        // config; CI machines have no global identity.
+        git(d.path(), &["config", "user.name", "t"]);
+        git(d.path(), &["config", "user.email", "t@t"]);
+        git(d.path(), &["config", "commit.gpgsign", "false"]);
         std::fs::write(d.path().join("a.txt"), "one\n").expect("write");
         git(d.path(), &["add", "."]);
         git(d.path(), &["commit", "-qm", "first"]);
