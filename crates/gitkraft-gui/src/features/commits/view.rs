@@ -57,6 +57,7 @@ fn ref_badges<'a>(
     ghost_label: Option<&'a str>,
     show_ghost: bool,
 ) -> Element<'a, Message> {
+    let badge_radius = c.radius(3.0, 6.0);
     // Show real badges if the commit has refs.
     if !refs.is_empty() {
         let mut items: Vec<Element<'a, Message>> = Vec::new();
@@ -71,7 +72,7 @@ fn ref_badges<'a>(
                     border: iced::Border {
                         color: fg,
                         width: 1.0,
-                        radius: 3.0.into(),
+                        radius: badge_radius.into(),
                     },
                     ..Default::default()
                 });
@@ -103,7 +104,7 @@ fn ref_badges<'a>(
             border: iced::Border {
                 color: fg,
                 width: 1.0,
-                radius: 3.0.into(),
+                radius: badge_radius.into(),
             },
             ..Default::default()
         });

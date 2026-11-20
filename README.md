@@ -345,7 +345,7 @@ Options: `--write`, `--allow-force`, `--repo host/owner/name` (env `GITKRAFT_MCP
 - **Editor integration** — open files, blame, or `settings.json` in your configured editor
 - **UI zoom (GUI)** — Ctrl/Cmd +/− to scale, persisted across launches
 - **Directory browser (TUI)** — press `o` to browse and open repos
-- **43 colour themes** — Dracula, Nord, Catppuccin, Tokyo Night, Kanagawa, Rose Pine, Cyberpunk, Synthwave, and more
+- **105 colour themes** — 43 classics (Dracula, Nord, Catppuccin, Tokyo Night, …) plus the 62 of the [Dodai design system](https://crates.io/crates/dodai-core), live-switchable in the web UI
 - **Virtual scrolling** — smooth performance with large histories and long diffs
 - **Two-phase diff loading** — file list appears instantly, diffs load per-file
 - **Draggable pane dividers (GUI)** — layout saved automatically
@@ -483,7 +483,11 @@ sudo apt-get install -y pkg-config libxkbcommon-dev libx11-dev libxrandr-dev \
 
 ## Themes
 
-43 built-in themes, persisted per-user and shared between GUI and TUI:
+105 themes, persisted per-user and shared between GUI, TUI and web: 43 built-in ones and the 62 of the Dodai design system (`dodai-core`), listed after them as "Dodai · …".
+
+A Dodai theme brings more than colours. In the web UI and the GUI it also sets the corner radius, border width, hard shadow and a soft glow (the Cyberpunk, Neobrutalism and Material families look like themselves). The web UI adds chamfered corners, fonts and UPPERCASE labels, and has a theme picker in the header. The GUI draws chamfered corners square, and the TUI uses the colours only. The classic themes look as they always did.
+
+The 43 built-in ones:
 
 > Default · Default Light · Grape · Ocean · Sunset · Forest · Rose · Mono · Neon · Dracula · Nord · Solarized Dark/Light · Gruvbox Dark/Light · Catppuccin Latte/Frappé/Macchiato/Mocha · Tokyo Night/Storm/Light · Kanagawa Wave/Dragon/Lotus · Moonfly · Nightfly · Oxocarbon · Cyberpunk · Rose Pine/Moon/Dawn · Ayu Mirage · Everforest Dark · Atom One Dark/Light · Night Owl · Poimandres · Flexoki Dark/Light · Carbonfox · Andromeda · Synthwave
 

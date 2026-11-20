@@ -221,6 +221,7 @@ fn tabs_bar<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
             c.text_secondary
         };
         let (sel, hover, border) = (c.selection, c.surface_highlight, c.accent);
+        let radius = c.radius(4.0, 8.0);
         let label = container(
             text(format!("{}{suffix}", section.name))
                 .size(13)
@@ -238,7 +239,7 @@ fn tabs_bar<'a>(hub: &'a HubState, c: &ThemeColors) -> El<'a> {
             border: iced::Border {
                 color: if hovered { border } else { Color::TRANSPARENT },
                 width: if hovered { 1.0 } else { 0.0 },
-                radius: 4.0.into(),
+                radius: radius.into(),
             },
             ..container::Style::default()
         });
@@ -942,6 +943,7 @@ fn run_detail<'a>(hub: &'a HubState, run: &'a gitkraft_ci::Run, c: &ThemeColors)
                 } else {
                     c.text_secondary
                 };
+                let bar_radius = c.radius(2.0, 4.0);
                 col = col.push(
                     row![
                         container(text(b.label.clone()).size(11).color(c.text_secondary))
@@ -953,7 +955,7 @@ fn run_detail<'a>(hub: &'a HubState, run: &'a gitkraft_ci::Run, c: &ThemeColors)
                             .style(move |_| container::Style {
                                 background: Some(color.into()),
                                 border: iced::Border {
-                                    radius: 2.0.into(),
+                                    radius: bar_radius.into(),
                                     ..iced::Border::default()
                                 },
                                 ..container::Style::default()
