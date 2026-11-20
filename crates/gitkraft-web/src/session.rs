@@ -79,6 +79,8 @@ struct Inner {
     /// Demo mode: nothing the visitor does is written to the user's files.
     demo: std::sync::atomic::AtomicBool,
     hub: Hub<DynClient>,
+    /// The local repositories the Repository pages may open (by index).
+    repos: Vec<PathBuf>,
     dashboard: RwLock<Dashboard>,
     paths: Paths,
     /// Index of the active theme; changes when the user picks another one.
@@ -123,8 +125,10 @@ impl Session {
             },
             _ => gitkraft_hub::agent_watch::AgentsState::default(),
         };
+        let repos = known_repos(&paths);
         Self {
             inner: Arc::new(Inner {
+                repos,
                 demo: std::sync::atomic::AtomicBool::new(false),
                 hub,
                 dashboard: RwLock::new(dashboard),
@@ -142,6 +146,11 @@ impl Session {
     /// make this server act (cross-site request forgery).
     pub fn token(&self) -> &str {
         &self.inner.token
+    }
+
+    /// The local repositories the pages may open: the checkouts and, for a real session, the recent ones.
+    pub fn repos(&self) -> &[PathBuf] {
+        &self.inner.repos
     }
 
     /// `~/.ssh` when this session may change it.
@@ -408,4 +417,22 @@ impl Session {
     pub fn is_live(&self) -> bool {
         self.inner.paths.use_state_dir
     }
+}
+
+/// Checkouts first, then recent repositories; only real repositories, each once.
+fn known_repos(paths: &Paths) -> Vec<PathBuf> {
+    let mut all: Vec<PathBuf> = paths.checkouts.clone();
+    if paths.use_state_dir
+        && let Ok(s) = gitkraft_settings::persistence::load_settings()
+    {
+        all.extend(s.recent_repos.into_iter().map(|e| e.path));
+    }
+    let mut out: Vec<PathBuf> = Vec::new();
+    for p in all {
+        let Ok(p) = p.canonicalize() else { continue };
+        if !out.contains(&p) && gitkraft_core::features::repo::open_repo(&p).is_ok() {
+            out.push(p);
+        }
+    }
+    out
 }

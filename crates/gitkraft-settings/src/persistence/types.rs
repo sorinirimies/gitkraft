@@ -119,14 +119,14 @@ impl AppSettings {
     }
 
     /// Preset index for the saved theme. `"System"` resolves from the OS
-    /// appearance; unknown/missing names fall back to `0`.
+    /// appearance; an unknown name falls back to `0`, a missing one to `DEFAULT_THEME`.
     pub fn theme_index(&self) -> usize {
         match self.theme_name.as_deref() {
             Some(n) if crate::theme::is_system_name(n) => {
                 crate::theme::current_system_theme_index()
             }
             Some(n) => crate::theme::theme_index_by_name(n),
-            None => 0,
+            None => crate::theme::DEFAULT_THEME,
         }
     }
 
@@ -174,7 +174,10 @@ mod theme_tests {
         assert!(s.follow_system_theme());
         assert!(s.theme_index() < crate::theme::THEME_COUNT);
         assert!(!AppSettings::default().follow_system_theme());
-        assert_eq!(AppSettings::default().theme_index(), 0);
+        assert_eq!(
+            AppSettings::default().theme_index(),
+            crate::theme::DEFAULT_THEME
+        );
     }
 
     #[test]
@@ -187,5 +190,9 @@ mod theme_tests {
         s.theme_name = Some("Not A Real Theme".to_string());
         assert_eq!(s.theme_index(), 0);
         assert!(!s.follow_system_theme());
+        // A fresh install starts on a Dodai theme.
+        s.theme_name = None;
+        assert_eq!(s.theme_index(), crate::theme::DEFAULT_THEME);
+        assert!(crate::theme::THEME_NAMES[s.theme_index()].starts_with("Dodai"));
     }
 }

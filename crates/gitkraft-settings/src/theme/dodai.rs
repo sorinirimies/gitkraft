@@ -271,12 +271,7 @@ mod tests {
         for (i, t) in all.iter().enumerate() {
             assert_eq!(DODAI_IDS[i], t.meta.id);
             let name = t.meta.name;
-            let expected = if name.starts_with("Dodai") {
-                name.to_string()
-            } else {
-                format!("Dodai · {name}")
-            };
-            assert_eq!(THEME_NAMES[DODAI_FIRST + i], expected);
+            assert_eq!(THEME_NAMES[DODAI_FIRST + i], name);
         }
     }
 

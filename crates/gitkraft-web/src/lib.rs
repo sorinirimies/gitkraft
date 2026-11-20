@@ -14,6 +14,8 @@
 
 pub mod actions;
 pub mod api;
+pub mod git;
+pub mod local;
 pub mod pages;
 pub mod render;
 pub mod session;

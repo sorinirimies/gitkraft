@@ -2313,6 +2313,7 @@ dependencies = [
  "dodai-core",
  "dodai-topcoat",
  "gitkraft-ci",
+ "gitkraft-core",
  "gitkraft-hub",
  "gitkraft-platforms",
  "gitkraft-settings",

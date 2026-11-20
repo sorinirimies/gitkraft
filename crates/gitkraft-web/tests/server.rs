@@ -1605,3 +1605,99 @@ async fn pr_ai_drafts_are_refused_until_the_host_allows_them_and_the_buttons_exi
     let inbox = get(h.addr, "/inbox").await;
     assert!(inbox.body.contains("Triage"), "{}", inbox.body);
 }
+
+fn git_in(dir: &std::path::Path, args: &[&str]) {
+    let ok = std::process::Command::new("git")
+        .current_dir(dir)
+        .args([
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "commit.gpgsign=false",
+        ])
+        .args(args)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    assert!(ok, "git {args:?}");
+}
+
+#[tokio::test]
+async fn a_local_repository_is_browsed_changed_and_committed_from_the_page() {
+    let repo = tempfile::tempdir().expect("tmp");
+    git_in(repo.path(), &["init", "-q", "-b", "main"]);
+    std::fs::write(repo.path().join("a.txt"), "one\n").expect("write");
+    git_in(repo.path(), &["add", "."]);
+    git_in(repo.path(), &["commit", "-qm", "first commit"]);
+    let h = start_with(vec![repo.path().to_path_buf()]).await;
+
+    let page = get(h.addr, "/git").await;
+    assert_eq!(page.status, 200);
+    for needle in [
+        "first commit",
+        "<svg class=\"g\"",
+        "on <b>main</b>",
+        "Changes 0",
+    ] {
+        assert!(
+            page.body.contains(needle),
+            "missing {needle:?} in\n{}",
+            page.body
+        );
+    }
+
+    std::fs::write(repo.path().join("a.txt"), "one\ntwo\n").expect("write");
+    let changes = get(h.addr, "/git?r=0&tab=changes&f=a.txt").await;
+    assert!(
+        changes.body.contains("a.txt") && changes.body.contains("+two"),
+        "{}",
+        changes.body
+    );
+
+    let stage = request(
+        h.addr,
+        "POST",
+        "/api/action",
+        r#"{"action":"git","r":0,"op":"stage","path":"a.txt"}"#,
+    )
+    .await;
+    assert_eq!(stage.status, 200, "{}", stage.body);
+    let blank = request(
+        h.addr,
+        "POST",
+        "/api/action",
+        r#"{"action":"git","r":0,"op":"commit","message":" "}"#,
+    )
+    .await;
+    assert_eq!(blank.status, 400);
+    let commit = request(
+        h.addr,
+        "POST",
+        "/api/action",
+        r#"{"action":"git","r":0,"op":"commit","message":"second commit"}"#,
+    )
+    .await;
+    assert_eq!(commit.status, 200, "{}", commit.body);
+    assert!(get(h.addr, "/git").await.body.contains("second commit"));
+
+    // Only repositories the server knows can be changed.
+    let other = request(
+        h.addr,
+        "POST",
+        "/api/action",
+        r#"{"action":"git","r":7,"op":"stage_all"}"#,
+    )
+    .await;
+    assert_eq!(other.status, 400);
+    assert!(get(h.addr, "/git?r=7").await.body.contains("not known"));
+}
+
+#[tokio::test]
+async fn without_a_repository_the_page_says_how_to_add_one() {
+    let h = start().await;
+    let page = get(h.addr, "/git").await;
+    assert_eq!(page.status, 200);
+    assert!(page.body.contains("--checkout"), "{}", page.body);
+}

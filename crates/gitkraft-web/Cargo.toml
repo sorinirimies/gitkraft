@@ -20,6 +20,7 @@ name = "gitkraft-web"
 path = "src/main.rs"
 
 [dependencies]
+gitkraft-core      = { workspace = true }
 gitkraft-hub       = { workspace = true }
 gitkraft-platforms = { workspace = true, features = ["desktop"] }
 gitkraft-ci        = { workspace = true }

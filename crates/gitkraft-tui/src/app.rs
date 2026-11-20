@@ -529,7 +529,7 @@ impl App {
         let theme_index = match settings.theme_name.as_deref() {
             Some(n) if gitkraft_core::is_system_name(n) => palette::system_index(),
             Some(n) => palette::index_by_name(n),
-            None => 0,
+            None => palette::default_index(),
         };
 
         let recent_repos = settings.recent_repos;
@@ -2841,7 +2841,7 @@ mod tests {
     #[test]
     fn theme_returns_struct() {
         let mut app = App::new();
-        app.current_theme_index = 0;
+        app.current_theme_index = palette::index_by_name("default");
         let theme = app.theme();
         // Active border comes from the tui-nuances default theme.
         assert_eq!(

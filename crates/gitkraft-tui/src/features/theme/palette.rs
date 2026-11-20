@@ -54,15 +54,68 @@ impl UiTheme {
     }
 }
 
-fn themes() -> &'static [Theme] {
-    static THEMES: OnceLock<Vec<Theme>> = OnceLock::new();
-    THEMES.get_or_init(Theme::all)
+/// A Dodai design-system theme as a `tui-nuances` one, so the TUI draws it like any other.
+fn dodai_theme(index: usize) -> Theme {
+    let t = gitkraft_core::theme_by_index(index);
+    let c = |r: gitkraft_core::Rgb| Color::Rgb(r.r, r.g, r.b);
+    Theme {
+        name: gitkraft_core::THEME_NAMES[index].to_string(),
+        background: Some(c(t.background)),
+        surface: Some(c(t.surface)),
+        foreground: c(t.text_primary),
+        muted: c(t.text_muted),
+        disabled: c(t.text_muted),
+        border: c(t.border),
+        border_focused: c(t.accent),
+        title: c(t.accent),
+        primary: c(t.accent),
+        secondary: c(t.text_secondary),
+        accent: c(t.accent),
+        success: c(t.success),
+        warning: c(t.warning),
+        error: c(t.error),
+        info: c(t.diff_hunk),
+        selection_bg: c(t.selection),
+        selection_fg: c(t.text_primary),
+        highlight: c(t.warning),
+        palette: t.graph_colors.iter().map(|r| c(*r)).collect(),
+        bull: c(t.success),
+        bear: c(t.error),
+        neutral: c(t.text_muted),
+        axis: c(t.border),
+        grid: c(t.border),
+        crosshair: c(t.accent),
+        tooltip_fg: c(t.text_primary),
+        tooltip_bg: c(t.surface),
+    }
 }
 
-/// Names of every `tui-nuances` theme, in picker order.
+/// The themes in picker order: the Dodai design system first, then the `tui-nuances` ones.
+fn themes() -> &'static [Theme] {
+    static THEMES: OnceLock<Vec<Theme>> = OnceLock::new();
+    THEMES.get_or_init(|| {
+        let first = gitkraft_core::THEME_NAMES.len() - dodai_count();
+        let mut all: Vec<Theme> = (first..gitkraft_core::THEME_NAMES.len())
+            .map(dodai_theme)
+            .collect();
+        all.extend(Theme::all());
+        all
+    })
+}
+
+fn dodai_count() -> usize {
+    gitkraft_core::THEME_COUNT - gitkraft_core::DODAI_FIRST
+}
+
+/// Names of every theme, in picker order (Dodai first).
 pub fn theme_names() -> &'static [&'static str] {
     static NAMES: OnceLock<Vec<&'static str>> = OnceLock::new();
-    NAMES.get_or_init(Theme::names)
+    NAMES.get_or_init(|| {
+        let mut v: Vec<&'static str> =
+            gitkraft_core::THEME_NAMES[gitkraft_core::DODAI_FIRST..].to_vec();
+        v.extend(Theme::names());
+        v
+    })
 }
 
 /// Number of themes (excluding the "System" pseudo-theme).
@@ -70,10 +123,21 @@ pub fn theme_count() -> usize {
     theme_names().len()
 }
 
-/// Index of a theme by name (case/space/accent-insensitive); `0` if unknown.
+/// Index of a theme by name (case/space/accent-insensitive); the default Dodai theme if unknown.
 pub fn index_by_name(name: &str) -> usize {
-    Theme::by_name(name)
-        .and_then(|t| theme_names().iter().position(|n| *n == t.name))
+    let names = theme_names();
+    let exact = |wanted: &str| names.iter().position(|n| n.eq_ignore_ascii_case(wanted));
+    exact(name)
+        .or_else(|| name.strip_prefix("Dodai · ").and_then(exact))
+        .or_else(|| Theme::by_name(name).and_then(|t| names.iter().position(|n| *n == t.name)))
+        .unwrap_or_else(default_index)
+}
+
+/// Index of the theme a fresh install starts with.
+pub fn default_index() -> usize {
+    theme_names()
+        .iter()
+        .position(|n| *n == gitkraft_core::THEME_NAMES[gitkraft_core::DEFAULT_THEME])
         .unwrap_or(0)
 }
 
@@ -175,5 +239,17 @@ mod tests {
         assert_eq!(ui.accent, t.accent);
         assert_eq!(Some(ui.bg), t.background);
         assert_eq!(ui.graph_colors[0], t.color(0));
+    }
+
+    #[test]
+    fn the_dodai_themes_come_first_and_a_fresh_install_starts_on_dodai_dark() {
+        assert!(theme_names()[0].starts_with("Dodai"));
+        assert_eq!(theme_names().len(), dodai_count() + Theme::names().len());
+        assert_eq!(theme_names()[default_index()], "Dodai · Dark");
+        assert_eq!(
+            index_by_name("Dodai · Cyberpunk · Toxic"),
+            index_by_name("Cyberpunk · Toxic")
+        );
+        assert_ne!(index_by_name("Cyberpunk · Toxic"), default_index());
     }
 }

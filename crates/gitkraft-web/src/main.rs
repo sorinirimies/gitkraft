@@ -58,8 +58,13 @@ async fn main() -> anyhow::Result<()> {
         let session = Session::new(
             gitkraft_hub::demo::hub(),
             Dashboard::starter(),
-            Paths::none(),
-            opts.theme.unwrap_or(0),
+            Paths {
+                // The repository you start in, to browse (changes are refused in a demo).
+                checkouts: vec![std::path::PathBuf::from(".")],
+                ..Paths::none()
+            },
+            opts.theme
+                .unwrap_or(gitkraft_settings::theme::DEFAULT_THEME),
         );
         session.demo();
         return serve(session, opts).await.map_err(Into::into);
@@ -95,7 +100,7 @@ async fn main() -> anyhow::Result<()> {
     let hub = Hub::new(accounts, &client).with_wiki_git(gitkraft_hub::wiki_git::WikiGit::system());
     let theme = gitkraft_settings::persistence::load_settings()
         .map(|s| s.theme_index())
-        .unwrap_or(0);
+        .unwrap_or(gitkraft_settings::theme::DEFAULT_THEME);
     let mut paths = Paths::user();
     paths.checkouts.extend(opts.checkouts.iter().cloned());
     let theme = opts.theme.unwrap_or(theme);

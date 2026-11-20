@@ -236,7 +236,7 @@ pub fn rows_in(data: &SectionData, multi: bool) -> Vec<Row> {
     }
 }
 
-fn nav(session: &Session, active: &str) -> Vec<NavItem> {
+pub(crate) fn nav(session: &Session, active: &str) -> Vec<NavItem> {
     let unseen = session.with_agents(|a| {
         a.reload();
         a.unseen()
@@ -251,6 +251,7 @@ fn nav(session: &Session, active: &str) -> Vec<NavItem> {
         })
         .collect();
     for (key, href, label) in [
+        ("git", "/git", "Repository"),
         ("pulse", "/pulse", "Pulse"),
         ("inbox", "/inbox", "Inbox"),
         ("community", "/community", "Discussions & wiki"),

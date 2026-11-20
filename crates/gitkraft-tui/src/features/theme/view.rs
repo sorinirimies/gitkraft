@@ -109,7 +109,7 @@ mod tests {
         app.set_follow_system();
         let out = draw(&mut app);
         assert!(out.contains("System"));
-        assert!(out.contains("default"));
+        assert!(out.contains("Dodai"));
         assert!(out.contains("←"));
     }
 

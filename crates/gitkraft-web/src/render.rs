@@ -83,9 +83,12 @@ pub fn theme_css(index: usize) -> String {
         if d.uppercase { "uppercase" } else { "none" },
     ));
     if let Some(theme) = dodai_id(index).and_then(dodai_core::themes::by_id) {
-        for decl in
-            dodai_topcoat::theme_vars(&theme.with_glow_intensity(gitkraft_settings::theme::GLOW))
-                .split(';')
+        for decl in dodai_topcoat::theme_vars(
+            &theme
+                .clone()
+                .with_glow_intensity(gitkraft_settings::theme::GLOW),
+        )
+        .split(';')
         {
             if let Some((name, _)) = decl.split_once(':')
                 && DODAI_VARS.contains(&name)
@@ -95,6 +98,11 @@ pub fn theme_css(index: usize) -> String {
             }
         }
         css.push_str(";--shape:dodai");
+        // The design's canvas mesh: soft blobs of its wash colours behind the page, with the
+        // panels a little see-through so it shows (Dodai, Ocean, Forest, Rose and Sunset).
+        if let Some(mesh) = dodai_topcoat::backdrop_css(&theme) {
+            css.push_str(&format!(";--gk-mesh:{mesh};--gk-surf:78%"));
+        }
     }
     css.push('}');
     css
@@ -580,6 +588,15 @@ mod tests {
     }
 
     #[test]
+    fn the_dodai_family_gets_its_gradient_mesh_and_the_others_stay_flat() {
+        let dodai = theme_css(gitkraft_settings::theme::DEFAULT_THEME);
+        assert!(dodai.contains("--gk-mesh:radial-gradient("), "{dodai}");
+        assert!(dodai.contains("--gk-surf:78%"));
+        assert!(!theme_css(3).contains("--gk-mesh"));
+        assert!(!theme_css(dodai_index("cyberpunk-cyan")).contains("--gk-mesh"));
+    }
+
+    #[test]
     fn a_built_in_theme_keeps_its_old_look_and_names_itself_for_the_picker() {
         let css = theme_css(3);
         assert!(css.starts_with(":root{--bg:#") && css.ends_with('}'));
@@ -604,6 +621,6 @@ mod tests {
         let json = theme_names_json();
         let names: Vec<String> = serde_json::from_str(&json).expect("json");
         assert_eq!(names.len(), gitkraft_settings::theme::THEME_COUNT);
-        assert!(names.iter().any(|n| n == "Dodai · Cyberpunk · Yellow"));
+        assert!(names.iter().any(|n| n == "Cyberpunk · Yellow"));
     }
 }

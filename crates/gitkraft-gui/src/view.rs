@@ -269,6 +269,11 @@ impl GitKraft {
 
     /// Stack the About dialog on top of `base` when it is open.
     fn with_about_overlay<'a>(&'a self, base: Element<'a, Message>) -> Element<'a, Message> {
+        // The Dodai family's gradient mesh goes under the whole window.
+        let base: Element<'a, Message> = match theme::backdrop(self.current_theme_index) {
+            Some(mesh) => iced::widget::stack![mesh, base].into(),
+            None => base,
+        };
         if self.show_about {
             iced::widget::stack![base, widgets::about::view(self)].into()
         } else {

@@ -64,58 +64,58 @@ pub const THEME_NAMES: &[&str] = &[
     "Dodai Rose · Dark",
     "Dodai Sunset · Light",
     "Dodai Sunset · Dark",
-    "Dodai · Cyberpunk · Yellow",
-    "Dodai · Cyberpunk · Cyan",
-    "Dodai · Cyberpunk · Red",
-    "Dodai · Cyberpunk · Yellow Light",
-    "Dodai · Cyberpunk · Cyan Light",
-    "Dodai · Cyberpunk · Red Light",
-    "Dodai · Cyberpunk · Magenta",
-    "Dodai · Cyberpunk · Acid",
-    "Dodai · Cyberpunk · Sunset",
-    "Dodai · Cyberpunk · Ultraviolet",
-    "Dodai · Cyberpunk · Ice",
-    "Dodai · Cyberpunk · Toxic",
-    "Dodai · Cyberpunk · Phantom",
-    "Dodai · Cyberpunk · Magenta Light",
-    "Dodai · Cyberpunk · Acid Light",
-    "Dodai · Cyberpunk · Sunset Light",
-    "Dodai · Cyberpunk · Ultraviolet Light",
-    "Dodai · Cyberpunk · Ice Light",
-    "Dodai · Cyberpunk · Toxic Light",
-    "Dodai · Cyberpunk · Phantom Light",
-    "Dodai · Material 3 · Light",
-    "Dodai · Material 3 · Dark",
-    "Dodai · Material 3 · Pastel Lavender Light",
-    "Dodai · Material 3 · Pastel Lavender Dark",
-    "Dodai · Material 3 · Pastel Mint Light",
-    "Dodai · Material 3 · Pastel Mint Dark",
-    "Dodai · Material 3 · Pastel Peach Light",
-    "Dodai · Material 3 · Pastel Peach Dark",
-    "Dodai · Material 3 · Pastel Sky Light",
-    "Dodai · Material 3 · Pastel Sky Dark",
-    "Dodai · Material 3 · Ocean Light",
-    "Dodai · Material 3 · Ocean Dark",
-    "Dodai · Material 3 · Forest Light",
-    "Dodai · Material 3 · Forest Dark",
-    "Dodai · Material 3 · Rose Light",
-    "Dodai · Material 3 · Rose Dark",
-    "Dodai · Material 3 · Amber Light",
-    "Dodai · Material 3 · Amber Dark",
-    "Dodai · Neo-Brutalism · Blue",
-    "Dodai · Neo-Brutalism · Blue · Dark",
-    "Dodai · Neo-Brutalism · Yellow",
-    "Dodai · Neo-Brutalism · Yellow · Dark",
-    "Dodai · Neo-Brutalism · Pink",
-    "Dodai · Neo-Brutalism · Pink · Dark",
-    "Dodai · Neo-Brutalism · Green",
-    "Dodai · Neo-Brutalism · Green · Dark",
-    "Dodai · Neo-Brutalism · Red",
-    "Dodai · Neo-Brutalism · Red · Dark",
-    "Dodai · Neo-Brutalism · Violet",
-    "Dodai · Neo-Brutalism · Violet · Dark",
-    "Dodai · Neo-Brutalism · Paper",
-    "Dodai · Neo-Brutalism · Paper · Dark",
+    "Cyberpunk · Yellow",
+    "Cyberpunk · Cyan",
+    "Cyberpunk · Red",
+    "Cyberpunk · Yellow Light",
+    "Cyberpunk · Cyan Light",
+    "Cyberpunk · Red Light",
+    "Cyberpunk · Magenta",
+    "Cyberpunk · Acid",
+    "Cyberpunk · Sunset",
+    "Cyberpunk · Ultraviolet",
+    "Cyberpunk · Ice",
+    "Cyberpunk · Toxic",
+    "Cyberpunk · Phantom",
+    "Cyberpunk · Magenta Light",
+    "Cyberpunk · Acid Light",
+    "Cyberpunk · Sunset Light",
+    "Cyberpunk · Ultraviolet Light",
+    "Cyberpunk · Ice Light",
+    "Cyberpunk · Toxic Light",
+    "Cyberpunk · Phantom Light",
+    "Material 3 · Light",
+    "Material 3 · Dark",
+    "Material 3 · Pastel Lavender Light",
+    "Material 3 · Pastel Lavender Dark",
+    "Material 3 · Pastel Mint Light",
+    "Material 3 · Pastel Mint Dark",
+    "Material 3 · Pastel Peach Light",
+    "Material 3 · Pastel Peach Dark",
+    "Material 3 · Pastel Sky Light",
+    "Material 3 · Pastel Sky Dark",
+    "Material 3 · Ocean Light",
+    "Material 3 · Ocean Dark",
+    "Material 3 · Forest Light",
+    "Material 3 · Forest Dark",
+    "Material 3 · Rose Light",
+    "Material 3 · Rose Dark",
+    "Material 3 · Amber Light",
+    "Material 3 · Amber Dark",
+    "Neo-Brutalism · Blue",
+    "Neo-Brutalism · Blue · Dark",
+    "Neo-Brutalism · Yellow",
+    "Neo-Brutalism · Yellow · Dark",
+    "Neo-Brutalism · Pink",
+    "Neo-Brutalism · Pink · Dark",
+    "Neo-Brutalism · Green",
+    "Neo-Brutalism · Green · Dark",
+    "Neo-Brutalism · Red",
+    "Neo-Brutalism · Red · Dark",
+    "Neo-Brutalism · Violet",
+    "Neo-Brutalism · Violet · Dark",
+    "Neo-Brutalism · Paper",
+    "Neo-Brutalism · Paper · Dark",
 ];
 
 /// Total number of themes.
@@ -123,6 +123,9 @@ pub const THEME_COUNT: usize = 105;
 
 /// Index of the first Dodai theme: the 43 built-ins come before them.
 pub const DODAI_FIRST: usize = 43;
+
+/// The theme a fresh install starts with: `Dodai · Dark`.
+pub const DEFAULT_THEME: usize = DODAI_FIRST + 1;
 
 /// Get a theme by index (0-based). Returns `default()` for out-of-range.
 pub fn theme_by_index(index: usize) -> AppTheme {
@@ -178,9 +181,14 @@ pub fn theme_by_index(index: usize) -> AppTheme {
 /// Find theme index by name (case-insensitive ASCII). Returns `0` (Default) if
 /// no match is found.
 pub fn theme_index_by_name(name: &str) -> usize {
-    THEME_NAMES
-        .iter()
-        .position(|n| n.eq_ignore_ascii_case(name))
+    let find = |wanted: &str| {
+        THEME_NAMES
+            .iter()
+            .position(|n| n.eq_ignore_ascii_case(wanted))
+    };
+    // Settings saved before the "Dodai · " prefix was dropped from the design families.
+    find(name)
+        .or_else(|| name.strip_prefix("Dodai · ").and_then(find))
         .unwrap_or(0)
 }
 
@@ -1555,6 +1563,17 @@ mod tests {
         assert_eq!(theme_index_by_name("Default"), 0);
         assert_eq!(theme_index_by_name("Cyberpunk"), 28);
         assert_eq!(theme_index_by_name("Synthwave"), 42);
+    }
+
+    #[test]
+    fn an_old_prefixed_dodai_name_still_finds_its_theme() {
+        let i = theme_index_by_name("Cyberpunk · Toxic");
+        assert!(i >= DODAI_FIRST);
+        assert_eq!(theme_index_by_name("Dodai · Cyberpunk · Toxic"), i);
+        assert_eq!(
+            theme_index_by_name("Dodai · Neo-Brutalism · Paper"),
+            theme_index_by_name("Neo-Brutalism · Paper")
+        );
     }
 
     #[test]

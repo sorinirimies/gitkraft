@@ -43,6 +43,8 @@ pub struct ThemeColors {
     pub design: gitkraft_core::Design,
     /// Index of the theme in the shared list (what [`shaped`] looks the design up by).
     pub index: usize,
+    /// The design has a canvas mesh behind the window, so big panels are a little see-through.
+    pub mesh: bool,
 }
 
 /// Clamp a single channel to `[0.0, 1.0]`.
@@ -155,6 +157,7 @@ impl ThemeColors {
             graph_colors,
             design: gitkraft_core::Design::default(),
             index: 0,
+            mesh: false,
         }
     }
 
@@ -163,6 +166,7 @@ impl ThemeColors {
     pub fn with_design(mut self, index: usize) -> Self {
         self.design = gitkraft_core::design(index);
         self.index = index;
+        self.mesh = mesh_theme(index).is_some();
         self
     }
 
@@ -175,6 +179,13 @@ impl ThemeColors {
         } else {
             builtin
         }
+    }
+
+    /// `c` as a big panel's fill: a little see-through on a design with a canvas mesh, so the
+    /// mesh shows, else as it is.
+    #[must_use]
+    pub fn wash(&self, c: Color) -> Color {
+        if self.mesh { Color { a: 0.8, ..c } } else { c }
     }
 
     /// Does this design cut its corners? Iced boxes cannot, so [`shaped`] draws them.
@@ -252,13 +263,103 @@ impl ThemeColors {
     }
 }
 
+// ── The design's canvas mesh ──────────────────────────────────────────────────
+
+/// The Dodai theme at `index` when its design has a canvas mesh (the Dodai family itself).
+fn mesh_theme(index: usize) -> Option<dodai_core::Theme> {
+    let t = gitkraft_core::dodai_id(index).and_then(dodai_core::themes::by_id)?;
+    (t.surface_style.backdrop > 0.0).then_some(t)
+}
+
+const MESH_COLS: usize = 32;
+const MESH_ROWS: usize = 60;
+
+/// The mesh of theme `index` as `MESH_ROWS` × `(MESH_COLS + 1)` colours (cached per theme).
+fn mesh_colors(index: usize) -> Option<std::rc::Rc<Vec<Color>>> {
+    thread_local! {
+        static CACHE: RefCell<Option<(usize, std::rc::Rc<Vec<Color>>)>> = const { RefCell::new(None) };
+    }
+    CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some((i, v)) = &*cache
+            && *i == index
+        {
+            return Some(v.clone());
+        }
+        let t = mesh_theme(index)?;
+        let (w, h) = (MESH_COLS + 1, MESH_ROWS);
+        let px = dodai_core::backdrop_mesh(&t, w, h)?;
+        let v: std::rc::Rc<Vec<Color>> = std::rc::Rc::new(
+            px.as_chunks::<4>()
+                .0
+                .iter()
+                .map(|p| Color::from_rgba8(p[0], p[1], p[2], f32::from(p[3]) / 255.0))
+                .collect(),
+        );
+        *cache = Some((index, v.clone()));
+        Some(v)
+    })
+}
+
+#[derive(Debug)]
+struct Mesh(std::rc::Rc<Vec<Color>>);
+
+impl<M> iced::widget::canvas::Program<M> for Mesh {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &(),
+        renderer: &iced::Renderer,
+        _theme: &iced::Theme,
+        bounds: iced::Rectangle,
+        _cursor: iced::mouse::Cursor,
+    ) -> Vec<iced::widget::canvas::Geometry> {
+        use iced::widget::canvas::{Fill, Frame, gradient::Linear};
+        let mut frame = Frame::new(renderer, bounds.size());
+        let (cw, rh) = (
+            bounds.width / MESH_COLS as f32,
+            bounds.height / MESH_ROWS as f32,
+        );
+        let stride = MESH_COLS + 1;
+        for row in 0..MESH_ROWS {
+            for col in 0..MESH_COLS {
+                let (a, b) = (self.0[row * stride + col], self.0[row * stride + col + 1]);
+                let x = col as f32 * cw;
+                let g = Linear::new(iced::Point::new(x, 0.0), iced::Point::new(x + cw, 0.0))
+                    .add_stop(0.0, a)
+                    .add_stop(1.0, b);
+                // A hair taller than its row so the rows leave no seam.
+                frame.fill_rectangle(
+                    iced::Point::new(x, row as f32 * rh),
+                    iced::Size::new(cw + 0.5, rh + 0.5),
+                    Fill::from(g),
+                );
+            }
+        }
+        vec![frame.into_geometry()]
+    }
+}
+
+/// The canvas mesh of the Dodai family, stretched over the window to go under everything;
+/// `None` for the other designs.
+pub fn backdrop<'a, M: 'a>(index: usize) -> Option<iced::Element<'a, M>> {
+    let colors = mesh_colors(index)?;
+    Some(
+        iced::widget::canvas(Mesh(colors))
+            .width(iced::Length::Fill)
+            .height(iced::Length::Fill)
+            .into(),
+    )
+}
+
 // ── Container styles ──────────────────────────────────────────────────────────
 
 /// Style for a container with the main window background.
 pub fn bg_style(theme: &iced::Theme) -> container::Style {
     let c = ThemeColors::from_theme(theme);
     container::Style {
-        background: Some(Background::Color(c.bg)),
+        background: Some(Background::Color(c.wash(c.bg))),
         ..Default::default()
     }
 }
@@ -276,7 +377,7 @@ pub fn error_banner_style(theme: &iced::Theme) -> container::Style {
 pub fn surface_style(theme: &iced::Theme) -> container::Style {
     let c = ThemeColors::from_theme(theme);
     container::Style {
-        background: Some(Background::Color(c.surface)),
+        background: Some(Background::Color(c.wash(c.surface))),
         ..Default::default()
     }
 }
@@ -285,7 +386,7 @@ pub fn surface_style(theme: &iced::Theme) -> container::Style {
 pub fn sidebar_style(theme: &iced::Theme) -> container::Style {
     let c = ThemeColors::from_theme(theme);
     container::Style {
-        background: Some(Background::Color(c.sidebar_bg)),
+        background: Some(Background::Color(c.wash(c.sidebar_bg))),
         ..Default::default()
     }
 }
@@ -294,7 +395,7 @@ pub fn sidebar_style(theme: &iced::Theme) -> container::Style {
 pub fn header_style(theme: &iced::Theme) -> container::Style {
     let c = ThemeColors::from_theme(theme);
     container::Style {
-        background: Some(Background::Color(c.header_bg)),
+        background: Some(Background::Color(c.wash(c.header_bg))),
         ..Default::default()
     }
 }
@@ -1153,6 +1254,20 @@ mod tests {
             cyber.lift(iced::Shadow::default()).blur_radius > 0.0,
             "a glow"
         );
+    }
+
+    #[test]
+    fn only_the_dodai_family_has_a_mesh_and_its_panels_let_it_show() {
+        let dodai =
+            ThemeColors::from_core(&gitkraft_core::theme_by_index(gitkraft_core::DEFAULT_THEME))
+                .with_design(gitkraft_core::DEFAULT_THEME);
+        assert!(dodai.mesh && dodai.wash(dodai.bg).a < 1.0);
+        assert!(backdrop::<()>(gitkraft_core::DEFAULT_THEME).is_some());
+        let classic = ThemeColors::from_core(&gitkraft_core::theme_by_index(3)).with_design(3);
+        assert!(!classic.mesh && (classic.wash(classic.bg).a - 1.0).abs() < f32::EPSILON);
+        assert!(backdrop::<()>(3).is_none());
+        let colors = mesh_colors(gitkraft_core::DEFAULT_THEME).expect("mesh");
+        assert_eq!(colors.len(), MESH_ROWS * (MESH_COLS + 1));
     }
 
     #[test]

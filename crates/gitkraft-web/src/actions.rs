@@ -172,6 +172,14 @@ pub enum ActionRequest {
         /// The state it should have.
         open: bool,
     },
+    /// Change a local repository (stage, commit, branch, stash, fetch, push …).
+    Git {
+        /// Index of the repository in the Repository page's list.
+        r: usize,
+        /// What to do.
+        #[serde(flatten)]
+        op: crate::local::GitOp,
+    },
     /// Add and remove labels, typed as `+bug -wontfix "good first issue"`.
     Labels {
         /// `host/owner/name`.
@@ -320,6 +328,19 @@ fn repo_of(key: &str) -> Result<RepoId, String> {
 /// Runs `req`; returns a short confirmation or the reason it failed.
 pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, String> {
     let hub = session.hub();
+    if let ActionRequest::Git { r, op } = req {
+        if session.is_demo() {
+            return Err("the demo is read-only".into());
+        }
+        let path = session
+            .repos()
+            .get(r)
+            .cloned()
+            .ok_or("that repository is not known to this server")?;
+        return tokio::task::spawn_blocking(move || crate::local::run(&path, &op))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
     let result = match req {
         ActionRequest::Comment {
             repo,
@@ -535,6 +556,7 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
                 .await
                 .map(|()| format!("labels of #{number} changed"))
         }
+        ActionRequest::Git { .. } => return Err("unexpected action".into()),
         ActionRequest::Rerun {
             repo,
             run_id,

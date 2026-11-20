@@ -185,6 +185,13 @@ gitkraft-tui notify status | on | off | mute 2h | unmute | test | install
 `gitkraft-web --demo` serves made-up data (an invented account, repos and pull requests) and touches none of your files, to try it
 without a token; `--theme N` picks the starting theme.
 
+The **Repository** page is the local git client in the browser, like the GUI and TUI: history with a graph and
+search, the working tree (stage, unstage, discard, commit, with diffs), branches, stashes and remotes (fetch, pull,
+push over your SSH setup). It only opens repositories the server knows (the one it started in, `--checkout DIR`,
+your recent ones), and the demo shows it read-only. The Dodai, Ocean, Forest, Rose and Sunset themes draw the design
+system's gradient mesh behind every page.
+
+![Web repository](docs/screenshots/web-repository.png)
 ![Web dashboard](docs/screenshots/web-dashboard.png)
 ![Web, Dodai Ocean Light](docs/screenshots/web-ocean-light.png)
 ![Web pull request, Dodai Cyberpunk](docs/screenshots/web-pr-cyberpunk.png)
@@ -490,7 +497,7 @@ sudo apt-get install -y pkg-config libxkbcommon-dev libx11-dev libxrandr-dev \
 
 ## Themes
 
-105 themes, persisted per-user and shared between GUI, TUI and web: 43 built-in ones and the 62 of the Dodai design system (`dodai-core`), listed after them as "Dodai · …".
+105 themes, persisted per-user and shared between GUI, TUI and web: 43 built-in ones and the 62 of the Dodai design system (`dodai-core`), listed after them (the Dodai base set as "Dodai · …", the others by family: "Cyberpunk · …", "Material 3 · …", "Neo-Brutalism · …").
 
 A Dodai theme brings more than colours. In the web UI and the GUI it also sets the corner radius, border width, hard shadow and a soft glow (the Cyberpunk, Neobrutalism and Material families look like themselves). The web UI adds chamfered corners, fonts and UPPERCASE labels, and has a theme picker in the header. The GUI draws chamfered corners square, and the TUI uses the colours only. The classic themes look as they always did.
 
