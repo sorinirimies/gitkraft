@@ -185,8 +185,10 @@ fn seed(fake: &FakeClient) {
             json!({ "contributionDays": days })
         })
         .collect();
-    let graph = json!({"data": {"user": {"contributionsCollection": {"contributionCalendar": {"weeks": weeks}}}}});
-    fake.push_json("https://api.github.com/graphql", &graph.to_string());
+    let calendar = json!({"data": {"user": {"contributionsCollection": {"contributionCalendar": {"weeks": weeks}}}}});
+    fake.respond_with("https://api.github.com/graphql", move |req| {
+        graphql_answer(&calendar, req)
+    });
 
     // One pull request worth opening.
     let base = format!("{API}/repos/dodai/gitkraft");
@@ -218,10 +220,85 @@ fn seed(fake: &FakeClient) {
         "diff --git a/src/tray.rs b/src/tray.rs\n--- a/src/tray.rs\n+++ b/src/tray.rs\n@@ -10,6 +10,9 @@ pub fn start() -> bool {\n     if cfg!(test) {\n         return false;\n     }\n+    if !host_available() {\n+        return false;\n+    }\n     imp::start()\n }\n");
 }
 
+/// The demo's GitHub GraphQL: the contribution calendar for the calendar query, and for a day
+/// query (`from` in the variables) what the calendar says was done that day.
+fn graphql_answer(
+    calendar: &serde_json::Value,
+    req: &gitkraft_platforms::http::Request,
+) -> gitkraft_platforms::http::Response {
+    let body: serde_json::Value = req
+        .body
+        .as_deref()
+        .and_then(|b| serde_json::from_slice(b).ok())
+        .unwrap_or_default();
+    let from = body["variables"]["from"].as_str().unwrap_or_default();
+    let reply = match from.get(..10) {
+        None => calendar.clone(),
+        Some(date) => day_reply(calendar, date),
+    };
+    gitkraft_platforms::http::Response {
+        status: 200,
+        headers: vec![("content-type".into(), "application/json".into())],
+        body: reply.to_string().into_bytes(),
+    }
+}
+
+/// The answer to the day query for `date`: the calendar's count for that day, split into commits
+/// in two repositories plus, on busier days, one pull request and one review.
+fn day_reply(calendar: &serde_json::Value, date: &str) -> serde_json::Value {
+    let total =
+        calendar["data"]["user"]["contributionsCollection"]["contributionCalendar"]["weeks"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|w| w["contributionDays"].as_array().into_iter().flatten())
+            .find(|d| d["date"] == date)
+            .and_then(|d| d["contributionCount"].as_u64())
+            .unwrap_or(0);
+    let commits = total.saturating_sub(if total > 5 { 2 } else { 0 });
+    let first = commits.div_ceil(2);
+    let repos: Vec<_> = [("dodai/gitkraft", first), ("dodai/dodai-ui", commits - first)]
+        .into_iter()
+        .filter(|(_, n)| *n > 0)
+        .map(|(name, n)| json!({"repository": {"nameWithOwner": name, "url": format!("https://github.com/{name}")}, "contributions": {"totalCount": n}}))
+        .collect();
+    let pr = |n: u64, title: &str| json!({"pullRequest": {"number": n, "title": title, "url": format!("https://github.com/dodai/gitkraft/pull/{n}"), "repository": {"nameWithOwner": "dodai/gitkraft"}}});
+    let (prs, reviews) = if total > 5 {
+        (
+            vec![pr(214, "Tray icon and start at login")],
+            vec![pr(209, "Fix the CI log scroll")],
+        )
+    } else {
+        (vec![], vec![])
+    };
+    json!({"data": {"user": {"contributionsCollection": {
+        "contributionCalendar": {"totalContributions": total},
+        "commitContributionsByRepository": repos,
+        "pullRequestContributions": {"nodes": prs},
+        "issueContributions": {"nodes": []},
+        "pullRequestReviewContributions": {"nodes": reviews},
+    }}}})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use gitkraft_settings::dashboard::Dashboard;
+
+    #[tokio::test]
+    async fn a_busy_calendar_day_opens_with_what_was_done_that_day() {
+        let hub = hub();
+        let calendar = hub.contributions().await;
+        let busy = calendar
+            .items
+            .iter()
+            .find(|d| d.count > 5)
+            .expect("the demo year has a busy day");
+        let day = hub.day_activity(busy.date).await;
+        assert!(day.errors.is_empty(), "{:?}", day.errors);
+        assert_eq!(day.activity.total, busy.count);
+        assert!(!day.activity.entries.is_empty());
+    }
 
     #[tokio::test]
     async fn the_demo_hub_fills_every_starter_section_without_a_network() {

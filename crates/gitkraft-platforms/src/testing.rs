@@ -7,8 +7,21 @@ use std::sync::{Arc, Mutex};
 use crate::error::{PlatformError, Result};
 use crate::http::{HttpClient, Request, Response};
 
+type Answer = dyn Fn(&Request) -> Response + Send + Sync;
+
+/// A function that answers every request to one URL.
+#[derive(Clone)]
+struct Responder(Arc<Answer>);
+
+impl std::fmt::Debug for Responder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Responder")
+    }
+}
+
 #[derive(Debug, Default)]
 struct Inner {
+    responders: HashMap<String, Responder>,
     queues: HashMap<String, VecDeque<Response>>,
     sent: Vec<Request>,
 }
@@ -34,6 +47,20 @@ impl FakeClient {
                 .entry(url.to_string())
                 .or_default()
                 .push_back(response);
+        }
+    }
+
+    /// Answers every request to `url` by calling `answer`, for URLs that carry several kinds of
+    /// call (GraphQL) and so cannot be told apart by address. Wins over queued responses.
+    pub fn respond_with(
+        &self,
+        url: &str,
+        answer: impl Fn(&Request) -> Response + Send + Sync + 'static,
+    ) {
+        if let Ok(mut inner) = self.inner.lock() {
+            inner
+                .responders
+                .insert(url.to_string(), Responder(Arc::new(answer)));
         }
     }
 
@@ -78,6 +105,13 @@ impl HttpClient for FakeClient {
             .map_err(|_| PlatformError::Network("poisoned".into()))?;
         inner.sent.push(req.clone());
         let stripped = req.url.split('?').next().unwrap_or_default().to_string();
+        let dynamic = [req.url.as_str(), stripped.as_str()]
+            .into_iter()
+            .find_map(|k| inner.responders.get(k).cloned());
+        if let Some(r) = dynamic {
+            drop(inner);
+            return Ok((r.0)(&req));
+        }
         let key = [req.url.as_str(), stripped.as_str()]
             .into_iter()
             .find(|k| inner.queues.contains_key(*k))
