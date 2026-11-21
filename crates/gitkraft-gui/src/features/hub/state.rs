@@ -180,6 +180,8 @@ pub enum HubMessage {
     EditLabels,
     /// Select a diff line.
     DiffLine(usize),
+    /// The PR diff scrolled: offset and visible height.
+    DiffScrolled(f32, f32),
     /// Comment on the selected diff line with the note text.
     InlineComment,
     /// Start the selected run's workflow again, with the note as `[WORKFLOW] REF key=value…`.
@@ -345,6 +347,27 @@ pub struct Detail {
     pub job: usize,
     /// Diff line a comment would go on (index into the diff's lines).
     pub diff_line: Option<usize>,
+    /// Scroll offset of the diff, and the height of its visible area, for drawing only the lines
+    /// in view.
+    pub diff_scroll: f32,
+    /// Height of the diff area as last reported by the scroll area.
+    pub diff_view_h: f32,
+}
+
+impl Detail {
+    /// The diff lines to draw: those in view plus some either side.
+    pub fn diff_window(&self, len: usize) -> std::ops::Range<usize> {
+        line_window(self.diff_scroll, self.diff_view_h, len)
+    }
+}
+
+/// The lines of a list of fixed-height (`LOG_LINE_H`) lines to draw: those in the visible area
+/// plus `LOG_OVERSCAN` either side. Before the first scroll report (`view_h` 0) one screenful.
+pub fn line_window(scroll_y: f32, view_h: f32, len: usize) -> std::ops::Range<usize> {
+    let view_h = if view_h > 0.0 { view_h } else { 1200.0 };
+    let first = ((scroll_y / LOG_LINE_H) as usize).saturating_sub(LOG_OVERSCAN);
+    let count = (view_h / LOG_LINE_H) as usize + 2 * LOG_OVERSCAN;
+    first.min(len)..(first + count).min(len)
 }
 
 /// A log being read.
@@ -371,10 +394,7 @@ pub struct LogState {
 impl LogState {
     /// The lines to draw: those in view plus some either side.
     pub fn window(&self) -> std::ops::Range<usize> {
-        let first = (self.scroll_y / LOG_LINE_H) as usize;
-        let first = first.saturating_sub(LOG_OVERSCAN);
-        let count = (self.view_h / LOG_LINE_H) as usize + 2 * LOG_OVERSCAN;
-        first.min(self.lines.len())..(first + count).min(self.lines.len())
+        line_window(self.scroll_y, self.view_h, self.lines.len())
     }
 }
 
@@ -859,6 +879,8 @@ impl HubState {
             }
             HubMessage::Tab(t) => {
                 self.tab = t;
+                // The diff's scroll area starts at the top again when its tab comes back.
+                self.detail.diff_scroll = 0.0;
                 Task::none()
             }
             HubMessage::SelectJob(i) => {
@@ -965,6 +987,11 @@ impl HubState {
             HubMessage::Worktree => self.worktree(),
             HubMessage::OpenInBrowser => {
                 self.open_in_browser();
+                Task::none()
+            }
+            HubMessage::DiffScrolled(y, h) => {
+                self.detail.diff_scroll = y;
+                self.detail.diff_view_h = h;
                 Task::none()
             }
             HubMessage::DiffLine(i) => {
@@ -3593,6 +3620,30 @@ mod tests {
                 .as_ref()
                 .is_some_and(|(t, ok)| t.contains("type labels") && !ok)
         );
+    }
+
+    #[test]
+    fn only_the_diff_lines_in_view_are_drawn_and_a_tab_switch_starts_at_the_top() {
+        assert_eq!(line_window(0.0, 0.0, 10), 0..10, "short diffs draw whole");
+        let w = line_window(0.0, 0.0, 100_000);
+        assert!(
+            w.start == 0 && w.len() < 200,
+            "{w:?}: one screenful before a scroll report"
+        );
+        let w = line_window(LOG_LINE_H * 50_000.0, 800.0, 100_000);
+        assert!(w.contains(&50_000) && w.len() < 200, "{w:?}");
+        assert_eq!(
+            line_window(LOG_LINE_H * 1e9, 800.0, 10),
+            10..10,
+            "past the end is empty"
+        );
+
+        let mut s = state();
+        let _ = s.update(HubMessage::DiffScrolled(LOG_LINE_H * 300.0, 640.0));
+        assert!(s.detail.diff_window(10_000).contains(&300));
+        let _ = s.update(HubMessage::Tab(PrTab::Overview));
+        let _ = s.update(HubMessage::Tab(PrTab::Diff));
+        assert_eq!(s.detail.diff_window(10_000).start, 0);
     }
 
     #[test]

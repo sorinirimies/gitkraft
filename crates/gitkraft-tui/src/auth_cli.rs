@@ -14,7 +14,6 @@ use gitkraft_platforms::oauth::{self, DeviceCode};
 use gitkraft_platforms::{
     Account, Backend, CachedClient, HttpClient, PlatformKind, ReqwestClient, Secret,
 };
-use gitkraft_settings::files;
 
 /// A parsed command.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -195,11 +194,7 @@ impl Terminal for Stdio {
 
 /// Runs a command for real; returns the text to print.
 pub fn run(cmd: Command) -> Result<String> {
-    let file = files::accounts_path()
-        .ok()
-        .and_then(|p| files::read_optional(&p).ok().flatten())
-        .and_then(|t| AccountsFile::parse(&t).ok())
-        .unwrap_or_default();
+    let file = AccountsFile::saved_or_default();
     let map = file.host_map();
     let client = CachedClient::new(ReqwestClient::new().map_err(|e| anyhow!(e))?);
     let rt = tokio::runtime::Builder::new_current_thread()

@@ -550,14 +550,29 @@ async fn pull_request(cx: &Cx) -> Result<impl View> {
             format!("{} {what}", r.author.login)
         })
         .collect();
-    let mut diff: Vec<(&'static str, String)> = detail
+    // Each line with where a comment on it lands (`path:line`, empty for headers); a click on such
+    // a line asks for the comment and sends its index, which the server maps again.
+    let at = gitkraft_platforms::diffpos::positions(&detail.diff);
+    let mut diff: Vec<(&'static str, String, String)> = detail
         .diff
         .lines()
         .take(DIFF_LINES)
-        .map(|l| (diff_class(l), l.to_string()))
+        .enumerate()
+        .map(|(i, l)| {
+            let anchor = at
+                .get(i)
+                .and_then(gitkraft_platforms::diffpos::DiffPos::anchor)
+                .map(|a| format!("{}:{}", a.path, a.line))
+                .unwrap_or_default();
+            (diff_class(l), l.to_string(), anchor)
+        })
         .collect();
     if detail.diff.lines().count() > DIFF_LINES {
-        diff.push(("hunk", format!("… diff cut after {DIFF_LINES} lines")));
+        diff.push((
+            "hunk",
+            format!("… diff cut after {DIFF_LINES} lines"),
+            String::new(),
+        ));
     }
     let images = gitkraft_hub::markdown::image_urls(&format!(
         "{}\n{}",
@@ -598,6 +613,7 @@ async fn pull_request(cx: &Cx) -> Result<impl View> {
     let ai_summary = with(serde_json::json!({"action": "pr_ai", "what": "summary"}));
     let ai_catch_up = with(serde_json::json!({"action": "pr_ai", "what": "catch_up"}));
     let ai_review = with(serde_json::json!({"action": "pr_ai", "what": "review"}));
+    let line_comment = with(serde_json::json!({"action": "line_comment"}));
     let labels: Vec<String> = pr.labels.iter().map(|l| l.name.clone()).collect();
     Ok(view! {
         shell(title: format!("{} · #{number}", pr.title), nav: nav(session, ""), vars: session.css_vars(), token: session.token().to_string(),
@@ -644,8 +660,11 @@ async fn pull_request(cx: &Cx) -> Result<impl View> {
                 <a href=(format!("{base}&tab=comments")) class=(if tab == "comments" { "on" } else { "" })>(format!("Comments {}", detail.comments.len()))</a>
             </nav>
             if tab == "diff" {
-                <div class="diff">
-                    for (class, text) in diff { <div class=(class)>(text)</div> }
+                <div class="meta small">"Click a line to comment on it."</div>
+                <div class="diff" data-line-act=(line_comment) onclick="gkLineComment(event,this)">
+                    for (i, (class, text, anchor)) in diff.into_iter().enumerate() {
+                        <div class=(class) data-l=(i.to_string()) data-at=(anchor)>(text)</div>
+                    }
                 </div>
             } else if tab == "comments" {
                 for c in detail.comments.clone() {

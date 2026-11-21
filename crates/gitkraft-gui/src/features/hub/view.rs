@@ -718,8 +718,13 @@ fn pr_detail<'a>(
             scrollable(col).height(Length::Fill).into()
         }
         (Some(d), PrTab::Diff) => {
-            let mut col = column![];
-            for (i, l) in d.diff.lines().enumerate().take(4000) {
+            // Only the lines in view are built (big PRs have tens of thousands), with spacers
+            // standing in for the rest so the scroll bar stays true.
+            let total = d.diff.lines().count();
+            let win = hub.detail.diff_window(total);
+            let line_h = super::state::LOG_LINE_H;
+            let mut col = column![Space::new().height(win.start as f32 * line_h)];
+            for (i, l) in d.diff.lines().enumerate().skip(win.start).take(win.len()) {
                 let color = if l.starts_with('+') && !l.starts_with("+++") {
                     c.green
                 } else if l.starts_with('-') && !l.starts_with("---") {
@@ -735,9 +740,14 @@ fn pr_detail<'a>(
                     text(l.to_string())
                         .font(iced::Font::MONOSPACE)
                         .size(12)
+                        .line_height(iced::widget::text::LineHeight::Absolute(iced::Pixels(
+                            line_h,
+                        )))
+                        .wrapping(iced::widget::text::Wrapping::None)
                         .color(color),
                 )
                 .width(Length::Fill)
+                .height(line_h)
                 .style(move |_| container::Style {
                     background: chosen
                         .then_some(iced::Background::Color(Color { a: 0.22, ..accent })),
@@ -745,7 +755,11 @@ fn pr_detail<'a>(
                 });
                 col = col.push(mouse_area(line).on_press(HubMessage::DiffLine(i)));
             }
-            scrollable(col).height(Length::Fill).into()
+            col = col.push(Space::new().height(total.saturating_sub(win.end) as f32 * line_h));
+            scrollable(col)
+                .on_scroll(|v| HubMessage::DiffScrolled(v.absolute_offset().y, v.bounds().height))
+                .height(Length::Fill)
+                .into()
         }
         (Some(d), PrTab::Comments) => {
             let mut col = column![].spacing(8);

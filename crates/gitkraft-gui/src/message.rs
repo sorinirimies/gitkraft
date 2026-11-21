@@ -65,6 +65,14 @@ pub enum Message {
     RepoSelected(Option<PathBuf>),
     /// Folder picker returned a path for init (or was cancelled → `None`).
     RepoInitSelected(Option<PathBuf>),
+    /// The clone field changed.
+    CloneSpecChanged(String),
+    /// User clicked "Clone" — pick the folder to clone into.
+    CloneRepo,
+    /// Folder picker returned the parent folder of the clone (or was cancelled → `None`).
+    CloneDestSelected(Option<PathBuf>),
+    /// The clone finished: the new checkout, or what went wrong.
+    Cloned(Result<PathBuf, String>),
     /// Async repo-open completed.
     RepoOpened(Result<RepoPayload, String>),
     /// User requested a full refresh of the current repo.

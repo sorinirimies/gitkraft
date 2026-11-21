@@ -911,11 +911,18 @@ fn render_pr(
                 vec![Line::from(Span::styled("No diff available.", muted(theme)))]
             } else {
                 let cursor = (hub.focus == Focus::Detail).then_some(hub.detail.diff_cursor);
+                // Style only the lines that can end up on screen (around the scroll position and
+                // the cursor the view follows); the rest stay empty placeholders so the line
+                // count, and with it the scrolling, is unchanged. Big PRs have 100k lines.
+                let near = diff_window(hub.detail.scroll as usize, cursor, body.height as usize);
                 detail
                     .diff
                     .lines()
                     .enumerate()
                     .map(|(i, l)| {
+                        if !near(i) {
+                            return Line::default();
+                        }
                         let line = diff_line(l, theme);
                         if cursor == Some(i) {
                             line.patch_style(Modifier::REVERSED)
@@ -974,6 +981,16 @@ fn render_pr(
         p = p.wrap(Wrap { trim: false });
     }
     frame.render_widget(p, body);
+}
+
+/// Whether diff line `i` can be on screen: within a screenful either side of the scroll
+/// position or of the cursor (which the view scrolls to).
+fn diff_window(scroll: usize, cursor: Option<usize>, height: usize) -> impl Fn(usize) -> bool {
+    let h = height.max(1);
+    move |i| {
+        let around = |at: usize| i + h >= at && i <= at + 2 * h;
+        around(scroll) || cursor.is_some_and(around)
+    }
 }
 
 fn indent(mut line: Line<'static>) -> Line<'static> {
@@ -1956,6 +1973,16 @@ fn render_status(hub: &HubState, frame: &mut Frame, area: Rect, theme: &UiTheme)
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn only_diff_lines_near_the_scroll_position_or_the_cursor_are_styled() {
+        let near = diff_window(1_000, None, 40);
+        assert!(near(1_000) && near(960) && near(1_080));
+        assert!(!near(0) && !near(5_000));
+        let near = diff_window(0, Some(90_000), 40);
+        assert!(near(0) && near(90_000) && near(89_960));
+        assert!(!near(50_000));
+    }
     use super::*;
     use crate::app::AppScreen;
     use crate::features::hub::logview::LogView;

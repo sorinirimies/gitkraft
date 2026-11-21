@@ -4,6 +4,7 @@
 
 use std::path::Path;
 
+use gitkraft_core::CommitAction;
 use gitkraft_core::features::{branches, commits, diff, graph, log, remotes, repo, staging, stash};
 use serde::Deserialize;
 
@@ -102,6 +103,74 @@ pub enum GitOp {
         /// Branch name.
         branch: String,
     },
+    /// Push a branch with `--force-with-lease`.
+    ForcePush {
+        /// Remote name.
+        remote: String,
+        /// Branch name.
+        branch: String,
+    },
+    /// Rename a local branch.
+    RenameBranch {
+        /// Current name.
+        name: String,
+        /// New name.
+        to: String,
+    },
+    /// Rebase the current branch onto another.
+    Rebase {
+        /// Branch to rebase onto.
+        name: String,
+    },
+    /// Check out a remote branch as a local tracking branch.
+    CheckoutRemote {
+        /// `remote/branch`.
+        name: String,
+    },
+    /// Delete a branch on its remote.
+    DeleteRemoteBranch {
+        /// `remote/branch`.
+        name: String,
+    },
+    /// Apply a commit on top of the current branch.
+    CherryPick {
+        /// The commit.
+        oid: String,
+    },
+    /// Make a commit that undoes another.
+    Revert {
+        /// The commit.
+        oid: String,
+    },
+    /// Move the current branch to a commit.
+    Reset {
+        /// The commit.
+        oid: String,
+        /// `soft`, `mixed` or `hard`.
+        mode: String,
+    },
+    /// Tag a commit; annotated when a message is given.
+    Tag {
+        /// The commit.
+        oid: String,
+        /// Tag name.
+        name: String,
+        /// Message of an annotated tag.
+        #[serde(default)]
+        message: Option<String>,
+    },
+    /// Create a branch at a commit.
+    BranchAt {
+        /// The commit.
+        oid: String,
+        /// Branch name.
+        name: String,
+    },
+    /// Check out a commit without a branch.
+    CheckoutDetached {
+        /// The commit.
+        oid: String,
+    },
 }
 
 fn err<E: std::fmt::Display>(e: E) -> String {
@@ -151,6 +220,18 @@ pub fn file_diff(path: &Path, file: &str, staged: bool) -> Result<diff::DiffInfo
 pub fn search(path: &Path, query: &str) -> Result<Vec<commits::CommitInfo>, String> {
     let r = repo::open_repo(path).map_err(err)?;
     log::search_commits(&r, query, COMMITS).map_err(err)
+}
+
+/// Runs a commit action (the same ones the GUI and TUI offer); "`done` <short id>" on success.
+fn on_commit(path: &Path, oid: &str, action: CommitAction, done: &str) -> anyhow::Result<String> {
+    action
+        .execute(path, oid)
+        .map(|()| format!("{done} {}", short(oid)))
+}
+
+/// The first 7 characters of a commit id.
+fn short(oid: &str) -> &str {
+    oid.get(..7).unwrap_or(oid)
 }
 
 fn need(name: &str, what: &str) -> Result<(), String> {
@@ -215,6 +296,59 @@ pub fn run(path: &Path, op: &GitOp) -> Result<String, String> {
         }
         Push { remote, branch } => {
             branches::push_branch(path, branch, remote).map(|()| format!("pushed {branch}"))
+        }
+        ForcePush { remote, branch } => branches::force_push_branch(path, branch, remote)
+            .map(|()| format!("force-pushed {branch}")),
+        RenameBranch { name, to } => {
+            need(to, "branch name")?;
+            branches::validate_ref_name(to.trim()).map_err(str::to_string)?;
+            branches::rename_branch(&open()?, name, to.trim())
+                .map(|()| format!("renamed {name} to {}", to.trim()))
+        }
+        Rebase { name } => {
+            branches::rebase_onto(path, name).map(|()| format!("rebased onto {name}"))
+        }
+        CheckoutRemote { name } => {
+            branches::checkout_remote_branch(path, name).map(|()| format!("checked out {name}"))
+        }
+        DeleteRemoteBranch { name } => {
+            branches::delete_remote_branch(path, name).map(|()| format!("deleted {name}"))
+        }
+        CherryPick { oid } => on_commit(path, oid, CommitAction::CherryPick, "cherry-picked"),
+        Revert { oid } => on_commit(path, oid, CommitAction::Revert, "reverted"),
+        Reset { oid, mode } => {
+            let action = match mode.as_str() {
+                "soft" => CommitAction::ResetSoft,
+                "mixed" => CommitAction::ResetMixed,
+                "hard" => CommitAction::ResetHard,
+                other => return Err(format!("unknown reset mode {other:?}")),
+            };
+            on_commit(path, oid, action, &format!("reset ({mode}) to"))
+        }
+        Tag { oid, name, message } => {
+            need(name, "tag name")?;
+            let name = name.trim().to_string();
+            branches::validate_ref_name(&name).map_err(str::to_string)?;
+            let action = match message.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
+                Some(m) => CommitAction::CreateAnnotatedTag(name.clone(), m.to_string()),
+                None => CommitAction::CreateTag(name.clone()),
+            };
+            on_commit(path, oid, action, "tagged").map(|m| format!("{m} as {name}"))
+        }
+        BranchAt { oid, name } => {
+            need(name, "branch name")?;
+            let name = name.trim().to_string();
+            branches::validate_ref_name(&name).map_err(str::to_string)?;
+            on_commit(
+                path,
+                oid,
+                CommitAction::CreateBranchHere(name.clone()),
+                "branched",
+            )
+            .map(|m| format!("{m} as {name}"))
+        }
+        CheckoutDetached { oid } => {
+            on_commit(path, oid, CommitAction::CheckoutDetached, "detached at")
         }
     };
     result.map_err(err)
@@ -390,6 +524,140 @@ mod tests {
         assert_eq!(info.summary, "second");
         assert!(!diff_lines(&files).is_empty());
         assert_eq!(search(p, "first").expect("search").len(), 1);
+    }
+
+    /// HEAD's commit id.
+    fn head(p: &Path) -> String {
+        let out = std::process::Command::new("git")
+            .current_dir(p)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .expect("rev-parse");
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    /// A repo with two commits on `main`; `(dir, first, second)`.
+    fn repo_with_two_commits() -> (tempfile::TempDir, String, String) {
+        let d = repo_with_commit();
+        let first = head(d.path());
+        std::fs::write(d.path().join("b.txt"), "two\n").expect("write");
+        git(d.path(), &["add", "."]);
+        git(d.path(), &["commit", "-qm", "second"]);
+        let second = head(d.path());
+        (d, first, second)
+    }
+
+    #[test]
+    fn a_commit_is_tagged_branched_from_and_checked_out_detached() {
+        let (d, first, _) = repo_with_two_commits();
+        let p = d.path();
+        let tag = |name: &str, message: Option<&str>| GitOp::Tag {
+            oid: first.clone(),
+            name: name.into(),
+            message: message.map(str::to_string),
+        };
+        assert!(
+            run(p, &tag("", None)).is_err(),
+            "an empty tag name is refused"
+        );
+        assert!(run(p, &tag("bad name", None)).is_err());
+        assert!(run(p, &tag("v0.1", None)).expect("light").contains("v0.1"));
+        run(p, &tag("v0.2", Some("first release"))).expect("annotated");
+        run(
+            p,
+            &GitOp::BranchAt {
+                oid: first.clone(),
+                name: "old".into(),
+            },
+        )
+        .expect("branch at");
+        let snap = snapshot(p).expect("snapshot");
+        assert!(snap.branches.iter().any(|b| b.name == "old"));
+        run(p, &GitOp::CheckoutDetached { oid: first.clone() }).expect("detach");
+        assert_eq!(head(p), first);
+    }
+
+    #[test]
+    fn cherry_pick_revert_and_the_three_resets_move_history() {
+        let (d, first, second) = repo_with_two_commits();
+        let p = d.path();
+        let reset = |mode: &str| GitOp::Reset {
+            oid: first.clone(),
+            mode: mode.into(),
+        };
+        assert!(run(p, &reset("sideways")).is_err());
+        run(p, &reset("soft")).expect("soft");
+        assert_eq!(head(p), first);
+        assert!(
+            !snapshot(p).expect("s").staged.is_empty(),
+            "soft keeps it staged"
+        );
+        run(p, &reset("mixed")).expect("mixed");
+        let s = snapshot(p).expect("s");
+        assert!(
+            s.staged.is_empty() && !s.unstaged.is_empty(),
+            "mixed unstages it"
+        );
+        // A hard reset throws away tracked changes; stage the file so it is one (untracked files
+        // stay, as with git).
+        run(
+            p,
+            &GitOp::Stage {
+                path: "b.txt".into(),
+            },
+        )
+        .expect("stage");
+        run(p, &reset("hard")).expect("hard");
+        assert!(!p.join("b.txt").exists(), "hard threw the staged file away");
+
+        run(
+            p,
+            &GitOp::CherryPick {
+                oid: second.clone(),
+            },
+        )
+        .expect("cherry-pick");
+        assert!(p.join("b.txt").exists());
+        run(p, &GitOp::Revert { oid: head(p) }).expect("revert");
+        assert!(!p.join("b.txt").exists(), "the revert undid the file");
+    }
+
+    #[test]
+    fn a_branch_is_renamed_and_the_new_name_is_checked() {
+        let d = repo_with_commit();
+        let p = d.path();
+        run(
+            p,
+            &GitOp::NewBranch {
+                name: "feature".into(),
+            },
+        )
+        .expect("new");
+        let rename = |to: &str| GitOp::RenameBranch {
+            name: "feature".into(),
+            to: to.into(),
+        };
+        assert!(run(p, &rename(" ")).is_err());
+        assert!(run(p, &rename("no spaces")).is_err());
+        run(p, &rename("feature-2")).expect("rename");
+        let names: Vec<_> = snapshot(p)
+            .expect("s")
+            .branches
+            .into_iter()
+            .map(|b| b.name)
+            .collect();
+        assert!(names.contains(&"feature-2".to_string()), "{names:?}");
+        assert!(!names.contains(&"feature".to_string()));
+        assert!(
+            run(
+                p,
+                &GitOp::DeleteRemoteBranch {
+                    name: "no-slash".into()
+                }
+            )
+            .is_err(),
+            "a remote branch needs remote/branch"
+        );
     }
 
     #[test]

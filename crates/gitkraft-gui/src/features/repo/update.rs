@@ -79,6 +79,49 @@ pub(crate) fn update(state: &mut GitKraft, message: Message) -> Task<Message> {
             }
         }
 
+        Message::CloneSpecChanged(spec) => {
+            state.clone_spec = spec;
+            Task::none()
+        }
+
+        Message::CloneRepo => {
+            if state.clone_spec.trim().is_empty() {
+                state.active_tab_mut().error_message =
+                    Some("type what to clone: owner/name, host/owner/name or a URL".into());
+                return Task::none();
+            }
+            let tab = state.active_tab_mut();
+            tab.error_message = None;
+            tab.status_message = Some("Choose the folder to clone into…".into());
+            commands::pick_folder_clone()
+        }
+
+        Message::CloneDestSelected(maybe_dir) => {
+            let tab = state.active_tab_mut();
+            let Some(dir) = maybe_dir else {
+                tab.status_message = None;
+                return Task::none();
+            };
+            let spec = state.clone_spec.trim().to_string();
+            let tab = state.active_tab_mut();
+            tab.is_loading = true;
+            tab.status_message = Some(format!("Cloning {spec}…"));
+            commands::clone_repo(spec, dir)
+        }
+
+        Message::Cloned(Ok(path)) => {
+            state.clone_spec.clear();
+            update(state, Message::RepoSelected(Some(path)))
+        }
+
+        Message::Cloned(Err(e)) => {
+            let tab = state.active_tab_mut();
+            tab.is_loading = false;
+            tab.status_message = None;
+            tab.error_message = Some(format!("clone failed: {e}"));
+            Task::none()
+        }
+
         Message::RepoOpened(result) => handle_repo_loaded(state, result),
 
         Message::RefreshRepo => with_repo!(state, loading, "Refreshing…".into(), |path| {
@@ -364,6 +407,29 @@ fn compute_branch_context(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn clone_asks_for_a_spec_then_a_folder_and_shows_a_failure() {
+        let mut s = GitKraft::new();
+        let _ = update(&mut s, Message::CloneRepo);
+        assert!(
+            s.active_tab()
+                .error_message
+                .as_deref()
+                .is_some_and(|e| e.contains("type what to clone")),
+        );
+        let _ = update(&mut s, Message::CloneSpecChanged("acme/widgets".into()));
+        assert_eq!(s.clone_spec, "acme/widgets");
+        let _ = update(&mut s, Message::CloneRepo);
+        assert!(s.active_tab().error_message.is_none());
+        let _ = update(&mut s, Message::CloneDestSelected(None));
+        assert!(s.active_tab().status_message.is_none(), "cancel clears");
+        let _ = update(&mut s, Message::Cloned(Err("no route".into())));
+        let tab = s.active_tab();
+        assert!(!tab.is_loading);
+        assert_eq!(tab.error_message.as_deref(), Some("clone failed: no route"));
+        assert_eq!(s.clone_spec, "acme/widgets", "kept to try again");
+    }
     use super::*;
 
     fn make_commit(oid: &str, refs: Vec<gitkraft_core::RefLabel>) -> gitkraft_core::CommitInfo {

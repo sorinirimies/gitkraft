@@ -102,7 +102,8 @@ branch by merging; those combinations say so instead of guessing.
 `+bug -wontfix \"good first issue\"`; GitHub, Gitea / Codeberg and GitLab.
 
 **Clone.** `gitkraft-tui clone owner/name` (or `host/owner/name`, or a URL) clones with your system `git`, over
-`--ssh` / `--https`, else the account's `clone_via` in `accounts.toml`, else https.
+`--ssh` / `--https`, else the account's `clone_via` in `accounts.toml`, else https. The GUI's welcome screen has the
+same field: type the project, pick the folder, and the clone opens in a tab.
 
 **Git over SSH.** fetch, pull and push use your system `git` and `ssh` (agent, `~/.ssh/config`, keychain), and
 a failure says what to do. `gitkraft-tui ssh …` gets a key in place:
@@ -121,7 +122,8 @@ passphrase (`--passphrase` lets `ssh-keygen` ask). The Hub's **SSH keys** view (
 
 **Workflow inputs.** `D` (and the GUI's Dispatch) reads `workflow_dispatch.inputs` from the workflow file: defaults
 fill what you leave out, `choice`/`boolean`/`number` values are checked, and a missing required input is named.
-**Inline comments** work on removed lines too (old side), and in the GUI by clicking a diff line.
+**Inline comments** work on removed lines too (old side), in the GUI by clicking a diff line, and on the web PR page
+by clicking a line of the Diff tab.
 
 **Palette and more.** In the TUI `:` or Ctrl+P, in the GUI Ctrl/Cmd+P or the **Commands** button, opens a fuzzy
 command palette with every action that applies to the selection. **Open in the browser:** a pull request, issue, CI run or notification opens on its forge with `b` in the TUI hub (also in the `?` menu and the right-click menu), the "Open in browser" button in the GUI (and the palette), and an "Open in browser ↗" link on the web pages. Only http(s) links are ever opened.
@@ -186,8 +188,10 @@ gitkraft-tui notify status | on | off | mute 2h | unmute | test | install
 without a token; `--theme N` picks the starting theme.
 
 The **Repository** page is the local git client in the browser, like the GUI and TUI: history with a graph and
-search, the working tree (stage, unstage, discard, commit, with diffs), branches, stashes and remotes (fetch, pull,
-push over your SSH setup). It only opens repositories the server knows (the one it started in, `--checkout DIR`,
+search, the working tree (stage, unstage, discard, commit, with diffs), branches (check out, merge, rebase onto,
+rename, delete, and remote branches checked out or deleted), stashes and remotes (fetch, pull, push and force push
+with lease over your SSH setup). A selected commit can be cherry-picked, reverted, tagged, branched from, checked out
+or reset to (soft, mixed, hard), the same actions as in the GUI and TUI. It only opens repositories the server knows (the one it started in, `--checkout DIR`,
 your recent ones), and the demo shows it read-only. The Dodai, Ocean, Forest, Rose and Sunset themes draw the design
 system's gradient mesh behind every page.
 

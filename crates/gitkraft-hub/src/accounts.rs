@@ -40,6 +40,20 @@ impl AccountsFile {
         toml::from_str(text).map_err(|e| e.to_string())
     }
 
+    /// The saved `accounts.toml`, or `None` when there is none or it does not parse.
+    pub fn saved() -> Option<Self> {
+        use gitkraft_settings::files;
+        files::accounts_path()
+            .ok()
+            .and_then(|p| files::read_optional(&p).ok().flatten())
+            .and_then(|t| Self::parse(&t).ok())
+    }
+
+    /// The saved `accounts.toml`, or an empty one.
+    pub fn saved_or_default() -> Self {
+        Self::saved().unwrap_or_default()
+    }
+
     /// The host map: well-known hosts plus these.
     pub fn host_map(&self) -> HostMap {
         self.accounts

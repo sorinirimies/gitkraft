@@ -43,6 +43,47 @@ pub(crate) fn pick_folder_init() -> Task<Message> {
     )
 }
 
+/// Open a folder-picker dialog for the folder a clone goes into.
+pub(crate) fn pick_folder_clone() -> Task<Message> {
+    Task::perform(
+        async {
+            let handle = rfd::AsyncFileDialog::new()
+                .set_title("Choose the folder to clone into")
+                .pick_folder()
+                .await;
+            handle.map(|h| h.path().to_path_buf())
+        },
+        Message::CloneDestSelected,
+    )
+}
+
+/// Clone `spec` into a new folder named after the project inside `parent`, on a background
+/// thread; over ssh or https as `accounts.toml` says for the host (as `gitkraft-tui clone`).
+pub(crate) fn clone_repo(spec: String, parent: PathBuf) -> Task<Message> {
+    git_task!(
+        Message::Cloned,
+        clone_blocking(
+            &spec,
+            &parent,
+            &gitkraft_hub::accounts::AccountsFile::saved_or_default()
+        )
+    )
+}
+
+/// Plans and runs a clone; the new checkout's path.
+pub(crate) fn clone_blocking(
+    spec: &str,
+    parent: &std::path::Path,
+    accounts: &gitkraft_hub::accounts::AccountsFile,
+) -> Result<PathBuf, String> {
+    let plan = gitkraft_hub::clone::plan(spec, None, None, accounts, parent)?;
+    if plan.dest.exists() {
+        return Err(format!("{} exists already", plan.dest.display()));
+    }
+    gitkraft_core::features::remotes::transport::clone_repo(&plan.url, &plan.dest).str_err()?;
+    Ok(plan.dest)
+}
+
 /// Load (open) a repository at `path` and gather all initial state.
 pub fn load_repo(path: PathBuf) -> Task<Message> {
     git_task!(Message::RepoOpened, load_repo_blocking(&path))
@@ -372,4 +413,19 @@ pub(crate) fn save_session_async(
         gitkraft_core::features::persistence::ops::save_session(&open_tabs, active_tab_index)
             .str_err()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_clone_is_refused_for_a_bad_spec_and_never_overwrites_a_folder() {
+        let parent = tempfile::tempdir().expect("tmp");
+        let none = gitkraft_hub::accounts::AccountsFile::default();
+        assert!(clone_blocking("just-a-name", parent.path(), &none).is_err());
+        std::fs::create_dir(parent.path().join("widgets")).expect("mk");
+        let e = clone_blocking("acme/widgets", parent.path(), &none).expect_err("exists");
+        assert!(e.contains("exists already"), "{e}");
+    }
 }

@@ -220,6 +220,13 @@ function gkLogFind(step){
   l.scrollIntoView({block:'center'});out.textContent=(gkAt+1)+'/'+gkHits.length;
 }
 if(document.querySelector('[data-running]'))setTimeout(()=>location.reload(),4000);
+function gkLineComment(e,box){
+  const l=e.target.closest('[data-at]');
+  if(!l||!l.dataset.at)return;
+  const t=prompt('Comment on '+l.dataset.at);
+  if(!t||!t.trim())return;
+  const p=JSON.parse(box.dataset.lineAct);p.line=Number(l.dataset.l);p.body=t;act(p);
+}
 function actBtn(b){
   const p=JSON.parse(b.dataset.act);
   const field=b.dataset.field||'body';

@@ -74,7 +74,72 @@ struct BranchRow {
     sync: String,
     checkout: String,
     merge: String,
+    rebase: String,
+    rename: String,
     delete: String,
+}
+
+/// A button that runs one git operation: what it says, the action, and an optional question
+/// (`ask`, its answer goes in `field`) or confirmation; `danger` paints it red.
+struct ActBtn {
+    label: &'static str,
+    act: String,
+    ask: &'static str,
+    field: &'static str,
+    confirm: &'static str,
+    danger: bool,
+}
+
+impl ActBtn {
+    fn new(label: &'static str, act: String) -> Self {
+        Self {
+            label,
+            act,
+            ask: "",
+            field: "",
+            confirm: "",
+            danger: false,
+        }
+    }
+    fn ask(mut self, question: &'static str, field: &'static str) -> Self {
+        self.ask = question;
+        self.field = field;
+        self
+    }
+    fn confirm(mut self, question: &'static str) -> Self {
+        self.confirm = question;
+        self
+    }
+    fn danger(mut self) -> Self {
+        self.danger = true;
+        self
+    }
+}
+
+/// The actions on a selected commit.
+fn commit_actions(r: usize, oid: &str) -> Vec<ActBtn> {
+    let a = |v: serde_json::Value| act(r, v);
+    vec![
+        ActBtn::new("Cherry-pick", a(serde_json::json!({"op": "cherry_pick", "oid": oid})))
+            .confirm("Apply this commit on top of the current branch?"),
+        ActBtn::new("Revert", a(serde_json::json!({"op": "revert", "oid": oid})))
+            .confirm("Make a new commit that undoes this one?"),
+        ActBtn::new("Branch here", a(serde_json::json!({"op": "branch_at", "oid": oid})))
+            .ask("Name of the new branch", "name"),
+        ActBtn::new("Tag", a(serde_json::json!({"op": "tag", "oid": oid})))
+            .ask("Tag name", "name"),
+        ActBtn::new("Rebase onto", a(serde_json::json!({"op": "rebase", "name": oid})))
+            .confirm("Rebase the current branch onto this commit?"),
+        ActBtn::new("Check out", a(serde_json::json!({"op": "checkout_detached", "oid": oid})))
+            .confirm("Check out this commit without a branch (detached HEAD)?"),
+        ActBtn::new("Reset soft", a(serde_json::json!({"op": "reset", "oid": oid, "mode": "soft"})))
+            .confirm("Move the current branch here and keep every change staged?"),
+        ActBtn::new("Reset mixed", a(serde_json::json!({"op": "reset", "oid": oid, "mode": "mixed"})))
+            .confirm("Move the current branch here and keep the changes unstaged?"),
+        ActBtn::new("Reset hard", a(serde_json::json!({"op": "reset", "oid": oid, "mode": "hard"})))
+            .confirm("Move the current branch here and THROW AWAY every uncommitted change? This cannot be undone.")
+            .danger(),
+    ]
 }
 
 struct StashRow {
@@ -90,6 +155,14 @@ struct RemoteRow {
     fetch: String,
     pull: String,
     push: String,
+    force: String,
+}
+
+/// A branch on a remote and what can be done with it.
+struct RemoteBranchRow {
+    name: String,
+    checkout: String,
+    delete: String,
 }
 
 /// Everything the page shows; `problem` set means only that is shown.
@@ -115,6 +188,7 @@ struct Page {
     d_head: String,
     d_message: String,
     d_diff: Vec<(&'static str, String)>,
+    d_actions: Vec<ActBtn>,
     history: Vec<CommitRow>,
     stage_all: String,
     unstage_all: String,
@@ -125,7 +199,7 @@ struct Page {
     f_diff: Vec<(&'static str, String)>,
     new_branch: String,
     local_branches: Vec<BranchRow>,
-    remote_branches: Vec<String>,
+    remote_branches: Vec<RemoteBranchRow>,
     stash_save: String,
     stashes: Vec<StashRow>,
     remotes: Vec<RemoteRow>,
@@ -290,7 +364,17 @@ async fn load(session: &Session, params: &GitParams) -> Page {
     let mut remote_branches = Vec::new();
     for b in &snap.branches {
         if b.is_remote() {
-            remote_branches.push(b.name.clone());
+            remote_branches.push(RemoteBranchRow {
+                name: b.name.clone(),
+                checkout: act(
+                    r,
+                    serde_json::json!({"op": "checkout_remote", "name": b.name}),
+                ),
+                delete: act(
+                    r,
+                    serde_json::json!({"op": "delete_remote_branch", "name": b.name}),
+                ),
+            });
         } else {
             local_branches.push(BranchRow {
                 name: b.name.clone(),
@@ -298,6 +382,11 @@ async fn load(session: &Session, params: &GitParams) -> Page {
                 sync: b.upstream_status().unwrap_or_default(),
                 checkout: act(r, serde_json::json!({"op": "checkout", "name": b.name})),
                 merge: act(r, serde_json::json!({"op": "merge", "name": b.name})),
+                rebase: act(r, serde_json::json!({"op": "rebase", "name": b.name})),
+                rename: act(
+                    r,
+                    serde_json::json!({"op": "rename_branch", "name": b.name}),
+                ),
                 delete: act(
                     r,
                     serde_json::json!({"op": "delete_branch", "name": b.name}),
@@ -339,6 +428,10 @@ async fn load(session: &Session, params: &GitParams) -> Page {
                 r,
                 serde_json::json!({"op": "push", "remote": m.name, "branch": head}),
             ),
+            force: act(
+                r,
+                serde_json::json!({"op": "force_push", "remote": m.name, "branch": head}),
+            ),
         })
         .collect();
 
@@ -364,6 +457,10 @@ async fn load(session: &Session, params: &GitParams) -> Page {
     let is_stash = tab == "stash";
     let is_remotes = tab == "remotes";
     let has_detail = detail.is_some();
+    let d_actions = match &detail {
+        Some((info, _)) => commit_actions(r, &info.oid),
+        None => Vec::new(),
+    };
     let nothing_changed = unstaged.is_empty() && staged.is_empty();
     Page {
         problem: String::new(),
@@ -386,6 +483,7 @@ async fn load(session: &Session, params: &GitParams) -> Page {
         d_head,
         d_message,
         d_diff,
+        d_actions,
         history,
         stage_all,
         unstage_all,
@@ -429,6 +527,7 @@ async fn repository(cx: &Cx) -> Result<impl View> {
         d_head,
         d_message,
         d_diff,
+        d_actions,
         history,
         stage_all,
         unstage_all,
@@ -471,6 +570,13 @@ async fn repository(cx: &Cx) -> Result<impl View> {
                     <div class="panel">
                         <div class="meta small">(d_head)</div>
                         <pre>(d_message)</pre>
+                        if !demo {
+                            <div class="bar">
+                                for b in d_actions {
+                                    <button class=(if b.danger { "danger" } else { "" }) data-act=(b.act) data-ask=(b.ask) data-field=(b.field) data-confirm=(b.confirm) onclick="actBtn(this)">(b.label)</button>
+                                }
+                            </div>
+                        }
                     </div>
                     <div class="diff">
                         for (class, text) in d_diff { <div class=(class)>(text)</div> }
@@ -534,15 +640,25 @@ async fn repository(cx: &Cx) -> Result<impl View> {
                                 if !b.head {
                                     <button data-act=(b.checkout) onclick="actBtn(this)">"Check out"</button>
                                     <button data-act=(b.merge) data-confirm="Merge this branch into the current one?" onclick="actBtn(this)">"Merge"</button>
+                                    <button data-act=(b.rebase) data-confirm="Rebase the current branch onto this one?" onclick="actBtn(this)">"Rebase onto"</button>
                                     <button class="danger" data-act=(b.delete) data-confirm="Delete this branch?" onclick="actBtn(this)">"Delete"</button>
                                 }
+                                <button data-act=(b.rename) data-ask="New name of the branch" data-field="to" onclick="actBtn(this)">"Rename"</button>
                             </td>
                         </tr>
                     }
                 </table>
                 <h2>"Remote branches"</h2>
                 <table>
-                    for n in remote_branches { <tr><td class="meta">(n)</td></tr> }
+                    for b in remote_branches {
+                        <tr>
+                            <td class="meta">(b.name)</td>
+                            <td>
+                                <button data-act=(b.checkout) onclick="actBtn(this)">"Check out"</button>
+                                <button class="danger" data-act=(b.delete) data-confirm="Delete this branch on the remote? Others lose it too." onclick="actBtn(this)">"Delete on remote"</button>
+                            </td>
+                        </tr>
+                    }
                 </table>
             } else if is_stash {
                 <div class="bar"><button class="primary" data-act=(stash_save) onclick="actBtn(this)">"Stash changes"</button></div>
@@ -569,6 +685,7 @@ async fn repository(cx: &Cx) -> Result<impl View> {
                                 <button data-act=(m.fetch) onclick="actBtn(this)">"Fetch"</button>
                                 <button data-act=(m.pull) data-confirm="Fast-forward the current branch from this remote?" onclick="actBtn(this)">"Pull"</button>
                                 <button data-act=(m.push) data-confirm="Push the current branch to this remote?" onclick="actBtn(this)">"Push"</button>
+                                <button class="danger" data-act=(m.force) data-confirm="Force-push (with lease) the current branch? It overwrites the remote branch if nobody pushed since your last fetch." onclick="actBtn(this)">"Force push"</button>
                             </td>
                         </tr>
                     }

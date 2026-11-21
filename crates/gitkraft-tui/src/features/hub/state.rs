@@ -3108,6 +3108,33 @@ pub(crate) mod fixtures {
 mod tests {
     use super::fixtures::*;
     use super::*;
+
+    #[test]
+    fn the_pulse_cycles_through_the_watched_repos_both_ways_and_wraps() {
+        let mut s = state();
+        s.cycle_pulse_repo(1);
+        assert!(s.pulse.repo.is_none(), "nothing watched, nothing changes");
+        s.watched = ["a", "b", "c"]
+            .iter()
+            .map(|n| Watched {
+                repo: RepoId::new("github.com", "o", *n),
+                path: None,
+            })
+            .collect();
+        let name = |s: &HubState| s.pulse.repo.as_ref().map(|r| r.name.clone());
+        s.cycle_pulse_repo(1);
+        assert_eq!(
+            name(&s).as_deref(),
+            Some("b"),
+            "from the first (default) to the next"
+        );
+        s.cycle_pulse_repo(1);
+        s.cycle_pulse_repo(1);
+        assert_eq!(name(&s).as_deref(), Some("a"), "wraps forward");
+        s.cycle_pulse_repo(-1);
+        assert_eq!(name(&s).as_deref(), Some("c"), "wraps backward");
+        assert!(s.pulse.data.is_none(), "the old repo's data is dropped");
+    }
     use gitkraft_settings::dashboard::SectionKind;
 
     #[test]

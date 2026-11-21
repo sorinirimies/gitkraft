@@ -35,6 +35,17 @@ pub enum ActionRequest {
         /// Text.
         body: String,
     },
+    /// Comment on one line of a pull request's diff.
+    LineComment {
+        /// `host/owner/name`.
+        repo: String,
+        /// Number.
+        number: u64,
+        /// Index of the line in the diff as the page shows it.
+        line: usize,
+        /// The comment.
+        body: String,
+    },
     /// Comment on a GitHub discussion.
     DiscussionComment {
         /// `host/owner/name`.
@@ -362,6 +373,31 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
                 .post_comment(&repo, kind, number, body.trim())
                 .await
                 .map(|()| "comment posted".to_string())
+        }
+        ActionRequest::LineComment {
+            repo,
+            number,
+            line,
+            body,
+        } => {
+            if body.trim().is_empty() {
+                return Err("a comment needs some text".into());
+            }
+            let repo = repo_of(&repo)?;
+            let backend = hub.backend(&repo.host).ok_or("no account for this host")?;
+            // Map the index on the current diff, so the page cannot point at a made-up line.
+            let diff = backend
+                .pull_request_diff(&repo, number)
+                .await
+                .map_err(|e| e.to_string())?;
+            let anchor = gitkraft_platforms::diffpos::positions(&diff)
+                .get(line)
+                .and_then(gitkraft_platforms::diffpos::DiffPos::anchor)
+                .ok_or("that line cannot take a comment (a header, or the diff changed)")?;
+            backend
+                .comment_on_line(&repo, number, &anchor, body.trim())
+                .await
+                .map(|()| format!("commented on {}:{}", anchor.path, anchor.line))
         }
         ActionRequest::DiscussionComment { repo, number, body } => {
             if body.trim().is_empty() {
@@ -904,6 +940,37 @@ mod tests {
         fake.push_json("https://api.github.com/repos/o/r/issues/3/labels", "[]");
         let ok = perform(&s, edit("+bug")).await.expect("added");
         assert!(ok.contains("#3"), "{ok}");
+    }
+
+    #[tokio::test]
+    async fn a_line_comment_lands_on_the_line_the_server_maps_from_the_current_diff() {
+        let fake = FakeClient::new();
+        let s = session(&fake);
+        let diff = "diff --git a/src/a.rs b/src/a.rs\n--- a/src/a.rs\n+++ b/src/a.rs\n@@ -1,2 +1,3 @@\n one\n+two\n three\n";
+        let at = |line: usize, body: &str| ActionRequest::LineComment {
+            repo: "github.com/o/r".into(),
+            number: 3,
+            line,
+            body: body.into(),
+        };
+        let e = perform(&s, at(5, " ")).await.expect_err("empty");
+        assert!(e.contains("needs some text"), "{e}");
+        assert!(fake.requests().is_empty(), "nothing was sent");
+
+        // A header line cannot take a comment.
+        fake.push_json("https://api.github.com/repos/o/r/pulls/3.diff", diff);
+        let e = perform(&s, at(0, "nit")).await.expect_err("header");
+        assert!(e.contains("cannot take a comment"), "{e}");
+
+        // Line 5 is `+two`: line 2 of the new src/a.rs.
+        fake.push_json("https://api.github.com/repos/o/r/pulls/3.diff", diff);
+        fake.push_json(
+            "https://api.github.com/repos/o/r/pulls/3",
+            r#"{"number":3,"head":{"ref":"f","sha":"abc"},"base":{"ref":"main"}}"#,
+        );
+        fake.push_json("https://api.github.com/repos/o/r/pulls/3/comments", "{}");
+        let ok = perform(&s, at(5, "nit")).await.expect("posted");
+        assert_eq!(ok, "commented on src/a.rs:2");
     }
 
     const BASE: &str = "https://api.github.com/repos/o/r/actions";

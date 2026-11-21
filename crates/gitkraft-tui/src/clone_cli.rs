@@ -7,7 +7,6 @@ use anyhow::{Result, anyhow};
 use gitkraft_hub::accounts::AccountsFile;
 use gitkraft_hub::clone::{ClonePlan, plan};
 use gitkraft_platforms::Transport;
-use gitkraft_settings::files;
 
 /// A parsed `clone` command.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,19 +41,17 @@ pub fn parse(args: &[String]) -> Result<Command, String> {
     })
 }
 
-fn accounts_file() -> AccountsFile {
-    files::accounts_path()
-        .ok()
-        .and_then(|p| files::read_optional(&p).ok().flatten())
-        .and_then(|t| AccountsFile::parse(&t).ok())
-        .unwrap_or_default()
-}
-
 /// Clones; returns the line to print.
 pub fn run(cmd: Command) -> Result<String> {
     let cwd = std::env::current_dir()?;
-    let p =
-        plan(&cmd.spec, cmd.transport, cmd.dest, &accounts_file(), &cwd).map_err(|e| anyhow!(e))?;
+    let p = plan(
+        &cmd.spec,
+        cmd.transport,
+        cmd.dest,
+        &AccountsFile::saved_or_default(),
+        &cwd,
+    )
+    .map_err(|e| anyhow!(e))?;
     clone_plan(&p)
 }
 

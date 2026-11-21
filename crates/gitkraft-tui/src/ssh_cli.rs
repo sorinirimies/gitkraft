@@ -22,7 +22,6 @@ use gitkraft_platforms::ssh::{PublicKey, SshTools, SystemSsh, local_keys};
 use gitkraft_platforms::{
     Account, Backend, CachedClient, HttpClient, ReqwestClient, Transport, parse_remote_url,
 };
-use gitkraft_settings::files;
 
 /// A parsed `ssh` command.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -333,7 +332,7 @@ fn known_hosts() -> Vec<String> {
                 .map(|id| id.host),
         );
     }
-    if let Some(file) = accounts_file() {
+    if let Some(file) = AccountsFile::saved() {
         hosts.extend(file.accounts.iter().map(|a| a.host.to_lowercase()));
     }
     if hosts.is_empty() {
@@ -342,13 +341,6 @@ fn known_hosts() -> Vec<String> {
     hosts.sort();
     hosts.dedup();
     hosts
-}
-
-fn accounts_file() -> Option<AccountsFile> {
-    files::accounts_path()
-        .ok()
-        .and_then(|p| files::read_optional(&p).ok().flatten())
-        .and_then(|t| AccountsFile::parse(&t).ok())
 }
 
 fn switch_remote(dir: &Path, to: Transport, name: &str) -> Result<String> {
@@ -371,7 +363,7 @@ fn switch_remote(dir: &Path, to: Transport, name: &str) -> Result<String> {
 
 /// The real backend for `host`: account kind from `accounts.toml` or the well-known hosts, token from the environment or CLI.
 fn real_backend(host: &str) -> Result<Backend<CachedClient<ReqwestClient>>> {
-    let map = accounts_file().unwrap_or_default().host_map();
+    let map = AccountsFile::saved_or_default().host_map();
     let kind = map.detect(host).ok_or_else(|| {
         anyhow!("unknown platform for {host}: add it to accounts.toml as [[account]] kind = \"gitlab\" | \"gitea\" | \"github\"")
     })?;

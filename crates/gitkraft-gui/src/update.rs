@@ -216,6 +216,10 @@ impl GitKraft {
             | Message::InitRepo
             | Message::RepoSelected(_)
             | Message::RepoInitSelected(_)
+            | Message::CloneSpecChanged(_)
+            | Message::CloneRepo
+            | Message::CloneDestSelected(_)
+            | Message::Cloned(_)
             | Message::RepoOpened(_)
             | Message::RefreshRepo
             | Message::RepoRefreshed(_)

@@ -573,6 +573,8 @@ pub struct GitKraft {
     // ── Persistence ───────────────────────────────────────────────────────
     /// Recently opened repositories (loaded from settings on startup).
     pub recent_repos: Vec<gitkraft_core::RepoHistoryEntry>,
+    /// What the welcome screen's clone field holds: `owner/name`, `host/owner/name` or a URL.
+    pub clone_spec: String,
 
     // ── About ─────────────────────────────────────────────────────────────
     /// Whether the About dialog is visible.
@@ -717,6 +719,7 @@ impl GitKraft {
             follow_system,
 
             recent_repos,
+            clone_spec: String::new(),
 
             show_about: false,
             hub: None,

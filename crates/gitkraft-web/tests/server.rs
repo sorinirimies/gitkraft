@@ -264,13 +264,19 @@ async fn the_pr_page_has_tabs_actions_images_and_escaped_text() {
     );
 
     let diff = get(h.addr, "/pr?repo=github.com%2Fo%2Fr&n=7&tab=diff").await;
-    assert!(
-        diff.body
-            .contains("<div class=\"del\">-old &lt;i&gt;</div>")
-            && diff.body.contains("<div class=\"add\">+new</div>"),
-        "{}",
-        diff.body
-    );
+    for needle in [
+        "<div class=\"del\" data-l=",
+        ">-old &lt;i&gt;</div>",
+        "<div class=\"add\" data-l=",
+        ">+new</div>",
+        "gkLineComment",
+    ] {
+        assert!(
+            diff.body.contains(needle),
+            "missing {needle:?} in\n{}",
+            diff.body
+        );
+    }
 
     let comments = get(h.addr, "/pr?repo=github.com%2Fo%2Fr&n=7&tab=comments").await;
     assert!(
@@ -1685,6 +1691,39 @@ async fn a_local_repository_is_browsed_changed_and_committed_from_the_page() {
     .await;
     assert_eq!(commit.status, 200, "{}", commit.body);
     assert!(get(h.addr, "/git").await.body.contains("second commit"));
+
+    // A selected commit offers the commit actions; a tag made from the page shows in history.
+    let oid = String::from_utf8(
+        std::process::Command::new("git")
+            .current_dir(repo.path())
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .expect("rev-parse")
+            .stdout,
+    )
+    .expect("utf8");
+    let oid = oid.trim();
+    let detail = get(h.addr, &format!("/git?r=0&tab=history&c={oid}")).await;
+    for needle in [
+        "Cherry-pick",
+        "Revert",
+        "Reset hard",
+        "Branch here",
+        "Rebase onto",
+    ] {
+        assert!(detail.body.contains(needle), "missing {needle:?}");
+    }
+    let tag = request(
+        h.addr,
+        "POST",
+        "/api/action",
+        &format!(r#"{{"action":"git","r":0,"op":"tag","oid":"{oid}","name":"v9"}}"#),
+    )
+    .await;
+    assert_eq!(tag.status, 200, "{}", tag.body);
+    assert!(get(h.addr, "/git").await.body.contains(">v9<"));
+    let branches = get(h.addr, "/git?r=0&tab=branches").await;
+    assert!(branches.body.contains("Rename"), "{}", branches.body);
 
     // Only repositories the server knows can be changed.
     let other = request(
