@@ -2,7 +2,7 @@
 //! stashes and remotes. The same core calls the GUI and the TUI make; this file only turns
 //! them into plain data and HTML-safe pieces, so the pages stay thin.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use gitkraft_core::CommitAction;
 use gitkraft_core::features::{branches, commits, diff, graph, log, remotes, repo, staging, stash};
@@ -171,6 +171,59 @@ pub enum GitOp {
         /// The commit.
         oid: String,
     },
+    /// Open a file of the working tree in the editor of the settings.
+    OpenInEditor {
+        /// Path inside the repository.
+        path: String,
+    },
+}
+
+/// `file` of the repository at `repo`, refused when it is absolute or climbs out with `..`
+/// (the page names files; it must not reach anything else on the machine).
+///
+/// # Errors
+/// The path leaves the repository.
+pub fn file_in_repo(repo: &Path, file: &str) -> Result<PathBuf, String> {
+    use std::path::Component;
+    let rel = Path::new(file.trim());
+    let plain = !file.trim().is_empty()
+        && rel
+            .components()
+            .all(|c| matches!(c, Component::Normal(_) | Component::CurDir));
+    if !plain {
+        return Err(format!("{file:?} is not a path inside the repository"));
+    }
+    Ok(repo.join(rel))
+}
+
+/// Who last changed each line of `file`.
+///
+/// # Errors
+/// The path leaves the repository, or git cannot blame it (unknown or binary file).
+pub fn blame(path: &Path, file: &str) -> Result<Vec<diff::BlameLine>, String> {
+    file_in_repo(path, file)?;
+    diff::blame_file(&repo::open_repo(path).map_err(err)?, file.trim()).map_err(err)
+}
+
+/// Opens `file` in the editor saved in the settings; terminal editors (which would take over
+/// the server's terminal) and no editor open it with the system's default app instead.
+fn open_in_editor(file: &Path) -> Result<String, String> {
+    if !file.exists() {
+        return Err(format!("{} does not exist", file.display()));
+    }
+    if cfg!(test) {
+        return Ok("opened".into());
+    }
+    let editor = gitkraft_settings::persistence::get_saved_editor()
+        .ok()
+        .flatten()
+        .map(|n| gitkraft_core::Editor::from_name(&n))
+        .filter(|e| !e.is_terminal_editor())
+        .unwrap_or(gitkraft_core::Editor::None);
+    editor
+        .open_file_or_default(file)
+        .map(|how| format!("opened {} ({how})", file.display()))
+        .map_err(err)
 }
 
 fn err<E: std::fmt::Display>(e: E) -> String {
@@ -347,6 +400,7 @@ pub fn run(path: &Path, op: &GitOp) -> Result<String, String> {
             )
             .map(|m| format!("{m} as {name}"))
         }
+        OpenInEditor { path: f } => return open_in_editor(&file_in_repo(path, f)?),
         CheckoutDetached { oid } => {
             on_commit(path, oid, CommitAction::CheckoutDetached, "detached at")
         }
@@ -446,6 +500,49 @@ pub fn ref_badges(c: &commits::CommitInfo) -> String {
 mod tests {
     use super::*;
     use std::process::Command;
+
+    #[test]
+    fn files_outside_the_repository_are_refused_for_blame_and_the_editor() {
+        let d = repo_with_commit();
+        let p = d.path();
+        for bad in ["../x", "/etc/passwd", "a/../../b", "", "  "] {
+            assert!(file_in_repo(p, bad).is_err(), "{bad:?}");
+            assert!(
+                run(p, &GitOp::OpenInEditor { path: bad.into() }).is_err(),
+                "{bad:?}"
+            );
+            assert!(blame(p, bad).is_err(), "{bad:?}");
+        }
+        assert_eq!(file_in_repo(p, "./a.txt").expect("ok"), p.join("./a.txt"));
+        assert!(
+            run(
+                p,
+                &GitOp::OpenInEditor {
+                    path: "missing.txt".into()
+                }
+            )
+            .is_err()
+        );
+        assert!(
+            run(
+                p,
+                &GitOp::OpenInEditor {
+                    path: "a.txt".into()
+                }
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn blame_names_the_commit_of_every_line() {
+        let d = repo_with_commit();
+        let p = d.path();
+        let lines = blame(p, "a.txt").expect("blame");
+        assert!(!lines.is_empty());
+        assert!(lines.iter().all(|l| l.oid == head(p)), "{lines:?}");
+        assert!(blame(p, "nope.txt").is_err());
+    }
 
     fn git(dir: &Path, args: &[&str]) {
         let ok = Command::new("git")

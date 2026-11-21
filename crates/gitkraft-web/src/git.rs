@@ -27,6 +27,21 @@ pub struct GitParams {
     pub staged: Option<String>,
     /// History search.
     pub q: Option<String>,
+    /// A file to blame.
+    pub blame: Option<String>,
+}
+
+/// A line of the blame view.
+#[derive(Debug, Default)]
+struct BlameRow {
+    no: String,
+    short: String,
+    who: String,
+    when: String,
+    href: String,
+    text: String,
+    /// The first line of a run from the same commit (the others leave the commit columns empty).
+    first: bool,
 }
 
 fn act(r: usize, op: serde_json::Value) -> String {
@@ -203,6 +218,14 @@ struct Page {
     stash_save: String,
     stashes: Vec<StashRow>,
     remotes: Vec<RemoteRow>,
+    d_files: Vec<(String, String)>,
+    f_blame: String,
+    f_open: String,
+    blame_path: String,
+    blame_close: String,
+    blame_open: String,
+    blame_error: String,
+    blame: Vec<BlameRow>,
 }
 
 fn problem(msg: impl Into<String>) -> Page {
@@ -355,6 +378,76 @@ async fn load(session: &Session, params: &GitParams) -> Page {
     } else {
         Vec::new()
     };
+    let blame_href = |file: &str| {
+        format!(
+            "{base}&tab={tab}&blame={}",
+            gitkraft_platforms::url_encode(file)
+        )
+    };
+    let open_act = |file: &str| act(r, serde_json::json!({"op": "open_in_editor", "path": file}));
+    let (f_blame, f_open) = if file.is_empty() {
+        (String::new(), String::new())
+    } else {
+        (blame_href(&file), open_act(&file))
+    };
+    let blame_path = params.blame.clone().unwrap_or_default();
+    let (blame, blame_error) = if blame_path.is_empty() {
+        (Vec::new(), String::new())
+    } else {
+        let p = path.clone();
+        let b2 = blame_path.clone();
+        match tokio::task::spawn_blocking(move || local::blame(&p, &b2)).await {
+            Ok(Ok(lines)) => {
+                let mut prev = String::new();
+                let rows = lines
+                    .iter()
+                    .map(|l| {
+                        let first = l.oid != prev;
+                        prev.clone_from(&l.oid);
+                        BlameRow {
+                            no: l.line_number.to_string(),
+                            short: if first {
+                                l.short_oid().to_string()
+                            } else {
+                                String::new()
+                            },
+                            who: if first {
+                                l.author_name.clone()
+                            } else {
+                                String::new()
+                            },
+                            when: if first {
+                                l.relative_time()
+                            } else {
+                                String::new()
+                            },
+                            href: format!("{base}&tab=history&c={}", l.oid),
+                            text: l.content.clone(),
+                            first,
+                        }
+                    })
+                    .collect();
+                (rows, String::new())
+            }
+            Ok(Err(e)) => (Vec::new(), e),
+            Err(e) => (Vec::new(), e.to_string()),
+        }
+    };
+    let blame_close = format!("{base}&tab={tab}");
+    let blame_open = if blame_path.is_empty() {
+        String::new()
+    } else {
+        open_act(&blame_path)
+    };
+    let d_files: Vec<(String, String)> = detail
+        .as_ref()
+        .map(|(_, files)| {
+            files
+                .iter()
+                .map(|f| (f.display_path().to_string(), blame_href(f.display_path())))
+                .collect()
+        })
+        .unwrap_or_default();
     let stage_all = act(r, serde_json::json!({"op": "stage_all"}));
     let unstage_all = act(r, serde_json::json!({"op": "unstage_all"}));
     let commit = act(r, serde_json::json!({"op": "commit"}));
@@ -498,6 +591,14 @@ async fn load(session: &Session, params: &GitParams) -> Page {
         stash_save,
         stashes,
         remotes,
+        d_files,
+        f_blame,
+        f_open,
+        blame_path,
+        blame_close,
+        blame_open,
+        blame_error,
+        blame,
     }
 }
 
@@ -542,14 +643,37 @@ async fn repository(cx: &Cx) -> Result<impl View> {
         stash_save,
         stashes,
         remotes,
+        d_files,
+        f_blame,
+        f_open,
+        blame_path,
+        blame_close,
+        blame_open,
+        blame_error,
+        blame,
     } = load(session, params).await;
     let failed = !problem.is_empty();
+    let has_blame = !blame_path.is_empty();
+    let f_name = params.f.clone().unwrap_or_default();
+    let clone_act = serde_json::json!({"action": "clone"}).to_string();
+    let clone_parent = session.clone_parent().display().to_string();
 
     Ok(view! {
         shell(title: format!("{title} · GitKraft"), nav: nav(session, "git"), vars: session.css_vars(), token: session.token().to_string(),
             <h1>(if failed { "Repository".to_string() } else { title.clone() })</h1>
             if failed { <div class="note err">(problem)</div> }
-            else {
+            if !demo {
+                <details class="panel" open=(failed)>
+                    <summary>"Clone a repository"</summary>
+                    <div class="bar">
+                        <input id="clone-spec" placeholder="owner/name, host/owner/name or a URL" aria-label="What to clone">
+                        <input id="clone-into" value=(clone_parent) aria-label="Folder to clone into">
+                        <button class="primary" data-act=(clone_act) data-from="clone-spec" data-field="spec" data-dest="clone-into" onclick="actBtn(this)">"Clone"</button>
+                    </div>
+                    <div class="meta small">"Over ssh or https as accounts.toml says for the host; the clone opens here when it is done."</div>
+                </details>
+            }
+            if !failed {
             <div class="meta">"on "<b>(head.clone())</b>if state != "Clean" { " · "(state.clone()) }if demo { " · demo: read-only" }</div>
             if picker.len() > 1 {
                 <div class="scope">
@@ -559,6 +683,27 @@ async fn repository(cx: &Cx) -> Result<impl View> {
             <nav class="tabs">
                 for (href, label, on) in tabs { <a href=(href) class=(if on { "on" } else { "" })>(label)</a> }
             </nav>
+            if has_blame {
+                <div class="panel">
+                    <div class="bar">
+                        <b>"Blame · "(blame_path.clone())</b>
+                        if !demo { <button data-act=(blame_open) onclick="actBtn(this)">"Open in editor"</button> }
+                        <a class="btn" href=(blame_close)>"Close"</a>
+                    </div>
+                    if !blame_error.is_empty() { <div class="note err">(blame_error)</div> }
+                    <table class="blame">
+                        for b in blame {
+                            <tr class=(if b.first { "run" } else { "" })>
+                                <td><a href=(b.href)><code>(b.short)</code></a></td>
+                                <td class="meta">(b.who)</td>
+                                <td class="meta">(b.when)</td>
+                                <td class="meta">(b.no)</td>
+                                <td><pre>(b.text)</pre></td>
+                            </tr>
+                        }
+                    </table>
+                </div>
+            }
             if is_history {
                 <form class="bar" method="get" action="/git">
                     <input type="hidden" name="r" value=(r.to_string())>
@@ -566,10 +711,19 @@ async fn repository(cx: &Cx) -> Result<impl View> {
                     <button>"Search"</button>
                     if searching { <a class="btn" href=(base.clone())>"Clear"</a> }
                 </form>
+                <form class="bar" method="get" action="/git">
+                    <input type="hidden" name="r" value=(r.to_string())>
+                    <input type="hidden" name="tab" value="history">
+                    <input name="blame" placeholder="path/of/a/file" aria-label="File to blame">
+                    <button>"Blame"</button>
+                </form>
                 if has_detail {
                     <div class="panel">
                         <div class="meta small">(d_head)</div>
                         <pre>(d_message)</pre>
+                        <div class="meta small">
+                            for (file, href) in d_files { <a href=(href) title="Blame (as it is now)">(file)</a>" " }
+                        </div>
                         if !demo {
                             <div class="bar">
                                 for b in d_actions {
@@ -625,6 +779,13 @@ async fn repository(cx: &Cx) -> Result<impl View> {
                 <h2>"Commit"</h2>
                 <textarea id="msg" placeholder="Commit message"></textarea>
                 <div class="bar"><button class="primary" data-act=(commit) data-from="msg" data-field="message" onclick="actBtn(this)">"Commit staged changes"</button></div>
+                if !f_blame.is_empty() {
+                    <div class="bar">
+                        <b>(f_name)</b>
+                        <a class="btn" href=(f_blame)>"Blame"</a>
+                        if !demo { <button data-act=(f_open) onclick="actBtn(this)">"Open in editor"</button> }
+                    </div>
+                }
                 <div class="diff">
                     for (class, text) in f_diff { <div class=(class)>(text)</div> }
                 </div>

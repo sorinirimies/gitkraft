@@ -257,6 +257,19 @@ impl Editor {
         }
     }
 
+    /// The editor saved under `name` in the settings (`editor_name`): a known one by name (any
+    /// case), `none`, or else a custom command.
+    pub fn from_name(name: &str) -> Self {
+        match EDITOR_NAMES
+            .iter()
+            .position(|n| n.eq_ignore_ascii_case(name))
+        {
+            Some(i) => Editor::from_index(i),
+            None if name.eq_ignore_ascii_case("none") => Editor::None,
+            None => Editor::Custom(name.to_string()),
+        }
+    }
+
     /// Get editor by index into EDITOR_NAMES.
     pub fn from_index(index: usize) -> Self {
         match index {
@@ -410,6 +423,17 @@ pub fn show_in_folder(file_path: &std::path::Path) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_saved_editor_name_maps_back_to_its_editor() {
+        assert_eq!(Editor::from_name("zed"), Editor::Zed);
+        assert_eq!(Editor::from_name(EDITOR_NAMES[0]), Editor::from_index(0));
+        assert_eq!(Editor::from_name("None"), Editor::None);
+        assert_eq!(
+            Editor::from_name("my-editor --wait"),
+            Editor::Custom("my-editor --wait".into())
+        );
+    }
+
     use super::*;
 
     #[test]

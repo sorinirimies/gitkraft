@@ -80,7 +80,7 @@ struct Inner {
     demo: std::sync::atomic::AtomicBool,
     hub: Hub<DynClient>,
     /// The local repositories the Repository pages may open (by index).
-    repos: Vec<PathBuf>,
+    repos: RwLock<Vec<PathBuf>>,
     dashboard: RwLock<Dashboard>,
     paths: Paths,
     /// Index of the active theme; changes when the user picks another one.
@@ -128,7 +128,7 @@ impl Session {
         let repos = known_repos(&paths);
         Self {
             inner: Arc::new(Inner {
-                repos,
+                repos: RwLock::new(repos),
                 demo: std::sync::atomic::AtomicBool::new(false),
                 hub,
                 dashboard: RwLock::new(dashboard),
@@ -149,8 +149,39 @@ impl Session {
     }
 
     /// The local repositories the pages may open: the checkouts and, for a real session, the recent ones.
-    pub fn repos(&self) -> &[PathBuf] {
-        &self.inner.repos
+    pub fn repos(&self) -> Vec<PathBuf> {
+        self.inner
+            .repos
+            .read()
+            .map(|r| r.clone())
+            .unwrap_or_default()
+    }
+
+    /// Makes `path` (just cloned) one of the repositories the pages may open, and, for the
+    /// user's real session, one of the recent ones the GUI and TUI list. Its index.
+    pub fn add_repo(&self, path: PathBuf) -> usize {
+        if self.is_live() {
+            let _ = gitkraft_settings::persistence::record_repo_opened(&path);
+        }
+        let Ok(mut repos) = self.inner.repos.write() else {
+            return 0;
+        };
+        if let Some(i) = repos.iter().position(|p| p == &path) {
+            return i;
+        }
+        repos.push(path);
+        repos.len() - 1
+    }
+
+    /// Where a clone goes when the page names no folder: beside the first repository, else
+    /// the home folder.
+    pub fn clone_parent(&self) -> PathBuf {
+        self.repos()
+            .first()
+            .and_then(|p| p.parent())
+            .map(std::path::Path::to_path_buf)
+            .or_else(dirs::home_dir)
+            .unwrap_or_else(|| PathBuf::from("."))
     }
 
     /// `~/.ssh` when this session may change it.

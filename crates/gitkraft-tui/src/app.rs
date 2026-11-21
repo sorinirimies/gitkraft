@@ -564,19 +564,7 @@ impl App {
             editor: settings
                 .editor_name
                 .as_deref()
-                .map(|name| {
-                    gitkraft_core::EDITOR_NAMES
-                        .iter()
-                        .position(|n| n.eq_ignore_ascii_case(name))
-                        .map(gitkraft_core::Editor::from_index)
-                        .unwrap_or_else(|| {
-                            if name.eq_ignore_ascii_case("none") {
-                                gitkraft_core::Editor::None
-                            } else {
-                                gitkraft_core::Editor::Custom(name.to_string())
-                            }
-                        })
-                })
+                .map(gitkraft_core::Editor::from_name)
                 .unwrap_or(gitkraft_core::Editor::None),
             show_editor_panel: false,
             editor_custom: String::new(),

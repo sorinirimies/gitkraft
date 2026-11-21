@@ -57,7 +57,7 @@ pub(crate) fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
     .style(theme::toolbar_button)
     .on_press(Message::OpenRepo);
 
-    let init_icon = icon!(icons::PERSON_FILL, 16);
+    let init_icon = icon!(icons::FOLDER_PLUS, 16);
 
     let init_btn = button(
         iced::widget::row![init_icon, text(" Init Repository").size(16)]
@@ -106,8 +106,9 @@ pub(crate) fn welcome_view<'a>(state: &'a GitKraft) -> Element<'a, Message> {
     ]
     .spacing(4)
     .align_x(Alignment::Center)
-    .width(Length::Fill)
-    .max_width(420);
+    // Fixed, so the card shrinks around it and the screen centres the card (a Fill column
+    // stretched the card to the whole width with the content at its left edge).
+    .width(Length::Fixed(420.0));
 
     // ── Recent repositories ───────────────────────────────────────────────
     if !state.recent_repos.is_empty() {

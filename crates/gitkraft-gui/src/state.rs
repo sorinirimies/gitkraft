@@ -765,20 +765,7 @@ impl GitKraft {
             editor: settings
                 .editor_name
                 .as_deref()
-                .map(|name| {
-                    // Try to map persisted name back to Editor variant
-                    gitkraft_core::EDITOR_NAMES
-                        .iter()
-                        .position(|n| n.eq_ignore_ascii_case(name))
-                        .map(gitkraft_core::Editor::from_index)
-                        .unwrap_or_else(|| {
-                            if name.eq_ignore_ascii_case("none") {
-                                gitkraft_core::Editor::None
-                            } else {
-                                gitkraft_core::Editor::Custom(name.to_string())
-                            }
-                        })
-                })
+                .map(gitkraft_core::Editor::from_name)
                 .unwrap_or_else(detect_system_editor),
 
             preview_editor: None,

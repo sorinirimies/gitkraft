@@ -191,8 +191,10 @@ The **Repository** page is the local git client in the browser, like the GUI and
 search, the working tree (stage, unstage, discard, commit, with diffs), branches (check out, merge, rebase onto,
 rename, delete, and remote branches checked out or deleted), stashes and remotes (fetch, pull, push and force push
 with lease over your SSH setup). A selected commit can be cherry-picked, reverted, tagged, branched from, checked out
-or reset to (soft, mixed, hard), the same actions as in the GUI and TUI. It only opens repositories the server knows (the one it started in, `--checkout DIR`,
-your recent ones), and the demo shows it read-only. The Dodai, Ocean, Forest, Rose and Sunset themes draw the design
+or reset to (soft, mixed, hard), the same actions as in the GUI and TUI. Any file can be blamed (from the changes tab,
+a commit's file list or a typed path) and opened in your editor; a repository can be cloned (`owner/name`,
+`host/owner/name` or a URL, into a folder you name) and opens once it is there. It only opens repositories the server knows (the one it started in, `--checkout DIR`,
+your recent ones, the ones it cloned), and the demo shows it read-only. The Dodai, Ocean, Forest, Rose and Sunset themes draw the design
 system's gradient mesh behind every page.
 
 ![Web repository](docs/screenshots/web-repository.png)

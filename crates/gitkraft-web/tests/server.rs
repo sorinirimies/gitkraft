@@ -1631,6 +1631,76 @@ fn git_in(dir: &std::path::Path, args: &[&str]) {
 }
 
 #[tokio::test]
+async fn a_file_is_blamed_and_a_repository_is_cloned_and_opened_from_the_page() {
+    let repo = tempfile::tempdir().expect("tmp");
+    git_in(repo.path(), &["init", "-q", "-b", "main"]);
+    git_in(repo.path(), &["config", "user.name", "Ada"]);
+    git_in(repo.path(), &["config", "user.email", "a@a"]);
+    git_in(repo.path(), &["config", "commit.gpgsign", "false"]);
+    std::fs::write(repo.path().join("a.txt"), "one <b>\ntwo\n").expect("write");
+    git_in(repo.path(), &["add", "."]);
+    git_in(repo.path(), &["commit", "-qm", "first commit"]);
+    let h = start_with(vec![repo.path().to_path_buf()]).await;
+
+    let blame = get(h.addr, "/git?r=0&tab=history&blame=a.txt").await;
+    for needle in [
+        "Blame · a.txt",
+        "<pre>one &lt;b&gt;</pre>",
+        "Open in editor",
+        "Close",
+    ] {
+        assert!(
+            blame.body.contains(needle),
+            "missing {needle:?} in\n{}",
+            blame.body
+        );
+    }
+    let outside = get(h.addr, "/git?r=0&blame=..%2F..%2Fetc%2Fpasswd").await;
+    assert!(outside.body.contains("not a path inside the repository"));
+    let refused = request(
+        h.addr,
+        "POST",
+        "/api/action",
+        r#"{"action":"git","r":0,"op":"open_in_editor","path":"/etc/passwd"}"#,
+    )
+    .await;
+    assert_eq!(refused.status, 400);
+
+    // A bare copy stands in for the forge: `file://localhost/…/o/widgets.git`.
+    let forge = tempfile::tempdir().expect("tmp");
+    let bare = forge.path().join("o").join("widgets.git");
+    std::fs::create_dir_all(bare.parent().expect("parent")).expect("mk");
+    git_in(
+        forge.path(),
+        &[
+            "clone",
+            "-q",
+            "--bare",
+            &repo.path().display().to_string(),
+            &bare.display().to_string(),
+        ],
+    );
+    let into = tempfile::tempdir().expect("tmp");
+    let body = serde_json::json!({
+        "action": "clone",
+        "spec": format!("file://localhost{}", bare.display()),
+        "into": into.path().display().to_string(),
+    });
+    let cloned = request(h.addr, "POST", "/api/action", &body.to_string()).await;
+    assert_eq!(cloned.status, 200, "{}", cloned.body);
+    assert!(into.path().join("widgets").join("a.txt").exists());
+    let reply: serde_json::Value = serde_json::from_str(&cloned.body).expect("json");
+    let goto = reply["goto"].as_str().expect("goto");
+    assert_eq!(goto, "/git?r=1");
+    let page = get(h.addr, goto).await;
+    assert!(page.body.contains("<h1>widgets</h1>") && page.body.contains("first commit"));
+
+    let again = request(h.addr, "POST", "/api/action", &body.to_string()).await;
+    assert_eq!(again.status, 400);
+    assert!(again.body.contains("exists already"), "{}", again.body);
+}
+
+#[tokio::test]
 async fn a_local_repository_is_browsed_changed_and_committed_from_the_page() {
     let repo = tempfile::tempdir().expect("tmp");
     git_in(repo.path(), &["init", "-q", "-b", "main"]);

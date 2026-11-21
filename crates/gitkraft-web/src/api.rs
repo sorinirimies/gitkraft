@@ -10,7 +10,7 @@ use topcoat::{
     },
 };
 
-use crate::actions::{ActionRequest, perform};
+use crate::actions::{ActionRequest, perform_to};
 use crate::session::Session;
 use crate::style::CSS;
 
@@ -104,8 +104,10 @@ async fn action(cx: &Cx, Json(env): Json<Envelope>) -> Result<Json<serde_json::V
     if env.token != session.token() {
         return Err(bad_request("missing or wrong token: reload the page").into());
     }
-    match perform(session, env.req).await {
-        Ok(message) => Ok(Json(serde_json::json!({ "ok": true, "message": message }))),
+    match perform_to(session, env.req).await {
+        Ok((message, goto)) => Ok(Json(
+            serde_json::json!({ "ok": true, "message": message, "goto": goto }),
+        )),
         Err(e) => Err(bad_request(e).into()),
     }
 }

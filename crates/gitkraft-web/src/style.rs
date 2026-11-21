@@ -65,7 +65,7 @@ svg.g{display:block}svg.g line,svg.g path{fill:none;stroke-width:2}
 svg.g .e0{stroke:var(--accent)}svg.g .n0{fill:var(--accent)}
 svg.g .e1{stroke:#e5a50a}svg.g .n1{fill:#e5a50a}svg.g .e2{stroke:#2ec27e}svg.g .n2{fill:#2ec27e}svg.g .e3{stroke:#c061cb}svg.g .n3{fill:#c061cb}
 svg.g .e4{stroke:#e66100}svg.g .n4{fill:#e66100}svg.g .e5{stroke:#33b2c9}svg.g .n5{fill:#33b2c9}svg.g .e6{stroke:#ed333b}svg.g .n6{fill:#ed333b}svg.g .e7{stroke:#7a8fb5}svg.g .n7{fill:#7a8fb5}
-table.commits td{padding:0 8px;vertical-align:middle;height:26px}table.commits td.gcell{padding:0 4px 0 0;width:1%}table.commits tr.sel td{background:var(--sel)}
+table.blame td{padding:0 8px;vertical-align:top;white-space:nowrap}table.blame td pre{margin:0;font:12px/18px var(--mono,ui-monospace,monospace)}table.blame tr.run td{border-top:1px solid var(--border)}table.commits td{padding:0 8px;vertical-align:middle;height:26px}table.commits td.gcell{padding:0 4px 0 0;width:1%}table.commits tr.sel td{background:var(--sel)}
 .ref{display:inline-block;padding:0 6px;margin-left:4px;border:1px solid var(--border);border-radius:999px;font-size:11px;color:var(--text2)}
 .ref.head{color:var(--accent);border-color:var(--accent)}.ref.local{color:var(--ok);border-color:var(--ok)}.ref.remote{color:var(--warn);border-color:var(--warn)}
 .note{padding:6px 10px;border-radius:6px;background:var(--sel);margin:8px 0}
@@ -77,6 +77,7 @@ async function act(p){
   const r=await fetch('/api/action',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({token:document.querySelector('meta[name=gk-token]').content},p))});
   const t=await r.text();
   if(!r.ok){alert(t);return;}
+  try{const j=JSON.parse(t);if(j.goto){location.href=j.goto;return;}}catch(e){}
   location.reload();
 }
 /* Command palette: every link of the navigation and every action button of the page, by fuzzy name. */
@@ -233,6 +234,7 @@ function actBtn(b){
   if(b.dataset.ask){const t=prompt(b.dataset.ask);if(!t)return;p[field]=t;}
   if(b.dataset.from){p[field]=document.getElementById(b.dataset.from).value;}
   if(b.dataset.title){p.title=document.getElementById(b.dataset.title).value;}
+  if(b.dataset.dest){p.into=document.getElementById(b.dataset.dest).value;}
   if(b.dataset.column){p.column=document.getElementById(b.dataset.column).value;}
   if(b.dataset.method){p.method=document.getElementById(b.dataset.method).value;}
   if(b.dataset.confirm&&!confirm(b.dataset.confirm))return;

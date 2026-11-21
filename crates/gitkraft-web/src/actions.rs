@@ -24,6 +24,15 @@ pub enum Kind {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum ActionRequest {
+    /// Clone `spec` (`owner/name`, `host/owner/name` or a URL) into a new folder inside `into`
+    /// (default: beside the first repository); the page then opens it.
+    Clone {
+        /// What to clone.
+        spec: String,
+        /// Parent folder.
+        #[serde(default)]
+        into: Option<String>,
+    },
     /// Post a comment.
     Comment {
         /// `host/owner/name`.
@@ -338,6 +347,55 @@ fn repo_of(key: &str) -> Result<RepoId, String> {
 
 /// Runs `req`; returns a short confirmation or the reason it failed.
 pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, String> {
+    perform_to(session, req).await.map(|(message, _)| message)
+}
+
+/// Runs an action: what to tell the user, and the page to go to next (else the page reloads).
+///
+/// # Errors
+/// What went wrong, for the page to show.
+pub async fn perform_to(
+    session: &Session,
+    req: ActionRequest,
+) -> Result<(String, Option<String>), String> {
+    if let ActionRequest::Clone { spec, into } = req {
+        if session.is_demo() {
+            return Err("the demo is read-only".into());
+        }
+        let parent = into
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .map_or_else(|| session.clone_parent(), std::path::PathBuf::from);
+        let dest = tokio::task::spawn_blocking(move || clone_into(&spec, &parent))
+            .await
+            .map_err(|e| e.to_string())??;
+        let shown = dest.display().to_string();
+        let r = session.add_repo(dest.canonicalize().unwrap_or(dest));
+        return Ok((format!("cloned into {shown}"), Some(format!("/git?r={r}"))));
+    }
+    perform_inner(session, req).await.map(|m| (m, None))
+}
+
+/// Plans (as `gitkraft-tui clone` and the GUI do) and runs a clone; the new checkout.
+fn clone_into(spec: &str, parent: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    if !parent.is_dir() {
+        return Err(format!("{} is not a folder", parent.display()));
+    }
+    let accounts = if cfg!(test) {
+        gitkraft_hub::accounts::AccountsFile::default()
+    } else {
+        gitkraft_hub::accounts::AccountsFile::saved_or_default()
+    };
+    let plan = gitkraft_hub::clone::plan(spec, None, None, &accounts, parent)?;
+    if plan.dest.exists() {
+        return Err(format!("{} exists already", plan.dest.display()));
+    }
+    gitkraft_core::features::remotes::transport::clone_repo(&plan.url, &plan.dest)
+        .map_err(|e| format!("{e:#}"))?;
+    Ok(plan.dest)
+}
+
+async fn perform_inner(session: &Session, req: ActionRequest) -> Result<String, String> {
     let hub = session.hub();
     if let ActionRequest::Git { r, op } = req {
         if session.is_demo() {
@@ -592,7 +650,9 @@ pub async fn perform(session: &Session, req: ActionRequest) -> Result<String, St
                 .await
                 .map(|()| format!("labels of #{number} changed"))
         }
-        ActionRequest::Git { .. } => return Err("unexpected action".into()),
+        ActionRequest::Git { .. } | ActionRequest::Clone { .. } => {
+            return Err("unexpected action".into());
+        }
         ActionRequest::Rerun {
             repo,
             run_id,
