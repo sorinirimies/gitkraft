@@ -28,7 +28,7 @@ pub fn plan(
     cwd: &std::path::Path,
 ) -> Result<ClonePlan, String> {
     let spec = spec.trim();
-    let repo = match parse_remote_url(spec) {
+    let repo = match parse_remote_url(spec).or_else(|| local_url_repo(spec)) {
         Some(r) => r,
         None => {
             let parts: Vec<&str> = spec.trim_matches('/').split('/').collect();
@@ -62,6 +62,20 @@ pub fn plan(
     };
     let dest = dest.unwrap_or_else(|| cwd.join(&repo.name));
     Ok(ClonePlan { repo, url, dest })
+}
+
+/// A `file://` URL names its project after the last two path segments, with the host
+/// `localhost`: `file:///srv/o/r.git` and `file:///C:/x/o/r.git` (what Git for Windows wants) are
+/// `localhost/o/r`.
+fn local_url_repo(spec: &str) -> Option<RepoId> {
+    let path = spec.strip_prefix("file://")?;
+    let path = path.strip_prefix("localhost").unwrap_or(path);
+    let mut parts = path.trim_end_matches('/').rsplit('/');
+    let name = parts.next()?.trim_end_matches(".git");
+    let owner = parts
+        .next()
+        .filter(|o| !o.is_empty() && !o.ends_with(':'))?;
+    (!name.is_empty()).then(|| RepoId::new("localhost", owner, name))
 }
 
 fn is_full_url(spec: &str) -> bool {
@@ -168,10 +182,23 @@ mod tests {
         for url in [
             "file://localhost/tmp/x/o/widgets.git",
             "file://localhost/C:/Users/me/AppData/Local/Temp/x/o/widgets.git",
+            "file:///C:/Users/me/AppData/Local/Temp/x/o/widgets.git",
+            "file:///tmp/x/o/widgets.git",
         ] {
             let p = plan(url, None, None, &none, Path::new("/w")).expect(url);
             assert_eq!(p.url, url);
             assert_eq!(p.dest, Path::new("/w").join("widgets"));
+        }
+    }
+
+    #[test]
+    fn a_file_url_needs_an_owner_folder_and_a_name() {
+        let none = AccountsFile::default();
+        for bad in ["file://", "file:///", "file:///r.git", "file:///C:/r.git"] {
+            assert!(
+                plan(bad, None, None, &none, Path::new("/w")).is_err(),
+                "{bad}"
+            );
         }
     }
 

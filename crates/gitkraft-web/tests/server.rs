@@ -1666,7 +1666,7 @@ async fn a_file_is_blamed_and_a_repository_is_cloned_and_opened_from_the_page() 
     .await;
     assert_eq!(refused.status, 400);
 
-    // A bare copy stands in for the forge: `file://localhost/…/o/widgets.git`.
+    // A bare copy stands in for the forge: `file:///…/o/widgets.git`.
     let forge = tempfile::tempdir().expect("tmp");
     let bare = forge.path().join("o").join("widgets.git");
     std::fs::create_dir_all(bare.parent().expect("parent")).expect("mk");
@@ -1815,8 +1815,8 @@ async fn without_a_repository_the_page_says_how_to_add_one() {
     assert!(page.body.contains("--checkout"), "{}", page.body);
 }
 
-/// `file://localhost/<path>` with forward slashes, also for `C:\…` on Windows
-/// (`file://localhost/C:/…`).
+/// `file:///<path>` with forward slashes: `file:///C:/…` on Windows, the only form Git for Windows
+/// takes.
 fn file_url(path: &std::path::Path) -> String {
     let p = path.display().to_string().replace('\\', "/");
     let p = if p.starts_with('/') {
@@ -1824,5 +1824,5 @@ fn file_url(path: &std::path::Path) -> String {
     } else {
         format!("/{p}")
     };
-    format!("file://localhost{p}")
+    format!("file://{p}")
 }
