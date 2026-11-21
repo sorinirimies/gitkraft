@@ -1,0 +1,94 @@
+name: Apt repository
+
+# After each release (or by hand, for a tag): the signed apt repository at
+# https://sorinirimies.github.io/gitkraft from the release's .deb files. Every
+# package is installed from it in Debian and Ubuntu containers, on amd64 and
+# arm64, before it is published. Needs the APT_SIGNING_KEY secret (made once with
+# `nu scripts/ci/apt_repo.nu key`); without it the repository is built and checked
+# with a throwaway key but not published.
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (empty: the latest release)"
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apt-repository
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and sign
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.key.outputs.publish }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: Release .deb files
+        run: nu scripts/ci/apt_repo.nu fetch "${{ github.event.inputs.tag || github.event.workflow_run.head_branch }}"
+      - name: Signing key
+        id: key
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: nu scripts/ci/apt_repo.nu import >> "$GITHUB_OUTPUT"
+      - name: Repository
+        run: nu scripts/ci/apt_repo.nu build debs site --key ${{ steps.key.outputs.fingerprint }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: apt-site
+          path: site
+          include-hidden-files: true
+          if-no-files-found: error
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  verify:
+    name: Install on ${{ matrix.image }} (${{ matrix.runner }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        image: ["debian:12", "ubuntu:22.04", "ubuntu:24.04"]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - uses: actions/download-artifact@v8
+        with:
+          name: apt-site
+          path: site
+      - name: Install every package from the repository
+        run: nu scripts/ci/apt_repo.nu verify site "${{ matrix.image }}"
+
+  deploy:
+    name: Publish on GitHub Pages
+    needs: [build, verify]
+    if: needs.build.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - id: pages
+        uses: actions/deploy-pages@v5

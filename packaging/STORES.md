@@ -7,6 +7,7 @@ A store job whose secret is missing is skipped, so the release itself never fail
 |---|---|---|---|---|
 | GitHub release | all | tarballs/zips of the four binaries, `.deb`, `.rpm`, AppImage, universal DMG, Windows installer | `publish` | nothing |
 | crates.io | all | `cargo install gitkraft` / `gitkraft-tui` / `gitkraft-web` / `gitkraft-mcp` | `crates-io` | `CRATES_IO_TOKEN` ✔ |
+| apt repository (GitHub Pages) | Debian, Ubuntu, Pop!_OS, Mint | the four `.deb`s, amd64 and arm64, signed | `apt.yml` (after `Release`) | `APT_SIGNING_KEY`, Pages set to "GitHub Actions" |
 | Snap Store | Linux | `gitkraft`, `gitkraft-tui` | `publish-snap` | `SNAPCRAFT_STORE_CREDENTIALS` ✔ |
 | Flathub (and so COSMIC Store, GNOME Software, KDE Discover) | Linux | the GUI | `update-flathub` | first submission, then `FLATHUB_TOKEN` |
 | AUR `gitkraft` | Arch | built from the source tarball | `aur` | `AUR_USERNAME`, `AUR_EMAIL`, `AUR_SSH_PRIVATE_KEY` |
@@ -21,6 +22,14 @@ Try them on a real release: `gh release download vX.Y.Z -D /tmp/rel`, then
 `nu scripts/ci/stores.nu manifests X.Y.Z --dist /tmp/rel --out /tmp/manifests`.
 
 ## One-time steps (the owner's accounts)
+
+**apt repository.** Make the signing key once and keep the file somewhere safe (a password
+manager): it is the only copy, and losing it means every user has to fetch a new key.
+
+    nu scripts/ci/apt_repo.nu key --out ~/gitkraft-apt-signing-key.asc
+    gh secret set APT_SIGNING_KEY -R sorinirimies/gitkraft < ~/gitkraft-apt-signing-key.asc
+
+Then run the `Apt repository` workflow once (`gh workflow run apt.yml`); later releases trigger it.
 
 **Homebrew and Scoop.** The repos `sorinirimies/homebrew-tap` and `sorinirimies/scoop-bucket` exist
 (nuance uses them). Create a fine-grained token: only those two repositories, *Contents: read and

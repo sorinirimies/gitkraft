@@ -380,11 +380,22 @@ Options: `--write`, `--allow-force`, `--repo host/owner/name` (env `GITKRAFT_MCP
 | Arch (AUR) | `paru -S gitkraft-bin` (prebuilt) or `paru -S gitkraft` (built from source) |
 | Linux (Snap) | `snap install gitkraft` / `snap install gitkraft-tui` |
 | Linux (Flathub) | `flatpak install flathub io.github.sorinirimies.GitKraft` (once accepted) |
-| Debian, Ubuntu, Fedora | the `.deb` / `.rpm` from the [Releases page](https://github.com/sorinirimies/gitkraft/releases), or the AppImage |
+| Debian 12+, Ubuntu 22.04+, Pop!_OS, Mint (apt) | add the repository once, then updates come with the system (commands below) |
+| Fedora, openSUSE | the `.rpm` from the [Releases page](https://github.com/sorinirimies/gitkraft/releases), or the AppImage |
 | Windows (Scoop) | `scoop bucket add sorinirimies https://github.com/sorinirimies/scoop-bucket`, then `scoop install sorinirimies/gitkraft` |
 | Windows (winget) | `winget install SorinIrimies.GitKraft` (once accepted) |
 | Windows, macOS | the installer / DMG from the [Releases page](https://github.com/sorinirimies/gitkraft/releases) |
 | Anywhere with Rust | `cargo install gitkraft` (GUI), `gitkraft-tui`, `gitkraft-web`, `gitkraft-mcp` |
+
+The apt repository, for amd64 and arm64:
+
+```sh
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://sorinirimies.github.io/gitkraft/gitkraft.gpg | sudo tee /etc/apt/keyrings/gitkraft.gpg > /dev/null
+curl -fsSL https://sorinirimies.github.io/gitkraft/gitkraft.sources | sudo tee /etc/apt/sources.list.d/gitkraft.sources > /dev/null
+sudo apt update
+sudo apt install gitkraft gitkraft-tui gitkraft-web gitkraft-mcp
+```
 
 The macOS app is not notarized yet: if macOS refuses to open it, run
 `xattr -dr com.apple.quarantine /Applications/GitKraft.app`. How each channel is published:

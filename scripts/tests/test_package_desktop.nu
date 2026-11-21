@@ -46,14 +46,15 @@ def "test package_desktop: architectures follow the target" [] {
     assert equal (rpm-arch x86_64-unknown-linux-gnu) x86_64
 }
 
-def "test package_desktop: only a gui depends on display libraries" [] {
+def "test package_desktop: every package needs glibc, only a gui the display libraries" [] {
     let gui = deb-control (app) (bin demo-gui) v1.2.3 amd64
     assert ($gui | str contains "Package: demo-gui\nVersion: 1.2.3\nArchitecture: amd64\n")
-    assert ($gui | str contains "Depends: libxkbcommon0\n")
+    assert ($gui | str contains "Depends: libc6 (>= 2.35), libgcc-s1, zlib1g, libxkbcommon0\n")
     assert ($gui | str contains "Recommends: libwayland-client0")
     assert ($gui | str contains "Maintainer: Me <me@example.com>")
-    let cli = deb-control (app) (bin demo) 1.2.3 arm64
-    assert not ($cli | str contains "Depends:")
+    assert not ($gui | str contains "Installed-Size")
+    let cli = deb-control (app) (bin demo) 1.2.3 arm64 --installed-kib 2048
+    assert ($cli | str contains "Installed-Size: 2048\nDepends: libc6 (>= 2.35), libgcc-s1, zlib1g\n") "a cli needs only the base libraries"
     assert not ($cli | str contains "Recommends:")
 }
 

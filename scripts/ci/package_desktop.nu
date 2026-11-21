@@ -49,13 +49,17 @@ export def alien-args [deb: string]: nothing -> list<string> {
 # Binaries that open a window or a terminal app, i.e. get a .desktop entry.
 export def launchable [bins: list<record>]: nothing -> list<record> { $bins | where kind in [gui tui] }
 
+# What every binary links: glibc (2.35 is the newest symbol version on the
+# ubuntu-22.04 runners that build the .debs), libgcc_s and zlib (libgit2).
+export const DEB_BASE_DEPENDS = "libc6 (>= 2.35), libgcc-s1, zlib1g"
+
 # Debian runtime dependencies of a kind. A GUI dlopen()s X11, Wayland and GL, so
 # one binary serves every session type; only xkbcommon is linked.
 export def deb-deps [kind: string]: nothing -> record<depends: string, recommends: string> {
     if $kind == "gui" {
-        {depends: "libxkbcommon0", recommends: "libwayland-client0, libx11-6, libvulkan1 | libgl1, fontconfig"}
+        {depends: $"($DEB_BASE_DEPENDS), libxkbcommon0", recommends: "libwayland-client0, libx11-6, libvulkan1 | libgl1, fontconfig"}
     } else {
-        {depends: "", recommends: ""}
+        {depends: $DEB_BASE_DEPENDS, recommends: ""}
     }
 }
 
@@ -66,8 +70,10 @@ export def deb-name [bin: string]: nothing -> string {
 }
 
 # DEBIAN/control of one binary's package.
-export def deb-control [app: record, bin: record, version: string, arch: string]: nothing -> string {
+# `installed_kib` is the unpacked size, which apt shows before installing.
+export def deb-control [app: record, bin: record, version: string, arch: string, --installed-kib: int]: nothing -> string {
     let deps = deb-deps $bin.kind
+    let size = if $installed_kib == null { "" } else { $"Installed-Size: ($installed_kib)\n" }
     let dep = if ($deps.depends | is-empty) { "" } else { $"Depends: ($deps.depends)\n" }
     let rec = if ($deps.recommends | is-empty) { "" } else { $"Recommends: ($deps.recommends)\n" }
     $"Package: (deb-name $bin.bin)
@@ -79,7 +85,7 @@ Priority: optional
 Description: ($bin.summary)
  ($app.summary)
 Homepage: ($app.homepage)
-($dep)($rec)"
+($size)($dep)($rec)"
 }
 
 # The file name of a binary's .desktop entry and metainfo, without extension:
@@ -374,7 +380,8 @@ def "main linux" [version: string, target: string, --appimage] {
         let pkg = deb-name $b.bin
         mkdir $"($root)/usr/share/doc/($pkg)"
         cp LICENSE $"($root)/usr/share/doc/($pkg)/copyright"
-        deb-control $APP $b $version (deb-arch $target) | save --force $"($root)/DEBIAN/control"
+        let kib = ^du -sk $root | split row "\t" | first | into int
+        deb-control $APP $b $version (deb-arch $target) --installed-kib $kib | save --force $"($root)/DEBIAN/control"
         let deb = $"dist/($pkg)_($v)_(deb-arch $target).deb"
         ^dpkg-deb --root-owner-group --build $root $deb
         # alien writes into the working directory: give each conversion its own.

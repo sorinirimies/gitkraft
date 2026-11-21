@@ -1,0 +1,35 @@
+name: Apt repository
+
+# GitHub Pages serves the apt repository (see .github/workflows/apt.yml); Gitea
+# only builds it from the latest GitHub release, to check the scripts, with a
+# throwaway key when APT_SIGNING_KEY is not set here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (empty: the latest release)"
+        required: false
+
+jobs:
+  build:
+    name: Build and sign
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: Install gh and dpkg-dev
+        run: nu scripts/ci/apt.nu
+      - name: Release .deb files
+        run: nu scripts/ci/apt_repo.nu fetch "${{ github.event.inputs.tag }}"
+      - name: Signing key
+        id: key
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: nu scripts/ci/apt_repo.nu import >> "$GITHUB_OUTPUT"
+      - name: Repository
+        run: nu scripts/ci/apt_repo.nu build debs site --key ${{ steps.key.outputs.fingerprint }}
