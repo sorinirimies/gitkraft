@@ -58,7 +58,7 @@ def "test rpm_spec: build dependencies resolve on fedora and opensuse alike" [] 
 }
 
 def "test rpm_spec: zypper on opensuse, dnf elsewhere" [] {
-    assert equal (install-command opensuse-tumbleweed [a]) [zypper --non-interactive install --no-recommends a]
+    assert equal (install-command opensuse-tumbleweed [a]) [zypper --non-interactive install --no-recommends --force-resolution a]
     assert equal (install-command opensuse-leap [a] | first) zypper
     assert equal (install-command fedora [a b]) [dnf install -y --setopt=install_weak_deps=False a b]
 }

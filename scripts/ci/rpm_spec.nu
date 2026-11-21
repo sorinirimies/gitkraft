@@ -136,7 +136,9 @@ def "main sources" [version: string, --out: string] {
 # The package manager command that installs `packages` on this distro.
 export def install-command [os_id: string, packages: list<string>]: nothing -> list<string> {
     if ($os_id | str starts-with "opensuse") or $os_id == "sles" {
-        [zypper --non-interactive install --no-recommends ...$packages]
+        # --force-resolution: the container image's busybox stand-ins (busybox-gawk…)
+        # give way to the real tools rpm-build needs.
+        [zypper --non-interactive install --no-recommends --force-resolution ...$packages]
     } else {
         [dnf install -y --setopt=install_weak_deps=False ...$packages]
     }
