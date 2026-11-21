@@ -46,9 +46,13 @@ jobs:
       matrix:
         include:
           - { image: "fedora:latest", prep: "dnf install -y tar xz gzip git" }
-          - { image: "opensuse/tumbleweed", prep: "zypper --non-interactive install bash tar xz gzip git" }
+          - { image: "opensuse/tumbleweed", prep: "zypper --non-interactive install tar xz gzip git" }
     runs-on: ubuntu-latest
     container: ${{ matrix.image }}
+    # Tumbleweed's image has bash but no /bin/sh, the default for container steps.
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Install tar and git for the actions
         run: ${{ matrix.prep }}
