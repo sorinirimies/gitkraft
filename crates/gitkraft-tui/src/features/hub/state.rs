@@ -158,7 +158,7 @@ pub struct Detail {
     /// Active PR tab.
     pub tab: Option<DetailTab>,
     /// Vertical scroll of the text.
-    pub scroll: u16,
+    pub scroll: usize,
     /// Selected job of a run.
     pub job: usize,
     /// Cursor line of the diff tab (index into the diff's lines).
@@ -280,7 +280,7 @@ pub struct CommunityDetail {
     /// The page.
     pub page: gitkraft_hub::community::Page,
     /// Lines scrolled.
-    pub scroll: u16,
+    pub scroll: usize,
 }
 
 /// State of the Community view.

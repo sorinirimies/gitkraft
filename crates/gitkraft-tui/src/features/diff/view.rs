@@ -197,8 +197,8 @@ fn render_commit_range_diff(app: &mut App, frame: &mut Frame, area: Rect) {
     }
 
     // Clamp scroll
-    let content_height = lines.len() as u16;
-    let visible_height = area.height.saturating_sub(2);
+    let content_height = lines.len();
+    let visible_height = usize::from(area.height.saturating_sub(2));
     {
         let tab = app.tab_mut();
         if content_height > visible_height {
@@ -210,7 +210,7 @@ fn render_commit_range_diff(app: &mut App, frame: &mut Frame, area: Rect) {
         }
     }
 
-    let scroll = app.tab().diff_scroll;
+    let (lines, scroll) = crate::utils::scroll_lines(lines, app.tab().diff_scroll);
     let paragraph = Paragraph::new(lines)
         .block(block)
         .wrap(Wrap { trim: false })
@@ -384,8 +384,8 @@ pub fn render_blame(app: &mut App, frame: &mut Frame, area: Rect) {
         .collect();
 
     // Clamp scroll
-    let content_height = lines.len() as u16;
-    let visible_height = area.height.saturating_sub(2);
+    let content_height = lines.len();
+    let visible_height = usize::from(area.height.saturating_sub(2));
     {
         let tab = app.tab_mut();
         if content_height > visible_height {
@@ -397,7 +397,7 @@ pub fn render_blame(app: &mut App, frame: &mut Frame, area: Rect) {
         }
     }
 
-    let scroll = app.tab().blame_scroll;
+    let (lines, scroll) = crate::utils::scroll_lines(lines, app.tab().blame_scroll);
     let paragraph = Paragraph::new(lines)
         .block(block)
         .wrap(Wrap { trim: false })
@@ -463,8 +463,8 @@ fn render_diff_content(
         }
 
         // Clamp scroll
-        let content_height = lines.len() as u16;
-        let visible_height = area.height.saturating_sub(2);
+        let content_height = lines.len();
+        let visible_height = usize::from(area.height.saturating_sub(2));
         {
             let tab = app.tab_mut();
             if content_height > visible_height {
@@ -476,7 +476,7 @@ fn render_diff_content(
             }
         }
 
-        let scroll = app.tab().diff_scroll;
+        let (lines, scroll) = crate::utils::scroll_lines(lines, app.tab().diff_scroll);
         let paragraph = Paragraph::new(lines)
             .block(block)
             .wrap(Wrap { trim: false })
@@ -528,8 +528,8 @@ fn render_diff_content(
             }
 
             // Clamp scroll so it doesn't go past the content
-            let content_height = lines.len() as u16;
-            let visible_height = area.height.saturating_sub(2); // subtract border rows
+            let content_height = lines.len();
+            let visible_height = usize::from(area.height.saturating_sub(2)); // subtract border rows
             if content_height > visible_height {
                 if tab.diff_scroll > content_height.saturating_sub(visible_height) {
                     tab.diff_scroll = content_height.saturating_sub(visible_height);
@@ -538,10 +538,11 @@ fn render_diff_content(
                 tab.diff_scroll = 0;
             }
 
+            let (lines, scroll) = crate::utils::scroll_lines(lines, tab.diff_scroll);
             let paragraph = Paragraph::new(lines)
                 .block(block)
                 .wrap(Wrap { trim: false })
-                .scroll((tab.diff_scroll, 0));
+                .scroll((scroll, 0));
 
             frame.render_widget(paragraph, area);
         }

@@ -914,7 +914,12 @@ fn render_pr(
                 // Style only the lines that can end up on screen (around the scroll position and
                 // the cursor the view follows); the rest stay empty placeholders so the line
                 // count, and with it the scrolling, is unchanged. Big PRs have 100k lines.
-                let near = diff_window(hub.detail.scroll as usize, cursor, body.height as usize);
+                let rows = usize::from(body.height);
+                let top = hub
+                    .detail
+                    .scroll
+                    .min(detail.diff.lines().count().saturating_sub(rows));
+                let near = diff_window(top, cursor, rows);
                 detail
                     .diff
                     .lines()
@@ -965,18 +970,23 @@ fn render_pr(
     hub.detail.body_rows = body.height;
     if tab == DetailTab::Diff && hub.focus == Focus::Detail && body.height > 0 {
         let (c, h) = (hub.detail.diff_cursor, body.height as usize);
-        if c < hub.detail.scroll as usize {
-            hub.detail.scroll = c as u16;
-        } else if c >= hub.detail.scroll as usize + h {
-            hub.detail.scroll = (c + 1 - h) as u16;
+        if c < hub.detail.scroll {
+            hub.detail.scroll = c;
+        } else if c >= hub.detail.scroll + h {
+            hub.detail.scroll = c + 1 - h;
         }
     }
-    let max_scroll = lines.len().saturating_sub(body.height as usize) as u16;
+    let rows = if wrap {
+        crate::utils::wrapped_rows(&lines, body.width)
+    } else {
+        lines.len()
+    };
     hub.detail.scroll = hub
         .detail
         .scroll
-        .min(if wrap { u16::MAX } else { max_scroll });
-    let mut p = Paragraph::new(lines).scroll((hub.detail.scroll, 0));
+        .min(rows.saturating_sub(usize::from(body.height)));
+    let (lines, scroll) = crate::utils::scroll_lines(lines, hub.detail.scroll);
+    let mut p = Paragraph::new(lines).scroll((scroll, 0));
     if wrap {
         p = p.wrap(Wrap { trim: false });
     }
@@ -1073,10 +1083,11 @@ fn render_issue(hub: &mut HubState, frame: &mut Frame, area: Rect, theme: &UiThe
         ]));
         lines.extend(c.body.lines().map(|l| Line::from(format!("  {l}"))));
     }
+    let (lines, scroll) = crate::utils::scroll_lines(lines, hub.detail.scroll);
     frame.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
-            .scroll((hub.detail.scroll, 0)),
+            .scroll((scroll, 0)),
         area,
     );
 }
@@ -1633,10 +1644,11 @@ fn render_community(
         )));
         lines.extend(body.lines().map(|l| Line::from(l.to_string())));
     }
+    let (lines, scroll) = crate::utils::scroll_lines(lines, d.scroll);
     frame.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
-            .scroll((d.scroll, 0)),
+            .scroll((scroll, 0)),
         inner,
     );
 }
@@ -2313,6 +2325,32 @@ mod tests {
         let text = draw(&mut app, 120, 24);
         assert!(text.contains("+line 70"), "{text}");
         assert!(app.hub.as_ref().expect("hub").detail.scroll > 0);
+    }
+
+    #[test]
+    fn a_diff_longer_than_a_u16_scrolls_to_its_last_line() {
+        let mut hub = state();
+        let pr = hub.selected_pr().cloned().expect("pr");
+        let diff: String = (0..100_000).map(|i| format!("+line {i}\n")).collect();
+        hub.detail.pr = Some(gitkraft_hub::PrDetail {
+            pr,
+            comments: vec![],
+            reviews: vec![],
+            diff,
+            errors: vec![],
+        });
+        hub.detail.tab = Some(DetailTab::Diff);
+        hub.detail.scroll = usize::MAX; // what G asks for
+        let mut app = app_with(hub);
+        let text = draw(&mut app, 120, 24);
+        assert!(text.contains("+line 99999"), "{text}");
+        assert!(app.hub.as_ref().expect("hub").detail.scroll > usize::from(u16::MAX));
+        app.hub.as_mut().expect("hub").focus = Focus::Detail;
+        app.hub.as_mut().expect("hub").detail.diff_cursor = 80_000;
+        assert!(
+            draw(&mut app, 120, 24).contains("+line 80000"),
+            "the cursor is followed"
+        );
     }
 
     #[test]

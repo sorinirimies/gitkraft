@@ -80,7 +80,7 @@ fn handle_content_key(app: &mut App, key: KeyEvent) {
                 .tab()
                 .selected_diff
                 .as_ref()
-                .map(|d| d.hunks.iter().map(|h| h.lines.len() as u16).sum::<u16>())
+                .map(|d| d.hunks.iter().map(|h| h.lines.len()).sum::<usize>())
                 .unwrap_or(0);
             app.tab_mut().diff_scroll = total_lines.saturating_sub(1);
         }
@@ -257,7 +257,7 @@ pub fn handle_blame_key(app: &mut App, key: KeyEvent) {
             app.tab_mut().blame_scroll = 0;
         }
         KeyCode::Char('G') => {
-            let len = app.tab().blame_lines.len() as u16;
+            let len = app.tab().blame_lines.len();
             app.tab_mut().blame_scroll = len.saturating_sub(1);
         }
         KeyCode::Esc | KeyCode::Char('q') => {

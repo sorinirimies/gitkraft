@@ -613,7 +613,7 @@ fn community_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
 
 fn scroll_community(hub: &mut HubState, delta: i16) {
     if let Some(d) = hub.community.detail.as_mut() {
-        d.scroll = d.scroll.saturating_add_signed(delta);
+        d.scroll = d.scroll.saturating_add_signed(isize::from(delta));
     }
 }
 
@@ -663,7 +663,7 @@ fn dashboard_key(hub: &mut HubState, key: KeyEvent) -> Outcome {
             if hub.focus == Focus::List {
                 hub.set_row(usize::MAX);
             } else {
-                hub.detail.scroll = u16::MAX;
+                hub.detail.scroll = usize::MAX;
             }
         }
         KeyCode::Right | KeyCode::Char('l') => hub.focus = Focus::Detail,
@@ -774,7 +774,7 @@ fn vertical(hub: &mut HubState, delta: isize) {
             } else if hub.selected_pr().is_some() && hub.detail.tab == Some(DetailTab::Diff) {
                 hub.move_diff_cursor(delta);
             } else {
-                hub.detail.scroll = hub.detail.scroll.saturating_add_signed(delta as i16);
+                hub.detail.scroll = hub.detail.scroll.saturating_add_signed(delta);
             }
         }
     }
@@ -993,7 +993,7 @@ fn scroll(hub: &mut HubState, x: u16, y: u16, delta: isize) {
                 let n = hub.detail.run.as_ref().map_or(0, |d| d.jobs.len());
                 hub.detail.job = super::list::step(hub.detail.job, n, delta.signum());
             } else {
-                hub.detail.scroll = hub.detail.scroll.saturating_add_signed(delta as i16);
+                hub.detail.scroll = hub.detail.scroll.saturating_add_signed(delta);
             }
         }
         _ => {}

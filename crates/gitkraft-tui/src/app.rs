@@ -247,7 +247,7 @@ pub struct RepoTab {
     pub staged_list_state: ListState,
     pub staging_focus: StagingFocus,
     pub selected_diff: Option<DiffInfo>,
-    pub diff_scroll: u16,
+    pub diff_scroll: usize,
     /// Which half of the diff split pane has keyboard focus.
     pub diff_sub_pane: DiffSubPane,
     /// Anchor index for diff file list range selection (set on plain navigation).
@@ -327,7 +327,7 @@ pub struct RepoTab {
     /// Blame lines for the current blame overlay.
     pub blame_lines: Vec<gitkraft_core::BlameLine>,
     /// Scroll offset for the blame overlay (rows from top).
-    pub blame_scroll: u16,
+    pub blame_scroll: usize,
 
     /// When `Some(path)`, show a delete-confirmation prompt for that path.
     pub confirm_delete_file: Option<String>,
