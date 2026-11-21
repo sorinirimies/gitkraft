@@ -48,11 +48,12 @@ jobs:
           - { image: "fedora:latest", prep: "dnf install -y tar xz gzip git" }
           - { image: "opensuse/tumbleweed", prep: "zypper --non-interactive install tar xz gzip git" }
     runs-on: ubuntu-latest
-    container: ${{ matrix.image }}
-    # Tumbleweed's image has bash but no /bin/sh, the default for container steps.
-    defaults:
-      run:
-        shell: bash
+    # The Tumbleweed image declares no PATH, so after setup-nu adds its folder the
+    # runner's PATH would hold only that one: give the container a full one.
+    container:
+      image: ${{ matrix.image }}
+      env:
+        PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     steps:
       - name: Install tar and git for the actions
         run: ${{ matrix.prep }}
