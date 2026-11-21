@@ -41,7 +41,7 @@ jobs:
     needs: prepare
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
       options: --privileged
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +54,8 @@ jobs:
           manifest-path: flathub/io.github.sorinirimies.GitKraft.yml
           bundle: gitkraft.flatpak
           cache-key: flatpak-${{ github.event.inputs.tag }}
+          # What Flathub's builders do; the linter requires mirrored screenshots.
+          mirror-screenshots-url: https://dl.flathub.org/media
       - uses: hustcer/setup-nu@v3
         with:
           version: "0.116.1"

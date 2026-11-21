@@ -14,7 +14,11 @@
   wayland,
   vulkan-loader,
   libGL,
-  xorg,
+  libx11,
+  libxcursor,
+  libxi,
+  libxrandr,
+  aws-lc,
   src,
   version,
 }:
@@ -26,10 +30,10 @@ let
     libxkbcommon
     vulkan-loader
     libGL
-    xorg.libX11
-    xorg.libXcursor
-    xorg.libXi
-    xorg.libXrandr
+    libx11
+    libxcursor
+    libxi
+    libxrandr
   ];
 in
 rustPlatform.buildRustPackage {
@@ -46,8 +50,9 @@ rustPlatform.buildRustPackage {
   ];
 
   nativeBuildInputs = [ pkg-config perl ];
-  buildInputs = [ openssl zlib fontconfig ]
-    ++ lib.optionals stdenv.hostPlatform.isLinux [ libxkbcommon wayland xorg.libX11 ];
+  # aws-lc: nixpkgs builds aws-lc-sys (rustls) against the packaged library.
+  buildInputs = [ openssl zlib fontconfig aws-lc ]
+    ++ lib.optionals stdenv.hostPlatform.isLinux [ libxkbcommon wayland libx11 ];
 
   # Link the system OpenSSL instead of building the vendored copy.
   env.OPENSSL_NO_VENDOR = "1";
