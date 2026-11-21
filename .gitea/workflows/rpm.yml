@@ -1,0 +1,23 @@
+name: RPM
+
+# GitHub builds the rpms and feeds COPR (see .github/workflows/rpm.yml); Gitea
+# only renders the spec of a tag, to check the script.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v1.6.0)"
+        required: true
+
+jobs:
+  spec:
+    name: Spec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: Render the spec
+        run: nu scripts/ci/rpm_spec.nu spec "${{ github.event.inputs.tag }}"

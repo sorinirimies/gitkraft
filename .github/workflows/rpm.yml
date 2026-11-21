@@ -1,0 +1,96 @@
+name: RPM
+
+# After each release (or by hand, for a tag): one spec (scripts/ci/rpm_spec.nu)
+# built offline from the tag and its vendored crates in Fedora and openSUSE
+# containers, installed there and checked; then the source rpm goes to the COPR
+# project (Fedora) when the COPR_LOGIN, COPR_USERNAME and COPR_TOKEN secrets are
+# set (https://copr.fedorainfracloud.org/api/), otherwise that step is skipped.
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v1.6.0)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  sources:
+    name: Spec and tarballs
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: Spec, source and vendored crates
+        run: nu scripts/ci/rpm_spec.nu sources "${{ github.event.inputs.tag || github.event.workflow_run.head_branch }}" --out rpm
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rpm-sources
+          path: rpm
+          if-no-files-found: error
+
+  build:
+    name: Build on ${{ matrix.image }}
+    needs: sources
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: "fedora:latest", prep: "dnf install -y tar xz gzip git" }
+          - { image: "opensuse/tumbleweed", prep: "zypper --non-interactive install tar xz gzip git" }
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    steps:
+      - name: Install tar and git for the actions
+        run: ${{ matrix.prep }}
+      - uses: actions/checkout@v7
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - uses: actions/download-artifact@v8
+        with:
+          name: rpm-sources
+          path: rpm
+      - name: Build, install and check
+        run: nu scripts/ci/rpm_spec.nu build rpm
+      - uses: actions/upload-artifact@v7
+        if: startsWith(matrix.image, 'fedora')
+        with:
+          name: srpm
+          path: rpm/out/*.src.rpm
+          if-no-files-found: error
+
+  copr:
+    name: COPR
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      COPR_LOGIN: ${{ secrets.COPR_LOGIN }}
+      COPR_USERNAME: ${{ secrets.COPR_USERNAME }}
+      COPR_TOKEN: ${{ secrets.COPR_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+        if: env.COPR_LOGIN != ''
+      - uses: hustcer/setup-nu@v3
+        if: env.COPR_LOGIN != ''
+        with:
+          version: "0.116.1"
+      - uses: actions/download-artifact@v8
+        if: env.COPR_LOGIN != ''
+        with:
+          name: srpm
+          path: srpm
+      - name: Install copr-cli
+        if: env.COPR_LOGIN != ''
+        run: pip install --quiet copr-cli
+      - name: Build in COPR
+        if: env.COPR_LOGIN != ''
+        run: nu scripts/ci/rpm_spec.nu copr srpm
