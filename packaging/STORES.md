@@ -54,9 +54,8 @@ later versions are opened as pull requests by the `winget` job.
 - **macOS Gatekeeper.** The app is signed ad hoc, not notarized (by choice: no paid Apple
   account, no Mac App Store), so a downloaded copy is refused until
   `xattr -dr com.apple.quarantine /Applications/GitKraft.app`; the cask says so.
-- **Microsoft Store.** It takes Win32 installers, but they must be signed with a certificate from a
-  trusted CA, and our installer is unsigned. winget and Scoop do not need that; Windows SmartScreen
-  may still warn on first run.
+- **Windows.** No Microsoft Store (by choice); winget and Scoop take the unsigned installer, though
+  SmartScreen may warn on first run.
 - **Homebrew on Linux** uses the glibc-linked tarballs built on `ubuntu-latest`, so it needs a
   distro with that glibc or newer.
 - **Homebrew trust.** Recent Homebrew versions require third-party taps to be trusted once:
