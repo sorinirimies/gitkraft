@@ -19,7 +19,14 @@ apps:
     plugs: [home, removable-media, network, ssh-keys, unity7]
 
 parts:
+  # The gnome extension adds its own parts, and snapcraft then wants rustup from a part we name
+  # ("'rustup' not found and part 'gitkraft' does not depend on a part named 'rust-deps'").
+  rust-deps:
+    plugin: nil
+    build-packages:
+      - rustup
   gitkraft:
+    after: [rust-deps]
     plugin: rust
     source: .
     rust-path: [crates/gitkraft-gui]
