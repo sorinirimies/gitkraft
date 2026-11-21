@@ -1,0 +1,36 @@
+name: Nix
+
+# Builds the flake (`nix run github:sorinirimies/gitkraft`) on Linux, x86-64 and
+# arm64, and checks every binary loads. Runs when the Nix files or the lockfile
+# change, and by hand. Uploads flake.lock when the repository has none.
+
+on:
+  push:
+    branches: [main]
+    paths: ["flake.nix", "flake.lock", "packaging/nix/**", "Cargo.lock"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: nix build (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v32
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: Build and check
+        run: nu scripts/ci/nix_check.nu
+      - uses: actions/upload-artifact@v7
+        if: matrix.runner == 'ubuntu-latest'
+        with:
+          name: flake-lock
+          path: flake.lock

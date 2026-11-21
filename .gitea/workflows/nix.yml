@@ -1,0 +1,20 @@
+name: Nix
+
+# GitHub builds the flake (see .github/workflows/nix.yml); Gitea can do the same
+# by hand when its runner has room for a Nix store.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: nix build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v32
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: Build and check
+        run: nu scripts/ci/nix_check.nu
