@@ -134,11 +134,13 @@ def "main sources" [version: string, --out: string] {
 }
 
 # The package manager command that installs `packages` on this distro.
-export def install-command [os_id: string, packages: list<string>]: nothing -> list<string> {
+# `--local` is for the rpms just built, which are unsigned (zypper refuses those).
+export def install-command [os_id: string, packages: list<string>, --local]: nothing -> list<string> {
     if ($os_id | str starts-with "opensuse") or $os_id == "sles" {
         # --force-resolution: the container image's busybox stand-ins (busybox-gawk…)
         # give way to the real tools rpm-build needs.
-        [zypper --non-interactive install --no-recommends --force-resolution ...$packages]
+        let unsigned = if $local { [--allow-unsigned-rpm] } else { [] }
+        [zypper --non-interactive install --no-recommends --force-resolution ...$unsigned ...$packages]
     } else {
         [dnf install -y --setopt=install_weak_deps=False ...$packages]
     }
@@ -162,7 +164,7 @@ def "main build" [dir: string] {
     run-cmd (install-command $os $deps)
     ^rpmbuild -ba $spec --define $"_sourcedir ($dir)" --define $"_rpmdir ($dir)/out" --define $"_srcrpmdir ($dir)/out"
     let rpms = glob $"($dir)/out/**/*.rpm" | where {|f| not ($f | str ends-with ".src.rpm") }
-    run-cmd (install-command $os $rpms)
+    run-cmd (install-command --local $os $rpms)
     for b in $BINS {
         let ldd = ^ldd $"/usr/bin/($b.bin)" | complete
         if ($ldd.stdout | str contains "not found") { error make {msg: $"($b.bin): ($ldd.stdout)"} }
