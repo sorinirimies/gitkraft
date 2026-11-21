@@ -205,12 +205,21 @@ def "main import" [] {
     print $"publish=(not ($secret | is-empty))"
 }
 
+# The container check of one binary: every library it links resolves, and a
+# command-line one starts (126/127 mean it could not; an older binary may reject
+# --version, which still proves it runs).
+export def binary-check [bin: record]: nothing -> string {
+    let libs = $"if ldd /usr/bin/($bin.bin) | grep 'not found'; then exit 1; fi"
+    if $bin.kind == "gui" { $libs } else { $"($libs)
+/usr/bin/($bin.bin) --version || [ $? -lt 126 ]" }
+}
+
 # Adds <site> as a source inside a fresh <image> container, the way users do (key
-# file + deb822 source, signature checked), installs every package and runs the
-# command-line ones.
+# file + deb822 source, signature checked), installs every package and checks
+# each binary.
 def "main verify" [site: string, image: string] {
     let pkgs = $BINS | get bin | str lowercase | str replace --all '_' '-'
-    let runs = $BINS | where kind != gui | each {|b| $"($b.bin) --version" } | str join " && "
+    let runs = $BINS | each {|b| binary-check $b } | str join "\n"
     let script = [
         "set -e"
         "export DEBIAN_FRONTEND=noninteractive"

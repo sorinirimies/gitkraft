@@ -25,6 +25,11 @@ def "test apt_repo: only a version tag is served as given" [] {
     assert equal (release-tag "") ""
 }
 
+def "test apt_repo: binaries must load in the container" [] {
+    assert equal (binary-check {bin: demo, kind: gui}) "if ldd /usr/bin/demo | grep 'not found'; then exit 1; fi"
+    assert equal (binary-check {bin: demo-tui, kind: tui}) "if ldd /usr/bin/demo-tui | grep 'not found'; then exit 1; fi\n/usr/bin/demo-tui --version || [ $? -lt 126 ]"
+}
+
 def "test apt_repo: a stanza is the control plus location and hashes" [] {
     let s = stanza "Package: demo\nVersion: 1.0\n\n" pool/main/demo.deb 42 m5 s256
     assert equal $s "Package: demo\nVersion: 1.0\nFilename: pool/main/demo.deb\nSize: 42\nMD5sum: m5\nSHA256: s256\n"
