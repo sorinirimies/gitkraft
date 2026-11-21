@@ -49,6 +49,11 @@ pub fn plan(
             }
         }
     };
+    // The checkout folder is named after the project, so the name must be one plain folder name:
+    // `.` or `..` would clone into the picked folder itself or above it.
+    if matches!(repo.name.as_str(), "" | "." | "..") || repo.name.contains(['/', '\\', '\0']) {
+        return Err(format!("'{spec}' does not name a project"));
+    }
     let chosen = transport.or_else(|| file.clone_via(&repo.host));
     // A full URL the user typed is used as typed unless they asked for a transport.
     let url = match (is_full_url(spec), chosen) {
@@ -66,6 +71,32 @@ fn is_full_url(spec: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_project_named_dot_or_dot_dot_is_refused_so_the_clone_stays_in_its_folder() {
+        // Found by the clone_plan fuzz target.
+        let none = AccountsFile::default();
+        let cwd = std::path::Path::new("/picked");
+        for spec in [
+            "/\0/.",
+            "o/.",
+            "o/..",
+            "github.com/o/..",
+            "https://github.com/o/...git",
+            "https://github.com/o/..",
+        ] {
+            if let Ok(p) = plan(spec, None, None, &none, cwd) {
+                assert_eq!(
+                    p.dest.parent(),
+                    Some(cwd),
+                    "{spec:?} -> {}",
+                    p.dest.display()
+                );
+                assert!(!matches!(p.repo.name.as_str(), "." | ".."), "{spec:?}");
+            }
+        }
+        assert!(plan("o/..", None, None, &none, cwd).is_err());
+    }
     use std::path::Path;
 
     fn file(text: &str) -> AccountsFile {

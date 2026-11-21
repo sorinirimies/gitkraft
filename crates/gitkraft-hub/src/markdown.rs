@@ -26,8 +26,9 @@ pub fn image_urls(md: &str) -> Vec<String> {
                 }
             }
         } else if b[i] == b'<'
-            && md[i..].len() > 4
-            && md[i..i + 4].eq_ignore_ascii_case("<img")
+            && md
+                .get(i..i + 4)
+                .is_some_and(|t| t.eq_ignore_ascii_case("<img"))
             && let Some(end) = md[i..].find('>')
         {
             let tag = &md[i..i + end];
@@ -50,6 +51,17 @@ pub fn image_urls(md: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_multibyte_character_right_after_a_less_than_sign_is_not_split() {
+        // Found by the markdown_images fuzz target: slicing 4 bytes after `<` cut into `Ǥ`.
+        assert!(image_urls("z<\n<\n\nǤ.").is_empty());
+        assert!(image_urls("<é").is_empty());
+        assert_eq!(
+            image_urls("<ÿ<img src='https://x/1.png'>"),
+            ["https://x/1.png"]
+        );
+    }
 
     #[test]
     fn finds_markdown_and_html_images_in_order_without_duplicates() {
