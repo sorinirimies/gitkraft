@@ -5,7 +5,8 @@
 use std/assert
 use runner.nu *
 use ../icons.nu [MASTER SMALL_MAX ICO_SIZES variant kind-for iconset-entries outputs]
-use ../ci/package_desktop.nu [ICON_SIZES]
+use ../ci/package_desktop.nu [ICON_SIZES pkgbuild]
+use ../project.nu [APP BINS]
 
 const ROOT = path self ../..
 
@@ -89,10 +90,11 @@ def "test icons: the ico entries are bmp, which nsis needs" [] {
 }
 
 def "test icons: packaging ships the png sizes" [] {
-    let aur = open --raw ($ROOT | path join packaging aur PKGBUILD)
+    let existing = glob ($ROOT | path join assets icons "*") | each {|p| $p | path relative-to $ROOT }
+    let aur = pkgbuild $APP $BINS 1.0.0 abc $existing
     let flatpak = open --raw ($ROOT | path join packaging flatpak io.github.sorinirimies.GitKraft.yml)
     let sizes = $ICON_SIZES | str join " "
-    assert ($aur | str contains $"for n in ($sizes); do") "AUR installs every hicolor size"
+    for n in $ICON_SIZES { assert ($aur | str contains $"hicolor/($n)x($n)/apps/") $"AUR installs the ($n) px icon" }
     assert ($flatpak | str contains $"for n in ($sizes); do") "Flatpak installs every hicolor size"
 }
 

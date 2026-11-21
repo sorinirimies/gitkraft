@@ -8,7 +8,7 @@ use gitkraft_settings::dashboard::Dashboard;
 use gitkraft_settings::files;
 use gitkraft_web::{Paths, ServerOptions, Session, serve};
 
-const USAGE: &str = "usage: gitkraft-web [--host HOST] [--port PORT] [--no-open] [--checkout DIR]... [--demo] [--theme N]";
+const USAGE: &str = "usage: gitkraft-web [--host HOST] [--port PORT] [--no-open] [--checkout DIR]... [--demo] [--theme N] [--version]";
 
 fn parse_args(args: &[String]) -> Result<ServerOptions, String> {
     let mut opts = ServerOptions {
@@ -49,6 +49,10 @@ fn parse_args(args: &[String]) -> Result<ServerOptions, String> {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "-V" || a == "--version") {
+        println!("gitkraft-web {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     let opts = parse_args(&args).unwrap_or_else(|e| {
         eprintln!("{e}");
         std::process::exit(2);

@@ -228,6 +228,15 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # Homebrew cask and formulae, the Scoop manifest and the gitkraft-bin
+      # PKGBUILD, hashed from the files above; the store jobs push them.
+      - name: Package-manager manifests
+        run: nu scripts/ci/stores.nu manifests ${{ needs.validate.outputs.version }} --dist dist --out manifests
+      - uses: actions/upload-artifact@v7
+        with:
+          name: manifests
+          path: manifests
+          if-no-files-found: error
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.validate.outputs.tag }}
@@ -255,10 +264,11 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
         run: nu scripts/ci/publish_crate.nu
 
-  # Needs the AUR_USERNAME, AUR_EMAIL and AUR_SSH_PRIVATE_KEY secrets; without
-  # them the deploy fails without failing the release.
-  aur:
-    name: AUR
+  # Needs the TAP_GITHUB_TOKEN secret (fine-grained token, contents: write on
+  # sorinirimies/homebrew-tap and sorinirimies/scoop-bucket, shared with nuance);
+  # without it the push is skipped with a warning.
+  homebrew:
+    name: Homebrew tap
     needs: [validate, publish]
     runs-on: ubuntu-latest
     steps:
@@ -268,14 +278,96 @@ jobs:
       - uses: hustcer/setup-nu@v3
         with:
           version: "0.116.1"
+      - uses: actions/download-artifact@v8
+        with:
+          name: manifests
+          path: manifests
+      - name: Push the cask and formulae
+        env:
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: nu scripts/ci/push_manifest.nu sorinirimies/homebrew-tap manifests/homebrew ${{ needs.validate.outputs.version }}
+
+  scoop:
+    name: Scoop bucket
+    needs: [validate, publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - uses: actions/download-artifact@v8
+        with:
+          name: manifests
+          path: manifests
+      - name: Push the manifest
+        env:
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: nu scripts/ci/push_manifest.nu sorinirimies/scoop-bucket manifests/scoop ${{ needs.validate.outputs.version }}
+
+  # Needs the WINGET_TOKEN secret (classic token, public_repo) and a fork of
+  # microsoft/winget-pkgs; the first version is submitted by hand (komac new,
+  # see packaging/STORES.md), later ones by this job.
+  winget:
+    name: winget
+    needs: [validate, publish]
+    runs-on: ubuntu-latest
+    env:
+      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+    steps:
+      - name: Open the winget-pkgs pull request
+        if: env.WINGET_TOKEN != ''
+        uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: SorinIrimies.GitKraft
+          installers-regex: '-setup\.exe$'
+          release-tag: ${{ needs.validate.outputs.tag }}
+          token: ${{ secrets.WINGET_TOKEN }}
+
+  # Needs the AUR_USERNAME, AUR_EMAIL and AUR_SSH_PRIVATE_KEY secrets (the key of
+  # an AUR account); without them both packages are skipped. gitkraft builds
+  # from source, gitkraft-bin unpacks the release's .deb files.
+  aur:
+    name: AUR
+    needs: [validate, publish]
+    runs-on: ubuntu-latest
+    env:
+      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+        if: env.AUR_SSH_PRIVATE_KEY != ''
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+      - uses: hustcer/setup-nu@v3
+        if: env.AUR_SSH_PRIVATE_KEY != ''
+        with:
+          version: "0.116.1"
       - name: PKGBUILD for this version
+        if: env.AUR_SSH_PRIVATE_KEY != ''
         run: nu scripts/ci/package_desktop.nu aur ${{ needs.validate.outputs.version }}
-      - name: Deploy to the AUR
+      - uses: actions/download-artifact@v8
+        if: env.AUR_SSH_PRIVATE_KEY != ''
+        with:
+          name: manifests
+          path: manifests
+      - name: Deploy gitkraft
+        if: env.AUR_SSH_PRIVATE_KEY != ''
         uses: KSXGitHub/github-actions-deploy-aur@v3
-        continue-on-error: true
         with:
           pkgname: gitkraft
           pkgbuild: dist/aur/PKGBUILD
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: Update to v${{ needs.validate.outputs.version }}
+      - name: Deploy gitkraft-bin
+        if: env.AUR_SSH_PRIVATE_KEY != ''
+        uses: KSXGitHub/github-actions-deploy-aur@v3
+        with:
+          pkgname: gitkraft-bin
+          pkgbuild: manifests/aur-bin/PKGBUILD
           commit_username: ${{ secrets.AUR_USERNAME }}
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}

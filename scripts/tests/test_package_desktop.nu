@@ -177,7 +177,7 @@ def "test package_desktop: the generated pkgbuild builds and installs every bina
     assert ($p | str contains "usr/share/applications/demo-tui.desktop\" <<'EOF'\n[Desktop Entry]")
     assert ($p | str contains "\"assets/icons/demo.svg\"")
     let cli_only = pkgbuild (app) [(bin demo)] 1.0.0 abc []
-    assert ($cli_only | str contains "depends=('gcc-libs')")
+    assert ($cli_only | str contains "depends=('gcc-libs' 'zlib')")
     assert not ($cli_only | str contains "<<'EOF'")
 }
 

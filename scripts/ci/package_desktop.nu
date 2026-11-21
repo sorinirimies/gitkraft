@@ -62,7 +62,7 @@ export def deb-deps [kind: string]: nothing -> record<depends: string, recommend
 # A binary's package name. Debian allows only lowercase letters, digits and `+-.`, so a
 # binary like `app_cli` ships as the package `app-cli` (the command keeps its name).
 export def deb-name [bin: string]: nothing -> string {
-    $bin | str downcase | str replace --all '_' '-'
+    $bin | str lowercase | str replace --all '_' '-'
 }
 
 # DEBIAN/control of one binary's package.
@@ -278,7 +278,8 @@ export def bump-pkgbuild [text: string, version: string, sha: string]: nothing -
 # Generated .desktop/metainfo files are written from heredocs.
 export def pkgbuild [app: record, bins: list<record>, version: string, sha: string, existing: list<string>]: nothing -> string {
     let gui = $bins | any {|b| $b.kind == "gui" }
-    let depends = if $gui { "'gcc-libs' 'libxkbcommon' 'wayland' 'libx11' 'vulkan-icd-loader' 'fontconfig'" } else { "'gcc-libs'" }
+    # libgit2 links zlib; a GUI dlopen()s the display libraries.
+    let depends = if $gui { "'gcc-libs' 'zlib' 'libxkbcommon' 'wayland' 'libx11' 'vulkan-icd-loader' 'fontconfig'" } else { "'gcc-libs' 'zlib'" }
     let crates = $bins | get crate | uniq | each {|c| $"--package ($c)" } | str join " "
     let installs = $bins | each {|b|
         let exe = [$"    install -Dm755 \"target/release/($b.bin)\" \"$pkgdir/usr/bin/($b.bin)\""]

@@ -373,15 +373,22 @@ Options: `--write`, `--allow-force`, `--repo host/owner/name` (env `GITKRAFT_MCP
 
 ## Installation
 
-```sh
-# Desktop GUI
-cargo install gitkraft
+| Where | Command |
+|---|---|
+| macOS (Homebrew) | `brew tap sorinirimies/tap && brew trust --tap sorinirimies/tap`, then `brew install --cask gitkraft` (the app) and `brew install gitkraft-tui gitkraft-web gitkraft-mcp` |
+| Linux (Homebrew) | the same, without the cask |
+| Arch (AUR) | `paru -S gitkraft-bin` (prebuilt) or `paru -S gitkraft` (built from source) |
+| Linux (Snap) | `snap install gitkraft` / `snap install gitkraft-tui` |
+| Linux (Flathub) | `flatpak install flathub io.github.sorinirimies.GitKraft` (once accepted) |
+| Debian, Ubuntu, Fedora | the `.deb` / `.rpm` from the [Releases page](https://github.com/sorinirimies/gitkraft/releases), or the AppImage |
+| Windows (Scoop) | `scoop bucket add sorinirimies https://github.com/sorinirimies/scoop-bucket`, then `scoop install sorinirimies/gitkraft` |
+| Windows (winget) | `winget install SorinIrimies.GitKraft` (once accepted) |
+| Windows, macOS | the installer / DMG from the [Releases page](https://github.com/sorinirimies/gitkraft/releases) |
+| Anywhere with Rust | `cargo install gitkraft` (GUI), `gitkraft-tui`, `gitkraft-web`, `gitkraft-mcp` |
 
-# Terminal UI
-cargo install gitkraft-tui
-```
-
-Or download pre-built binaries from the [Releases page](https://github.com/sorinirimies/gitkraft/releases).
+The macOS app is not notarized yet: if macOS refuses to open it, run
+`xattr -dr com.apple.quarantine /Applications/GitKraft.app`. How each channel is published:
+[`packaging/STORES.md`](packaging/STORES.md).
 
 ## Keyboard Shortcuts
 
