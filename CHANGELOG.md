@@ -4,6 +4,53 @@ All notable changes to this project are documented here. It is generated from
 [Conventional Commits](https://www.conventionalcommits.org) by
 [git-cliff](https://git-cliff.org) — do not edit it by hand.
 
+## [1.6.1](https://github.com/sorinirimies/gitkraft/compare/v1.6.0...v1.6.1) — 2026-11-21
+
+### ✨ Features
+
+- **web:** Blame, open in editor and clone from the Repository page; fix(gui): centred welcome card and right icons; refactor: Editor::from_name in core ([`27af228`](https://github.com/sorinirimies/gitkraft/commit/27af228a62629fc58abc7ee06b9db16dabb4dbca))
+- Web commit/branch actions, web inline diff comments, clone in the GUI; perf: virtualised PR diffs in GUI and TUI; refactor: one accounts.toml loader ([`eedc86b`](https://github.com/sorinirimies/gitkraft/commit/eedc86bf0ec29a284bac544c7becd899e816de50))
+
+### 🐛 Bug fixes
+
+- **hub:** Clone from file:// URLs without a host (file:///C:/… on Windows); test(web): use that form ([`786e0c7`](https://github.com/sorinirimies/gitkraft/commit/786e0c7ba52dd47c23ca348cedbbd3ab36d9d268))
+- **nix:** Build against the system libgit2 and libssh2 ([`9d27ad4`](https://github.com/sorinirimies/gitkraft/commit/9d27ad4faf52351980ede2f95c53a6d6aec35189))
+- **tui:** Scroll past 65 535 lines in diffs, blame and PR views; G on huge diffs no longer overflows ([`eec8207`](https://github.com/sorinirimies/gitkraft/commit/eec82075d14709fba0c9a136e8d807dd2918feec))
+- **snap:** Gitkraft part depends on a rust-deps part (snapcraft 9 with the gnome extension) ([`a29ccb6`](https://github.com/sorinirimies/gitkraft/commit/a29ccb6e2758f9db7f8b55c26fe2aaa54a3fda18))
+
+### 📚 Documentation
+
+- **packaging:** No Microsoft Store ([`6d2cbfd`](https://github.com/sorinirimies/gitkraft/commit/6d2cbfd7f125d806553beb98f428f0418c2dbfe3))
+- **packaging:** No notarization or Mac App Store ([`67215d3`](https://github.com/sorinirimies/gitkraft/commit/67215d39e0fb63037635c4940227cf59f963b83f))
+
+### 🧪 Tests
+
+- **web:** Build a real file:// URL for the clone test on Windows (file://localhost/C:/…) ([`15eedc8`](https://github.com/sorinirimies/gitkraft/commit/15eedc8fc340ded432f1082257efdde0551e29e4))
+- **fuzz:** Fuzz PR diff positions, CI logs, markdown images and clone specs; fix two bugs they found ([`f59206d`](https://github.com/sorinirimies/gitkraft/commit/f59206d9fc45f20d2c3d840b48d1d7d16dedeab7))
+
+### 📦 Build
+
+- **flatpak:** Runtime 26.08, mirror screenshots like Flathub; fix(nix): aws-lc and the renamed X11 attributes ([`3d76cbd`](https://github.com/sorinirimies/gitkraft/commit/3d76cbd13086f993ae11c07adfef4ab00accc58e))
+- Nix flake (nix run github:sorinirimies/gitkraft) with a nixpkgs-style package.nix, checked in CI ([`4b4a27f`](https://github.com/sorinirimies/gitkraft/commit/4b4a27ffad68d2002f924b6b252981c63597e4c5))
+
+### 🔄 CI and release
+
+- **rpm:** Install the freshly built, unsigned rpms on openSUSE with --allow-unsigned-rpm ([`f2c274f`](https://github.com/sorinirimies/gitkraft/commit/f2c274ffa9517799aadc3902a2a5fcf82fac6b08))
+- **rpm:** Let zypper replace the busybox stand-ins on Tumbleweed ([`084a992`](https://github.com/sorinirimies/gitkraft/commit/084a99200e88f934c59ae2c71ca2f3da3120b3b1))
+- **rpm:** A full PATH in the containers (Tumbleweed declares none) ([`f3027f2`](https://github.com/sorinirimies/gitkraft/commit/f3027f26b0099af134084268f51d06f5b6b13efb))
+- **rpm:** Run container steps with bash (Tumbleweed has no /bin/sh) ([`b73ef9c`](https://github.com/sorinirimies/gitkraft/commit/b73ef9cfd30502d72ac1c0dead2b47a204d3ccc3))
+- **rpm:** Bash in the Tumbleweed container ([`f63dcb4`](https://github.com/sorinirimies/gitkraft/commit/f63dcb4cb177889834df04eae099f513a928a714))
+- **rpm:** Commit the spec to the openSUSE Build Service (Tumbleweed x86-64/arm64, Leap 16.0) ([`cef7484`](https://github.com/sorinirimies/gitkraft/commit/cef748439f79699454a86d5f97b6f7d2f63b2083))
+- One RPM spec built offline in Fedora and openSUSE containers, then sent to COPR ([`14d41e0`](https://github.com/sorinirimies/gitkraft/commit/14d41e08898735ab35a5bebd735227ea6de82a04))
+- Flatpak workflow builds the Flathub manifest at a tag and runs flatpak-builder-lint; update_flathub.nu prepare ([`ce8ed61`](https://github.com/sorinirimies/gitkraft/commit/ce8ed61c56152e1bdcf7bc955d013188567332b5))
+- **apt:** Check that each binary loads instead of requiring --version ([`1dc48ac`](https://github.com/sorinirimies/gitkraft/commit/1dc48ac9c46c2c401e6c02792788e8ab0895f67e))
+- Signed apt repository on GitHub Pages, installed in Debian/Ubuntu containers before publishing; fix(deb): declare glibc, libgcc and zlib, Installed-Size ([`cf95cc5`](https://github.com/sorinirimies/gitkraft/commit/cf95cc5832c8ed198c4c9c73fa40568182b43bd9))
+- **release:** Homebrew tap, Scoop bucket, winget and AUR gitkraft-bin; AUR jobs skip without secrets; feat(web): --version ([`40e614a`](https://github.com/sorinirimies/gitkraft/commit/40e614a050c442f332b7f872a4ebac5bcda6ad6d))
+
+### 🔧 Chores
+
+- **flatpak:** Manifest points at the v1.6.0 commit ([`04a937c`](https://github.com/sorinirimies/gitkraft/commit/04a937cefc63b358d83f73bf8d8c997661d07d58))
+
 ## [1.6.0](https://github.com/sorinirimies/gitkraft/compare/v1.5.0...v1.6.0) — 2026-11-20
 
 ### ✨ Features
@@ -31,10 +78,14 @@ All notable changes to this project are documented here. It is generated from
 
 ### 🧪 Tests
 
+- **web:** The page-commit test brings its own git identity ([`7a8df48`](https://github.com/sorinirimies/gitkraft/commit/7a8df48a8da5c331a69284fc78fd74daa80c4f11))
+- **web:** Give the test repos their own git identity (CI has none) ([`ff6611a`](https://github.com/sorinirimies/gitkraft/commit/ff6611afed890ad987ded91159c816934d68c086))
 - **gui:** Pin the theme instead of reading the saved settings ([`8d386f7`](https://github.com/sorinirimies/gitkraft/commit/8d386f74efef6e9b01e29493b46759e1784b04ff))
 
 ### 🔧 Chores
 
+- **flatpak:** Manifest points at the v1.6.0 commit ([`80d24d1`](https://github.com/sorinirimies/gitkraft/commit/80d24d101a6e5909b1028586d2e0d7e0108ceaeb))
+- **flatpak:** Manifest points at the v1.6.0 commit ([`db6b5d7`](https://github.com/sorinirimies/gitkraft/commit/db6b5d722b9f37ae76307ee978faa98b6942c23c))
 - **flatpak:** 25.08 runtime, richer AppStream metadata and 1.6.0 release entry, submission notes ([`2bfe2c8`](https://github.com/sorinirimies/gitkraft/commit/2bfe2c800ad7101512f1bbf114f32580d0251299))
 - **packaging:** Tray permissions for Flatpak and Snap, sandbox-safe tray name, AppStream keywords ([`0fafadf`](https://github.com/sorinirimies/gitkraft/commit/0fafadf91f60ddec297f52a680888e7629530d17))
 - **deny:** Ignore the chrono unmaintained notice (RUSTSEC-2026-0543) ([`5283235`](https://github.com/sorinirimies/gitkraft/commit/52832355fed8c2640d169b2d53acf7621e18d9b9))

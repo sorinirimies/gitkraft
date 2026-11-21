@@ -516,7 +516,7 @@ dependencies = [
 
 [[package]]
 name = "gitkraft-ci"
-version = "1.6.0"
+version = "1.6.1"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -528,7 +528,7 @@ dependencies = [
 
 [[package]]
 name = "gitkraft-core"
-version = "1.6.0"
+version = "1.6.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -555,7 +555,7 @@ dependencies = [
 
 [[package]]
 name = "gitkraft-hub"
-version = "1.6.0"
+version = "1.6.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -573,7 +573,7 @@ dependencies = [
 
 [[package]]
 name = "gitkraft-platforms"
-version = "1.6.0"
+version = "1.6.1"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -589,7 +589,7 @@ dependencies = [
 
 [[package]]
 name = "gitkraft-settings"
-version = "1.6.0"
+version = "1.6.1"
 dependencies = [
  "anyhow",
  "chrono",
