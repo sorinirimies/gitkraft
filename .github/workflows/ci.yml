@@ -35,6 +35,10 @@ jobs:
           version: "0.116.1"
       - name: Install system packages
         run: nu scripts/ci/apt.nu
+      # Prebuilt binary: compiling cargo-udeps costs minutes on every run.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-udeps
       - name: Quality gate
         run: nu scripts/ci/quality_gate.nu
 

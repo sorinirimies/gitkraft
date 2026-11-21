@@ -5,6 +5,7 @@
 # Usage:
 #   nu scripts/tools.nu check git-cliff     fail with an install hint if missing
 #   nu scripts/tools.nu ensure cargo-machete install it only if it is missing (the gate's tools)
+#   nu scripts/tools.nu ensure-nightly      install a minimal nightly toolchain if none (cargo-udeps)
 #   nu scripts/tools.nu install             add the rustup TARGETS, cargo install every missing tool
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -17,6 +18,7 @@ export const TOOLS = {
     cargo-llvm-cov: "cargo-llvm-cov"
     cargo-outdated: "cargo-outdated"
     cargo-machete: "cargo-machete"
+    cargo-udeps: "cargo-udeps"
 }
 
 # rustup targets the build needs besides the host (e.g. wasm32-wasip2 for a Zed
@@ -52,4 +54,11 @@ def "main ensure" [tool: string] {
     if (which $tool | is-empty) { ^cargo ...(install_args $tool) }
 }
 
-def main [] { print "usage: nu scripts/tools.nu (check <tool> | ensure <tool> | install)" }
+# cargo-udeps needs a nightly compiler: install a minimal one when rustup has none.
+def "main ensure-nightly" [] {
+    if (^rustup toolchain list | lines | where {|l| $l starts-with "nightly" } | is-empty) {
+        ^rustup toolchain install nightly --profile minimal
+    }
+}
+
+def main [] { print "usage: nu scripts/tools.nu (check <tool> | ensure <tool> | ensure-nightly | install)" }

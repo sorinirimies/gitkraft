@@ -37,6 +37,7 @@ def "test tools: install args use the crate name and the lockfile" [] {
 
 def "test tools: the gate tools are known" [] {
     assert ("cargo-machete" in ($TOOLS | columns))
+    assert ("cargo-udeps" in ($TOOLS | columns))
 }
 
 def "test gitea_run: dispatch url" [] {

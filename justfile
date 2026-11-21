@@ -93,9 +93,12 @@ audit:
 deny:
     cargo deny check
 
-# Dependencies nothing uses (cargo install cargo-machete; the gate runs it too)
+# Dependencies nothing uses: machete (fast) + udeps (nightly, exact); the gate runs both
 unused-deps:
     cargo machete
+    nu scripts/tools.nu ensure cargo-udeps
+    nu scripts/tools.nu ensure-nightly
+    cargo +nightly udeps --workspace --all-targets --all-features
 
 # Fuzz one target (e.g. just fuzz parse 60); needs nightly + cargo-fuzz
 fuzz target secs="60":

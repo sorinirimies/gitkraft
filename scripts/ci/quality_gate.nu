@@ -10,11 +10,13 @@
 #   4. cargo doc with warnings as errors (broken intra-doc links fail docs.rs)
 #   5. versions agree (Cargo.toml == EXTRA_MANIFESTS)
 #   6. no unused dependencies (cargo machete, installed when missing)
-#   7. nushell script tests
+#   7. no unused dependencies, second opinion (cargo +nightly udeps: sees features,
+#      dev/build deps and all targets; installs nightly and the tool when missing)
+#   8. nushell script tests
 # Project-specific steps (a wasm build, a web bundle, …) go in as extra run_step
 # calls — one place, so every caller gets them.
 #
-# Usage: nu scripts/ci/quality_gate.nu [--skip-fmt] [--skip-test] [--skip-nu]
+# Usage: nu scripts/ci/quality_gate.nu [--skip-fmt] [--skip-test] [--skip-nu] [--skip-udeps]
 # ──────────────────────────────────────────────────────────────────────────────
 
 def run_step [label: string, cmd: closure]: nothing -> bool {
@@ -31,7 +33,7 @@ def run_step [label: string, cmd: closure]: nothing -> bool {
     }
 }
 
-def main [--skip-fmt, --skip-test, --skip-nu] {
+def main [--skip-fmt, --skip-test, --skip-nu, --skip-udeps] {
     print $"(ansi cyan)══ GitKraft — Quality Gate ══(ansi reset)"
     mut ok = true
     if not $skip_fmt {
@@ -51,6 +53,13 @@ def main [--skip-fmt, --skip-test, --skip-nu] {
         nu scripts/tools.nu ensure cargo-machete
         cargo machete
     }) and $ok
+    if not $skip_udeps {
+        $ok = (run_step "unused dependencies (cargo +nightly udeps)" {
+            nu scripts/tools.nu ensure cargo-udeps
+            nu scripts/tools.nu ensure-nightly
+            cargo +nightly udeps --workspace --all-targets --all-features
+        }) and $ok
+    }
     if not $skip_nu {
         $ok = (run_step "nushell tests" { nu scripts/tests/run_all.nu }) and $ok
     }
