@@ -19,6 +19,8 @@
   libxi,
   libxrandr,
   aws-lc,
+  libgit2,
+  libssh2,
   src,
   version,
 }:
@@ -50,8 +52,9 @@ rustPlatform.buildRustPackage {
   ];
 
   nativeBuildInputs = [ pkg-config perl ];
-  # aws-lc: nixpkgs builds aws-lc-sys (rustls) against the packaged library.
-  buildInputs = [ openssl zlib fontconfig aws-lc ]
+  # nixpkgs builds aws-lc-sys (rustls) and libgit2-sys (LIBGIT2_NO_VENDOR) against
+  # the packaged libraries instead of their bundled copies.
+  buildInputs = [ openssl zlib fontconfig aws-lc libgit2 libssh2 ]
     ++ lib.optionals stdenv.hostPlatform.isLinux [ libxkbcommon wayland libx11 ];
 
   # Link the system OpenSSL instead of building the vendored copy.
