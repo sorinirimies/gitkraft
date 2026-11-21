@@ -199,4 +199,81 @@ def "main copr" [dir: string] {
     print $"copr=($project)"
 }
 
-def main [] { print "usage: rpm_spec.nu spec <version> | sources <version> --out <dir> | build <dir> | copr <dir>" }
+# The OBS repositories: Tumbleweed (x86-64 from Factory, arm64 from its ARM port)
+# and Leap 16.0.
+export const OBS_REPOS = [
+    [name project repository archs];
+    [openSUSE_Tumbleweed "openSUSE:Factory" snapshot [x86_64]]
+    [openSUSE_Factory_ARM "openSUSE:Factory:ARM" standard [aarch64]]
+    ["openSUSE_Leap_16.0" "openSUSE:Leap:16.0" standard [x86_64 aarch64]]
+]
+
+# The OBS project, home:<user>:<id>.
+export def obs-project [user: string, app: record]: nothing -> string { $"home:($user):($app.id)" }
+
+def xml-escape [s: string]: nothing -> string {
+    $s | str replace --all '&' '&amp;' | str replace --all '<' '&lt;' | str replace --all '>' '&gt;' | str replace --all '"' '&quot;'
+}
+
+# The project's _meta: title, maintainer and repositories.
+export def obs-project-meta [user: string, app: record]: nothing -> string {
+    let repos = $OBS_REPOS | each {|r|
+        let archs = $r.archs | each {|a| $"    <arch>($a)</arch>" } | str join "\n"
+        $"  <repository name=\"($r.name)\">\n    <path project=\"($r.project)\" repository=\"($r.repository)\"/>\n($archs)\n  </repository>"
+    } | str join "\n"
+    $"<project name=\"(obs-project $user $app)\">
+  <title>($app.title)</title>
+  <description>(xml-escape $app.summary) \(($app.homepage))</description>
+  <person userid=\"($user)\" role=\"maintainer\"/>
+($repos)
+</project>
+"
+}
+
+# The package's _meta.
+export def obs-package-meta [user: string, app: record]: nothing -> string {
+    $"<package name=\"($app.id)\" project=\"(obs-project $user $app)\">
+  <title>($app.title)</title>
+  <description>(xml-escape $app.summary)</description>
+  <url>($app.homepage)</url>
+</package>
+"
+}
+
+# The zypper line users add the repository with.
+export def obs-repo-url [user: string, app: record, repo: string]: nothing -> string {
+    let p = obs-project $user $app
+    $"https://download.opensuse.org/repositories/($p | str replace --all ':' ':/')/($repo)/($p).repo"
+}
+
+# Commits the spec and tarballs in <dir> to OBS (project and package are created
+# or updated first); OBS then builds them for OBS_REPOS. Needs $OBS_USER and
+# $OBS_PASSWORD; without them it does nothing.
+def "main obs" [dir: string, version: string] {
+    let user = $env.OBS_USER? | default ""
+    if ($user | is-empty) { print "obs=skipped"; return }
+    let dir = $dir | path expand
+    let project = obs-project $user $APP
+    let home = mktemp -d
+    let rc = $"($home)/oscrc"
+    $"[general]\napiurl = https://api.opensuse.org\n[https://api.opensuse.org]\nuser = ($user)\npass = ($env.OBS_PASSWORD)\ncredentials_mgr_class = osc.credentials.PlaintextConfigFileCredentialsManager\n" | save $rc
+    let osc = [osc --config $rc]
+    obs-project-meta $user $APP | save $"($home)/prj.xml"
+    obs-package-meta $user $APP | save $"($home)/pkg.xml"
+    run-cmd [...$osc meta prj $project --file $"($home)/prj.xml"]
+    run-cmd [...$osc meta pkg $project $APP.id --file $"($home)/pkg.xml"]
+    do {
+        cd $home
+        run-cmd [...$osc checkout $project $APP.id]
+        let pkg = $"($home)/($project)/($APP.id)"
+        glob $"($pkg)/*" | each {|f| rm $f } | ignore
+        for f in (glob $"($dir)/*" | where {|f| ($f | path type) == file }) { cp $f $pkg }
+        cd $pkg
+        run-cmd [...$osc addremove]
+        run-cmd [...$osc commit -m $"Update to (plain-version $version)"]
+    }
+    rm -rf $home
+    print $"obs=($project)"
+}
+
+def main [] { print "usage: rpm_spec.nu spec <version> | sources <version> --out <dir> | build <dir> | copr <dir> | obs <dir> <version>" }

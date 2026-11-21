@@ -4,7 +4,8 @@ name: RPM
 # built offline from the tag and its vendored crates in Fedora and openSUSE
 # containers, installed there and checked; then the source rpm goes to the COPR
 # project (Fedora) when the COPR_LOGIN, COPR_USERNAME and COPR_TOKEN secrets are
-# set (https://copr.fedorainfracloud.org/api/), otherwise that step is skipped.
+# set (https://copr.fedorainfracloud.org/api/), and to the openSUSE Build Service
+# with OBS_USER and OBS_PASSWORD; without the secrets those jobs are skipped.
 
 on:
   workflow_run:
@@ -94,3 +95,31 @@ jobs:
       - name: Build in COPR
         if: env.COPR_LOGIN != ''
         run: nu scripts/ci/rpm_spec.nu copr srpm
+
+  # Needs OBS_USER and OBS_PASSWORD (a build.opensuse.org account); creates
+  # home:<user>:gitkraft on first use and OBS builds it for openSUSE.
+  obs:
+    name: openSUSE Build Service
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      OBS_USER: ${{ secrets.OBS_USER }}
+      OBS_PASSWORD: ${{ secrets.OBS_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+        if: env.OBS_USER != ''
+      - uses: hustcer/setup-nu@v3
+        if: env.OBS_USER != ''
+        with:
+          version: "0.116.1"
+      - uses: actions/download-artifact@v8
+        if: env.OBS_USER != ''
+        with:
+          name: rpm-sources
+          path: rpm
+      - name: Install osc
+        if: env.OBS_USER != ''
+        run: pip install --quiet osc
+      - name: Commit to OBS
+        if: env.OBS_USER != ''
+        run: nu scripts/ci/rpm_spec.nu obs rpm "${{ github.event.inputs.tag || github.event.workflow_run.head_branch }}"

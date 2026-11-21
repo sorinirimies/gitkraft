@@ -69,4 +69,14 @@ def "test rpm_spec: copr config and chroots" [] {
     assert equal (vendor-name $APP v1.6.0) "gitkraft-1.6.0-vendor.tar.xz"
 }
 
+def "test rpm_spec: obs project, repositories and the zypper url" [] {
+    let m = obs-project-meta me (app)
+    assert ($m | str starts-with "<project name=\"home:me:demo\">")
+    assert ($m | str contains "<person userid=\"me\" role=\"maintainer\"/>")
+    assert ($m | str contains "<repository name=\"openSUSE_Tumbleweed\">\n    <path project=\"openSUSE:Factory\" repository=\"snapshot\"/>\n    <arch>x86_64</arch>\n  </repository>")
+    assert ($m | str contains "<path project=\"openSUSE:Factory:ARM\" repository=\"standard\"/>\n    <arch>aarch64</arch>")
+    assert ((obs-package-meta me (app)) | str contains "<package name=\"demo\" project=\"home:me:demo\">")
+    assert equal (obs-repo-url me (app) openSUSE_Tumbleweed) "https://download.opensuse.org/repositories/home:/me:/demo/openSUSE_Tumbleweed/home:me:demo.repo"
+}
+
 def main [] { run-tests }
