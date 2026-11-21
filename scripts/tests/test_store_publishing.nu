@@ -5,9 +5,16 @@
 use std/assert
 use runner.nu *
 use ../ci/update_flathub.nu [pin APP_ID]
+use ../ci/flatpak_lint.nu [lint-commands]
 use ../ci/snap_prepare.nu [set-version]
 
 const ROOT = path self ../..
+
+def "test flathub: the linter checks the manifest and the built repo" [] {
+    let c = lint-commands m.yml repo
+    assert equal ($c | each {|x| $x | last 2 }) [[manifest m.yml] [repo repo]]
+    assert equal ($c.0 | first 3) [run --command=flatpak-builder-lint org.flatpak.Builder]
+}
 
 def "test flathub: the manifest pins the release tag and commit" [] {
     let text = "    sources:\n      - type: git\n        tag: v1.2.1\n        commit: 0000\n"

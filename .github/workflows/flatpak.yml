@@ -1,0 +1,61 @@
+name: Flatpak
+
+# Builds the Flathub manifest the way Flathub will (the release tag, offline from
+# cargo-sources.json) and runs Flathub's linter on the manifest and the build.
+# Run it by hand before the Flathub submission and whenever the manifest changes;
+# the bundle is an artifact (`flatpak install --user gitkraft.flatpak`).
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build (e.g. v1.6.0)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Manifest and cargo sources
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: Install flatpak-cargo-generator dependencies
+        run: pip install --quiet aiohttp toml tomlkit
+      - name: Manifest pinned to the tag
+        run: nu scripts/ci/update_flathub.nu prepare "${{ github.event.inputs.tag }}" --out flathub
+      - uses: actions/upload-artifact@v7
+        with:
+          name: flathub-files
+          path: flathub
+          if-no-files-found: error
+
+  build:
+    name: Build and lint
+    needs: prepare
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: flathub-files
+          path: flathub
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: flathub/io.github.sorinirimies.GitKraft.yml
+          bundle: gitkraft.flatpak
+          cache-key: flatpak-${{ github.event.inputs.tag }}
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: Flathub linter
+        run: nu scripts/ci/flatpak_lint.nu flathub/io.github.sorinirimies.GitKraft.yml repo

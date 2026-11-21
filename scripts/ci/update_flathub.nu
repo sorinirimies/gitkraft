@@ -9,6 +9,9 @@
 # toml and tomlkit; without the token it does nothing.
 #
 # Usage: nu scripts/ci/update_flathub.nu <version>
+#        nu scripts/ci/update_flathub.nu prepare <version> --out <dir>
+#          (the manifest and cargo-sources.json Flathub builds, without pushing;
+#          .github/workflows/flatpak.yml builds and lints them)
 # ──────────────────────────────────────────────────────────────────────────────
 
 export const APP_ID = "io.github.sorinirimies.GitKraft"
@@ -23,6 +26,21 @@ export def pin [text: string, version: string, commit: string]: nothing -> strin
     | str replace --regex '(?m)^(\s+commit: ).*$' ('${1}' + $commit)
 }
 
+# Writes <out>/<id>.yml (pinned to the tag's commit) and <out>/cargo-sources.json
+# (from the tag's Cargo.lock), what the Flathub app repo holds for that version.
+def "main prepare" [version: string, --out: string] {
+    let v = $version | str replace --regex '^v' ''
+    let commit = ^git rev-parse $"v($v)^{commit}" | str trim
+    let tmp = mktemp -d
+    mkdir $out
+    http get --raw $GENERATOR | save $"($tmp)/generator.py"
+    ^git show $"v($v):Cargo.lock" | save $"($tmp)/Cargo.lock"
+    ^python3 $"($tmp)/generator.py" $"($tmp)/Cargo.lock" -o $"($out)/cargo-sources.json"
+    pin (open --raw $MANIFEST) $v $commit | save --force $"($out)/($APP_ID).yml"
+    rm -rf $tmp
+    print -e $"✅ ($out): manifest at v($v) \(($commit | str substring 0..<7)) and cargo-sources.json"
+}
+
 def main [version: string] {
     let token = $env.FLATHUB_TOKEN? | default ""
     if ($token | is-empty) {
@@ -30,15 +48,12 @@ def main [version: string] {
         return
     }
     let v = $version | str replace --regex '^v' ''
-    let commit = ^git rev-parse $"v($v)^{commit}" | str trim
     let tmp = mktemp -d
-    http get --raw $GENERATOR | save $"($tmp)/generator.py"
-    ^python3 $"($tmp)/generator.py" Cargo.lock -o $"($tmp)/cargo-sources.json"
-    pin (open --raw $MANIFEST) $v $commit | save --force $MANIFEST
+    main prepare $v --out $"($tmp)/files"
     let work = $"($tmp)/flathub"
     ^git clone -q $"https://x-access-token:($token)@github.com/flathub/($APP_ID).git" $work
-    cp $MANIFEST $"($work)/($APP_ID).yml"
-    cp $"($tmp)/cargo-sources.json" $"($work)/cargo-sources.json"
+    cp $"($tmp)/files/($APP_ID).yml" $"($work)/($APP_ID).yml"
+    cp $"($tmp)/files/cargo-sources.json" $"($work)/cargo-sources.json"
     cd $work
     ^git config user.name "gitkraft-release-bot"
     ^git config user.email "gitkraft-release-bot@users.noreply.github.com"
