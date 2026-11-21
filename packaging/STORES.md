@@ -51,12 +51,9 @@ later versions are opened as pull requests by the `winget` job.
 
 ## Known limits
 
-- **macOS Gatekeeper.** The app is signed ad hoc, not notarized, so a downloaded copy is refused
-  until `xattr -dr com.apple.quarantine /Applications/GitKraft.app`; the cask says so. Notarizing
-  needs the Apple Developer Program (paid, yearly); with a Developer ID certificate the `macos-dmg`
-  job can sign and notarize, and the caveat goes away.
-- **Mac App Store.** Not possible as is: the sandbox forbids running `git`, `ssh` and editors and
-  opening repositories anywhere on disk.
+- **macOS Gatekeeper.** The app is signed ad hoc, not notarized (by choice: no paid Apple
+  account, no Mac App Store), so a downloaded copy is refused until
+  `xattr -dr com.apple.quarantine /Applications/GitKraft.app`; the cask says so.
 - **Microsoft Store.** It takes Win32 installers, but they must be signed with a certificate from a
   trusted CA, and our installer is unsigned. winget and Scoop do not need that; Windows SmartScreen
   may still warn on first run.
