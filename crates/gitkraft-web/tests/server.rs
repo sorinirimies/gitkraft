@@ -1683,7 +1683,7 @@ async fn a_file_is_blamed_and_a_repository_is_cloned_and_opened_from_the_page() 
     let into = tempfile::tempdir().expect("tmp");
     let body = serde_json::json!({
         "action": "clone",
-        "spec": format!("file://localhost{}", bare.display()),
+        "spec": file_url(&bare),
         "into": into.path().display().to_string(),
     });
     let cloned = request(h.addr, "POST", "/api/action", &body.to_string()).await;
@@ -1813,4 +1813,16 @@ async fn without_a_repository_the_page_says_how_to_add_one() {
     let page = get(h.addr, "/git").await;
     assert_eq!(page.status, 200);
     assert!(page.body.contains("--checkout"), "{}", page.body);
+}
+
+/// `file://localhost/<path>` with forward slashes, also for `C:\…` on Windows
+/// (`file://localhost/C:/…`).
+fn file_url(path: &std::path::Path) -> String {
+    let p = path.display().to_string().replace('\\', "/");
+    let p = if p.starts_with('/') {
+        p
+    } else {
+        format!("/{p}")
+    };
+    format!("file://localhost{p}")
 }

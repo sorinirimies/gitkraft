@@ -163,6 +163,19 @@ mod tests {
     }
 
     #[test]
+    fn a_local_file_url_clones_as_typed_also_with_a_drive_letter() {
+        let none = AccountsFile::default();
+        for url in [
+            "file://localhost/tmp/x/o/widgets.git",
+            "file://localhost/C:/Users/me/AppData/Local/Temp/x/o/widgets.git",
+        ] {
+            let p = plan(url, None, None, &none, Path::new("/w")).expect(url);
+            assert_eq!(p.url, url);
+            assert_eq!(p.dest, Path::new("/w").join("widgets"));
+        }
+    }
+
+    #[test]
     fn nonsense_is_explained() {
         let none = AccountsFile::default();
         for bad in ["", "r", "a/b/c/d", "x//y", "/"] {
