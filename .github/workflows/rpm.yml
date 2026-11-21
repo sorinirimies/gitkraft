@@ -46,7 +46,7 @@ jobs:
       matrix:
         include:
           - { image: "fedora:latest", prep: "dnf install -y tar xz gzip git" }
-          - { image: "opensuse/tumbleweed", prep: "zypper --non-interactive install tar xz gzip git" }
+          - { image: "opensuse/tumbleweed", prep: "zypper --non-interactive install bash tar xz gzip git" }
     runs-on: ubuntu-latest
     container: ${{ matrix.image }}
     steps:
