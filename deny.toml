@@ -9,7 +9,6 @@ ignore = [
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: via iced_winit → mundy → zbus" },
     { id = "RUSTSEC-2026-0543", reason = "chrono: unmaintained notice only, no vulnerability; used for dates across the workspace, a move to jiff/time is a separate migration" },
     { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: via tray-icon → muda → gtk, listed in the lockfile for Linux only; the Linux tray uses ksni, so it is never compiled" },
-    { id = "RUSTSEC-2026-0441", reason = "pin-utils: via iced → iced_futures → wasmtimer (web timers); its latest release still depends on it" },
 ]
 
 [licenses]
